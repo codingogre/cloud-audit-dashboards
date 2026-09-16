@@ -1,0 +1,104 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+  "title": {
+    "text": "",
+    "subtitle": "The audit firehose, banded. Signal is what the forensic dashboards show."
+  },
+  "autosize": {
+    "type": "fit",
+    "contains": "padding"
+  },
+  "config": {
+    "axis": {
+      "labelFontSize": 11,
+      "titleFontSize": 11
+    },
+    "view": {
+      "stroke": null
+    },
+    "title": {
+      "fontSize": 14,
+      "subtitleFontSize": 11,
+      "anchor": "start"
+    },
+    "legend": {
+      "labelFontSize": 11,
+      "titleFontSize": 11
+    }
+  },
+  "data": {
+    "url": {
+      "%type%": "esql",
+      "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | EVAL band = CASE(attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\"), \"infra-noise\", attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\", \"query-noise\", attributes.event.action == \"connection_granted\", \"query-noise\", attributes.event.action == \"authentication_success\", \"authn-volume\", \"signal\") | STATS events = COUNT(*) BY ts = BUCKET(@timestamp, 75, ?_tstart, ?_tend), band | SORT ts ASC",
+      "%timefield%": "@timestamp",
+      "%context%": true
+    }
+  },
+  "mark": {
+    "type": "area",
+    "interpolate": "step-after",
+    "opacity": 0.95
+  },
+  "encoding": {
+    "x": {
+      "field": "ts",
+      "type": "temporal",
+      "axis": {
+        "title": "Time",
+        "labelAngle": 0,
+        "tickCount": 8
+      }
+    },
+    "y": {
+      "field": "events",
+      "type": "quantitative",
+      "stack": "normal",
+      "axis": {
+        "title": "Audit events per bucket",
+        "format": "~s",
+        "labels": true,
+        "grid": true,
+        "ticks": true,
+        "domain": true
+      }
+    },
+    "color": {
+      "field": "band",
+      "type": "nominal",
+      "scale": {
+        "domain": [
+          "infra-noise",
+          "query-noise",
+          "authn-volume",
+          "signal"
+        ],
+        "range": [
+          "#565D6E",
+          "#8A94A6",
+          "#0077CC",
+          "#00BFB3"
+        ]
+      },
+      "legend": {
+        "title": "Band",
+        "orient": "top"
+      }
+    },
+    "tooltip": [
+      {
+        "field": "band",
+        "title": "Band"
+      },
+      {
+        "field": "events",
+        "title": "Events",
+        "format": ","
+      },
+      {
+        "field": "ts",
+        "title": "Time",
+        "type": "temporal"
+      }
+    ]
+  }
+}

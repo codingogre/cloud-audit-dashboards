@@ -1,0 +1,102 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+  "title": {
+    "text": "",
+    "subtitle": "Where audited traffic actually originates, from the real client IP resolved at ingest. Top 25 locations."
+  },
+  "autosize": {
+    "type": "fit",
+    "contains": "padding"
+  },
+  "config": {
+    "axis": {
+      "labelFontSize": 11,
+      "titleFontSize": 11
+    },
+    "view": {
+      "stroke": null
+    },
+    "title": {
+      "fontSize": 14,
+      "subtitleFontSize": 11,
+      "anchor": "start"
+    },
+    "legend": {
+      "labelFontSize": 11,
+      "titleFontSize": 11
+    }
+  },
+  "data": {
+    "url": {
+      "%type%": "esql",
+      "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE client.geo.country_iso_code IS NOT NULL | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS events = COUNT(*), actors = COUNT_DISTINCT(actor), ips = COUNT_DISTINCT(client.ip) BY country = client.geo.country_name, city = client.geo.city_name | EVAL place = CONCAT(COALESCE(city, \"(no city)\"), \", \", COALESCE(country, \"(unknown)\")) | SORT events DESC | LIMIT 25",
+      "%timefield%": "@timestamp",
+      "%context%": true
+    }
+  },
+  "mark": {
+    "type": "bar",
+    "cornerRadiusEnd": 3
+  },
+  "encoding": {
+    "y": {
+      "field": "place",
+      "type": "nominal",
+      "sort": {
+        "op": "sum",
+        "field": "events",
+        "order": "descending"
+      },
+      "axis": {
+        "title": "Client location",
+        "labelLimit": 200
+      }
+    },
+    "x": {
+      "field": "events",
+      "type": "quantitative",
+      "axis": {
+        "title": "Audited events",
+        "format": "~s"
+      }
+    },
+    "color": {
+      "field": "events",
+      "type": "quantitative",
+      "scale": {
+        "type": "sqrt",
+        "range": [
+          "#0B1628",
+          "#155C7A",
+          "#1BA9F5",
+          "#7DD3FC",
+          "#FDE68A",
+          "#E7664C"
+        ]
+      },
+      "legend": {
+        "title": "Events",
+        "format": "~s"
+      }
+    },
+    "tooltip": [
+      {
+        "field": "place",
+        "title": "Location"
+      },
+      {
+        "field": "events",
+        "title": "Events",
+        "format": ","
+      },
+      {
+        "field": "actors",
+        "title": "Distinct actors"
+      },
+      {
+        "field": "ips",
+        "title": "Distinct IPs"
+      }
+    ]
+  }
+}

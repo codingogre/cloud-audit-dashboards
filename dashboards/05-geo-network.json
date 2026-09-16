@@ -1,0 +1,558 @@
+{
+  "title": "[Audit] 🌍 Geo & Network",
+  "description": "Real client geography from forwarded_ip, geo-resolved at ingest. Impossible-travel detection.",
+  "time_range": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "refresh_interval": {
+    "pause": true,
+    "value": 60000
+  },
+  "panels": [
+    {
+      "type": "links",
+      "id": "nav-16",
+      "grid": {
+        "x": 0,
+        "y": 0,
+        "w": 48,
+        "h": 4
+      },
+      "config": {
+        "title": "Audit suite navigation",
+        "layout": "horizontal",
+        "links": [
+          {
+            "type": "dashboardLink",
+            "destination": "cloud-audit-00-command-center",
+            "label": "🎛️  Command Center",
+            "options": {
+              "use_filters": true,
+              "use_time_range": true,
+              "open_in_new_tab": false
+            }
+          },
+          {
+            "type": "dashboardLink",
+            "destination": "cloud-audit-01-identity-access",
+            "label": "🔐  Identity & Access",
+            "options": {
+              "use_filters": true,
+              "use_time_range": true,
+              "open_in_new_tab": false
+            }
+          },
+          {
+            "type": "dashboardLink",
+            "destination": "cloud-audit-02-kibana-objects",
+            "label": "🗂️  Kibana Object Forensics",
+            "options": {
+              "use_filters": true,
+              "use_time_range": true,
+              "open_in_new_tab": false
+            }
+          },
+          {
+            "type": "dashboardLink",
+            "destination": "cloud-audit-03-data-access",
+            "label": "🔎  Elasticsearch Data Access",
+            "options": {
+              "use_filters": true,
+              "use_time_range": true,
+              "open_in_new_tab": false
+            }
+          },
+          {
+            "type": "dashboardLink",
+            "destination": "cloud-audit-04-security-anomalies",
+            "label": "🚨  Security & Anomalies",
+            "options": {
+              "use_filters": true,
+              "use_time_range": true,
+              "open_in_new_tab": false
+            }
+          },
+          {
+            "type": "dashboardLink",
+            "destination": "cloud-audit-06-platform-volume",
+            "label": "📊  Platform Volume",
+            "options": {
+              "use_filters": true,
+              "use_time_range": true,
+              "open_in_new_tab": false
+            }
+          },
+          {
+            "type": "dashboardLink",
+            "destination": "cloud-audit-07-actor-360",
+            "label": "👤  Actor 360",
+            "options": {
+              "use_filters": true,
+              "use_time_range": true,
+              "open_in_new_tab": false
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "kpi-01",
+      "grid": {
+        "x": 0,
+        "y": 4,
+        "w": 8,
+        "h": 5
+      },
+      "config": {
+        "title": "",
+        "description": "Events with a resolved client location.",
+        "type": "metric",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE client.geo.country_iso_code IS NOT NULL | STATS `Geo-resolved events` = COUNT(*)"
+        },
+        "metrics": [
+          {
+            "type": "primary",
+            "column": "Geo-resolved events",
+            "format": {
+              "type": "number",
+              "decimals": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "kpi-02",
+      "grid": {
+        "x": 8,
+        "y": 4,
+        "w": 8,
+        "h": 5
+      },
+      "config": {
+        "title": "",
+        "description": "Share of audited events that resolve to a country — the honest denominator for every geographic panel here. It can be low: events with no forwarded IP, and forwarded addresses in private or CGNAT ranges, cannot be placed by any geoip database. \"Why client IPs do not resolve\" breaks it down.",
+        "type": "metric",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS total = COUNT(*), resolved = COUNT(client.geo.country_iso_code) | EVAL `Geo coverage` = ROUND(resolved * 1.0 / total, 4) | KEEP `Geo coverage`"
+        },
+        "metrics": [
+          {
+            "type": "primary",
+            "column": "Geo coverage",
+            "format": {
+              "type": "percent",
+              "decimals": 1
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "kpi-03",
+      "grid": {
+        "x": 16,
+        "y": 4,
+        "w": 8,
+        "h": 5
+      },
+      "config": {
+        "title": "",
+        "description": "Distinct client cities.",
+        "type": "metric",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS `Cities` = COUNT_DISTINCT(client.geo.city_name)"
+        },
+        "metrics": [
+          {
+            "type": "primary",
+            "column": "Cities",
+            "format": {
+              "type": "number",
+              "decimals": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "kpi-04",
+      "grid": {
+        "x": 24,
+        "y": 4,
+        "w": 8,
+        "h": 5
+      },
+      "config": {
+        "title": "",
+        "description": "Distinct real client IPs, taken from network.forwarded_ip.",
+        "type": "metric",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS `Client IPs` = COUNT_DISTINCT(client.ip)"
+        },
+        "metrics": [
+          {
+            "type": "primary",
+            "column": "Client IPs",
+            "format": {
+              "type": "number",
+              "decimals": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "kpi-05",
+      "grid": {
+        "x": 32,
+        "y": 4,
+        "w": 8,
+        "h": 5
+      },
+      "config": {
+        "title": "",
+        "description": "Distinct source.ip values — these are internal proxies, not clients. Shown to make the difference explicit.",
+        "type": "metric",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS `Proxy IPs` = COUNT_DISTINCT(attributes.source.ip)"
+        },
+        "metrics": [
+          {
+            "type": "primary",
+            "column": "Proxy IPs",
+            "format": {
+              "type": "number",
+              "decimals": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "kpi-06",
+      "grid": {
+        "x": 40,
+        "y": 4,
+        "w": 8,
+        "h": 5
+      },
+      "config": {
+        "title": "",
+        "description": "Human identities seen from more than one country in range — the impossible-travel signal. Service credentials are excluded: for machine credentials, multi-region is the normal case, not an anomaly.",
+        "type": "metric",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE client.geo.country_iso_code IS NOT NULL AND attributes.user.email IS NOT NULL | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS c = COUNT_DISTINCT(client.geo.country_iso_code) BY actor | WHERE c > 1 | STATS `Multi-country people` = COUNT(*)"
+        },
+        "metrics": [
+          {
+            "type": "primary",
+            "column": "Multi-country people",
+            "format": {
+              "type": "number",
+              "decimals": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "map-07",
+      "grid": {
+        "x": 0,
+        "y": 9,
+        "w": 24,
+        "h": 13
+      },
+      "config": {
+        "title": "Audited traffic by country",
+        "description": "Choropleth of audited events by client country, joined to Elastic Maps world boundaries on ISO country code.",
+        "type": "region_map",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE client.geo.country_iso_code IS NOT NULL | STATS events = COUNT(*) BY country = client.geo.country_iso_code | SORT events DESC"
+        },
+        "region": {
+          "column": "country"
+        },
+        "metric": {
+          "column": "events"
+        }
+      }
+    },
+    {
+      "type": "vis",
+      "id": "vega-08",
+      "grid": {
+        "x": 24,
+        "y": 9,
+        "w": 12,
+        "h": 13
+      },
+      "config": {
+        "ref_id": "cloud-audit-vega-06-geo-origin",
+        "title": "Client origin by city",
+        "description": "Where audited traffic actually comes from, resolved from the real client IP at ingest."
+      }
+    },
+    {
+      "type": "markdown",
+      "id": "md-09",
+      "grid": {
+        "x": 36,
+        "y": 9,
+        "w": 12,
+        "h": 13
+      },
+      "config": {
+        "content": "### 🌍 About this data\n\nGeo is resolved **at ingest** by `logs-serverless.audit.otel@custom`, which lifts\n`attributes.network.forwarded_ip` to `client.ip` and resolves `client.geo.*`.\n\n**Not `source.ip`** — that is the *internal proxy* (`100.64.x.x` CGNAT, `10.x.x.x` mesh),\nnever the real client.\n\n**Forward-only** — events from before the pipeline was installed have no geo."
+      }
+    },
+    {
+      "type": "vis",
+      "id": "tbl-10",
+      "grid": {
+        "x": 0,
+        "y": 22,
+        "w": 24,
+        "h": 12
+      },
+      "config": {
+        "title": "⚠️ Multi-country identities (impossible travel)",
+        "description": "Identities observed from more than one country inside the selected window. For a human identity this is the classic impossible-travel indicator; for a service key it usually means multi-region infrastructure.",
+        "type": "data_table",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE client.geo.country_iso_code IS NOT NULL AND attributes.user.email IS NOT NULL | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS countries = COUNT_DISTINCT(client.geo.country_iso_code), cities = COUNT_DISTINCT(client.geo.city_name), ips = COUNT_DISTINCT(client.ip), events = COUNT(*) BY actor | WHERE countries > 1 | SORT countries DESC, events DESC | LIMIT 15"
+        },
+        "rows": [
+          {
+            "column": "actor"
+          }
+        ],
+        "metrics": [
+          {
+            "column": "countries"
+          },
+          {
+            "column": "cities"
+          },
+          {
+            "column": "ips"
+          },
+          {
+            "column": "events"
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "tbl-11",
+      "grid": {
+        "x": 24,
+        "y": 22,
+        "w": 24,
+        "h": 12
+      },
+      "config": {
+        "title": "Client IP footprint",
+        "description": "Real client IPs with their resolved location. An IP shared by many actors is usually a NAT gateway or CI runner. A null city and country is not necessarily an error — no geoip database can place an address in a private or CGNAT range; \"Why client IPs do not resolve\" below accounts for every one of them.",
+        "type": "data_table",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE client.ip IS NOT NULL | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS events = COUNT(*), actors = COUNT_DISTINCT(actor), first_seen = MIN(@timestamp) BY ip = client.ip, city = client.geo.city_name, country = client.geo.country_iso_code | SORT events DESC | LIMIT 15"
+        },
+        "rows": [
+          {
+            "column": "ip"
+          },
+          {
+            "column": "city"
+          },
+          {
+            "column": "country"
+          }
+        ],
+        "metrics": [
+          {
+            "column": "events"
+          },
+          {
+            "column": "actors"
+          },
+          {
+            "column": "first_seen"
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "pie-12",
+      "grid": {
+        "x": 0,
+        "y": 34,
+        "w": 24,
+        "h": 12
+      },
+      "config": {
+        "title": "Geo resolution of audited events",
+        "description": "The denominator behind the map: only the \"Resolved to a country\" slice appears on any geographic panel. \"No client IP\" is mostly Elasticsearch transport traffic, which carries no forwarded address at all.",
+        "type": "pie",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | EVAL geo_status = CASE(client.ip IS NULL, \"No client IP on the event\", client.geo.country_iso_code IS NOT NULL, \"Resolved to a country\", \"Client IP present, not resolvable\") | STATS events = COUNT(*) BY geo_status | SORT events DESC"
+        },
+        "metrics": [
+          {
+            "column": "events"
+          }
+        ],
+        "group_by": [
+          {
+            "column": "geo_status"
+          }
+        ],
+        "styling": {
+          "donut_hole": "m"
+        }
+      }
+    },
+    {
+      "type": "vis",
+      "id": "tbl-13",
+      "grid": {
+        "x": 24,
+        "y": 34,
+        "w": 24,
+        "h": 12
+      },
+      "config": {
+        "title": "Why client IPs do not resolve",
+        "description": "Every lifted client IP that did not resolve, bucketed by address class. CGNAT and RFC1918 rows are expected — clients reaching the project through a NAT or private egress, whose addresses no geoip database can place — and are not an enrichment failure. A \"public, unresolved\" row appearing here WOULD be a geoip problem worth chasing.",
+        "type": "data_table",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE client.ip IS NOT NULL AND client.geo.country_iso_code IS NULL | EVAL kind = CASE(CIDR_MATCH(client.ip, \"100.64.0.0/10\"), \"CGNAT 100.64/10 (carrier NAT)\", CIDR_MATCH(client.ip, \"10.0.0.0/8\", \"172.16.0.0/12\", \"192.168.0.0/16\"), \"RFC1918 private\", CIDR_MATCH(client.ip, \"127.0.0.0/8\"), \"loopback\", CIDR_MATCH(client.ip, \"169.254.0.0/16\"), \"link-local\", \"public, unresolved\") | STATS events = COUNT(*), addresses = COUNT_DISTINCT(client.ip) BY kind | SORT events DESC"
+        },
+        "rows": [
+          {
+            "column": "kind"
+          }
+        ],
+        "metrics": [
+          {
+            "column": "events"
+          },
+          {
+            "column": "addresses"
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "xy-14",
+      "grid": {
+        "x": 0,
+        "y": 46,
+        "w": 24,
+        "h": 12
+      },
+      "config": {
+        "title": "Traffic by country over time",
+        "description": "Client country mix over time.",
+        "type": "xy",
+        "axis": {
+          "x": {
+            "title": {
+              "visible": false
+            },
+            "scale": "temporal",
+            "domain": {
+              "type": "fit",
+              "rounding": false
+            }
+          },
+          "y": {
+            "title": {
+              "visible": false
+            }
+          }
+        },
+        "layers": [
+          {
+            "type": "bar_stacked",
+            "data_source": {
+              "type": "esql",
+              "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE client.geo.country_iso_code IS NOT NULL | STATS events = COUNT(*) BY BUCKET(@timestamp, 75, ?_tstart, ?_tend), country = client.geo.country_iso_code"
+            },
+            "x": {
+              "column": "BUCKET(@timestamp, 75, ?_tstart, ?_tend)",
+              "label": "@timestamp"
+            },
+            "y": [
+              {
+                "column": "events"
+              }
+            ],
+            "breakdown_by": {
+              "column": "country"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "tbl-15",
+      "grid": {
+        "x": 24,
+        "y": 46,
+        "w": 24,
+        "h": 12
+      },
+      "config": {
+        "title": "Proxy vs real client IP",
+        "description": "Side-by-side proof that source.ip is the internal proxy and client.ip (from network.forwarded_ip) is the real origin. Analysing the wrong field would put every user in the datacentre.",
+        "type": "data_table",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE client.ip IS NOT NULL | STATS events = COUNT(*) BY proxy = attributes.source.ip, client_ip = client.ip, city = client.geo.city_name | SORT events DESC | LIMIT 15"
+        },
+        "rows": [
+          {
+            "column": "proxy"
+          },
+          {
+            "column": "client_ip"
+          },
+          {
+            "column": "city"
+          }
+        ],
+        "metrics": [
+          {
+            "column": "events"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,637 @@
+{
+  "title": "[Audit] 👤 Actor 360",
+  "description": "One identity’s complete footprint — pick a person in the control bar and every panel becomes their story.",
+  "time_range": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "refresh_interval": {
+    "pause": true,
+    "value": 60000
+  },
+  "panels": [
+    {
+      "type": "links",
+      "id": "nav-22",
+      "grid": {
+        "x": 0,
+        "y": 0,
+        "w": 48,
+        "h": 4
+      },
+      "config": {
+        "title": "Audit suite navigation",
+        "layout": "horizontal",
+        "links": [
+          {
+            "type": "dashboardLink",
+            "destination": "cloud-audit-00-command-center",
+            "label": "🎛️  Command Center",
+            "options": {
+              "use_filters": true,
+              "use_time_range": true,
+              "open_in_new_tab": false
+            }
+          },
+          {
+            "type": "dashboardLink",
+            "destination": "cloud-audit-01-identity-access",
+            "label": "🔐  Identity & Access",
+            "options": {
+              "use_filters": true,
+              "use_time_range": true,
+              "open_in_new_tab": false
+            }
+          },
+          {
+            "type": "dashboardLink",
+            "destination": "cloud-audit-02-kibana-objects",
+            "label": "🗂️  Kibana Object Forensics",
+            "options": {
+              "use_filters": true,
+              "use_time_range": true,
+              "open_in_new_tab": false
+            }
+          },
+          {
+            "type": "dashboardLink",
+            "destination": "cloud-audit-03-data-access",
+            "label": "🔎  Elasticsearch Data Access",
+            "options": {
+              "use_filters": true,
+              "use_time_range": true,
+              "open_in_new_tab": false
+            }
+          },
+          {
+            "type": "dashboardLink",
+            "destination": "cloud-audit-04-security-anomalies",
+            "label": "🚨  Security & Anomalies",
+            "options": {
+              "use_filters": true,
+              "use_time_range": true,
+              "open_in_new_tab": false
+            }
+          },
+          {
+            "type": "dashboardLink",
+            "destination": "cloud-audit-05-geo-network",
+            "label": "🌍  Geo & Network",
+            "options": {
+              "use_filters": true,
+              "use_time_range": true,
+              "open_in_new_tab": false
+            }
+          },
+          {
+            "type": "dashboardLink",
+            "destination": "cloud-audit-06-platform-volume",
+            "label": "📊  Platform Volume",
+            "options": {
+              "use_filters": true,
+              "use_time_range": true,
+              "open_in_new_tab": false
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "markdown",
+      "id": "md-01",
+      "grid": {
+        "x": 0,
+        "y": 4,
+        "w": 48,
+        "h": 3
+      },
+      "config": {
+        "content": "### 👤 Pick a person in the control bar\n**① Is this normal?** reads a fixed 7 days whatever the time picker says · **② What they did** follows the picker · **③ Evidence** ends in the raw records. With nobody selected, every panel describes the whole estate."
+      }
+    },
+    {
+      "type": "vis",
+      "id": "tbl-02",
+      "grid": {
+        "x": 0,
+        "y": 7,
+        "w": 16,
+        "h": 7
+      },
+      "config": {
+        "title": "Who this is",
+        "description": "The people in range, busiest first — click an email to pin that identity across the suite. `keys` counts the API keys acting under that email: Elasticsearch stamps a key's CREATOR on every event the key emits, so a person with keys may be carrying a machine's traffic.",
+        "type": "data_table",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.user.email IS NOT NULL | STATS events = COUNT(*), keys = COUNT_DISTINCT(attributes.api_key.name, 100) BY attributes.user.email | SORT events DESC | LIMIT 10"
+        },
+        "rows": [
+          {
+            "column": "attributes.user.email",
+            "click_filter": true
+          }
+        ],
+        "metrics": [
+          {
+            "column": "events"
+          },
+          {
+            "column": "keys"
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "kpi-03",
+      "grid": {
+        "x": 16,
+        "y": 7,
+        "w": 8,
+        "h": 7
+      },
+      "config": {
+        "title": "",
+        "description": "Every audited event for the selection, how many different things that was, and how recently they were last seen. Unfiltered by the noise gate, so it includes connection housekeeping.",
+        "type": "metric",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS Events = COUNT(*), actions = COUNT_DISTINCT(attributes.event.action, 100), last_ts = MAX(@timestamp) | EVAL detail = CASE(Events == 0, \"no activity\", CONCAT(TO_STRING(actions), \" actions · seen \", TO_STRING(DATE_DIFF(\"minutes\", last_ts, NOW())), \"m ago\")) | KEEP Events, detail"
+        },
+        "metrics": [
+          {
+            "type": "primary",
+            "column": "Events",
+            "format": {
+              "type": "number",
+              "decimals": 0
+            }
+          },
+          {
+            "type": "secondary",
+            "column": "detail"
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "kpi-04",
+      "grid": {
+        "x": 24,
+        "y": 7,
+        "w": 8,
+        "h": 7
+      },
+      "config": {
+        "title": "",
+        "description": "Summed severity of everything that scored, and what the single worst-weighted event was. Routine activity scores zero, so this is not an event count in disguise; the receipts are in \"Everything that scored\" below.",
+        "type": "metric",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.security_config_change IS NOT NULL OR attributes.event.outcome == \"failure\" OR attributes.event.action IN (\"invalidate_apikeys\",\"anonymous_access_denied\") OR (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) | EVAL risk = CASE(attributes.event.action == \"invalidate_apikeys\", 45, attributes.event.action == \"anonymous_access_denied\", 35, attributes.elasticsearch.audit.security_config_change IS NOT NULL, 50, attributes.event.outcome == \"failure\", 40, (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) AND attributes.event.action IN (\"workflow_run\",\"workflow_test\",\"workflow_execution_cancel\"), 10, (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) AND (attributes.event.type == \"deletion\" OR attributes.event.action == \"rule_disable\"), 30, (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))), 25, 0) | WHERE risk > 0 | STATS Risk = SUM(risk), worst = MAX(risk) | EVAL detail = CASE(worst IS NULL, \"nothing scored\", CONCAT(\"worst: \", CASE(worst == 50, \"config change\", worst == 45, \"keys invalidated\", worst == 40, \"failure\", worst == 35, \"anonymous denied\", worst == 30, \"destructive change\", worst == 25, \"Kibana change\", \"execution\"))), Risk = COALESCE(Risk, 0) | KEEP Risk, detail"
+        },
+        "metrics": [
+          {
+            "type": "primary",
+            "column": "Risk",
+            "format": {
+              "type": "number",
+              "decimals": 0
+            }
+          },
+          {
+            "type": "secondary",
+            "column": "detail"
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "kpi-05",
+      "grid": {
+        "x": 32,
+        "y": 7,
+        "w": 8,
+        "h": 7
+      },
+      "config": {
+        "title": "",
+        "description": "The width of their reach: distinct indices named in their requests, Kibana spaces worked in, and browser sessions. Dated daily indices and data-stream backing indices each count once, so a large number can be one dashboard reading many days.",
+        "type": "metric",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS `Indices touched` = COUNT_DISTINCT(attributes.elasticsearch.audit.indices), spaces = COUNT_DISTINCT(attributes.kibana.space.id, 100), sessions = COUNT_DISTINCT(attributes.kibana.session.id, 100) | EVAL detail = CONCAT(TO_STRING(spaces), \" Kibana spaces · \", TO_STRING(sessions), \" sessions\") | KEEP `Indices touched`, detail"
+        },
+        "metrics": [
+          {
+            "type": "primary",
+            "column": "Indices touched",
+            "format": {
+              "type": "number",
+              "decimals": 0
+            }
+          },
+          {
+            "type": "secondary",
+            "column": "detail"
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "kpi-06",
+      "grid": {
+        "x": 40,
+        "y": 7,
+        "w": 8,
+        "h": 7
+      },
+      "config": {
+        "title": "",
+        "description": "Distinct real client addresses, resolved countries, and how they authenticated — authentication type where Elasticsearch records one, realm otherwise. Many addresses for one named person is the shared-credential signal; private and CGNAT addresses cannot be placed in a country at all.",
+        "type": "metric",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | EVAL credential = COALESCE(attributes.authentication.type, attributes.user.domain, \"unknown\") | STATS `Client IPs` = COUNT_DISTINCT(client.ip), countries = COUNT_DISTINCT(client.geo.country_iso_code, 100), creds = VALUES(credential) | EVAL detail = CONCAT(TO_STRING(countries), \" countries · \", CASE(MV_COUNT(creds) == 1, creds, CONCAT(TO_STRING(MV_COUNT(creds)), \" credential kinds\"))) | KEEP `Client IPs`, detail"
+        },
+        "metrics": [
+          {
+            "type": "primary",
+            "column": "Client IPs",
+            "format": {
+              "type": "number",
+              "decimals": 0
+            }
+          },
+          {
+            "type": "secondary",
+            "column": "detail"
+          }
+        ]
+      }
+    },
+    {
+      "type": "markdown",
+      "id": "md-07",
+      "grid": {
+        "x": 0,
+        "y": 14,
+        "w": 48,
+        "h": 2
+      },
+      "config": {
+        "content": "#### ① Is this normal? · _fixed 7-day window — ignores the time picker_"
+      }
+    },
+    {
+      "type": "vis",
+      "id": "vega-08",
+      "grid": {
+        "x": 0,
+        "y": 16,
+        "w": 20,
+        "h": 14
+      },
+      "config": {
+        "ref_id": "cloud-audit-vega-08-actor-baseline-band",
+        "title": "Is this normal for them? — hourly, last 7 days (UTC)",
+        "description": "Hourly activity for the current selection against its OWN pattern for that hour of day. The shaded band is their typical range for the hour — the middle half of the seven observations in the window — and a point marks an hour beyond 1.5× that range, which is unusual for them. Seven observations per hour slot is thin, so read it as a sanity check rather than a detector: an identity with a steady background process plus human bursts will sit outside often, and correctly. The headline reads the last complete hour; the current partial hour is left off so it cannot read as a drop. Hours are UTC. Fixed 7-day window: does not follow the time picker. No noise gate, so it will not reconcile with Signal events."
+      }
+    },
+    {
+      "type": "vis",
+      "id": "vega-09",
+      "grid": {
+        "x": 20,
+        "y": 16,
+        "w": 12,
+        "h": 14
+      },
+      "config": {
+        "ref_id": "cloud-audit-vega-12-actor-cohort",
+        "title": "Where they rank among the busiest — last 7 days",
+        "description": "The 40 busiest identities by user email over the last 7 days, placed by percentile rank on three measures: how much they did, how many different things they did, and how many kinds of Kibana object they touched. The cohort is deliberately NOT filtered by the control bar — that is what makes it a cohort — and the highlighted diamond is the selected identity, drawn only when exactly one is selected. Rank rather than raw value so all three measures share one honest axis: a person can be busier than 90% of the cohort while touching fewer kinds of object than most. Hover any point for its raw numbers. Fixed 7-day window: does not follow the time picker."
+      }
+    },
+    {
+      "type": "vis",
+      "id": "vega-10",
+      "grid": {
+        "x": 32,
+        "y": 16,
+        "w": 16,
+        "h": 14
+      },
+      "config": {
+        "ref_id": "cloud-audit-vega-09-activity-punchcard",
+        "title": "Working rhythm — last 7 days (UTC)",
+        "description": "Every audited event for the current selection by hour of day and day of week, over the last 7 days in UTC — one cell is one specific hour, not an average, because a seven-day window holds each hour of the week exactly once. Fixed window: this panel does not follow the time picker. No noise gate: it measures presence, so it will not reconcile with Signal events. UTC is stated rather than localised so the chart reads the same for every viewer, whatever their timezone — read the rhythm, not the clock."
+      }
+    },
+    {
+      "type": "markdown",
+      "id": "md-11",
+      "grid": {
+        "x": 0,
+        "y": 30,
+        "w": 48,
+        "h": 2
+      },
+      "config": {
+        "content": "#### ② What they did · _follows the time picker_"
+      }
+    },
+    {
+      "type": "vis",
+      "id": "vega-12",
+      "grid": {
+        "x": 0,
+        "y": 32,
+        "w": 48,
+        "h": 11
+      },
+      "config": {
+        "ref_id": "cloud-audit-vega-11-actor-object-flow",
+        "title": "How they reached what they touched — credential → space → object → operation",
+        "description": "How the current selection's Kibana activity flows: which credential it arrived with, which space it happened in, what kind of object it touched and what it did to it. Ribbon width is event count in the time picker's range. Kibana audit only, and only events that touched an object — requests, logins and point-in-time internals are left out. Elasticsearch events carry no space and no saved object, so including them would put most of the ink in a branch that says nothing. Credential is authentication type where Elasticsearch records one and the user's realm otherwise, which is what separates a person in a browser (cloud-saml-kibana) from a script calling Kibana with a key. Object types come from the shared OBJ_TYPE fragment, which recovers a type from the event for workflows, ML jobs, agent-builder tools and secrets that carry no saved-object fields. Top 40 flows: a missing ribbon means the flow is outside the top 40, not that it never happened. Click a credential or a space to pin it across the suite — object type and operation are derived, so a pill on them would match nothing. Double-click anywhere in the panel to clear every pill on the page."
+      }
+    },
+    {
+      "type": "vis",
+      "id": "tbl-13",
+      "grid": {
+        "x": 0,
+        "y": 43,
+        "w": 48,
+        "h": 12
+      },
+      "config": {
+        "title": "⚠️ What they changed",
+        "description": "Everything they changed, ran or deleted in Kibana — newest first. `type` and `name` are the real saved-object fields where Kibana records them, and are otherwise recovered from the event message: workflows, agent-builder agents and tools, ML jobs and secrets carry no saved_object fields at all. `execution` is the first 8 characters of the run id on workflow run/test/cancel events, and \"—\" everywhere else — a cancel and the run it cancelled share that id; the full id is in the session records at the bottom of the page. `result` reads \"attempted\" where Kibana logged the attempt rather than the outcome; \"failure\" is a change that was denied.",
+        "type": "data_table",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) | EVAL verb = CASE(attributes.event.action LIKE \"*_execution_cancel\", \"cancel\", attributes.event.action LIKE \"*_run_soon\", \"run\", attributes.event.action LIKE \"*_run\", \"run\", attributes.event.action LIKE \"*_test\", \"test\", attributes.event.action LIKE \"*_enable\", \"enable\", attributes.event.action LIKE \"*_disable\", \"disable\", attributes.event.action LIKE \"ml_put_*\", \"create\", attributes.event.action LIKE \"ml_open_*\", \"open\", attributes.event.action LIKE \"ml_start_*\", \"start\", attributes.event.action LIKE \"*point_in_time\", \"pit\", attributes.event.action LIKE \"*_create*\", \"create\", attributes.event.action LIKE \"*_update*\", \"update\", attributes.event.action LIKE \"*_delete\", \"delete\", attributes.event.action LIKE \"*_find\", \"find\", attributes.event.action LIKE \"*_get\", \"get\", attributes.event.action LIKE \"*_resolve\", \"resolve\", \"other\") | GROK body.text \"\"\"\\[(?:id|workflowId)=%{DATA:g_id}(?:,|\\])\"\"\" | GROK body.text \"\"\"\\[name=%{GREEDYDATA:g_name}\\]\"\"\" | GROK body.text \"\"\"\\[executionId=%{DATA:g_exec}\\]\"\"\" | GROK body.text \"\"\"case id: %{NOTSPACE:g_case}\"\"\" | GROK body.text \"\"\"(?:job|datafeed) %{NOTSPACE:g_ml}\"\"\" | EVAL obj_type = CASE(attributes.kibana.saved_object.type IS NOT NULL, attributes.kibana.saved_object.type, attributes.event.action LIKE \"ml_*ad_job\", \"ml-job\", attributes.event.action LIKE \"ml_*ad_datafeed\", \"ml-datafeed\", attributes.event.action LIKE \"workflow_execution_*\", \"workflow-execution\", attributes.event.action LIKE \"workflow_*\", \"workflow\", attributes.event.action LIKE \"agent_builder_agent_*\", \"agent-builder-agent\", attributes.event.action LIKE \"agent_builder_tool_*\", \"agent-builder-tool\", attributes.event.action LIKE \"product_documentation_*\", \"product-documentation\", attributes.event.action == \"secret_create\", \"secret\", attributes.event.action IS NULL, \"unclassified\", REPLACE(attributes.event.action, \"_(create|update|delete|enable|disable|run|run_soon|test|cancel)$\", \"\")) | EVAL obj_name = COALESCE(attributes.kibana.saved_object.name, g_name, g_id, attributes.kibana.saved_object.id, g_case, g_ml, g_exec, body.text) | EVAL result = CASE(attributes.event.outcome == \"unknown\", \"attempted\", attributes.event.outcome) | EVAL execution = COALESCE(LEFT(g_exec, 8), \"—\") | STATS events = COUNT(*), last_seen = MAX(@timestamp) BY verb, type = obj_type, name = obj_name, execution, space = attributes.kibana.space.id, result | SORT last_seen DESC | LIMIT 25"
+        },
+        "rows": [
+          {
+            "column": "verb"
+          },
+          {
+            "column": "type",
+            "width": 200
+          },
+          {
+            "column": "name",
+            "width": 430
+          },
+          {
+            "column": "execution",
+            "width": 110
+          },
+          {
+            "column": "space",
+            "width": 110
+          },
+          {
+            "column": "result",
+            "width": 120
+          }
+        ],
+        "metrics": [
+          {
+            "column": "events"
+          },
+          {
+            "column": "last_seen"
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "xy-14",
+      "grid": {
+        "x": 0,
+        "y": 55,
+        "w": 18,
+        "h": 11
+      },
+      "config": {
+        "title": "What they read, by index family",
+        "description": "Where their reads concentrate. Dated daily indices and data-stream backing indices are folded into the family they belong to, so a date-suffixed series counts as one family rather than one row per day. A request naming several indices counts once per index.",
+        "type": "xy",
+        "axis": {
+          "x": {
+            "title": {
+              "visible": false
+            }
+          },
+          "y": {
+            "title": {
+              "visible": false
+            }
+          }
+        },
+        "layers": [
+          {
+            "type": "bar_horizontal",
+            "data_source": {
+              "type": "esql",
+              "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.indices IS NOT NULL | MV_EXPAND attributes.elasticsearch.audit.indices | STATS n = COUNT(*) BY attributes.elasticsearch.audit.indices | EVAL family = REPLACE(REPLACE(attributes.elasticsearch.audit.indices, \"\"\"^\\.ds-\"\"\", \"\"), \"\"\"[-.]?\\d{4}[.-]\\d{2}[.-]\\d{2}(-\\d+)?$\"\"\", \"\") | STATS events = SUM(n) BY family | SORT events DESC | LIMIT 12"
+            },
+            "x": {
+              "column": "family",
+              "label": "family"
+            },
+            "y": [
+              {
+                "column": "events"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "tbl-15",
+      "grid": {
+        "x": 18,
+        "y": 55,
+        "w": 30,
+        "h": 11
+      },
+      "config": {
+        "title": "⚠️ System and hidden index reads",
+        "description": "Dot-prefixed indices — system and hidden — that their requests named, one row per index family: daily indices of the same stream are folded together and `indices` says how many were touched. The index shown is one real member of the family, which is what a click pins; then \"Open in Elasticsearch Data Access\" to see who else reads it. Data-stream backing indices (.ds-*) are left out; they are ordinary data.",
+        "type": "data_table",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.indices IS NOT NULL | MV_EXPAND attributes.elasticsearch.audit.indices | WHERE attributes.elasticsearch.audit.indices LIKE \".*\" AND NOT attributes.elasticsearch.audit.indices LIKE \".ds-*\" | STATS n = COUNT(*), seen = MAX(@timestamp) BY attributes.elasticsearch.audit.indices, action = attributes.elasticsearch.audit.action | EVAL family = REPLACE(REPLACE(attributes.elasticsearch.audit.indices, \"\"\"^\\.ds-\"\"\", \"\"), \"\"\"[-.]?\\d{4}[.-]\\d{2}[.-]\\d{2}(-\\d+)?$\"\"\", \"\") | STATS events = SUM(n), indices = COUNT_DISTINCT(attributes.elasticsearch.audit.indices), actions = COUNT_DISTINCT(action), last_seen = MAX(seen), `attributes.elasticsearch.audit.indices` = MIN(attributes.elasticsearch.audit.indices) BY family | SORT events DESC | LIMIT 20"
+        },
+        "rows": [
+          {
+            "column": "attributes.elasticsearch.audit.indices",
+            "width": 420,
+            "click_filter": true
+          }
+        ],
+        "metrics": [
+          {
+            "column": "indices"
+          },
+          {
+            "column": "actions"
+          },
+          {
+            "column": "events"
+          },
+          {
+            "column": "last_seen"
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "vega-16",
+      "grid": {
+        "x": 0,
+        "y": 66,
+        "w": 24,
+        "h": 12
+      },
+      "config": {
+        "ref_id": "cloud-audit-vega-10-actor-geography",
+        "title": "Where they connected from",
+        "description": "Where the current selection connected from, in the time picker's range. Points are resolved client locations sized by event volume; a line joins one location to the next the same identity appeared from, coloured by the speed that move implies between last seen there and first seen here. Places are aggregated per city, so an identity active in two cities at overlapping times is marked as such rather than given an impossible speed. Read the title line first: many events cannot be placed at all — CGNAT and private addresses resolve to nothing, and many events carry no client IP — so the absence of a line is not evidence of absence. This is a movement record, not an impossible-travel detector."
+      }
+    },
+    {
+      "type": "vis",
+      "id": "tbl-17",
+      "grid": {
+        "x": 24,
+        "y": 66,
+        "w": 24,
+        "h": 12
+      },
+      "config": {
+        "title": "Every address they used",
+        "description": "Every real client address, including the ones the map cannot show: an empty city and country means geoip could not place it, which is always the case for a private or CGNAT address. Click an address to pin it, then \"Open in Geo & Network\".",
+        "type": "data_table",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE client.ip IS NOT NULL | STATS events = COUNT(*), last_seen = MAX(@timestamp) BY client.ip, city = client.geo.city_name, country = client.geo.country_name | SORT events DESC | LIMIT 25"
+        },
+        "rows": [
+          {
+            "column": "client.ip",
+            "click_filter": true
+          },
+          {
+            "column": "city"
+          },
+          {
+            "column": "country"
+          }
+        ],
+        "metrics": [
+          {
+            "column": "events"
+          },
+          {
+            "column": "last_seen"
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "tbl-18",
+      "grid": {
+        "x": 0,
+        "y": 78,
+        "w": 48,
+        "h": 10
+      },
+      "config": {
+        "title": "Everything that scored, with its weight",
+        "description": "The receipts behind the Risk tile: exactly which actions carried a weight, what each weighed, how often, and when last. Click an action to pin it, then \"Open in Security & Anomalies\" to see who else does it — the pinned person and action combine, so clear the person pill first to compare.",
+        "type": "data_table",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.security_config_change IS NOT NULL OR attributes.event.outcome == \"failure\" OR attributes.event.action IN (\"invalidate_apikeys\",\"anonymous_access_denied\") OR (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) | EVAL risk = CASE(attributes.event.action == \"invalidate_apikeys\", 45, attributes.event.action == \"anonymous_access_denied\", 35, attributes.elasticsearch.audit.security_config_change IS NOT NULL, 50, attributes.event.outcome == \"failure\", 40, (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) AND attributes.event.action IN (\"workflow_run\",\"workflow_test\",\"workflow_execution_cancel\"), 10, (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) AND (attributes.event.type == \"deletion\" OR attributes.event.action == \"rule_disable\"), 30, (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))), 25, 0) | WHERE risk > 0 | STATS events = COUNT(*), severity = SUM(risk), last_seen = MAX(@timestamp) BY attributes.event.action, weight = risk | SORT severity DESC | LIMIT 25"
+        },
+        "rows": [
+          {
+            "column": "attributes.event.action",
+            "click_filter": true
+          },
+          {
+            "column": "weight"
+          }
+        ],
+        "metrics": [
+          {
+            "column": "events"
+          },
+          {
+            "column": "severity"
+          },
+          {
+            "column": "last_seen"
+          }
+        ]
+      }
+    },
+    {
+      "type": "markdown",
+      "id": "md-19",
+      "grid": {
+        "x": 0,
+        "y": 88,
+        "w": 48,
+        "h": 2
+      },
+      "config": {
+        "content": "#### ③ Evidence · _session timeline is fixed at 24 hours · the records follow the time picker_"
+      }
+    },
+    {
+      "type": "vis",
+      "id": "vega-20",
+      "grid": {
+        "x": 0,
+        "y": 90,
+        "w": 48,
+        "h": 9
+      },
+      "config": {
+        "ref_id": "cloud-audit-vega-13-session-gantt",
+        "title": "Kibana sessions — last 24 hours",
+        "description": "One bar per Kibana browser session in the last 24 hours, newest first — its length is how long the session ran and its strength is how much it did, which are independent: a short session can carry far more activity than a long one left open and idle. Click a bar to set the dashboard's time range to that session (plus a minute either side); use the time picker's back arrow to return. Shift-click pins that identity across the suite. Only Kibana audit carries a session id, so an identity that works through the Elasticsearch API has no sessions, and an empty panel for it is the correct answer. Twelve most recent sessions. Times are in your browser's timezone, like the rest of Kibana. Fixed 24-hour window: does not follow the time picker."
+      }
+    },
+    {
+      "type": "discover_session",
+      "id": "ds-21",
+      "grid": {
+        "x": 0,
+        "y": 99,
+        "w": 48,
+        "h": 12
+      },
+      "config": {
+        "ref_id": "cloud-audit-search-09-session-reconstruction",
+        "title": "Session records",
+        "description": "The raw Kibana events behind every panel above, newest first, with full session and object ids and the message Kibana wrote."
+      }
+    }
+  ]
+}

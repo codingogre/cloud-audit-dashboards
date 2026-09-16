@@ -1,0 +1,568 @@
+{
+  "title": "[Audit] 🔐 Identity & Access",
+  "description": "Who authenticated, how, from where, and what failed. Resolves the numeric user.name into real identities.",
+  "time_range": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "refresh_interval": {
+    "pause": true,
+    "value": 60000
+  },
+  "panels": [
+    {
+      "type": "links",
+      "id": "nav-17",
+      "grid": {
+        "x": 0,
+        "y": 0,
+        "w": 48,
+        "h": 4
+      },
+      "config": {
+        "title": "Audit suite navigation",
+        "layout": "horizontal",
+        "links": [
+          {
+            "type": "dashboardLink",
+            "destination": "cloud-audit-00-command-center",
+            "label": "🎛️  Command Center",
+            "options": {
+              "use_filters": true,
+              "use_time_range": true,
+              "open_in_new_tab": false
+            }
+          },
+          {
+            "type": "dashboardLink",
+            "destination": "cloud-audit-02-kibana-objects",
+            "label": "🗂️  Kibana Object Forensics",
+            "options": {
+              "use_filters": true,
+              "use_time_range": true,
+              "open_in_new_tab": false
+            }
+          },
+          {
+            "type": "dashboardLink",
+            "destination": "cloud-audit-03-data-access",
+            "label": "🔎  Elasticsearch Data Access",
+            "options": {
+              "use_filters": true,
+              "use_time_range": true,
+              "open_in_new_tab": false
+            }
+          },
+          {
+            "type": "dashboardLink",
+            "destination": "cloud-audit-04-security-anomalies",
+            "label": "🚨  Security & Anomalies",
+            "options": {
+              "use_filters": true,
+              "use_time_range": true,
+              "open_in_new_tab": false
+            }
+          },
+          {
+            "type": "dashboardLink",
+            "destination": "cloud-audit-05-geo-network",
+            "label": "🌍  Geo & Network",
+            "options": {
+              "use_filters": true,
+              "use_time_range": true,
+              "open_in_new_tab": false
+            }
+          },
+          {
+            "type": "dashboardLink",
+            "destination": "cloud-audit-06-platform-volume",
+            "label": "📊  Platform Volume",
+            "options": {
+              "use_filters": true,
+              "use_time_range": true,
+              "open_in_new_tab": false
+            }
+          },
+          {
+            "type": "dashboardLink",
+            "destination": "cloud-audit-07-actor-360",
+            "label": "👤  Actor 360",
+            "options": {
+              "use_filters": true,
+              "use_time_range": true,
+              "open_in_new_tab": false
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "kpi-01",
+      "grid": {
+        "x": 0,
+        "y": 4,
+        "w": 8,
+        "h": 5
+      },
+      "config": {
+        "title": "",
+        "description": "All distinct identities, human and machine.",
+        "type": "metric",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS `Identities` = COUNT_DISTINCT(actor)"
+        },
+        "metrics": [
+          {
+            "type": "primary",
+            "column": "Identities",
+            "format": {
+              "type": "number",
+              "decimals": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "kpi-02",
+      "grid": {
+        "x": 8,
+        "y": 4,
+        "w": 8,
+        "h": 5
+      },
+      "config": {
+        "title": "",
+        "description": "Distinct human identities by email address.",
+        "type": "metric",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS `Humans` = COUNT_DISTINCT(attributes.user.email)"
+        },
+        "metrics": [
+          {
+            "type": "primary",
+            "column": "Humans",
+            "format": {
+              "type": "number",
+              "decimals": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "kpi-03",
+      "grid": {
+        "x": 16,
+        "y": 4,
+        "w": 8,
+        "h": 5
+      },
+      "config": {
+        "title": "",
+        "description": "Distinct named API keys seen authenticating in range.",
+        "type": "metric",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS `Named API keys` = COUNT_DISTINCT(attributes.api_key.name)"
+        },
+        "metrics": [
+          {
+            "type": "primary",
+            "column": "Named API keys",
+            "format": {
+              "type": "number",
+              "decimals": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "kpi-04",
+      "grid": {
+        "x": 24,
+        "y": 4,
+        "w": 8,
+        "h": 5
+      },
+      "config": {
+        "title": "",
+        "description": "Events authenticated through the cloud-saml-kibana SAML realm — interactive human sign-in.",
+        "type": "metric",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.user.domain == \"cloud-saml-kibana\" | STATS `SSO events` = COUNT(*)"
+        },
+        "metrics": [
+          {
+            "type": "primary",
+            "column": "SSO events",
+            "format": {
+              "type": "number",
+              "decimals": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "kpi-05",
+      "grid": {
+        "x": 32,
+        "y": 4,
+        "w": 8,
+        "h": 5
+      },
+      "config": {
+        "title": "",
+        "description": "Failed authentications, denied access and any failed outcome — the same predicate as the Authentication failures table below, so the two always agree.",
+        "type": "metric",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.event.outcome == \"failure\" OR attributes.event.action IN (\"authentication_failed\",\"realm_authentication_failed\",\"anonymous_access_denied\") | STATS `Auth failures` = COUNT(*)"
+        },
+        "metrics": [
+          {
+            "type": "primary",
+            "column": "Auth failures",
+            "format": {
+              "type": "number",
+              "decimals": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "kpi-06",
+      "grid": {
+        "x": 40,
+        "y": 4,
+        "w": 8,
+        "h": 5
+      },
+      "config": {
+        "title": "",
+        "description": "Distinct Kibana browser sessions observed in range.",
+        "type": "metric",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS `Kibana sessions` = COUNT_DISTINCT(attributes.kibana.session.id)"
+        },
+        "metrics": [
+          {
+            "type": "primary",
+            "column": "Kibana sessions",
+            "format": {
+              "type": "number",
+              "decimals": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "xy-07",
+      "grid": {
+        "x": 0,
+        "y": 9,
+        "w": 24,
+        "h": 12
+      },
+      "config": {
+        "title": "Authentication method over time",
+        "description": "How credentials are presented over time: api_key, token or realm. A shift in this mix is worth explaining.",
+        "type": "xy",
+        "axis": {
+          "x": {
+            "title": {
+              "visible": false
+            },
+            "scale": "temporal",
+            "domain": {
+              "type": "fit",
+              "rounding": false
+            }
+          },
+          "y": {
+            "title": {
+              "visible": false
+            }
+          }
+        },
+        "layers": [
+          {
+            "type": "bar_stacked",
+            "data_source": {
+              "type": "esql",
+              "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.authentication.type IS NOT NULL | STATS events = COUNT(*) BY BUCKET(@timestamp, 75, ?_tstart, ?_tend), auth = attributes.authentication.type"
+            },
+            "x": {
+              "column": "BUCKET(@timestamp, 75, ?_tstart, ?_tend)",
+              "label": "@timestamp"
+            },
+            "y": [
+              {
+                "column": "events"
+              }
+            ],
+            "breakdown_by": {
+              "column": "auth"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "vega-08",
+      "grid": {
+        "x": 24,
+        "y": 9,
+        "w": 24,
+        "h": 12
+      },
+      "config": {
+        "ref_id": "cloud-audit-vega-02-auth-matrix",
+        "title": "Credential type by identity",
+        "description": "Matrix of which credential type each identity uses. Humans should authenticate via token/SAML; service identities via api_key."
+      }
+    },
+    {
+      "type": "vis",
+      "id": "pie-09",
+      "grid": {
+        "x": 0,
+        "y": 21,
+        "w": 12,
+        "h": 11
+      },
+      "config": {
+        "title": "Identity origin",
+        "description": "Traffic split by the email on the event: Elastic (@elastic.co), tenant (any other address, including API-key traffic, which carries the key creator’s email), or machine (no email at all).",
+        "type": "pie",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | EVAL actor_org = CASE(attributes.user.email IS NULL, \"machine\", attributes.user.email LIKE \"*@elastic.co\", \"Elastic\", \"tenant\") | STATS events = COUNT(*) BY actor_org"
+        },
+        "metrics": [
+          {
+            "column": "events"
+          }
+        ],
+        "group_by": [
+          {
+            "column": "actor_org"
+          }
+        ],
+        "styling": {
+          "donut_hole": "m"
+        }
+      }
+    },
+    {
+      "type": "vis",
+      "id": "pie-10",
+      "grid": {
+        "x": 12,
+        "y": 21,
+        "w": 12,
+        "h": 11
+      },
+      "config": {
+        "title": "Authentication realm",
+        "description": "Which security realm authenticated the request. SAML SSO is interactive human sign-in (cloud-saml-kibana); API key is programmatic (_es_api_key).",
+        "type": "pie",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.user.domain IS NOT NULL | EVAL realm = CASE(attributes.user.domain == \"cloud-saml-kibana\", \"SAML SSO\", attributes.user.domain == \"_es_api_key\", \"API key\", attributes.user.domain) | STATS events = COUNT(*) BY realm"
+        },
+        "metrics": [
+          {
+            "column": "events"
+          }
+        ],
+        "group_by": [
+          {
+            "column": "realm"
+          }
+        ],
+        "styling": {
+          "donut_hole": "m"
+        }
+      }
+    },
+    {
+      "type": "vis",
+      "id": "tbl-11",
+      "grid": {
+        "x": 24,
+        "y": 21,
+        "w": 24,
+        "h": 11
+      },
+      "config": {
+        "title": "API key inventory",
+        "description": "Every named API key, the human it is attributed to, its request volume and how many distinct client IPs used it. A key appearing from many IPs is worth investigating.",
+        "type": "data_table",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.api_key.name IS NOT NULL | STATS events = COUNT(*), ips = COUNT_DISTINCT(client.ip) BY api_key = attributes.api_key.name, key_id = attributes.api_key.id, owner = attributes.user.email | SORT events DESC | LIMIT 15"
+        },
+        "rows": [
+          {
+            "column": "api_key"
+          },
+          {
+            "column": "key_id"
+          },
+          {
+            "column": "owner"
+          }
+        ],
+        "metrics": [
+          {
+            "column": "events"
+          },
+          {
+            "column": "ips"
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "tbl-12",
+      "grid": {
+        "x": 0,
+        "y": 32,
+        "w": 24,
+        "h": 12
+      },
+      "config": {
+        "title": "Human identity footprint",
+        "description": "Human users with first/last seen and client IP spread. attributes.user.name is a numeric id, so the display name comes from user.full_name.",
+        "type": "data_table",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.user.email IS NOT NULL | STATS events = COUNT(*), first_seen = MIN(@timestamp), last_seen = MAX(@timestamp), ips = COUNT_DISTINCT(client.ip) BY user = attributes.user.email, name = attributes.user.full_name | SORT events DESC | LIMIT 15"
+        },
+        "rows": [
+          {
+            "column": "user"
+          },
+          {
+            "column": "name"
+          }
+        ],
+        "metrics": [
+          {
+            "column": "events"
+          },
+          {
+            "column": "first_seen"
+          },
+          {
+            "column": "last_seen"
+          },
+          {
+            "column": "ips"
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "tbl-13",
+      "grid": {
+        "x": 24,
+        "y": 32,
+        "w": 24,
+        "h": 12
+      },
+      "config": {
+        "title": "Authentication failures",
+        "description": "Failed authentication and denied access grouped by identity and source IP. Empty is good.",
+        "type": "data_table",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.event.action IN (\"authentication_failed\",\"realm_authentication_failed\",\"anonymous_access_denied\") OR attributes.event.outcome == \"failure\" | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS events = COUNT(*), last_seen = MAX(@timestamp) BY actor, action = attributes.event.action, ip = client.ip | SORT events DESC | LIMIT 15"
+        },
+        "rows": [
+          {
+            "column": "actor"
+          },
+          {
+            "column": "action"
+          },
+          {
+            "column": "ip"
+          }
+        ],
+        "metrics": [
+          {
+            "column": "events"
+          },
+          {
+            "column": "last_seen"
+          }
+        ]
+      }
+    },
+    {
+      "type": "discover_session",
+      "id": "ds-14",
+      "grid": {
+        "x": 0,
+        "y": 44,
+        "w": 24,
+        "h": 14
+      },
+      "config": {
+        "ref_id": "cloud-audit-search-07-api-key-activity",
+        "title": "API key activity",
+        "description": "Named API keys with ownership and volume, as a pivotable Discover session."
+      }
+    },
+    {
+      "type": "discover_session",
+      "id": "ds-15",
+      "grid": {
+        "x": 24,
+        "y": 44,
+        "w": 24,
+        "h": 14
+      },
+      "config": {
+        "ref_id": "cloud-audit-search-02-failed-authentications",
+        "title": "Failed authentications",
+        "description": "Every failed or denied authentication event, newest first."
+      }
+    },
+    {
+      "type": "discover_session",
+      "id": "ds-16",
+      "grid": {
+        "x": 0,
+        "y": 58,
+        "w": 48,
+        "h": 14
+      },
+      "config": {
+        "ref_id": "cloud-audit-search-06-actor-first-seen",
+        "title": "Actor first-seen and footprint",
+        "description": "Every identity with when it first and last appeared, its event count, and how many IPs and countries it came from. A brand-new identity near the top is worth a question."
+      }
+    }
+  ]
+}

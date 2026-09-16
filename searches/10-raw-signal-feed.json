@@ -1,0 +1,21 @@
+{
+  "title": "[Audit] Raw signal feed (noise gate applied)",
+  "description": "The full audit stream with the monitor-ping and bulk-authentication noise removed. This is the firehose you can actually read. body.text is emitted only on Kibana events, so that column is empty on Elasticsearch rows.",
+  "esql": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE (attributes.elasticsearch.audit.action IS NULL OR NOT (attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\") OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\")) AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"authentication_success\",\"connection_granted\"))) | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | KEEP @timestamp, actor, resource.attributes.service.name, attributes.event.action, attributes.event.outcome, attributes.elasticsearch.audit.action, attributes.kibana.saved_object.type, client.ip, client.geo.country_iso_code, body.text | SORT @timestamp DESC",
+  "columns": [
+    "actor",
+    "resource.attributes.service.name",
+    "attributes.event.action",
+    "attributes.event.outcome",
+    "attributes.elasticsearch.audit.action",
+    "attributes.kibana.saved_object.type",
+    "client.ip",
+    "body.text"
+  ],
+  "sort": [
+    [
+      "@timestamp",
+      "desc"
+    ]
+  ]
+}

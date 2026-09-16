@@ -1,0 +1,111 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+  "title": {
+    "text": "",
+    "subtitle": "Top 60 identity/index pairs. A blank cell means the pair is outside the top 60, not that access never happened. Counts are request-index pairs (MV_EXPAND)."
+  },
+  "autosize": {
+    "type": "fit",
+    "contains": "padding"
+  },
+  "config": {
+    "axis": {
+      "labelFontSize": 11,
+      "titleFontSize": 11
+    },
+    "view": {
+      "stroke": null
+    },
+    "title": {
+      "fontSize": 14,
+      "subtitleFontSize": 11,
+      "anchor": "start"
+    },
+    "legend": {
+      "labelFontSize": 11,
+      "titleFontSize": 11
+    }
+  },
+  "data": {
+    "url": {
+      "%type%": "esql",
+      "%timefield%": "@timestamp",
+      "%context%": true,
+      "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.indices IS NOT NULL | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | MV_EXPAND attributes.elasticsearch.audit.indices | RENAME attributes.elasticsearch.audit.indices AS idx | STATS events = COUNT(*) BY actor, idx | SORT events DESC | LIMIT 60"
+    }
+  },
+  "mark": {
+    "type": "rect",
+    "cornerRadius": 2,
+    "stroke": "#1D1E24",
+    "strokeWidth": 0.5
+  },
+  "encoding": {
+    "y": {
+      "field": "idx",
+      "type": "nominal",
+      "sort": {
+        "op": "sum",
+        "field": "events",
+        "order": "descending"
+      },
+      "axis": {
+        "title": "Index",
+        "labelLimit": 320,
+        "labelFontSize": 10
+      }
+    },
+    "x": {
+      "field": "actor",
+      "type": "nominal",
+      "sort": {
+        "op": "sum",
+        "field": "events",
+        "order": "descending"
+      },
+      "axis": {
+        "title": "Identity",
+        "orient": "top",
+        "labelAngle": -35,
+        "labelLimit": 160,
+        "labelFontSize": 10,
+        "labelPadding": 6
+      }
+    },
+    "color": {
+      "field": "events",
+      "type": "quantitative",
+      "scale": {
+        "type": "log",
+        "range": [
+          "#0B1628",
+          "#155C7A",
+          "#1BA9F5",
+          "#7DD3FC",
+          "#FDE68A",
+          "#E7664C"
+        ]
+      },
+      "legend": {
+        "title": "Requests (log)",
+        "format": "~s",
+        "orient": "right"
+      }
+    },
+    "tooltip": [
+      {
+        "field": "idx",
+        "title": "Index"
+      },
+      {
+        "field": "actor",
+        "title": "Actor"
+      },
+      {
+        "field": "events",
+        "title": "Events",
+        "format": ","
+      }
+    ]
+  }
+}

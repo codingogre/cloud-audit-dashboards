@@ -1,0 +1,341 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+  "description": "The 40 busiest identities by user email over the last 7 days, placed by percentile rank on three measures: how much they did, how many different things they did, and how many kinds of Kibana object they touched. The cohort is deliberately NOT filtered by the control bar — that is what makes it a cohort — and the highlighted diamond is the selected identity, drawn only when exactly one is selected. Rank rather than raw value so all three measures share one honest axis: a person can be busier than 90% of the cohort while touching fewer kinds of object than most. Hover any point for its raw numbers. Fixed 7-day window: does not follow the time picker.",
+  "autosize": {
+    "type": "fit",
+    "contains": "padding"
+  },
+  "config": {
+    "axis": {
+      "labelFontSize": 11,
+      "titleFontSize": 11
+    },
+    "view": {
+      "stroke": null
+    },
+    "title": {
+      "fontSize": 12,
+      "anchor": "start",
+      "fontWeight": 500
+    }
+  },
+  "title": {
+    "text": {
+      "expr": "'Rank among ' + length(data('people')) + ' identities · last 7 days'"
+    }
+  },
+  "data": {
+    "name": "people",
+    "url": {
+      "index": "logs-serverless.audit.otel-elastic_cloud",
+      "body": {
+        "size": 0,
+        "query": {
+          "range": {
+            "@timestamp": {
+              "gte": "now-7d",
+              "lte": "now"
+            }
+          }
+        },
+        "aggs": {
+          "people": {
+            "terms": {
+              "field": "attributes.user.email",
+              "size": 40
+            },
+            "aggs": {
+              "actions": {
+                "cardinality": {
+                  "field": "attributes.event.action",
+                  "precision_threshold": 100
+                }
+              },
+              "objtypes": {
+                "cardinality": {
+                  "field": "attributes.kibana.saved_object.type",
+                  "precision_threshold": 100
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "format": {
+      "property": "aggregations.people.buckets"
+    }
+  },
+  "transform": [
+    {
+      "lookup": "key",
+      "from": {
+        "data": {
+          "name": "selected",
+          "url": {
+            "index": "logs-serverless.audit.otel-elastic_cloud",
+            "body": {
+              "size": 0,
+              "query": {
+                "bool": {
+                  "must": [
+                    "%dashboard_context-must_clause%",
+                    {
+                      "range": {
+                        "@timestamp": {
+                          "gte": "now-7d",
+                          "lte": "now"
+                        }
+                      }
+                    }
+                  ],
+                  "must_not": [
+                    "%dashboard_context-must_not_clause%"
+                  ],
+                  "filter": [
+                    "%dashboard_context-filter_clause%"
+                  ]
+                }
+              },
+              "aggs": {
+                "people": {
+                  "terms": {
+                    "field": "attributes.user.email",
+                    "size": 40
+                  }
+                }
+              }
+            }
+          },
+          "format": {
+            "property": "aggregations.people.buckets"
+          }
+        },
+        "key": "key",
+        "fields": [
+          "doc_count"
+        ]
+      },
+      "as": [
+        "selectedEvents"
+      ]
+    },
+    {
+      "calculate": "datum.selectedEvents != null ? 1 : 0",
+      "as": "isSel"
+    },
+    {
+      "joinaggregate": [
+        {
+          "op": "sum",
+          "field": "isSel",
+          "as": "nSel"
+        }
+      ]
+    },
+    {
+      "calculate": "datum.isSel === 1 && datum.nSel === 1",
+      "as": "highlight"
+    },
+    {
+      "calculate": "datum.doc_count",
+      "as": "events"
+    },
+    {
+      "calculate": "datum.actions.value",
+      "as": "distinct actions"
+    },
+    {
+      "calculate": "datum.objtypes.value",
+      "as": "object kinds"
+    },
+    {
+      "fold": [
+        "events",
+        "distinct actions",
+        "object kinds"
+      ],
+      "as": [
+        "measure",
+        "value"
+      ]
+    },
+    {
+      "window": [
+        {
+          "op": "percent_rank",
+          "as": "pct"
+        }
+      ],
+      "groupby": [
+        "measure"
+      ],
+      "sort": [
+        {
+          "field": "value",
+          "order": "ascending"
+        }
+      ]
+    },
+    {
+      "window": [
+        {
+          "op": "row_number",
+          "as": "tieIdx"
+        }
+      ],
+      "groupby": [
+        "measure",
+        "pct"
+      ]
+    },
+    {
+      "joinaggregate": [
+        {
+          "op": "count",
+          "as": "tieN"
+        }
+      ],
+      "groupby": [
+        "measure",
+        "pct"
+      ]
+    },
+    {
+      "calculate": "datum.tieIdx - (datum.tieN + 1) / 2",
+      "as": "jitter"
+    }
+  ],
+  "layer": [
+    {
+      "transform": [
+        {
+          "filter": "!datum.highlight"
+        }
+      ],
+      "mark": {
+        "type": "circle",
+        "size": 34,
+        "color": "#5082B1",
+        "opacity": 0.55
+      },
+      "encoding": {
+        "x": {
+          "field": "measure",
+          "type": "nominal",
+          "sort": [
+            "events",
+            "distinct actions",
+            "object kinds"
+          ],
+          "axis": {
+            "title": null,
+            "labelAngle": 0,
+            "orient": "top",
+            "ticks": false,
+            "domain": false
+          }
+        },
+        "xOffset": {
+          "field": "jitter",
+          "type": "quantitative",
+          "scale": {
+            "domain": [
+              -7,
+              7
+            ]
+          }
+        },
+        "y": {
+          "field": "pct",
+          "type": "quantitative",
+          "scale": {
+            "domain": [
+              0,
+              1
+            ],
+            "padding": 10
+          },
+          "axis": {
+            "title": "percentile among identities",
+            "format": ".0%",
+            "tickCount": 5,
+            "grid": true,
+            "gridOpacity": 0.35
+          }
+        },
+        "tooltip": [
+          {
+            "field": "key",
+            "title": "Identity"
+          },
+          {
+            "field": "measure",
+            "title": "Measure"
+          },
+          {
+            "field": "value",
+            "title": "Value",
+            "format": ","
+          },
+          {
+            "field": "pct",
+            "title": "Percentile",
+            "format": ".0%"
+          }
+        ]
+      }
+    },
+    {
+      "transform": [
+        {
+          "filter": "datum.highlight"
+        }
+      ],
+      "mark": {
+        "type": "point",
+        "shape": "diamond",
+        "filled": true,
+        "size": 190,
+        "color": "#d95926",
+        "stroke": "#d95926",
+        "strokeWidth": 1
+      },
+      "encoding": {
+        "x": {
+          "field": "measure",
+          "type": "nominal",
+          "sort": [
+            "events",
+            "distinct actions",
+            "object kinds"
+          ]
+        },
+        "y": {
+          "field": "pct",
+          "type": "quantitative"
+        },
+        "tooltip": [
+          {
+            "field": "key",
+            "title": "Selected"
+          },
+          {
+            "field": "measure",
+            "title": "Measure"
+          },
+          {
+            "field": "value",
+            "title": "Value",
+            "format": ","
+          },
+          {
+            "field": "pct",
+            "title": "Percentile",
+            "format": ".0%"
+          }
+        ]
+      }
+    }
+  ]
+}

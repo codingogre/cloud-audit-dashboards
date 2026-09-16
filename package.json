@@ -1,0 +1,18 @@
+{
+  "name": "cloud-audit-dashboards",
+  "version": "1.0.0",
+  "description": "Cloud Audit Dashboards — audit analytics for Elastic Cloud Serverless. Node CLI that provisions an audit space, installs audit-scoped geoip enrichment, and deploys an eight-dashboard ES|QL/Lens/Vega audit suite to Kibana as code.",
+  "type": "module",
+  "engines": { "node": ">=20.0.0" },
+  "scripts": {
+    "space": "./audit --space",
+    "ingest": "./audit --ingest",
+    "lint": "./audit --lint",
+    "objects": "./audit --objects",
+    "dashboards": "./audit --dashboards",
+    "verify": "./audit --verify",
+    "deploy": "./audit --deploy",
+    "clean": "./audit --clean"
+  },
+  "license": "MIT"
+}

@@ -1,0 +1,131 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+  "title": {
+    "text": "",
+    "subtitle": "The 40 rarest identity/action pairs in range, by when each was first seen. Rare and high-severity together is where to look first."
+  },
+  "autosize": {
+    "type": "fit",
+    "contains": "padding"
+  },
+  "config": {
+    "axis": {
+      "labelFontSize": 11,
+      "titleFontSize": 11
+    },
+    "view": {
+      "stroke": null
+    },
+    "title": {
+      "fontSize": 14,
+      "subtitleFontSize": 11,
+      "anchor": "start"
+    },
+    "legend": {
+      "labelFontSize": 11,
+      "titleFontSize": 11
+    }
+  },
+  "data": {
+    "url": {
+      "%type%": "esql",
+      "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | EVAL risk = CASE(attributes.event.action == \"invalidate_apikeys\", 45, attributes.event.action == \"anonymous_access_denied\", 35, attributes.elasticsearch.audit.security_config_change IS NOT NULL, 50, attributes.event.outcome == \"failure\", 40, (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) AND attributes.event.action IN (\"workflow_run\",\"workflow_test\",\"workflow_execution_cancel\"), 10, (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) AND (attributes.event.type == \"deletion\" OR attributes.event.action == \"rule_disable\"), 30, (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))), 25, 0) | STATS events = COUNT(*), risk = MAX(risk), ts = MIN(@timestamp) BY actor, action = attributes.event.action | SORT events ASC | LIMIT 40",
+      "%timefield%": "@timestamp",
+      "%context%": true
+    }
+  },
+  "mark": {
+    "type": "point",
+    "filled": true,
+    "opacity": 0.85
+  },
+  "encoding": {
+    "x": {
+      "field": "ts",
+      "type": "temporal",
+      "axis": {
+        "title": "First seen in range",
+        "labelAngle": 0,
+        "tickCount": 5
+      }
+    },
+    "y": {
+      "field": "action",
+      "type": "nominal",
+      "sort": {
+        "op": "sum",
+        "field": "events",
+        "order": "descending"
+      },
+      "axis": {
+        "title": "Action",
+        "labelLimit": 220
+      }
+    },
+    "size": {
+      "field": "events",
+      "type": "quantitative",
+      "scale": {
+        "type": "sqrt",
+        "range": [
+          30,
+          260
+        ]
+      },
+      "legend": {
+        "title": "Occurrences",
+        "format": "~s"
+      }
+    },
+    "color": {
+      "field": "risk",
+      "type": "quantitative",
+      "scale": {
+        "domain": [
+          0,
+          50
+        ],
+        "range": [
+          "#1D2A3A",
+          "#155C7A",
+          "#D6BF57",
+          "#E7664C"
+        ]
+      },
+      "legend": {
+        "title": "Severity (0-50)"
+      }
+    },
+    "tooltip": [
+      {
+        "field": "actor",
+        "title": "Actor"
+      },
+      {
+        "field": "action",
+        "title": "Action"
+      },
+      {
+        "field": "events",
+        "title": "Occurrences",
+        "format": ","
+      },
+      {
+        "field": "risk",
+        "title": "Risk"
+      },
+      {
+        "field": "ts",
+        "title": "First seen",
+        "type": "temporal"
+      }
+    ],
+    "shape": {
+      "field": "actor_kind",
+      "type": "nominal",
+      "legend": {
+        "title": "Identity kind"
+      }
+    }
+  }
+}

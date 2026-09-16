@@ -1,0 +1,219 @@
+{
+  "$schema": "https://vega.github.io/schema/vega/v5.json",
+  "autosize": {
+    "type": "fit",
+    "contains": "padding"
+  },
+  "padding": 4,
+  "data": [
+    {
+      "name": "raw",
+      "url": {
+        "%type%": "esql",
+        "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE (attributes.elasticsearch.audit.action IS NULL OR NOT (attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\") OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\")) AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"authentication_success\",\"connection_granted\"))) | EVAL actor = CASE(attributes.api_key.name IS NOT NULL, attributes.api_key.name, COALESCE(attributes.user.email, attributes.user.name, \"<anonymous>\")), actor_kind = CASE(attributes.api_key.name IS NOT NULL, \"service\", attributes.user.email IS NOT NULL, \"human\", \"unattributed\") | EVAL risk = CASE(attributes.event.action == \"invalidate_apikeys\", 45, attributes.event.action == \"anonymous_access_denied\", 35, attributes.elasticsearch.audit.security_config_change IS NOT NULL, 50, attributes.event.outcome == \"failure\", 40, (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) AND attributes.event.action IN (\"workflow_run\",\"workflow_test\",\"workflow_execution_cancel\"), 10, (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) AND (attributes.event.type == \"deletion\" OR attributes.event.action == \"rule_disable\"), 30, (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))), 25, 0) | STATS events = COUNT(*), severity = SUM(risk), scoring = COUNT(CASE(risk > 0, 1, null)) BY actor, actor_kind | SORT events DESC | LIMIT 40",
+        "%timefield%": "@timestamp",
+        "%context%": true
+      }
+    },
+    {
+      "name": "tree",
+      "source": "raw",
+      "transform": [
+        {
+          "type": "nest",
+          "keys": [
+            "actor_kind"
+          ],
+          "generate": true
+        },
+        {
+          "type": "treemap",
+          "field": "events",
+          "sort": {
+            "field": "value",
+            "order": "descending"
+          },
+          "round": true,
+          "method": "squarify",
+          "padding": 2,
+          "size": [
+            {
+              "signal": "width"
+            },
+            {
+              "signal": "height"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "nodes",
+      "source": "tree",
+      "transform": [
+        {
+          "type": "filter",
+          "expr": "datum.children"
+        }
+      ]
+    },
+    {
+      "name": "leaves",
+      "source": "tree",
+      "transform": [
+        {
+          "type": "filter",
+          "expr": "!datum.children"
+        }
+      ]
+    }
+  ],
+  "scales": [
+    {
+      "name": "risk",
+      "type": "sqrt",
+      "domain": {
+        "data": "leaves",
+        "field": "severity"
+      },
+      "range": [
+        "#4A6B85",
+        "#155C7A",
+        "#D6BF57",
+        "#E7664C"
+      ],
+      "zero": true
+    }
+  ],
+  "marks": [
+    {
+      "type": "rect",
+      "from": {
+        "data": "nodes"
+      },
+      "encode": {
+        "update": {
+          "x": {
+            "field": "x0"
+          },
+          "y": {
+            "field": "y0"
+          },
+          "x2": {
+            "field": "x1"
+          },
+          "y2": {
+            "field": "y1"
+          },
+          "fill": {
+            "value": "transparent"
+          },
+          "stroke": {
+            "value": "transparent"
+          }
+        }
+      }
+    },
+    {
+      "type": "rect",
+      "from": {
+        "data": "leaves"
+      },
+      "encode": {
+        "update": {
+          "x": {
+            "field": "x0"
+          },
+          "y": {
+            "field": "y0"
+          },
+          "x2": {
+            "field": "x1"
+          },
+          "y2": {
+            "field": "y1"
+          },
+          "fill": {
+            "scale": "risk",
+            "field": "severity"
+          },
+          "stroke": {
+            "value": "#1D1E24"
+          },
+          "strokeWidth": {
+            "value": 1
+          },
+          "tooltip": {
+            "signal": "{'Identity': datum.actor, 'Kind': datum.actor_kind, 'Events': format(datum.events, ','), 'Accumulated severity': format(datum.severity, ','), 'Scoring events': format(datum.scoring, ',')}"
+          }
+        },
+        "hover": {
+          "stroke": {
+            "value": "#FFFFFF"
+          },
+          "strokeWidth": {
+            "value": 2
+          }
+        }
+      }
+    },
+    {
+      "type": "text",
+      "from": {
+        "data": "leaves"
+      },
+      "interactive": false,
+      "encode": {
+        "update": {
+          "x": {
+            "signal": "(datum.x0 + datum.x1) / 2"
+          },
+          "y": {
+            "signal": "(datum.y0 + datum.y1) / 2"
+          },
+          "align": {
+            "value": "center"
+          },
+          "baseline": {
+            "value": "middle"
+          },
+          "fill": {
+            "value": "#FFFFFF"
+          },
+          "fontSize": {
+            "value": 10
+          },
+          "fontWeight": {
+            "value": 600
+          },
+          "text": {
+            "signal": "(datum.x1 - datum.x0) > 70 && (datum.y1 - datum.y0) > 18 ? datum.actor : ''"
+          },
+          "limit": {
+            "signal": "datum.x1 - datum.x0 - 6"
+          },
+          "stroke": {
+            "value": "#0B1628"
+          },
+          "strokeWidth": {
+            "value": 0.6
+          }
+        }
+      }
+    }
+  ],
+  "legends": [
+    {
+      "fill": "risk",
+      "type": "gradient",
+      "title": "Accumulated severity",
+      "orient": "bottom-right",
+      "direction": "horizontal",
+      "gradientLength": 140,
+      "gradientThickness": 10,
+      "titleFontSize": 10,
+      "labelFontSize": 10,
+      "format": "~s"
+    }
+  ]
+}

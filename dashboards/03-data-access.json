@@ -1,0 +1,491 @@
+{
+  "title": "[Audit] 🔎 Elasticsearch Data Access",
+  "description": "What data was read, by whom, through which transport action — including system indices.",
+  "time_range": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "refresh_interval": {
+    "pause": true,
+    "value": 60000
+  },
+  "panels": [
+    {
+      "type": "links",
+      "id": "nav-14",
+      "grid": {
+        "x": 0,
+        "y": 0,
+        "w": 48,
+        "h": 4
+      },
+      "config": {
+        "title": "Audit suite navigation",
+        "layout": "horizontal",
+        "links": [
+          {
+            "type": "dashboardLink",
+            "destination": "cloud-audit-00-command-center",
+            "label": "🎛️  Command Center",
+            "options": {
+              "use_filters": true,
+              "use_time_range": true,
+              "open_in_new_tab": false
+            }
+          },
+          {
+            "type": "dashboardLink",
+            "destination": "cloud-audit-01-identity-access",
+            "label": "🔐  Identity & Access",
+            "options": {
+              "use_filters": true,
+              "use_time_range": true,
+              "open_in_new_tab": false
+            }
+          },
+          {
+            "type": "dashboardLink",
+            "destination": "cloud-audit-02-kibana-objects",
+            "label": "🗂️  Kibana Object Forensics",
+            "options": {
+              "use_filters": true,
+              "use_time_range": true,
+              "open_in_new_tab": false
+            }
+          },
+          {
+            "type": "dashboardLink",
+            "destination": "cloud-audit-04-security-anomalies",
+            "label": "🚨  Security & Anomalies",
+            "options": {
+              "use_filters": true,
+              "use_time_range": true,
+              "open_in_new_tab": false
+            }
+          },
+          {
+            "type": "dashboardLink",
+            "destination": "cloud-audit-05-geo-network",
+            "label": "🌍  Geo & Network",
+            "options": {
+              "use_filters": true,
+              "use_time_range": true,
+              "open_in_new_tab": false
+            }
+          },
+          {
+            "type": "dashboardLink",
+            "destination": "cloud-audit-06-platform-volume",
+            "label": "📊  Platform Volume",
+            "options": {
+              "use_filters": true,
+              "use_time_range": true,
+              "open_in_new_tab": false
+            }
+          },
+          {
+            "type": "dashboardLink",
+            "destination": "cloud-audit-07-actor-360",
+            "label": "👤  Actor 360",
+            "options": {
+              "use_filters": true,
+              "use_time_range": true,
+              "open_in_new_tab": false
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "kpi-01",
+      "grid": {
+        "x": 0,
+        "y": 4,
+        "w": 8,
+        "h": 5
+      },
+      "config": {
+        "title": "",
+        "description": "All Elasticsearch audit events in range.",
+        "type": "metric",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE resource.attributes.service.name == \"elasticsearch-serverless\" | STATS `Elasticsearch events` = COUNT(*)"
+        },
+        "metrics": [
+          {
+            "type": "primary",
+            "column": "Elasticsearch events",
+            "format": {
+              "type": "number",
+              "decimals": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "kpi-02",
+      "grid": {
+        "x": 8,
+        "y": 4,
+        "w": 8,
+        "h": 5
+      },
+      "config": {
+        "title": "",
+        "description": "Distinct indices named in audited requests.",
+        "type": "metric",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS `Indices touched` = COUNT_DISTINCT(attributes.elasticsearch.audit.indices)"
+        },
+        "metrics": [
+          {
+            "type": "primary",
+            "column": "Indices touched",
+            "format": {
+              "type": "number",
+              "decimals": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "kpi-03",
+      "grid": {
+        "x": 16,
+        "y": 4,
+        "w": 8,
+        "h": 5
+      },
+      "config": {
+        "title": "",
+        "description": "Distinct Elasticsearch transport actions (cluster:*, indices:*).",
+        "type": "metric",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS `Distinct actions` = COUNT_DISTINCT(attributes.elasticsearch.audit.action)"
+        },
+        "metrics": [
+          {
+            "type": "primary",
+            "column": "Distinct actions",
+            "format": {
+              "type": "number",
+              "decimals": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "kpi-04",
+      "grid": {
+        "x": 24,
+        "y": 4,
+        "w": 8,
+        "h": 5
+      },
+      "config": {
+        "title": "",
+        "description": "Requests on the ES|QL execution path — someone running queries, including these dashboards.",
+        "type": "metric",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.action LIKE \"*esql*\" | STATS `ES|QL requests` = COUNT(*)"
+        },
+        "metrics": [
+          {
+            "type": "primary",
+            "column": "ES|QL requests",
+            "format": {
+              "type": "number",
+              "decimals": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "kpi-05",
+      "grid": {
+        "x": 32,
+        "y": 4,
+        "w": 8,
+        "h": 5
+      },
+      "config": {
+        "title": "",
+        "description": "Requests touching dot-prefixed system indices (.kibana*, .security*, .slo-*, .alerts-*). Privileged by nature.",
+        "type": "metric",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.indices IS NOT NULL | MV_EXPAND attributes.elasticsearch.audit.indices | WHERE attributes.elasticsearch.audit.indices LIKE \".*\" | STATS `System index access` = COUNT(*)"
+        },
+        "metrics": [
+          {
+            "type": "primary",
+            "column": "System index access",
+            "format": {
+              "type": "number",
+              "decimals": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "kpi-06",
+      "grid": {
+        "x": 40,
+        "y": 4,
+        "w": 8,
+        "h": 5
+      },
+      "config": {
+        "title": "",
+        "description": "Authorization denials. Sustained non-zero values mean a misconfigured client or a probe.",
+        "type": "metric",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.event.action == \"access_denied\" OR attributes.event.action == \"anonymous_access_denied\" | STATS `Access denied` = COUNT(*)"
+        },
+        "metrics": [
+          {
+            "type": "primary",
+            "column": "Access denied",
+            "format": {
+              "type": "number",
+              "decimals": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "xy-07",
+      "grid": {
+        "x": 0,
+        "y": 9,
+        "w": 24,
+        "h": 15
+      },
+      "config": {
+        "title": "Data access over time by category",
+        "description": "Elasticsearch audit volume over time by ECS category, noise gate applied.",
+        "type": "xy",
+        "axis": {
+          "x": {
+            "title": {
+              "visible": false
+            },
+            "scale": "temporal",
+            "domain": {
+              "type": "fit",
+              "rounding": false
+            }
+          },
+          "y": {
+            "title": {
+              "visible": false
+            }
+          }
+        },
+        "layers": [
+          {
+            "type": "bar_stacked",
+            "data_source": {
+              "type": "esql",
+              "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE resource.attributes.service.name == \"elasticsearch-serverless\" | WHERE (attributes.elasticsearch.audit.action IS NULL OR NOT (attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\") OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\")) AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"authentication_success\",\"connection_granted\"))) | MV_EXPAND attributes.event.category | STATS events = COUNT(*) BY BUCKET(@timestamp, 75, ?_tstart, ?_tend), category = attributes.event.category"
+            },
+            "x": {
+              "column": "BUCKET(@timestamp, 75, ?_tstart, ?_tend)",
+              "label": "@timestamp"
+            },
+            "y": [
+              {
+                "column": "events"
+              }
+            ],
+            "breakdown_by": {
+              "column": "category"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "vega-08",
+      "grid": {
+        "x": 24,
+        "y": 9,
+        "w": 24,
+        "h": 30
+      },
+      "config": {
+        "ref_id": "cloud-audit-vega-04-actor-index-matrix",
+        "title": "Who reads which index",
+        "description": "Heatmap of the busiest identity/index pairs — index down the side, identity across the top, colour is request volume. Reading down a column shows one identity's data footprint; reading across a row shows who touches an index."
+      }
+    },
+    {
+      "type": "vis",
+      "id": "tbl-09",
+      "grid": {
+        "x": 0,
+        "y": 24,
+        "w": 24,
+        "h": 15
+      },
+      "config": {
+        "title": "Most-accessed indices",
+        "description": "Which indices see the most audited access, and how many distinct identities touch each.",
+        "type": "data_table",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.indices IS NOT NULL | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | MV_EXPAND attributes.elasticsearch.audit.indices | STATS events = COUNT(*), actors = COUNT_DISTINCT(actor) BY index = attributes.elasticsearch.audit.indices | SORT events DESC | LIMIT 15"
+        },
+        "rows": [
+          {
+            "column": "index"
+          }
+        ],
+        "metrics": [
+          {
+            "column": "events"
+          },
+          {
+            "column": "actors"
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "tbl-10",
+      "grid": {
+        "x": 0,
+        "y": 39,
+        "w": 24,
+        "h": 12
+      },
+      "config": {
+        "title": "Transport actions",
+        "description": "Elasticsearch transport actions with their request class, after the noise gate removes health pings, search-phase internals and connection and bulk-authentication events.",
+        "type": "data_table",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.action IS NOT NULL | WHERE (attributes.elasticsearch.audit.action IS NULL OR NOT (attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\") OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\")) AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"authentication_success\",\"connection_granted\"))) | STATS events = COUNT(*) BY action = attributes.elasticsearch.audit.action, request = attributes.elasticsearch.audit.request.name | SORT events DESC | LIMIT 15"
+        },
+        "rows": [
+          {
+            "column": "action"
+          },
+          {
+            "column": "request"
+          }
+        ],
+        "metrics": [
+          {
+            "column": "events"
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "tbl-11",
+      "grid": {
+        "x": 0,
+        "y": 51,
+        "w": 48,
+        "h": 12
+      },
+      "config": {
+        "title": "⚠️ System and hidden index access",
+        "description": "Access to dot-prefixed system indices — Kibana internals, the security index, alerting and SLO data. Sorted by most recent, not by volume: sorting by volume buries a one-off read under Kibana’s own continuous polling. Expected from elastic/kibana; unexpected from anyone else.",
+        "type": "data_table",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.indices IS NOT NULL | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | MV_EXPAND attributes.elasticsearch.audit.indices | WHERE attributes.elasticsearch.audit.indices LIKE \".*\" | STATS events = COUNT(*), last_seen = MAX(@timestamp) BY actor, index = attributes.elasticsearch.audit.indices, action = attributes.elasticsearch.audit.action | SORT last_seen DESC | LIMIT 25"
+        },
+        "rows": [
+          {
+            "column": "actor"
+          },
+          {
+            "column": "index"
+          },
+          {
+            "column": "action"
+          }
+        ],
+        "metrics": [
+          {
+            "column": "events"
+          },
+          {
+            "column": "last_seen"
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "pie-12",
+      "grid": {
+        "x": 24,
+        "y": 39,
+        "w": 24,
+        "h": 12
+      },
+      "config": {
+        "title": "Request outcome",
+        "description": "Outcome distribution for Elasticsearch audit events.",
+        "type": "pie",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE resource.attributes.service.name == \"elasticsearch-serverless\" | STATS events = COUNT(*) BY outcome = attributes.event.outcome"
+        },
+        "metrics": [
+          {
+            "column": "events"
+          }
+        ],
+        "group_by": [
+          {
+            "column": "outcome"
+          }
+        ],
+        "styling": {
+          "donut_hole": "m"
+        }
+      }
+    },
+    {
+      "type": "discover_session",
+      "id": "ds-13",
+      "grid": {
+        "x": 0,
+        "y": 63,
+        "w": 48,
+        "h": 15
+      },
+      "config": {
+        "ref_id": "cloud-audit-search-05-system-index-access",
+        "title": "System index access",
+        "description": "Every request against a dot-prefixed index, newest first."
+      }
+    }
+  ]
+}

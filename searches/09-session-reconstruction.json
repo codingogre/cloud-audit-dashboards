@@ -1,0 +1,20 @@
+{
+  "title": "[Audit] Kibana session reconstruction",
+  "description": "Replay a user's Kibana session end to end. Filter to one kibana.session.id to see exactly what that person did, in order. Kibana events only \u2014 sessions are a Kibana concept, and body.text renders each one as a sentence.",
+  "esql": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE resource.attributes.service.name == \"serverless-kibana\" | WHERE attributes.kibana.session.id IS NOT NULL | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | KEEP @timestamp, actor, attributes.kibana.session.id, attributes.event.action, attributes.kibana.saved_object.type, attributes.kibana.saved_object.name, attributes.kibana.space.id, client.ip, body.text | SORT @timestamp DESC",
+  "columns": [
+    "actor",
+    "attributes.kibana.session.id",
+    "attributes.event.action",
+    "attributes.kibana.saved_object.name",
+    "attributes.kibana.space.id",
+    "client.ip",
+    "body.text"
+  ],
+  "sort": [
+    [
+      "@timestamp",
+      "desc"
+    ]
+  ]
+}

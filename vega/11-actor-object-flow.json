@@ -1,0 +1,706 @@
+{
+  "$schema": "https://vega.github.io/schema/vega/v5.json",
+  "description": "How the current selection's Kibana activity flows: which credential it arrived with, which space it happened in, what kind of object it touched and what it did to it. Ribbon width is event count in the time picker's range. Kibana audit only, and only events that touched an object — requests, logins and point-in-time internals are left out. Elasticsearch events carry no space and no saved object, so including them would put most of the ink in a branch that says nothing. Credential is authentication type where Elasticsearch records one and the user's realm otherwise, which is what separates a person in a browser (cloud-saml-kibana) from a script calling Kibana with a key. Object types come from the shared OBJ_TYPE fragment, which recovers a type from the event for workflows, ML jobs, agent-builder tools and secrets that carry no saved-object fields. Top 40 flows: a missing ribbon means the flow is outside the top 40, not that it never happened. Click a credential or a space to pin it across the suite — object type and operation are derived, so a pill on them would match nothing. Double-click anywhere in the panel to clear every pill on the page.",
+  "autosize": {
+    "type": "fit",
+    "contains": "padding"
+  },
+  "padding": 4,
+  "signals": [
+    {
+      "name": "nodeW",
+      "value": 10
+    },
+    {
+      "name": "gap",
+      "value": 5
+    },
+    {
+      "name": "head",
+      "value": 20
+    },
+    {
+      "name": "hoverKey",
+      "value": null,
+      "on": [
+        {
+          "events": "@node:mouseover",
+          "update": "datum.key"
+        },
+        {
+          "events": "@node:mouseout",
+          "update": "null"
+        }
+      ]
+    },
+    {
+      "name": "pin",
+      "value": null,
+      "on": [
+        {
+          "events": "@node:click",
+          "update": "datum.stage === 0 && datum.label !== 'unknown' ? kibanaAddFilter({bool: {should: [{match_phrase: {'attributes.authentication.type': datum.label}}, {match_phrase: {'attributes.user.domain': datum.label}}], minimum_should_match: 1}}, 'logs-serverless.audit.otel-elastic_cloud', 'credential: ' + datum.label) : datum.stage === 1 && datum.label !== 'no space' ? kibanaAddFilter({match_phrase: {'attributes.kibana.space.id': datum.label}}, 'logs-serverless.audit.otel-elastic_cloud', 'space: ' + datum.label) : null"
+        }
+      ]
+    },
+    {
+      "name": "clearAll",
+      "value": null,
+      "on": [
+        {
+          "events": "dblclick",
+          "update": "kibanaRemoveAllFilters()"
+        }
+      ]
+    },
+    {
+      "name": "maxPerStage",
+      "update": "max(1, data('stageCounts').length ? data('stageCounts')[0].most : 1)"
+    },
+    {
+      "name": "total",
+      "update": "data('stageTotal').length ? data('stageTotal')[0].t : 1"
+    }
+  ],
+  "data": [
+    {
+      "name": "raw",
+      "url": {
+        "%type%": "esql",
+        "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE resource.attributes.service.name == \"serverless-kibana\" | STATS events = COUNT(*) BY attributes.authentication.type, attributes.user.domain, attributes.kibana.space.id, attributes.kibana.saved_object.type, attributes.event.action | WHERE (attributes.kibana.saved_object.type IS NOT NULL OR attributes.event.action LIKE \"ml_*\" OR attributes.event.action LIKE \"workflow_*\" OR attributes.event.action LIKE \"agent_builder_*\" OR attributes.event.action LIKE \"product_documentation_*\" OR attributes.event.action == \"secret_create\") | EVAL credential = COALESCE(attributes.authentication.type, attributes.user.domain, \"unknown\") | EVAL verb = CASE(attributes.event.action LIKE \"*_execution_cancel\", \"cancel\", attributes.event.action LIKE \"*_run_soon\", \"run\", attributes.event.action LIKE \"*_run\", \"run\", attributes.event.action LIKE \"*_test\", \"test\", attributes.event.action LIKE \"*_enable\", \"enable\", attributes.event.action LIKE \"*_disable\", \"disable\", attributes.event.action LIKE \"ml_put_*\", \"create\", attributes.event.action LIKE \"ml_open_*\", \"open\", attributes.event.action LIKE \"ml_start_*\", \"start\", attributes.event.action LIKE \"*point_in_time\", \"pit\", attributes.event.action LIKE \"*_create*\", \"create\", attributes.event.action LIKE \"*_update*\", \"update\", attributes.event.action LIKE \"*_delete\", \"delete\", attributes.event.action LIKE \"*_find\", \"find\", attributes.event.action LIKE \"*_get\", \"get\", attributes.event.action LIKE \"*_resolve\", \"resolve\", \"other\") | EVAL obj_type = CASE(attributes.kibana.saved_object.type IS NOT NULL, attributes.kibana.saved_object.type, attributes.event.action LIKE \"ml_*ad_job\", \"ml-job\", attributes.event.action LIKE \"ml_*ad_datafeed\", \"ml-datafeed\", attributes.event.action LIKE \"workflow_execution_*\", \"workflow-execution\", attributes.event.action LIKE \"workflow_*\", \"workflow\", attributes.event.action LIKE \"agent_builder_agent_*\", \"agent-builder-agent\", attributes.event.action LIKE \"agent_builder_tool_*\", \"agent-builder-tool\", attributes.event.action LIKE \"product_documentation_*\", \"product-documentation\", attributes.event.action == \"secret_create\", \"secret\", attributes.event.action IS NULL, \"unclassified\", REPLACE(attributes.event.action, \"_(create|update|delete|enable|disable|run|run_soon|test|cancel)$\", \"\")) | EVAL space = COALESCE(attributes.kibana.space.id, \"no space\") | STATS events = SUM(events) BY credential, space, obj_type, verb | SORT events DESC | LIMIT 40",
+        "%timefield%": "@timestamp",
+        "%context%": true
+      }
+    },
+    {
+      "name": "l0",
+      "source": "raw",
+      "transform": [
+        {
+          "type": "aggregate",
+          "groupby": [
+            "credential",
+            "space"
+          ],
+          "fields": [
+            "events"
+          ],
+          "ops": [
+            "sum"
+          ],
+          "as": [
+            "value"
+          ]
+        },
+        {
+          "type": "formula",
+          "as": "stage",
+          "expr": "0"
+        },
+        {
+          "type": "formula",
+          "as": "src",
+          "expr": "'0|' + datum.credential"
+        },
+        {
+          "type": "formula",
+          "as": "dst",
+          "expr": "'1|' + datum.space"
+        }
+      ]
+    },
+    {
+      "name": "l1",
+      "source": "raw",
+      "transform": [
+        {
+          "type": "aggregate",
+          "groupby": [
+            "space",
+            "obj_type"
+          ],
+          "fields": [
+            "events"
+          ],
+          "ops": [
+            "sum"
+          ],
+          "as": [
+            "value"
+          ]
+        },
+        {
+          "type": "formula",
+          "as": "stage",
+          "expr": "1"
+        },
+        {
+          "type": "formula",
+          "as": "src",
+          "expr": "'1|' + datum.space"
+        },
+        {
+          "type": "formula",
+          "as": "dst",
+          "expr": "'2|' + datum.obj_type"
+        }
+      ]
+    },
+    {
+      "name": "l2",
+      "source": "raw",
+      "transform": [
+        {
+          "type": "aggregate",
+          "groupby": [
+            "obj_type",
+            "verb"
+          ],
+          "fields": [
+            "events"
+          ],
+          "ops": [
+            "sum"
+          ],
+          "as": [
+            "value"
+          ]
+        },
+        {
+          "type": "formula",
+          "as": "stage",
+          "expr": "2"
+        },
+        {
+          "type": "formula",
+          "as": "src",
+          "expr": "'2|' + datum.obj_type"
+        },
+        {
+          "type": "formula",
+          "as": "dst",
+          "expr": "'3|' + datum.verb"
+        }
+      ]
+    },
+    {
+      "name": "links",
+      "source": [
+        "l0",
+        "l1",
+        "l2"
+      ]
+    },
+    {
+      "name": "outs",
+      "source": "links",
+      "transform": [
+        {
+          "type": "aggregate",
+          "groupby": [
+            "src"
+          ],
+          "fields": [
+            "value"
+          ],
+          "ops": [
+            "sum"
+          ],
+          "as": [
+            "v"
+          ]
+        },
+        {
+          "type": "formula",
+          "as": "key",
+          "expr": "datum.src"
+        }
+      ]
+    },
+    {
+      "name": "ins",
+      "source": "links",
+      "transform": [
+        {
+          "type": "aggregate",
+          "groupby": [
+            "dst"
+          ],
+          "fields": [
+            "value"
+          ],
+          "ops": [
+            "sum"
+          ],
+          "as": [
+            "v"
+          ]
+        },
+        {
+          "type": "formula",
+          "as": "key",
+          "expr": "datum.dst"
+        }
+      ]
+    },
+    {
+      "name": "nodes",
+      "source": [
+        "outs",
+        "ins"
+      ],
+      "transform": [
+        {
+          "type": "aggregate",
+          "groupby": [
+            "key"
+          ],
+          "fields": [
+            "v"
+          ],
+          "ops": [
+            "max"
+          ],
+          "as": [
+            "value"
+          ]
+        },
+        {
+          "type": "formula",
+          "as": "stage",
+          "expr": "toNumber(split(datum.key, '|')[0])"
+        },
+        {
+          "type": "formula",
+          "as": "label",
+          "expr": "slice(datum.key, indexof(datum.key, '|') + 1)"
+        },
+        {
+          "type": "stack",
+          "groupby": [
+            "stage"
+          ],
+          "field": "value",
+          "sort": {
+            "field": "value",
+            "order": "descending"
+          },
+          "as": [
+            "y0",
+            "y1"
+          ]
+        },
+        {
+          "type": "window",
+          "groupby": [
+            "stage"
+          ],
+          "sort": {
+            "field": "value",
+            "order": "descending"
+          },
+          "ops": [
+            "row_number"
+          ],
+          "as": [
+            "rank"
+          ]
+        },
+        {
+          "type": "formula",
+          "as": "rank",
+          "expr": "datum.rank - 1"
+        }
+      ]
+    },
+    {
+      "name": "stageCounts",
+      "source": "nodes",
+      "transform": [
+        {
+          "type": "aggregate",
+          "groupby": [
+            "stage"
+          ],
+          "ops": [
+            "count"
+          ],
+          "as": [
+            "n"
+          ]
+        },
+        {
+          "type": "aggregate",
+          "fields": [
+            "n"
+          ],
+          "ops": [
+            "max"
+          ],
+          "as": [
+            "most"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "stageTotal",
+      "source": "l0",
+      "transform": [
+        {
+          "type": "aggregate",
+          "fields": [
+            "value"
+          ],
+          "ops": [
+            "sum"
+          ],
+          "as": [
+            "t"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ribbons",
+      "source": "links",
+      "transform": [
+        {
+          "type": "lookup",
+          "from": "nodes",
+          "key": "key",
+          "fields": [
+            "src"
+          ],
+          "values": [
+            "y0",
+            "rank"
+          ],
+          "as": [
+            "srcY0",
+            "srcRank"
+          ]
+        },
+        {
+          "type": "lookup",
+          "from": "nodes",
+          "key": "key",
+          "fields": [
+            "dst"
+          ],
+          "values": [
+            "y0",
+            "rank"
+          ],
+          "as": [
+            "dstY0",
+            "dstRank"
+          ]
+        },
+        {
+          "type": "stack",
+          "groupby": [
+            "src"
+          ],
+          "field": "value",
+          "sort": {
+            "field": [
+              "dstY0"
+            ],
+            "order": [
+              "ascending"
+            ]
+          },
+          "as": [
+            "sy0",
+            "sy1"
+          ]
+        },
+        {
+          "type": "stack",
+          "groupby": [
+            "dst"
+          ],
+          "field": "value",
+          "sort": {
+            "field": [
+              "srcY0"
+            ],
+            "order": [
+              "ascending"
+            ]
+          },
+          "as": [
+            "ty0",
+            "ty1"
+          ]
+        },
+        {
+          "type": "formula",
+          "as": "x1",
+          "expr": "scale('x', datum.stage) + nodeW"
+        },
+        {
+          "type": "formula",
+          "as": "x2",
+          "expr": "scale('x', datum.stage + 1)"
+        },
+        {
+          "type": "formula",
+          "as": "xm",
+          "expr": "(datum.x1 + datum.x2) / 2"
+        },
+        {
+          "type": "formula",
+          "as": "s0",
+          "expr": "head + scale('y', datum.srcY0 + datum.sy0) + datum.srcRank * gap"
+        },
+        {
+          "type": "formula",
+          "as": "s1",
+          "expr": "max(datum.s0 + 1, head + scale('y', datum.srcY0 + datum.sy1) + datum.srcRank * gap)"
+        },
+        {
+          "type": "formula",
+          "as": "t0",
+          "expr": "head + scale('y', datum.dstY0 + datum.ty0) + datum.dstRank * gap"
+        },
+        {
+          "type": "formula",
+          "as": "t1",
+          "expr": "max(datum.t0 + 1, head + scale('y', datum.dstY0 + datum.ty1) + datum.dstRank * gap)"
+        },
+        {
+          "type": "formula",
+          "as": "shape",
+          "expr": "'M' + datum.x1 + ',' + datum.s0 + 'C' + datum.xm + ',' + datum.s0 + ' ' + datum.xm + ',' + datum.t0 + ' ' + datum.x2 + ',' + datum.t0 + 'L' + datum.x2 + ',' + datum.t1 + 'C' + datum.xm + ',' + datum.t1 + ' ' + datum.xm + ',' + datum.s1 + ' ' + datum.x1 + ',' + datum.s1 + 'Z'"
+        }
+      ]
+    },
+    {
+      "name": "stageNames",
+      "values": [
+        {
+          "stage": 0,
+          "name": "Credential"
+        },
+        {
+          "stage": 1,
+          "name": "Space"
+        },
+        {
+          "stage": 2,
+          "name": "Object type"
+        },
+        {
+          "stage": 3,
+          "name": "Operation"
+        }
+      ]
+    }
+  ],
+  "scales": [
+    {
+      "name": "x",
+      "type": "linear",
+      "domain": [
+        0,
+        3
+      ],
+      "range": [
+        0,
+        {
+          "signal": "width - nodeW"
+        }
+      ]
+    },
+    {
+      "name": "y",
+      "type": "linear",
+      "domain": [
+        0,
+        {
+          "signal": "total"
+        }
+      ],
+      "range": [
+        0,
+        {
+          "signal": "max(10, height - head - gap * (maxPerStage - 1))"
+        }
+      ],
+      "zero": true
+    },
+    {
+      "name": "stageColor",
+      "type": "ordinal",
+      "domain": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "range": [
+        "#3987e5",
+        "#199e70",
+        "#c98500",
+        "#d55181"
+      ]
+    }
+  ],
+  "marks": [
+    {
+      "type": "text",
+      "style": "guide-title",
+      "interactive": false,
+      "from": {
+        "data": "stageNames"
+      },
+      "encode": {
+        "update": {
+          "x": {
+            "signal": "datum.stage === 3 ? scale('x', 3) + nodeW : scale('x', datum.stage)"
+          },
+          "align": {
+            "signal": "datum.stage === 3 ? 'right' : 'left'"
+          },
+          "y": {
+            "value": 2
+          },
+          "baseline": {
+            "value": "top"
+          },
+          "fontSize": {
+            "value": 11
+          },
+          "fontWeight": {
+            "value": 600
+          },
+          "text": {
+            "field": "name"
+          }
+        }
+      }
+    },
+    {
+      "type": "path",
+      "from": {
+        "data": "ribbons"
+      },
+      "encode": {
+        "update": {
+          "path": {
+            "field": "shape"
+          },
+          "fill": {
+            "scale": "stageColor",
+            "field": "stage"
+          },
+          "fillOpacity": {
+            "signal": "hoverKey == null ? 0.3 : (datum.src === hoverKey || datum.dst === hoverKey ? 0.7 : 0.06)"
+          },
+          "tooltip": {
+            "signal": "{'From': slice(datum.src, 2), 'To': slice(datum.dst, 2), 'Events': format(datum.value, ',')}"
+          }
+        }
+      }
+    },
+    {
+      "type": "rect",
+      "name": "node",
+      "from": {
+        "data": "nodes"
+      },
+      "encode": {
+        "update": {
+          "x": {
+            "scale": "x",
+            "field": "stage"
+          },
+          "width": {
+            "signal": "nodeW"
+          },
+          "y": {
+            "signal": "head + scale('y', datum.y0) + datum.rank * gap"
+          },
+          "y2": {
+            "signal": "head + max(scale('y', datum.y0) + 1, scale('y', datum.y1)) + datum.rank * gap"
+          },
+          "fill": {
+            "scale": "stageColor",
+            "field": "stage"
+          },
+          "cursor": {
+            "signal": "(datum.stage === 0 && datum.label !== 'unknown') || (datum.stage === 1 && datum.label !== 'no space') ? 'pointer' : 'default'"
+          },
+          "tooltip": {
+            "signal": "{'Stage': ['credential', 'space', 'object type', 'operation'][datum.stage], 'Value': datum.label, 'Events': format(datum.value, ','), 'Click': (datum.stage === 0 && datum.label !== 'unknown') || (datum.stage === 1 && datum.label !== 'no space') ? 'pin across the suite' : 'derived — cannot be pinned'}"
+          }
+        }
+      }
+    },
+    {
+      "type": "text",
+      "style": "guide-label",
+      "from": {
+        "data": "nodes"
+      },
+      "interactive": false,
+      "encode": {
+        "update": {
+          "x": {
+            "signal": "datum.stage === 3 ? scale('x', 3) - 4 : scale('x', datum.stage) + nodeW + 4"
+          },
+          "align": {
+            "signal": "datum.stage === 3 ? 'right' : 'left'"
+          },
+          "y": {
+            "signal": "head + (scale('y', datum.y0) + scale('y', datum.y1)) / 2 + datum.rank * gap"
+          },
+          "baseline": {
+            "value": "middle"
+          },
+          "fontSize": {
+            "value": 10
+          },
+          "text": {
+            "signal": "datum.label + '  ' + format(datum.value, '~s')"
+          },
+          "opacity": {
+            "signal": "scale('y', datum.y1) - scale('y', datum.y0) + gap >= 11 ? 1 : 0"
+          },
+          "limit": {
+            "signal": "width / 3 - 24"
+          }
+        }
+      }
+    },
+    {
+      "type": "text",
+      "style": "guide-label",
+      "interactive": false,
+      "encode": {
+        "update": {
+          "x": {
+            "signal": "width / 2"
+          },
+          "y": {
+            "signal": "height / 2"
+          },
+          "align": {
+            "value": "center"
+          },
+          "fontSize": {
+            "value": 12
+          },
+          "text": {
+            "value": "No Kibana activity in range — this identity works through the Elasticsearch API only."
+          },
+          "opacity": {
+            "signal": "length(data('raw')) === 0 ? 1 : 0"
+          }
+        }
+      }
+    }
+  ]
+}

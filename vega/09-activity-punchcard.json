@@ -1,0 +1,67 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+  "description": "Every audited event for the current selection by hour of day and day of week, over the last 7 days in UTC — one cell is one specific hour, not an average, because a seven-day window holds each hour of the week exactly once. Fixed window: this panel does not follow the time picker. No noise gate: it measures presence, so it will not reconcile with Signal events. UTC is stated rather than localised so the chart reads the same for every viewer, whatever their timezone — read the rhythm, not the clock.",
+  "autosize": { "type": "fit", "contains": "padding" },
+  "config": {
+    "axis": { "labelFontSize": 11, "titleFontSize": 11 },
+    "view": { "stroke": null },
+    "legend": { "labelFontSize": 11, "titleFontSize": 11 }
+  },
+  "data": {
+    "name": "hours",
+    "url": {
+      "index": "logs-serverless.audit.otel-elastic_cloud",
+      "body": {
+        "size": 0,
+        "query": {
+          "bool": {
+            "must": [
+              "%dashboard_context-must_clause%",
+              { "range": { "@timestamp": { "gte": "now-167h/h", "lte": "now" } } }
+            ],
+            "must_not": ["%dashboard_context-must_not_clause%"],
+            "filter": ["%dashboard_context-filter_clause%"]
+          }
+        },
+        "aggs": {
+          "hours": {
+            "date_histogram": {
+              "field": "@timestamp",
+              "fixed_interval": "1h",
+              "time_zone": "UTC",
+              "min_doc_count": 0,
+              "extended_bounds": { "min": "now-167h/h", "max": "now" }
+            }
+          }
+        }
+      }
+    },
+    "format": { "property": "aggregations.hours.buckets" }
+  },
+  "transform": [
+    { "calculate": "utchours(datum.key)", "as": "hour" },
+    { "calculate": "['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][(utcday(datum.key) + 6) % 7]", "as": "day" },
+    { "calculate": "utcFormat(datum.key, '%a %d %b, %H:00') + '–' + utcFormat(datum.key + 3600000, '%H:00') + ' UTC'", "as": "when" }
+  ],
+  "mark": { "type": "rect", "cornerRadius": 2, "color": "#3987e5" },
+  "encoding": {
+    "x": {
+      "field": "hour", "type": "ordinal", "scale": { "paddingInner": 0.1 },
+      "axis": { "title": "Hour of day (UTC)", "orient": "top", "labelAngle": 0, "ticks": false, "domain": false,
+                "labelExpr": "datum.value % 3 === 0 ? datum.label : ''" }
+    },
+    "y": {
+      "field": "day", "type": "ordinal", "sort": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+      "scale": { "paddingInner": 0.1 }, "axis": { "title": null, "ticks": false, "domain": false }
+    },
+    "opacity": {
+      "field": "doc_count", "type": "quantitative",
+      "scale": { "type": "symlog", "range": [0.07, 1] },
+      "legend": { "title": "Events", "format": "~s", "orient": "right" }
+    },
+    "tooltip": [
+      { "field": "when", "title": "Hour" },
+      { "field": "doc_count", "title": "Events", "format": "," }
+    ]
+  }
+}

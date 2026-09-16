@@ -1,0 +1,288 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+  "description": "Where the current selection connected from, in the time picker's range. Points are resolved client locations sized by event volume; a line joins one location to the next the same identity appeared from, coloured by the speed that move implies between last seen there and first seen here. Places are aggregated per city, so an identity active in two cities at overlapping times is marked as such rather than given an impossible speed. Read the title line first: many events cannot be placed at all — CGNAT and private addresses resolve to nothing, and many events carry no client IP — so the absence of a line is not evidence of absence. This is a movement record, not an impossible-travel detector.",
+  "autosize": {
+    "type": "fit",
+    "contains": "padding"
+  },
+  "config": {
+    "view": {
+      "stroke": null
+    },
+    "legend": {
+      "labelFontSize": 11,
+      "titleFontSize": 11
+    },
+    "title": {
+      "fontSize": 12,
+      "fontWeight": 500,
+      "anchor": "start",
+      "subtitleFontSize": 11
+    }
+  },
+  "title": {
+    "text": {
+      "expr": "length(data('coverage')) && data('coverage')[0].total > 0 ? 'Placed on the map: ' + format(data('coverage')[0].located / data('coverage')[0].total, '.1%') + ' of events · IP geoip cannot place: ' + format((data('coverage')[0].with_ip - data('coverage')[0].located) / data('coverage')[0].total, '.0%') + ' · no client IP: ' + format((data('coverage')[0].total - data('coverage')[0].with_ip) / data('coverage')[0].total, '.0%') : 'No events in range'"
+    },
+    "subtitle": "Lines join consecutive locations for one identity; colour is the travel speed that would imply."
+  },
+  "projection": {
+    "type": "naturalEarth1"
+  },
+  "data": {
+    "name": "places",
+    "url": {
+      "%type%": "esql",
+      "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE client.geo.location IS NOT NULL | STATS events = COUNT(*), at = ST_CENTROID_AGG(client.geo.location), first_seen = MIN(@timestamp), last_seen = MAX(@timestamp) BY actor = attributes.user.email, city = client.geo.city_name, country = client.geo.country_name | EVAL lon = ST_X(at), lat = ST_Y(at), first_ms = TO_LONG(first_seen), last_ms = TO_LONG(last_seen) | KEEP actor, city, country, lon, lat, events, first_seen, last_seen, first_ms, last_ms | SORT events DESC | LIMIT 150",
+      "%timefield%": "@timestamp",
+      "%context%": true
+    }
+  },
+  "layer": [
+    {
+      "data": {
+        "name": "world",
+        "url": {
+          "%type%": "emsfile",
+          "name": "World Countries"
+        },
+        "format": {
+          "type": "topojson",
+          "feature": "data"
+        }
+      },
+      "transform": [
+        {
+          "filter": "datum.properties.iso2 !== 'AQ'"
+        }
+      ],
+      "mark": {
+        "type": "geoshape",
+        "fill": "#64A3DE",
+        "fillOpacity": 0.16,
+        "stroke": "#5082B1",
+        "strokeWidth": 0.4,
+        "strokeOpacity": 0.5
+      }
+    },
+    {
+      "data": {
+        "name": "coverage",
+        "url": {
+          "%type%": "esql",
+          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS total = COUNT(*), located = COUNT(client.geo.location), with_ip = COUNT(client.ip)",
+          "%timefield%": "@timestamp",
+          "%context%": true
+        }
+      },
+      "mark": {
+        "type": "point",
+        "opacity": 0
+      },
+      "encoding": {
+        "longitude": {
+          "datum": 0
+        },
+        "latitude": {
+          "datum": 0
+        }
+      }
+    },
+    {
+      "transform": [
+        {
+          "calculate": "datum.actor || '(no email recorded)'",
+          "as": "who"
+        },
+        {
+          "window": [
+            {
+              "op": "lag",
+              "field": "lon",
+              "as": "p_lon"
+            },
+            {
+              "op": "lag",
+              "field": "lat",
+              "as": "p_lat"
+            },
+            {
+              "op": "lag",
+              "field": "last_ms",
+              "as": "p_last"
+            },
+            {
+              "op": "lag",
+              "field": "city",
+              "as": "p_city"
+            }
+          ],
+          "groupby": [
+            "who"
+          ],
+          "sort": [
+            {
+              "field": "first_ms",
+              "order": "ascending"
+            }
+          ]
+        },
+        {
+          "filter": "datum.p_lon != null && datum.city !== datum.p_city"
+        },
+        {
+          "calculate": "6371 * acos(min(1, sin(datum.p_lat * PI / 180) * sin(datum.lat * PI / 180) + cos(datum.p_lat * PI / 180) * cos(datum.lat * PI / 180) * cos((datum.lon - datum.p_lon) * PI / 180)))",
+          "as": "km"
+        },
+        {
+          "calculate": "(datum.first_ms - datum.p_last) / 3600000",
+          "as": "hours"
+        },
+        {
+          "calculate": "datum.hours <= 0 ? 'seen in both at overlapping times' : datum.km / datum.hours > 900 ? 'faster than flying (>900 km/h)' : datum.km / datum.hours > 300 ? 'faster than driving (>300 km/h)' : 'plausible travel'",
+          "as": "reading"
+        }
+      ],
+      "mark": {
+        "type": "rule",
+        "strokeWidth": 1.8,
+        "opacity": 0.85
+      },
+      "encoding": {
+        "longitude": {
+          "field": "p_lon",
+          "type": "quantitative"
+        },
+        "latitude": {
+          "field": "p_lat",
+          "type": "quantitative"
+        },
+        "longitude2": {
+          "field": "lon"
+        },
+        "latitude2": {
+          "field": "lat"
+        },
+        "color": {
+          "field": "reading",
+          "type": "nominal",
+          "scale": {
+            "domain": [
+              "plausible travel",
+              "faster than driving (>300 km/h)",
+              "faster than flying (>900 km/h)",
+              "seen in both at overlapping times"
+            ],
+            "range": [
+              "#199e70",
+              "#c98500",
+              "#d95926",
+              "#9085e9"
+            ]
+          },
+          "legend": {
+            "title": null,
+            "orient": "bottom",
+            "direction": "horizontal",
+            "symbolType": "stroke",
+            "labelLimit": 220
+          }
+        },
+        "tooltip": [
+          {
+            "field": "who",
+            "title": "Identity"
+          },
+          {
+            "field": "p_city",
+            "title": "From"
+          },
+          {
+            "field": "city",
+            "title": "To"
+          },
+          {
+            "field": "km",
+            "title": "Distance (km)",
+            "format": ",.0f"
+          },
+          {
+            "field": "hours",
+            "title": "Gap (hours)",
+            "format": ",.1f"
+          },
+          {
+            "field": "reading",
+            "title": "Reading"
+          }
+        ]
+      }
+    },
+    {
+      "transform": [
+        {
+          "calculate": "datum.actor || '(no email recorded)'",
+          "as": "who"
+        }
+      ],
+      "mark": {
+        "type": "circle",
+        "color": "#3987e5",
+        "opacity": 0.8
+      },
+      "encoding": {
+        "longitude": {
+          "field": "lon",
+          "type": "quantitative"
+        },
+        "latitude": {
+          "field": "lat",
+          "type": "quantitative"
+        },
+        "size": {
+          "field": "events",
+          "type": "quantitative",
+          "scale": {
+            "type": "sqrt",
+            "range": [
+              25,
+              700
+            ]
+          },
+          "legend": null
+        },
+        "tooltip": [
+          {
+            "field": "who",
+            "title": "Identity"
+          },
+          {
+            "field": "city",
+            "title": "City"
+          },
+          {
+            "field": "country",
+            "title": "Country"
+          },
+          {
+            "field": "events",
+            "title": "Events",
+            "format": ","
+          },
+          {
+            "field": "first_seen",
+            "title": "First seen",
+            "type": "temporal",
+            "format": "%d %b %H:%M"
+          },
+          {
+            "field": "last_seen",
+            "title": "Last seen",
+            "type": "temporal",
+            "format": "%d %b %H:%M"
+          }
+        ]
+      }
+    }
+  ]
+}

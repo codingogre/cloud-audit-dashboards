@@ -1,0 +1,99 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+  "title": {
+    "text": "",
+    "subtitle": "Which credential type each identity presents. Top 40 identities by volume."
+  },
+  "autosize": {
+    "type": "fit",
+    "contains": "padding"
+  },
+  "config": {
+    "axis": {
+      "labelFontSize": 11,
+      "titleFontSize": 11
+    },
+    "view": {
+      "stroke": null
+    },
+    "title": {
+      "fontSize": 14,
+      "subtitleFontSize": 11,
+      "anchor": "start"
+    },
+    "legend": {
+      "labelFontSize": 11,
+      "titleFontSize": 11
+    }
+  },
+  "data": {
+    "url": {
+      "%type%": "esql",
+      "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.authentication.type IS NOT NULL | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS events = COUNT(*) BY actor, auth = attributes.authentication.type | SORT events DESC | LIMIT 40",
+      "%timefield%": "@timestamp",
+      "%context%": true
+    }
+  },
+  "mark": {
+    "type": "rect",
+    "cornerRadius": 2
+  },
+  "encoding": {
+    "y": {
+      "field": "actor",
+      "type": "nominal",
+      "sort": {
+        "op": "sum",
+        "field": "events",
+        "order": "descending"
+      },
+      "axis": {
+        "title": "Identity",
+        "labelLimit": 230
+      }
+    },
+    "x": {
+      "field": "auth",
+      "type": "nominal",
+      "axis": {
+        "title": "Credential type",
+        "labelAngle": 0,
+        "orient": "top"
+      }
+    },
+    "color": {
+      "field": "events",
+      "type": "quantitative",
+      "scale": {
+        "type": "log",
+        "range": [
+          "#0B1628",
+          "#155C7A",
+          "#1BA9F5",
+          "#7DD3FC",
+          "#FDE68A",
+          "#E7664C"
+        ]
+      },
+      "legend": {
+        "title": "Events (log)",
+        "format": "~s"
+      }
+    },
+    "tooltip": [
+      {
+        "field": "actor",
+        "title": "Actor"
+      },
+      {
+        "field": "auth",
+        "title": "Auth type"
+      },
+      {
+        "field": "events",
+        "title": "Events",
+        "format": ","
+      }
+    ]
+  }
+}

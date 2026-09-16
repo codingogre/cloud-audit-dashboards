@@ -1,0 +1,20 @@
+{
+  "title": "[Audit] Failed authentications and denied access",
+  "description": "authentication_failed, realm_authentication_failed and anonymous_access_denied \u2014 the classic intrusion signal.",
+  "esql": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE attributes.event.action IN (\"authentication_failed\",\"realm_authentication_failed\",\"anonymous_access_denied\") OR attributes.event.outcome == \"failure\" | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | KEEP @timestamp, actor, attributes.event.action, attributes.event.outcome, attributes.authentication.type, client.ip, client.geo.country_iso_code, attributes.url.path | SORT @timestamp DESC",
+  "columns": [
+    "actor",
+    "attributes.event.action",
+    "attributes.event.outcome",
+    "attributes.authentication.type",
+    "client.ip",
+    "client.geo.country_iso_code",
+    "attributes.url.path"
+  ],
+  "sort": [
+    [
+      "@timestamp",
+      "desc"
+    ]
+  ]
+}

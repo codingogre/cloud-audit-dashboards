@@ -1,0 +1,300 @@
+{
+  "$schema": "https://vega.github.io/schema/vega/v5.json",
+  "description": "One bar per Kibana browser session in the last 24 hours, newest first — its length is how long the session ran and its strength is how much it did, which are independent: a short session can carry far more activity than a long one left open and idle. Click a bar to set the dashboard's time range to that session (plus a minute either side); use the time picker's back arrow to return. Shift-click pins that identity across the suite. Only Kibana audit carries a session id, so an identity that works through the Elasticsearch API has no sessions, and an empty panel for it is the correct answer. Twelve most recent sessions. Times are in your browser's timezone, like the rest of Kibana. Fixed 24-hour window: does not follow the time picker.",
+  "autosize": {
+    "type": "fit",
+    "contains": "padding"
+  },
+  "padding": 4,
+  "config": {
+    "axis": {
+      "labelFontSize": 11,
+      "titleFontSize": 11
+    }
+  },
+  "signals": [
+    {
+      "name": "lane",
+      "update": "max(12, min(22, height / 12))"
+    },
+    {
+      "name": "zoomTo",
+      "value": null,
+      "on": [
+        {
+          "events": "@ribbon:click[!event.shiftKey]",
+          "update": "kibanaSetTimeFilter(datum.start - 60000, datum.end + 60000)"
+        }
+      ]
+    },
+    {
+      "name": "pinActor",
+      "value": null,
+      "on": [
+        {
+          "events": "@ribbon:click[event.shiftKey]",
+          "update": "datum.actor === 'no email recorded' ? null : kibanaAddFilter({match_phrase: {'attributes.user.email': datum.actor}}, 'logs-serverless.audit.otel-elastic_cloud', 'actor: ' + datum.actor)"
+        }
+      ]
+    }
+  ],
+  "data": [
+    {
+      "name": "sessions",
+      "url": {
+        "index": "logs-serverless.audit.otel-elastic_cloud",
+        "body": {
+          "size": 0,
+          "query": {
+            "bool": {
+              "must": [
+                "%dashboard_context-must_clause%",
+                {
+                  "range": {
+                    "@timestamp": {
+                      "gte": "now-24h",
+                      "lte": "now"
+                    }
+                  }
+                },
+                {
+                  "exists": {
+                    "field": "attributes.kibana.session.id"
+                  }
+                }
+              ],
+              "must_not": [
+                "%dashboard_context-must_not_clause%"
+              ],
+              "filter": [
+                "%dashboard_context-filter_clause%"
+              ]
+            }
+          },
+          "aggs": {
+            "sessions": {
+              "terms": {
+                "field": "attributes.kibana.session.id",
+                "size": 12,
+                "order": {
+                  "last": "desc"
+                }
+              },
+              "aggs": {
+                "first": {
+                  "min": {
+                    "field": "@timestamp"
+                  }
+                },
+                "last": {
+                  "max": {
+                    "field": "@timestamp"
+                  }
+                },
+                "who": {
+                  "terms": {
+                    "field": "attributes.user.email",
+                    "size": 1
+                  }
+                },
+                "actions": {
+                  "cardinality": {
+                    "field": "attributes.event.action",
+                    "precision_threshold": 100
+                  }
+                },
+                "spaces": {
+                  "terms": {
+                    "field": "attributes.kibana.space.id",
+                    "size": 5
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "format": {
+        "property": "aggregations.sessions.buckets"
+      },
+      "transform": [
+        {
+          "type": "formula",
+          "as": "start",
+          "expr": "datum.first.value"
+        },
+        {
+          "type": "formula",
+          "as": "end",
+          "expr": "datum.last.value"
+        },
+        {
+          "type": "formula",
+          "as": "events",
+          "expr": "datum.doc_count"
+        },
+        {
+          "type": "formula",
+          "as": "nActions",
+          "expr": "datum.actions.value"
+        },
+        {
+          "type": "formula",
+          "as": "actor",
+          "expr": "length(datum.who.buckets) ? datum.who.buckets[0].key : 'no email recorded'"
+        },
+        {
+          "type": "formula",
+          "as": "label",
+          "expr": "datum.actor + ' · ' + slice(datum.key, 0, 6)"
+        },
+        {
+          "type": "formula",
+          "as": "minutes",
+          "expr": "(datum.end - datum.start) / 60000"
+        },
+        {
+          "type": "formula",
+          "as": "spaceList",
+          "expr": "join(pluck(datum.spaces.buckets, 'key'), ', ')"
+        }
+      ]
+    }
+  ],
+  "scales": [
+    {
+      "name": "x",
+      "type": "time",
+      "domain": {
+        "signal": "[now() - 86400000, now()]"
+      },
+      "range": "width"
+    },
+    {
+      "name": "y",
+      "type": "band",
+      "domain": {
+        "data": "sessions",
+        "field": "label",
+        "sort": {
+          "field": "end",
+          "op": "max",
+          "order": "descending"
+        }
+      },
+      "range": {
+        "step": {
+          "signal": "lane"
+        }
+      },
+      "paddingInner": 0.25
+    },
+    {
+      "name": "strength",
+      "type": "log",
+      "domain": {
+        "data": "sessions",
+        "field": "events"
+      },
+      "range": [
+        0.35,
+        1
+      ]
+    }
+  ],
+  "axes": [
+    {
+      "orient": "bottom",
+      "scale": "x",
+      "format": "%H:%M",
+      "tickCount": 8,
+      "grid": true,
+      "gridOpacity": 0.3,
+      "labelOverlap": true
+    },
+    {
+      "orient": "left",
+      "scale": "y",
+      "ticks": false,
+      "domain": false,
+      "labelLimit": 240,
+      "labelFontSize": 10
+    }
+  ],
+  "marks": [
+    {
+      "type": "rect",
+      "name": "ribbon",
+      "from": {
+        "data": "sessions"
+      },
+      "encode": {
+        "update": {
+          "x": {
+            "scale": "x",
+            "field": "start"
+          },
+          "x2": {
+            "signal": "max(scale('x', datum.start) + 4, scale('x', datum.end))"
+          },
+          "y": {
+            "scale": "y",
+            "field": "label"
+          },
+          "height": {
+            "scale": "y",
+            "band": 1
+          },
+          "fill": {
+            "value": "#3987e5"
+          },
+          "fillOpacity": {
+            "scale": "strength",
+            "field": "events"
+          },
+          "cornerRadius": {
+            "value": 2
+          },
+          "cursor": {
+            "value": "pointer"
+          },
+          "tooltip": {
+            "signal": "{'Identity': datum.actor, 'Session': slice(datum.key, 0, 12) + '…', 'Started': timeFormat(datum.start, '%a %d %b, %H:%M'), 'Ended': timeFormat(datum.end, '%a %d %b, %H:%M'), 'Duration': datum.minutes < 90 ? format(datum.minutes, '.0f') + ' min' : format(datum.minutes / 60, '.1f') + ' h', 'Events': format(datum.events, ','), 'Distinct actions': datum.nActions, 'Spaces': datum.spaceList, 'Click': 'zoom the dashboard to this session', 'Shift-click': 'pin this identity'}"
+          }
+        },
+        "hover": {
+          "fillOpacity": {
+            "value": 1
+          }
+        }
+      }
+    },
+    {
+      "type": "text",
+      "style": "guide-label",
+      "interactive": false,
+      "encode": {
+        "update": {
+          "x": {
+            "signal": "width / 2"
+          },
+          "y": {
+            "signal": "height / 2"
+          },
+          "align": {
+            "value": "center"
+          },
+          "fontSize": {
+            "value": 12
+          },
+          "text": {
+            "value": "No Kibana browser sessions in the last 24 hours — this identity works through the Elasticsearch API, which carries no session id."
+          },
+          "opacity": {
+            "signal": "length(data('sessions')) === 0 ? 1 : 0"
+          }
+        }
+      }
+    }
+  ]
+}

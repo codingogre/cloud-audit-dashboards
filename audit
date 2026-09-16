@@ -1,0 +1,25 @@
+#!/usr/bin/env node
+
+/**
+ * Cloud Audit Dashboards — audit dashboards for Elastic Cloud Serverless, as code.
+ *
+ * Dependency-free root stub: a fresh clone can run this before node_modules exists.
+ * Installs deps on first run only when something actually needs them (verify uses
+ * Playwright), loads .env with Node's native loader, then delegates to scripts/main.mjs.
+ */
+
+import { existsSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const ROOT = dirname(fileURLToPath(import.meta.url));
+
+const envPath = resolve(ROOT, '.env');
+if (existsSync(envPath)) {
+  process.loadEnvFile(envPath);
+} else {
+  console.error('x No .env found. Copy .env.example to .env and fill in EC_URL, KB_URL and EC_API_KEY.');
+  process.exit(1);
+}
+
+await import(join(ROOT, 'scripts', 'main.mjs'));

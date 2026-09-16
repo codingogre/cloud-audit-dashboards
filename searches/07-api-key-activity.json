@@ -1,0 +1,16 @@
+{
+  "title": "[Audit] API key activity and ownership",
+  "description": "Named API keys, the human they are attributed to, and their request volume, busiest first.",
+  "esql": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE attributes.api_key.name IS NOT NULL | STATS events = COUNT(*), first_seen = MIN(@timestamp), last_seen = MAX(@timestamp), ips = COUNT_DISTINCT(client.ip), indices = COUNT_DISTINCT(attributes.elasticsearch.audit.indices) BY api_key = attributes.api_key.name, key_id = attributes.api_key.id, owner = attributes.user.email | SORT events DESC",
+  "columns": [
+    "api_key",
+    "key_id",
+    "owner",
+    "events",
+    "first_seen",
+    "last_seen",
+    "ips",
+    "indices"
+  ],
+  "hide_chart": true
+}

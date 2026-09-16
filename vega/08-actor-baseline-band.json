@@ -1,0 +1,466 @@
+{
+  "$schema": "https://vega.github.io/schema/vega/v5.json",
+  "description": "Hourly activity for the current selection against its OWN pattern for that hour of day. The shaded band is their typical range for the hour — the middle half of the seven observations in the window — and a point marks an hour beyond 1.5× that range, which is unusual for them. Seven observations per hour slot is thin, so read it as a sanity check rather than a detector: an identity with a steady background process plus human bursts will sit outside often, and correctly. The headline reads the last complete hour; the current partial hour is left off so it cannot read as a drop. Hours are UTC. Fixed 7-day window: does not follow the time picker. No noise gate, so it will not reconcile with Signal events.",
+  "autosize": {
+    "type": "fit",
+    "contains": "padding"
+  },
+  "padding": 4,
+  "config": {
+    "axis": {
+      "labelFontSize": 11,
+      "titleFontSize": 11
+    },
+    "legend": {
+      "labelFontSize": 11
+    }
+  },
+  "signals": [
+    {
+      "name": "head",
+      "value": 40
+    }
+  ],
+  "data": [
+    {
+      "name": "hours",
+      "url": {
+        "index": "logs-serverless.audit.otel-elastic_cloud",
+        "body": {
+          "size": 0,
+          "query": {
+            "bool": {
+              "must": [
+                "%dashboard_context-must_clause%",
+                {
+                  "range": {
+                    "@timestamp": {
+                      "gte": "now-167h/h",
+                      "lte": "now"
+                    }
+                  }
+                }
+              ],
+              "must_not": [
+                "%dashboard_context-must_not_clause%"
+              ],
+              "filter": [
+                "%dashboard_context-filter_clause%"
+              ]
+            }
+          },
+          "aggs": {
+            "hours": {
+              "date_histogram": {
+                "field": "@timestamp",
+                "fixed_interval": "1h",
+                "time_zone": "UTC",
+                "min_doc_count": 0,
+                "extended_bounds": {
+                  "min": "now-167h/h",
+                  "max": "now"
+                }
+              }
+            }
+          }
+        }
+      },
+      "format": {
+        "property": "aggregations.hours.buckets"
+      }
+    },
+    {
+      "name": "series",
+      "source": "hours",
+      "transform": [
+        {
+          "type": "filter",
+          "expr": "datum.key + 3600000 <= now()"
+        },
+        {
+          "type": "formula",
+          "as": "events",
+          "expr": "datum.doc_count"
+        },
+        {
+          "type": "formula",
+          "as": "slot",
+          "expr": "utchours(datum.key)"
+        },
+        {
+          "type": "joinaggregate",
+          "groupby": [
+            "slot"
+          ],
+          "fields": [
+            "events",
+            "events",
+            "events"
+          ],
+          "ops": [
+            "q1",
+            "median",
+            "q3"
+          ],
+          "as": [
+            "q1",
+            "med",
+            "q3"
+          ]
+        },
+        {
+          "type": "formula",
+          "as": "hi",
+          "expr": "datum.q3 + 1.5 * (datum.q3 - datum.q1)"
+        },
+        {
+          "type": "formula",
+          "as": "lo",
+          "expr": "max(0, datum.q1 - 1.5 * (datum.q3 - datum.q1))"
+        },
+        {
+          "type": "formula",
+          "as": "flag",
+          "expr": "datum.events > datum.hi ? 'unusually busy' : datum.events < datum.lo ? 'unusually quiet' : 'typical'"
+        },
+        {
+          "type": "formula",
+          "as": "out",
+          "expr": "datum.flag === 'typical' ? 0 : 1"
+        }
+      ]
+    },
+    {
+      "name": "outside",
+      "source": "series",
+      "transform": [
+        {
+          "type": "filter",
+          "expr": "datum.out === 1"
+        }
+      ]
+    },
+    {
+      "name": "summary",
+      "source": "series",
+      "transform": [
+        {
+          "type": "window",
+          "sort": {
+            "field": "key",
+            "order": "descending"
+          },
+          "ops": [
+            "row_number"
+          ],
+          "as": [
+            "recency"
+          ]
+        },
+        {
+          "type": "joinaggregate",
+          "fields": [
+            "out",
+            "events"
+          ],
+          "ops": [
+            "sum",
+            "sum"
+          ],
+          "as": [
+            "n_out",
+            "total"
+          ]
+        },
+        {
+          "type": "joinaggregate",
+          "ops": [
+            "count"
+          ],
+          "as": [
+            "n_hours"
+          ]
+        },
+        {
+          "type": "filter",
+          "expr": "datum.recency === 1"
+        },
+        {
+          "type": "formula",
+          "as": "line1",
+          "expr": "datum.total === 0 ? 'No activity for this selection in the last 7 days' : format(datum.events, ',') + ' events in the last full hour (' + utcFormat(datum.key, '%H:00') + ' UTC) — ' + (datum.med > 0 ? format(datum.events / datum.med, '.1f') + '× their median for that hour' : 'an hour they are usually idle')"
+        },
+        {
+          "type": "formula",
+          "as": "line2",
+          "expr": "datum.total === 0 ? '' : datum.n_out + ' of ' + datum.n_hours + ' hours this week unusual for that hour of day'"
+        }
+      ]
+    }
+  ],
+  "scales": [
+    {
+      "name": "x",
+      "type": "time",
+      "domain": {
+        "data": "series",
+        "field": "key"
+      },
+      "range": "width"
+    },
+    {
+      "name": "y",
+      "type": "symlog",
+      "domain": {
+        "data": "series",
+        "fields": [
+          "events",
+          "q1",
+          "q3"
+        ]
+      },
+      "range": [
+        {
+          "signal": "height"
+        },
+        {
+          "signal": "head"
+        }
+      ],
+      "zero": false
+    },
+    {
+      "name": "key",
+      "type": "ordinal",
+      "domain": [
+        "typical",
+        "unusually busy",
+        "unusually quiet"
+      ],
+      "range": [
+        "#5082B1",
+        "#d95926",
+        "#9085e9"
+      ]
+    }
+  ],
+  "axes": [
+    {
+      "orient": "bottom",
+      "scale": "x",
+      "tickCount": 7,
+      "labelOverlap": true,
+      "grid": false
+    },
+    {
+      "orient": "left",
+      "scale": "y",
+      "grid": true,
+      "gridOpacity": 0.4,
+      "values": {
+        "signal": "slice([0, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000], domain('y')[0] <= 0 ? 0 : ceil(log(domain('y')[0]) / LN10), 2 + floor(log(max(domain('y')[1], 10)) / LN10))"
+      },
+      "encode": {
+        "labels": {
+          "update": {
+            "text": {
+              "signal": "format(datum.value, '~s')"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "legends": [
+    {
+      "fill": "key",
+      "orient": "none",
+      "legendX": {
+        "signal": "width - 250"
+      },
+      "legendY": 20,
+      "direction": "horizontal",
+      "symbolType": "circle",
+      "symbolSize": 50,
+      "labelLimit": 160
+    }
+  ],
+  "marks": [
+    {
+      "type": "area",
+      "from": {
+        "data": "series"
+      },
+      "interactive": false,
+      "encode": {
+        "update": {
+          "x": {
+            "scale": "x",
+            "field": "key"
+          },
+          "y": {
+            "scale": "y",
+            "field": "q1"
+          },
+          "y2": {
+            "scale": "y",
+            "field": "q3"
+          },
+          "interpolate": {
+            "value": "step-after"
+          },
+          "fill": {
+            "value": "#5082B1"
+          },
+          "fillOpacity": {
+            "value": 0.35
+          }
+        }
+      }
+    },
+    {
+      "type": "line",
+      "from": {
+        "data": "series"
+      },
+      "interactive": false,
+      "encode": {
+        "update": {
+          "x": {
+            "scale": "x",
+            "field": "key"
+          },
+          "y": {
+            "scale": "y",
+            "field": "events"
+          },
+          "stroke": {
+            "value": "#3987e5"
+          },
+          "strokeWidth": {
+            "value": 1.5
+          }
+        }
+      }
+    },
+    {
+      "type": "symbol",
+      "from": {
+        "data": "outside"
+      },
+      "interactive": false,
+      "encode": {
+        "update": {
+          "x": {
+            "scale": "x",
+            "field": "key"
+          },
+          "y": {
+            "scale": "y",
+            "field": "events"
+          },
+          "size": {
+            "value": 42
+          },
+          "fill": {
+            "scale": "key",
+            "field": "flag"
+          }
+        }
+      }
+    },
+    {
+      "type": "symbol",
+      "from": {
+        "data": "series"
+      },
+      "encode": {
+        "update": {
+          "x": {
+            "scale": "x",
+            "field": "key"
+          },
+          "y": {
+            "scale": "y",
+            "field": "events"
+          },
+          "size": {
+            "value": 120
+          },
+          "fill": {
+            "value": "#3987e5"
+          },
+          "fillOpacity": {
+            "value": 0
+          },
+          "tooltip": {
+            "signal": "{'Hour': utcFormat(datum.key, '%a %d %b, %H:00') + ' UTC', 'Events': format(datum.events, ','), 'Typical for this hour': format(datum.q1, ',.0f') + ' – ' + format(datum.q3, ',.0f'), 'Unusual beyond': format(datum.lo, ',.0f') + ' – ' + format(datum.hi, ',.0f'), 'Reading': datum.flag}"
+          }
+        }
+      }
+    },
+    {
+      "type": "text",
+      "from": {
+        "data": "summary"
+      },
+      "style": "guide-title",
+      "interactive": false,
+      "encode": {
+        "update": {
+          "x": {
+            "value": 0
+          },
+          "y": {
+            "value": 2
+          },
+          "baseline": {
+            "value": "top"
+          },
+          "fontSize": {
+            "value": 13
+          },
+          "fontWeight": {
+            "value": 600
+          },
+          "text": {
+            "field": "line1"
+          },
+          "limit": {
+            "signal": "width"
+          }
+        }
+      }
+    },
+    {
+      "type": "text",
+      "from": {
+        "data": "summary"
+      },
+      "style": "guide-label",
+      "interactive": false,
+      "encode": {
+        "update": {
+          "x": {
+            "value": 0
+          },
+          "y": {
+            "value": 20
+          },
+          "baseline": {
+            "value": "top"
+          },
+          "fontSize": {
+            "value": 11
+          },
+          "text": {
+            "field": "line2"
+          },
+          "limit": {
+            "signal": "width - 260"
+          }
+        }
+      }
+    }
+  ]
+}
