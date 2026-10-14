@@ -124,11 +124,12 @@ destination with `drill`, which is kept on the in-memory definition and stripped
 shift-clicking a session, pins it across the suite; clicking a session sets the dashboard's time
 range to it. Double-clicking the flow clears every pill on the page.
 
-**The control bar** — three option-list dropdowns on every dashboard, defined in
+**The control bar** — four option-list dropdowns on every dashboard, defined in
 `scripts/lib/controls.mjs`:
 
 | Control | Field | Why |
 |---|---|---|
+| Project | `attributes.project.name` | The serverless project that **emitted** the event. An audit project usually collects the audit streams of several projects; this narrows the whole dashboard — and, through hierarchical chaining, every dropdown after it — to one of them. Populated on every Elasticsearch and Kibana event. Names are not unique in Elastic Cloud, so projects that share a name share an option. **Exception:** Actor 360's cohort rank deliberately ignores the control bar (it ranks against the whole estate), so it ranks across all projects. |
 | Person (name) | `attributes.user.full_name` | Human-readable display names. **Null for some identities**, so it can never be the only identity control. |
 | Person (email) | `attributes.user.email` | The reliable identity key — never null for a human. |
 | Client IP | `client.ip` | Can hold more distinct addresses than anyone could eyeball, which is the point of a searchable dropdown. |

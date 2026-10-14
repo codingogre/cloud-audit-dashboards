@@ -237,8 +237,8 @@ export async function run(argv = []) {
       }),
       step('Pick an identity from the control bar', {
         mins: '1 min',
-        act: 'At the top of every dashboard there are three dropdowns — **Person (name)**, **Person (email)** and **Client IP**. Open **Person (name)**, type a few letters, choose someone. Every panel on the dashboard rescopes to them.',
-        say: 'An analyst should be able to pick a person rather than hunt for them. Name, email or client IP — every dashboard carries the same three. Names are the full names recorded for each identity, so you can search the way you would say it out loud.',
+        act: 'At the top of every dashboard there are four dropdowns — **Project**, **Person (name)**, **Person (email)** and **Client IP**. When the audit project collects several serverless projects, pick one under **Project** first and the other dropdowns narrow to it. Open **Person (name)**, type a few letters, choose someone. Every panel on the dashboard rescopes to them.',
+        say: 'An analyst should be able to pick a person rather than hunt for them. Name, email or client IP — every dashboard carries the same set, with Project first for audit projects that collect more than one serverless project. Names are the full names recorded for each identity, so you can search the way you would say it out loud.',
         note: {
           kind: 'tip', label: 'Why both name and email',
           body: '`full_name` is null for some identities, so the name dropdown cannot be the only way in — the email dropdown is the one that never misses. Client IP is searchable because there are usually far too many to scroll.',
