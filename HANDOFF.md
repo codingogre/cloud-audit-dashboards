@@ -24,6 +24,44 @@ them, each verified on the live 9.6 project:
   space needs `AUDIT_ID_NS`. Renders for this work: `AUDIT_SPACE=uifix-shared AUDIT_ID_NS=uifix-shared`.
   `scripts/perf.mjs` maps refs to files by the default `cloud-audit-` prefix and assumes it.
 
+## Shared-file requests from the per-dashboard review, 2026-10-14
+
+The eight per-dashboard fixers could not touch shared files; their requests are applied centrally.
+Facts behind them, verified on the live 9.6 project (private space, read back with GET /api/dashboards):
+
+- **`axis.y.title: {visible: true, text}` and `axis.y.scale: 'log'` survive the PUT** on an `xy` panel;
+  `xy()` takes them as `yTitle` / `yScale`. **A pie takes `legend.size`, `styling.labels.position`,
+  `styling.values.percent_decimals` and `group_by[].color` with a mapping** — `pie()` emits all four,
+  so the local `keyed()` (01) and `geoPie()` (05) are gone.
+- **A null click-filter cell renders as an underlined `-` link, `""` as an underlined `(blank)` link, and
+  `" "` as an empty cell** — checked side by side on one panel. But blanking it means assigning the
+  column in ES|QL, and Lens then refuses the filter on EVERY cell of that column: clicking a real email
+  opened *"You can't apply a filter or drill down from this value because it relies on a field created
+  at query time"* (rendered; the untouched column on 01 offered "Apply filter" and "Open in Actor 360").
+  So `blankNull()` is for display columns only, and 00's Busiest identities lost its Email column
+  instead (Identity already is the email wherever there is one). 04's Email columns keep their dashes.
+- **Lens column widths are absolute pixels.** At a 1440px viewport the 48-column grid is 1316px (8px
+  gutters) and a table's data grid is its panel less 16px. `table()` now budgets for that; the four
+  tables that cannot give their text columns ~120px even at their floors are named by `--lint` as
+  advisories (01 "Human identity footprint", 02 "Dashboards, SLOs and alert rules touched", 04
+  "Identities by first appearance in range", 05 "Top client locations") — each needs a wider panel or
+  fewer columns, which is a layout decision, not arithmetic.
+- **Lens stack and legend order follow row order**, so every breakdown query ends with a SORT
+  (`SOURCE_LABEL` sorts by source; 06's bands by an order column).
+- **On an ES|QL Vega spec, `"domain": {"%timefilter%": true}` renders the bare "Error".** Echo
+  `?_tstart`/`?_tend` after the STATS instead (vega/07). And on an ES|QL time chart size a bar to the
+  bucket interval, never "until the next row": empty buckets have no row.
+- **Lens drops a pie's outside label for a small slice on a short panel**, so a pie always has a legend.
+- **Top-axis rotated labels:** a positive `labelAngle` with `labelAlign: "right"`; a negative angle runs
+  the last label off the panel edge (vega/04). No other spec rotates top-axis labels.
+
+Declined, with reasons, in the commit message of this change: extending the noise gate to ES|QL's own
+fan-out (a change to what every gated panel counts, and to five static copies — needs a product call and
+a perf pass); naming Elasticsearch security actions inside the OBJ fragment; a `label` on `kpi()`
+secondaries (unverified against the API); a lint check comparing `vega()` descriptions with spec
+descriptions. `ACTOR_RESOLVE` is unchanged by decision: the opaque id stays, and every table, session
+and Vega panel that shows it now says what it is.
+
 ## State — 2026-09-15
 
 **Actor 360 was rebuilt** from a stack of tables into a page organised around three time regimes,

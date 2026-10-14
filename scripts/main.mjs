@@ -26,7 +26,9 @@ const HELP = `Usage: ./audit <command>
     --objects          Deploy the data view, 13 Vega visualizations and 10 Discover sessions
     --dashboards       Generate dashboards/*.json and deploy every dashboard
     --verify           Render every dashboard in Chromium and inspect for broken panels
-                       (AUDIT_VERIFY_THEME=light renders light mode; default dark)
+                       (AUDIT_VERIFY_THEME=light renders light mode; default dark.
+                       AUDIT_VERIFY_RANGE=now-24h widens the window; default now-1h.
+                       AUDIT_VERIFY_WIDTH=1440 narrows the viewport; default 1920)
     --queries          List the ES|QL queries running on the project right now. Check this before
                        trusting any timing: an abandoned query cannot be cancelled on serverless
 

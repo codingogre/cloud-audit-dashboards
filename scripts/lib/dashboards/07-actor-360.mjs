@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ROOT } from '../env.mjs';
 import {
-  IDX, TIME, CRED, dash, kpi, table, vega, search, md, section, row, stack, resetIds, sized, filterable,
+  IDX, TIME, CRED, INDEX_FAMILY, indexFamily, dash, kpi, table, vega, search, md, section, row, stack, resetIds, sized, filterable,
 } from '../panels.mjs';
 import { riskScored, CHANGED, CHANGED_KEYS, CHANGED_DERIVE } from './shared.mjs';
 
@@ -32,9 +32,6 @@ const vegaPanel = (ref, title) => (x, y, w, h) => vega(x, y, w, h, ref, title, s
 /** Out to the topic dashboard that owns the dimension clicked. Stripped before the API sees it. */
 const drillTo = (destination, panel) => Object.assign(panel, { drill: destination });
 
-/** Folds dated daily indices and data-stream backing indices into the family they belong to. */
-const indexFamily = (col) => String.raw`REPLACE(REPLACE(${col}, """^\.ds-""", ""), """[-.]?\d{4}[.-]\d{2}[.-]\d{2}(-\d+)?$""", "")`;
-const INDEX_FAMILY = indexFamily('attributes.elasticsearch.audit.indices');
 /**
  * `*`, `-*` and `syn-*` arrive in the indices field as REQUEST PATTERNS, not indices — and so does
  * date math: the SLO writer names `<.slo-observability.sli-v3.6.{2026-10-13||/d{yyyy-MM-dd|UTC}}>`,

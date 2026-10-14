@@ -324,7 +324,7 @@
             "type": "line",
             "data_source": {
               "type": "esql",
-              "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.authentication.type IS NOT NULL | STATS events = COUNT(*) BY BUCKET(@timestamp, 75, ?_tstart, ?_tend), attributes.authentication.type | EVAL auth = CASE(attributes.authentication.type == \"api_key\", \"API key\", attributes.authentication.type == \"token\", \"Token\", attributes.authentication.type == \"realm\", \"Realm\", attributes.authentication.type == \"saml\", \"SAML\", attributes.authentication.type == \"anonymous\", \"Anonymous\", attributes.authentication.type == \"internal\", \"Internal\", attributes.authentication.type)"
+              "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.authentication.type IS NOT NULL | STATS events = COUNT(*) BY BUCKET(@timestamp, 75, ?_tstart, ?_tend), attributes.authentication.type | EVAL auth = CASE(attributes.authentication.type == \"api_key\", \"API key\", attributes.authentication.type == \"token\", \"Token\", attributes.authentication.type == \"realm\", \"Realm\", attributes.authentication.type == \"saml\", \"SAML\", attributes.authentication.type == \"anonymous\", \"Anonymous\", attributes.authentication.type == \"internal\", \"Internal\", attributes.authentication.type) | SORT auth"
             },
             "x": {
               "column": "BUCKET(@timestamp, 75, ?_tstart, ?_tend)",
@@ -439,7 +439,7 @@
         "type": "pie",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS events = COUNT(*) BY attributes.user.email | EVAL actor_org = CASE(attributes.user.email IS NULL, \"machine\", attributes.user.email LIKE \"*@elastic.co\", \"Elastic\", \"tenant\") | STATS events = SUM(events) BY actor_org | EVAL origin = CASE(actor_org == \"machine\", \"Machine\", actor_org == \"tenant\", \"Tenant\", actor_org)"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS events = COUNT(*) BY attributes.user.email | EVAL actor_org = CASE(attributes.user.email IS NULL, \"Machine\", attributes.user.email LIKE \"*@elastic.co\", \"Elastic\", \"Tenant\") | STATS events = SUM(events) BY origin = actor_org"
         },
         "metrics": [
           {
@@ -484,8 +484,12 @@
             }
           }
         ],
+        "legend": {
+          "visibility": "visible",
+          "position": "right",
+          "size": "l"
+        },
         "styling": {
-          "donut_hole": "s",
           "labels": {
             "visible": true,
             "position": "inside"
@@ -494,12 +498,8 @@
             "visible": true,
             "mode": "percentage",
             "percent_decimals": 1
-          }
-        },
-        "legend": {
-          "visibility": "visible",
-          "position": "right",
-          "size": "l"
+          },
+          "donut_hole": "s"
         }
       }
     },
@@ -581,8 +581,12 @@
             }
           }
         ],
+        "legend": {
+          "visibility": "visible",
+          "position": "right",
+          "size": "l"
+        },
         "styling": {
-          "donut_hole": "s",
           "labels": {
             "visible": true,
             "position": "inside"
@@ -591,12 +595,8 @@
             "visible": true,
             "mode": "percentage",
             "percent_decimals": 1
-          }
-        },
-        "legend": {
-          "visibility": "visible",
-          "position": "right",
-          "size": "l"
+          },
+          "donut_hole": "s"
         }
       }
     },
@@ -636,7 +636,7 @@
           {
             "label": "Key ID",
             "column": "key_id",
-            "width": 175
+            "width": 164
           },
           {
             "label": "Owner",
@@ -646,12 +646,12 @@
         "metrics": [
           {
             "label": "Events",
-            "width": 90,
+            "width": 86,
             "column": "events"
           },
           {
             "label": "IPs",
-            "width": 90,
+            "width": 86,
             "column": "ips"
           }
         ]
@@ -695,7 +695,7 @@
         "metrics": [
           {
             "label": "Events",
-            "width": 90,
+            "width": 72,
             "column": "events"
           },
           {
@@ -710,7 +710,7 @@
           },
           {
             "label": "IPs",
-            "width": 90,
+            "width": 72,
             "column": "ips"
           }
         ]
@@ -727,7 +727,7 @@
       },
       "config": {
         "title": "Failed or denied access",
-        "description": "Failed sign-ins and refused requests grouped by identity, action and source IP, most frequent first. authentication_failed, realm_authentication_failed and anonymous_access_denied are failed sign-ins; access_denied is an authenticated identity refused an action. Empty is good.",
+        "description": "Failed sign-ins and refused requests grouped by identity, action and source IP, most frequent first. authentication_failed, realm_authentication_failed and anonymous_access_denied are failed sign-ins; access_denied is an authenticated identity refused an action. Empty is good. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
@@ -755,14 +755,14 @@
           },
           {
             "label": "IP",
-            "width": 125,
+            "width": 118,
             "column": "ip"
           }
         ],
         "metrics": [
           {
             "label": "Events",
-            "width": 90,
+            "width": 72,
             "column": "events"
           },
           {
@@ -785,7 +785,7 @@
       "config": {
         "ref_id": "cloud-audit-search-02-failed-authentications",
         "title": "Failed sign-ins and denied access",
-        "description": "Every failed sign-in and refused request, newest first. Read Action: authentication_failed, realm_authentication_failed and anonymous_access_denied are failed sign-ins; access_denied is an authenticated identity refused an action."
+        "description": "Every failed sign-in and refused request, newest first. Read Action: authentication_failed, realm_authentication_failed and anonymous_access_denied are failed sign-ins; access_denied is an authenticated identity refused an action. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id."
       }
     },
     {
@@ -815,7 +815,7 @@
       "config": {
         "ref_id": "cloud-audit-search-06-actor-first-seen",
         "title": "Identity first and last seen",
-        "description": "Every identity with its first and last appearance within the selected time range, its event count, and how many IPs, countries and actions it used. Newest first appearance on top. Widen the time range to tell a brand-new identity from one that was simply quiet. Noise gate applied, so counts run lower than on the panels above."
+        "description": "Every identity with its first and last appearance within the selected time range, its event count, and how many IPs, countries and actions it used. Newest first appearance on top. Widen the time range to tell a brand-new identity from one that was simply quiet. Noise gate applied, so counts run lower than on the panels above. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id."
       }
     }
   ]

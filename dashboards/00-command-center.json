@@ -315,7 +315,7 @@
             "type": "bar_stacked",
             "data_source": {
               "type": "esql",
-              "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS events = COUNT(*) BY BUCKET(@timestamp, 75, ?_tstart, ?_tend), service = resource.attributes.service.name | EVAL source = REPLACE(service, \"^serverless-\", \"\")"
+              "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS events = COUNT(*) BY BUCKET(@timestamp, 75, ?_tstart, ?_tend), source = resource.attributes.service.name | EVAL source = CASE(source == \"serverless-elasticsearch\", \"Elasticsearch\", source == \"serverless-kibana\", \"Kibana\", source) | SORT source"
             },
             "x": {
               "column": "BUCKET(@timestamp, 75, ?_tstart, ?_tend)",
@@ -334,20 +334,20 @@
                 "mapping": [
                   {
                     "values": [
-                      "kibana"
+                      "Elasticsearch"
                     ],
                     "color": {
                       "type": "color_code",
-                      "value": "#54B399"
+                      "value": "#9170B8"
                     }
                   },
                   {
                     "values": [
-                      "elasticsearch"
+                      "Kibana"
                     ],
                     "color": {
                       "type": "color_code",
-                      "value": "#6092C0"
+                      "value": "#D36086"
                     }
                   }
                 ]
@@ -374,7 +374,7 @@
         "h": 13
       },
       "config": {
-        "content": "<style>\nul, li { margin: 0; padding: 0; list-style: none; position: relative; }\na {\n  display: block; padding: 8px 14px;\n  color: #1ba9f5 !important; text-decoration: none !important;\n  transition: all 0.3s ease !important; border-radius: 4px;\n}\na:hover {\n  background-color: rgba(27, 169, 245, 0.1) !important;\n  color: #0079b8 !important; padding-left: 20px !important; cursor: pointer;\n}\n</style>\n\n**Noise gate is ON** — health pings, query internals and bulk `authentication_success`\nare excluded; how much that removes varies by workload. Unfiltered totals live on **📊 Platform Volume**.\n\n**Identity is resolved** — `user.name` is a numeric id, so panels fall back\n`user.email` → `api_key.name`.\n\n**Client IPs are real** — `source.ip` is the proxy; geography comes from\n`network.forwarded_ip`.\n\n*Hover any panel title for detail.*",
+        "content": "<style>\nul, li { margin: 0; padding: 0; list-style: none; position: relative; }\na {\n  display: block; padding: 8px 14px;\n  color: #1ba9f5 !important; text-decoration: none !important;\n  transition: all 0.3s ease !important; border-radius: 4px;\n}\na:hover {\n  background-color: rgba(27, 169, 245, 0.1) !important;\n  color: #0079b8 !important; padding-left: 20px !important; cursor: pointer;\n}\n</style>\n\n**Noise gate is ON** except where a title says *all traffic*: health pings, query internals and bulk `authentication_success` records are left out. Unfiltered totals are on **📊 Platform Volume**.\n\n**Identity is resolved** as email, then API key name, then the numeric `user.name`. An opaque id is usually an organisation-level Cloud API key.\n\n**Client IPs are real**: geography comes from `network.forwarded_ip`; `source.ip` is only the proxy. *Hover a panel title for detail.*",
         "title": "How to read this suite"
       }
     },
@@ -405,7 +405,7 @@
       "config": {
         "ref_id": "cloud-audit-vega-07-noise-ratio-stream",
         "title": "Signal vs noise over time",
-        "description": "Stream graph banding the firehose into signal, bulk authentication, query internals and infrastructure noise, with a readable volume axis. Shows why the noise gate exists."
+        "description": "Audit events per time bucket, stacked by band — Signal on the baseline, then bulk authentication, query internals and infrastructure health — so the top edge is the whole firehose. Shows why the noise gate exists. Hover a segment for its band and the bucket total."
       }
     },
     {
@@ -423,7 +423,7 @@
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE (attributes.elasticsearch.audit.action IS NULL OR NOT (attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\") OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\")) AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"authentication_success\",\"connection_granted\"))) | STATS events = COUNT(*) BY action = attributes.event.action, service = resource.attributes.service.name | EVAL source = REPLACE(service, \"^serverless-\", \"\") | SORT events DESC | LIMIT 10"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE (attributes.elasticsearch.audit.action IS NULL OR NOT (attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\") OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\")) AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"authentication_success\",\"connection_granted\"))) | STATS events = COUNT(*) BY action = attributes.event.action, source = resource.attributes.service.name | EVAL source = CASE(source == \"serverless-elasticsearch\", \"Elasticsearch\", source == \"serverless-kibana\", \"Kibana\", source) | SORT source | SORT events DESC | LIMIT 10"
         },
         "styling": {
           "density": {
@@ -444,13 +444,13 @@
           {
             "label": "Source",
             "column": "source",
-            "width": 105
+            "width": 100
           }
         ],
         "metrics": [
           {
             "label": "Events",
-            "width": 90,
+            "width": 72,
             "column": "events"
           }
         ]
@@ -467,11 +467,11 @@
       },
       "config": {
         "title": "Busiest identities",
-        "description": "Who is generating signal traffic, and how varied their behaviour is. Identity resolves to an email, then an API key name, then a user id. Elasticsearch stamps an API key’s CREATOR’s email on every event the key emits, so any number of machines authenticating with one key resolves to one person’s name: where Via API key is filled in, that row is a credential’s traffic, not the person at a keyboard. Click an email to pin that identity across the suite.",
+        "description": "Who is generating signal traffic, and how varied their behaviour is. Identity resolves to an email, then an API key name, then a user id. Elasticsearch stamps an API key’s CREATOR’s email on every event the key emits, so any number of machines authenticating with one key resolves to one person’s name: where Via API key is filled in, that row is a credential’s traffic, not the person at a keyboard. To follow one person across the suite, pick them in the Person (email) control above. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE (attributes.elasticsearch.audit.action IS NULL OR NOT (attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\") OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\")) AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"authentication_success\",\"connection_granted\"))) | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS events = COUNT(*), actions = COUNT_DISTINCT(attributes.event.action) BY actor, attributes.api_key.name, attributes.user.email | EVAL via_key = CASE(attributes.api_key.name != actor, attributes.api_key.name) | SORT events DESC | LIMIT 10"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE (attributes.elasticsearch.audit.action IS NULL OR NOT (attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\") OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\")) AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"authentication_success\",\"connection_granted\"))) | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS events = COUNT(*), actions = COUNT_DISTINCT(attributes.event.action) BY actor, attributes.api_key.name | EVAL via_key = CASE(attributes.api_key.name != actor, attributes.api_key.name) | EVAL via_key = COALESCE(via_key, \" \") | SORT events DESC | LIMIT 10"
         },
         "styling": {
           "density": {
@@ -488,16 +488,11 @@
           {
             "label": "Identity",
             "column": "actor",
-            "width": 260
+            "width": 300
           },
           {
             "label": "Via API key",
             "column": "via_key"
-          },
-          {
-            "label": "Email",
-            "column": "attributes.user.email",
-            "click_filter": true
           }
         ],
         "metrics": [
@@ -581,7 +576,7 @@
       "config": {
         "ref_id": "cloud-audit-search-10-raw-signal-feed",
         "title": "Live signal feed",
-        "description": "The newest 200 signal events, newest first. Detail is the Kibana message, or the transport action on an Elasticsearch event. Open the Discover session to page further back or add columns."
+        "description": "The newest 200 signal events, newest first. Detail is the Kibana message, or the transport action on an Elasticsearch event. Open the Discover session to page further back or add columns. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id."
       }
     }
   ]

@@ -49,7 +49,9 @@
  *      queries; that was the multi-condition CASE of rule 1.)
  */
 
-import { cfg, nsId } from './env.mjs';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { cfg, nsId, ROOT } from './env.mjs';
 
 /** The audit stream, from config — one definition, so a rename is an .env change, not a code change. */
 export const IDX = cfg.dataStream;
@@ -63,12 +65,37 @@ export const IDX = cfg.dataStream;
 export const ACTOR_RESOLVE =
   'EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, "<anonymous>")';
 
+/**
+ * `actor_kind` here is the cheap first cut — "human" when the event carries an email, "service"
+ * otherwise — because ACTOR runs per event and a CASE with two or more conditions must not (QUERY
+ * SHAPE rule 1). That cut calls `<anonymous>` and Elastic's own service accounts "service" too; a
+ * panel that SHOWS the kind groups by it and then applies KIND_REFINE to the grouped rows.
+ */
 export const ACTOR =
   `${ACTOR_RESOLVE}, actor_kind = CASE(attributes.user.email IS NOT NULL, "human", "service")`;
 
+/**
+ * Where an identity's traffic comes from, by the email on the event. Title case because these are
+ * display values — a pie's slices and legend print them as they are — and they sit beside the
+ * realm and credential-type labels, which are title case too. ORG reads only attributes.user.email,
+ * so group by that first and apply ORG to the grouped rows.
+ */
 export const ORG =
-  'EVAL actor_org = CASE(attributes.user.email IS NULL, "machine", ' +
-  'attributes.user.email LIKE "*@elastic.co", "Elastic", "tenant")';
+  'EVAL actor_org = CASE(attributes.user.email IS NULL, "Machine", ' +
+  'attributes.user.email LIKE "*@elastic.co", "Elastic", "Tenant")';
+
+/**
+ * attributes.authentication.type in words, as an EVAL assignment (`auth = CASE(…)`) so it can share an
+ * EVAL with other columns: vega/02 embeds exactly this text, and the drift check pins it. Apply it
+ * AFTER a STATS that groups on the raw field. "saml" is real on serverless (a SAML sign-in not yet
+ * exchanged for a token). A type Elasticsearch has not documented falls through as its raw value.
+ */
+export const CRED_TYPE_LABEL =
+  'auth = CASE(attributes.authentication.type == "api_key", "API key", ' +
+  'attributes.authentication.type == "token", "Token", attributes.authentication.type == "realm", "Realm", ' +
+  'attributes.authentication.type == "saml", "SAML", ' +
+  'attributes.authentication.type == "anonymous", "Anonymous", attributes.authentication.type == "internal", "Internal", ' +
+  'attributes.authentication.type)';
 
 /**
  * How an identity authenticated, across both audit sources.
@@ -287,13 +314,22 @@ export const RISK_INDEX_EVAL  =
  * security config changes, which carry the highest weight.
  */
 export const PLATFORM_ACTORS =
-  '"elastic.maintenance","autoscaling","elasticsearch-controller","elastic/fleet-server"';
+  '"elastic.maintenance","autoscaling","elasticsearch-controller","elastic/fleet-server","elastic/kibana"';
 /** Anything the cluster could not attribute to a principal. Not platform — nobody owns these. */
 export const UNAUTH_ACTORS =
-  '"<anonymous>","<unauthenticated-cloud-access-token>","<unauthenticated-saml-user>"';
+  '"<anonymous>","<unauthenticated-cloud-access-token>","<unauthenticated-saml-user>","<unauthenticated-cloud-api-key>"';
 export const SCOPE =
   `EVAL actor_scope = CASE(actor IN (${PLATFORM_ACTORS}), "platform", ` +
   `actor IN (${UNAUTH_ACTORS}), "unauthenticated", "tenant")`;
+
+/**
+ * ACTOR's `actor_kind`, refined with SCOPE's vocabulary: an unattributed principal is
+ * "unauthenticated" and Elastic's own automation (elastic/kibana included) is "platform", rather than
+ * both reading "service". A three-way CASE, so it runs on grouped rows that carry `actor` and
+ * `actor_kind` — after the STATS, never per event.
+ */
+export const KIND_REFINE =
+  `EVAL actor_kind = CASE(actor IN (${UNAUTH_ACTORS}), "unauthenticated", actor IN (${PLATFORM_ACTORS}), "platform", actor_kind)`;
 
 /**
  * Pushed ahead of the ACTOR/RISK EVALs so scoring runs over the few events that can score
@@ -384,6 +420,46 @@ export const KIB    = 'WHERE resource.attributes.service.name == "serverless-kib
 export const ESS    = 'WHERE resource.attributes.service.name == "serverless-elasticsearch"';
 
 /**
+ * Folds dated daily indices and data-stream backing indices into the family they belong to, so
+ * `.ds-logs-x-2026.10.14-000001` and `logs-x` are one row and seven `.slo-…-2026-10-0N` days are one.
+ * One definition for 03 and 07, so "index family" means one thing in the suite; vega/04 embeds the
+ * same text and the drift check pins it.
+ */
+export const indexFamily = (col) => String.raw`REPLACE(REPLACE(${col}, """^\.ds-""", ""), """[-.]?\d{4}[.-]\d{2}[.-]\d{2}(-\d+)?$""", "")`;
+export const INDEX_FAMILY = indexFamily('attributes.elasticsearch.audit.indices');
+
+/**
+ * Index EXPRESSIONS, not indices: `*`, `-*`, `syn-*` and date math like `<.slo-…{2026-10-14||/d}>`.
+ * Elasticsearch records the expression as the client wrote it, and the concrete indices it resolved
+ * to appear on the shard-level events beside it, so counting both double-counts and lists a pattern
+ * as if it were something you could open. Applied to grouped rows, so it costs nothing per document.
+ * vega/04 embeds it verbatim.
+ */
+export const CONCRETE = 'WHERE LOCATE(attributes.elasticsearch.audit.indices, "*") == 0 AND NOT attributes.elasticsearch.audit.indices LIKE "<*"';
+
+/**
+ * A request to a system or hidden index. Two corrections to the bare `LIKE ".*"` this used to be:
+ *
+ *   .ds-*      A data stream's backing index starts with a dot whatever the stream is, so
+ *              `.ds-logs-…` (the audit stream itself, read by these very dashboards) counted as a
+ *              system index and filled the top of the ⚠️ table with false positives. It is ordinary
+ *              data. A backing index of a DOT-named stream (`.ds-.alerts-…`) is still system data, so
+ *              it stays in — which is where this deliberately differs from 07's blanket `.ds-*`.
+ *   *[*        Shard- and node-level fan-out (`search[phase/query]`, `search[can_match][n]`,
+ *              `field_caps[n]`, `bulk[s][p]`). Each repeats a top-level request that is itself
+ *              audited with the same index, so it multiplied one read into five rows. NOT the noise
+ *              gate: NOISE also drops the top-level `indices:data/read/search`, and a real search of
+ *              .security is exactly what this view exists to show.
+ *
+ * Null-guarded on the action, per the noise-gate lesson. Applied after MV_EXPAND, per index value.
+ * searches/05-system-index-access.json embeds the same text, and the drift check pins it.
+ */
+export const SYS_INDEX =
+  'WHERE ((attributes.elasticsearch.audit.indices LIKE ".*" AND NOT attributes.elasticsearch.audit.indices LIKE ".ds-*") ' +
+  'OR attributes.elasticsearch.audit.indices LIKE ".ds-.*") ' +
+  'AND (attributes.elasticsearch.audit.action IS NULL OR NOT attributes.elasticsearch.audit.action LIKE "*[*")';
+
+/**
  * Action -> verb. Shared by the change panels, 02's object/verb heatmap and the Discover sessions,
  * so the READ verbs have to survive alongside the write ones.
  *
@@ -460,6 +536,33 @@ export const kpi = (x, y, w, h, q, col, desc, { fmt = 'number', dec = 0, seconda
 export const PALETTE_ID = 'eui_amsterdam';
 export const PALETTE = ['#54B399', '#6092C0', '#D36086', '#9170B8', '#CA8EAE', '#D6BF57', '#B9A888', '#DA8B45', '#AA6556', '#E7664C'];
 
+/** A pinned colour mapping for a breakdown or slice dimension, in the shape xy() and pie() both emit. */
+const colorMapping = (colors) => ({ mode: 'categorical', palette: PALETTE_ID,
+  mapping: Object.entries(colors || {}).map(([v, hex]) => ({ values: [v], color: { type: 'color_code', value: hex } })) });
+
+/**
+ * One colour per CRED_TYPE_LABEL value, for any chart that breaks down by credential type. EVERY
+ * value the CASE can produce is pinned: an unpinned value takes the palette from its start, and
+ * PALETTE[0] is already API key's — unpinned, "SAML" (one event in 30 days) drew as a second green
+ * line indistinguishable from API key. Only a type Elasticsearch has not documented can still collide.
+ */
+export const CRED_TYPE_COLORS = {
+  'API key': PALETTE[0], Token: PALETTE[1], Realm: PALETTE[2], SAML: PALETTE[3], Anonymous: PALETTE[5], Internal: PALETTE[7],
+};
+
+/**
+ * The two audit sources by name, for any panel that splits by resource.attributes.service.name. Apply
+ * after a STATS grouped on `source = resource.attributes.service.name`: "serverless-" spends eleven
+ * characters of every legend entry saying what the whole suite assumes. Pinned so Elasticsearch and
+ * Kibana are the same colours on Command Center and Platform Volume, and SORTed because Lens takes stack
+ * and legend order from row order: unsorted, the two swapped places between refreshes. Elasticsearch
+ * first puts the bulk on the baseline.
+ */
+export const SOURCE_LABEL =
+  'EVAL source = CASE(source == "serverless-elasticsearch", "Elasticsearch", source == "serverless-kibana", "Kibana", source) ' +
+  '| SORT source';
+export const SOURCE_COLORS = { Elasticsearch: PALETTE[3], Kibana: PALETTE[2] };
+
 /**
  * Legend placement, verified against the 9.6 Dashboards API (`config.legend`) and rendered:
  *
@@ -484,21 +587,31 @@ const LEGEND = {
  * `legend`  'bottom' | 'right' | 'hidden'; defaults to 'bottom' when there is a breakdown.
  * `colors`  { value: '#hex' } pins a breakdown value to a colour, so the same category is the same
  *           colour on every chart that shows it (e.g. the four BAND values on Lens and on Vega).
- *           Unpinned values take PALETTE in order.
- * `values`  true prints each bar's value on it — for a ranked bar() whose tail would otherwise be
- *           a 1px sliver next to a dominant first bar.
+ *           Unpinned values take PALETTE from its START, not from after the pinned ones — so an
+ *           unpinned value can land on a colour a pinned one already holds. Pin every value the
+ *           query can produce (CRED_TYPE_COLORS does), or pin none.
+ * `values`  true asks Lens to print each bar's value. Lens prints a label only where it fits INSIDE
+ *           the bar, so the long thin tail of a ranked bar() stays unlabelled (hover for it); it labels
+ *           the leaders, nothing more.
+ * `yScale`  'log' for a line chart whose series differ by orders of magnitude (credential types: API
+ *           keys carry ~99.6% of requests), so a minor series is as readable as the bulk.
+ * `yTitle`  a y-axis title, for a measure the panel title does not already name ("Summed severity").
+ *           Hidden by default: on a count it repeats the title.
+ *
+ * SERIES ORDER. Lens draws breakdown series — stack order and legend order — in the order rows
+ * arrive, and an unsorted STATS returns them in whatever order the shards finished, so a stack
+ * reshuffles between refreshes. A breakdown query ends with a SORT on the breakdown column (or an
+ * explicit order column, as 06's bands do); it runs over the aggregated rows and costs nothing.
  */
 export const xy = (x, y, w, h, title, q, ycol, desc,
-  { kind = 'bar_stacked', breakdown, xcol, label = '@timestamp', temporal = true, legend, colors, values = false } = {}) => {
+  { kind = 'bar_stacked', breakdown, xcol, label = '@timestamp', temporal = true, legend, colors, values = false, yScale, yTitle } = {}) => {
   const layer = {
     type: kind, data_source: { type: 'esql', query: q },
     x: { column: xcol || BUCKET, label }, y: [{ column: ycol }],
   };
-  if (breakdown) {
-    layer.breakdown_by = { column: breakdown, color: { mode: 'categorical', palette: PALETTE_ID,
-      mapping: Object.entries(colors || {}).map(([v, hex]) => ({ values: [v], color: { type: 'color_code', value: hex } })) } };
-  }
-  const axis = { x: { title: { visible: false } }, y: { title: { visible: false } } };
+  if (breakdown) layer.breakdown_by = { column: breakdown, color: colorMapping(colors) };
+  const axis = { x: { title: { visible: false } }, y: { title: yTitle ? { visible: true, text: yTitle } : { visible: false } } };
+  if (yScale) axis.y.scale = yScale;
   if (temporal) Object.assign(axis.x, { scale: 'temporal', domain: { type: 'fit', rounding: false } });
   const config = { title, description: desc, type: 'xy', axis, layers: [layer],
     legend: LEGEND[legend || (breakdown ? 'bottom' : 'hidden')] };
@@ -552,13 +665,18 @@ export const bar = (x, y, w, h, title, q, cat, val, desc, opts = {}) =>
  * format, "Oct 14, 2026 @ 11:28:36.286", with nothing cut. Deliberately not DATE_FORMAT in ES|QL to
  * save width: that renders UTC as a string, while every Lens and Discover timestamp beside it is
  * in the browser's zone, and the column stops sorting as a date.
+ *
+ * Each role also has a FLOOR, the narrowest it can go and still hold its content; see fitWidths().
+ * SCOPE is its own role because "unauthenticated", the longest Scope value and the one that matters,
+ * exactly filled ENUM's 105px and ran into the next column with no gap (rendered on 04).
  */
-const W = { DATE: 190, COUNT: 90, IP: 125, ENUM: 105 };
-const C = (label, width) => (width ? { label, width } : { label });
+const W = { DATE: 190, COUNT: 90, IP: 125, ENUM: 105, SCOPE: 120 };
+const FLOOR = new Map([[W.DATE, 190], [W.COUNT, 72], [W.IP, 118], [W.ENUM, 92], [W.SCOPE, 120]]);
+const C = (label, width) => (width ? { label, width, min: FLOOR.get(width) } : { label });
 
 export const COLUMNS = {
   // who
-  actor: C('Identity'), actor_kind: C('Kind', W.ENUM), actor_scope: C('Scope', W.ENUM), actor_org: C('Origin', W.ENUM),
+  actor: C('Identity'), actor_kind: C('Kind', W.ENUM), actor_scope: C('Scope', W.SCOPE), actor_org: C('Origin', W.ENUM),
   'attributes.user.email': C('Email'), 'attributes.user.name': C('User'), user: C('User'), owner: C('Owner'),
   api_key: C('API key'), 'attributes.api_key.name': C('API key'), key_id: C('Key ID'), 'attributes.api_key.id': C('Key ID'),
   credential: C('Credential', W.ENUM),
@@ -635,8 +753,9 @@ const DENSITY_WRAP = { mode: 'compact', height: { value: { type: 'auto' } } };
  */
 const column = (c) => {
   const spec = typeof c === 'string' ? { column: c } : c;
-  const { label: lbl, width } = COLUMNS[spec.column] || {};
-  return { label: lbl || humanise(spec.column), ...(width ? { width } : {}), ...spec };
+  const { label: lbl, width, min } = COLUMNS[spec.column] || {};
+  // A role's floor goes with the role's width; a call site that sets its own width gets the default floor.
+  return { label: lbl || humanise(spec.column), ...(width ? { width, min } : {}), ...spec, ...(spec.width ? { min: spec.min } : {}) };
 };
 
 /**
@@ -646,6 +765,71 @@ const column = (c) => {
  * lowered: a LIMIT already within the panel is left alone. `wrap` implies scroll, since auto-height
  * rows make the count unknowable.
  */
+/**
+ * NARROW VIEWPORTS. A Lens column width is absolute pixels, the same at every viewport, while the
+ * panel is a share of the screen. Widths sized at 1920px add up to more than the panel at 1440px —
+ * 04's first-appearance table left its Identity column 43px, and 05's locations table pushed its last
+ * column out of view behind a horizontal scrollbar (both rendered). So table() budgets every table for
+ * a 1440px viewport: when the fixed widths plus FLEX_MIN for each flexing column exceed the panel's
+ * grid width there, the fixed columns give up the difference, each in proportion to how far it sits
+ * above its floor. A date never shrinks (a cut timestamp is unreadable); a count stops at 72px
+ * ("720,418" with its header), an IP at 118px; a sized() text column at 70% of what it asked for, or
+ * its own `min` where a value is known to need more (an email, "Elasticsearch").
+ *
+ * Measured on a rendered dashboard: at a 1440px viewport the 48-column grid is 1316px wide with 8px
+ * gutters, and a table's data grid is its panel less 16px, so a w-column table has w × 1324/48 − 24px.
+ * Tables that fit at 1440 are untouched; the ones that do not get the same widths at 1920 too (Lens
+ * has no relative width), where the space they gave up goes to the text columns that were clipping.
+ * When even the floors do not fit, the text columns are what clips — fewer columns is then the fix.
+ */
+const GRID_PX_1440 = 1324;
+const FLEX_MIN = 150; // an email or an action name; below ~120px (0.8×) a text column is unreadable
+export const gridPx = (w) => Math.floor(w * GRID_PX_1440 / 48) - 24;
+const floorOf = (c) => c.min ?? Math.max(Math.min(c.width, FLOOR.get(W.COUNT)), Math.round(c.width * 0.7));
+export const fitWidths = (cols, w) => {
+  const fixed = cols.filter((c) => c.width);
+  const nflex = cols.length - fixed.length;
+  const need = fixed.reduce((t, c) => t + c.width, 0) + nflex * FLEX_MIN - gridPx(w);
+  const slack = fixed.map((c) => Math.max(0, c.width - floorOf(c)));
+  const total = slack.reduce((a, b) => a + b, 0);
+  if (need > 0 && total > 0) {
+    const share = Math.min(1, need / total);
+    fixed.forEach((c, i) => { c.width -= Math.ceil(slack[i] * share); });
+  }
+  // Below ~120px (0.8 × FLEX_MIN) a text column is unreadable at 1440 whatever the widths are; such a
+  // table is reported (narrow1440) for a layout decision. A column whose value must not be cut gets a
+  // `min` (02's Identity) so it keeps its width rather than paying for the rest.
+  const left = gridPx(w) - fixed.reduce((t, c) => t + c.width, 0);
+  const fits = !nflex || left / nflex >= 0.8 * FLEX_MIN;
+  for (const c of cols) delete c.min;
+  return fits;
+};
+
+/** True when a table panel cannot give each text column ~120px at a 1440px viewport. See fitWidths(). */
+export const narrowOverflow = (p) => p.config?.type === 'data_table' && p.narrow1440 === true;
+
+/**
+ * An identity that reads as a 20-character id is ACTOR_RESOLVE's last resort, not a defect, and a reader
+ * meeting one needs to be told so where they meet it. Appended to the description of every table that
+ * shows the resolved identity, unless the description already explains it.
+ */
+export const OPAQUE_ID_NOTE = 'An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id.';
+const withIdNote = (desc, cols) =>
+  (cols.some((c) => c.column === 'actor') && !/opaque/i.test(desc || '') ? `${desc} ${OPAQUE_ID_NOTE}` : desc);
+
+/**
+ * Lens prints a null cell as "-". A single space renders as an empty cell (an empty string renders as
+ * "(blank)") — checked on a live panel. Apply AFTER the STATS, to the grouped rows, and only to a
+ * DISPLAY column: nothing downstream may test it for null.
+ *
+ * NEVER on a click-to-filter column. Lens treats any column the query assigns (EVAL, even back onto
+ * the same field name) as "created at query time": the cell is still a link, but clicking it opens
+ * "You can't apply a filter or drill down from this value", so the pin and the Actor 360 drilldown
+ * are lost (rendered, then reverted). A null in a filter column therefore stays an underlined "-";
+ * there is no Lens setting that hides it. Where those dashes dominate a column, drop the column.
+ */
+export const blankNull = (...cols) => `EVAL ${cols.map((c) => `${c} = COALESCE(${c}, " ")`).join(', ')}`;
+
 export const table = (x, y, w, h, title, q, rows, metrics, desc, { scroll = false, wrap = false } = {}) => {
   let query = q;
   if (!scroll && !wrap) {
@@ -659,10 +843,11 @@ export const table = (x, y, w, h, title, q, rows, metrics, desc, { scroll = fals
   if (r.length && [...r, ...m].every((c) => c.width)) {
     delete r.reduce((a, b) => (b.width > a.width ? b : a)).width;
   }
+  const fits = fitWidths([...r, ...m], w);
   return {
-    type: 'vis', id: nid('tbl'), grid: { x, y, w, h },
+    type: 'vis', id: nid('tbl'), grid: { x, y, w, h }, ...(fits ? {} : { narrow1440: true }),
     config: {
-      title, description: desc, type: 'data_table',
+      title, description: withIdNote(desc, r), type: 'data_table',
       data_source: { type: 'esql', query },
       styling: { density: wrap ? DENSITY_WRAP : DENSITY },
       rows: r, metrics: m,
@@ -682,13 +867,41 @@ export const filterable = (column, extra = {}) => ({ column, click_filter: true,
  */
 export const sized = (column, width, extra = {}) => ({ column, width, ...extra });
 
-export const pie = (x, y, w, h, title, q, sliceCol, metricCol, desc, { donut = 'm', kind = 'pie' } = {}) => {
+/**
+ * A pie or donut. The API defaults draw every slice name OUTSIDE the ring with no legend: sub-1%
+ * slices stacked their leader lines in one corner, a long name was cut ("_service_..."), and on a
+ * short panel Lens drops the outside label of a small slice altogether — with no legend that
+ * category vanished from the panel (rendered, 05 at h=9). So every pie gets:
+ *
+ *   legend   'right' (default) | 'bottom' | 'hidden'. The right legend is `size: 'l'` (the API takes
+ *            s/m/l/xl/auto, and only beside a left/right legend): the default width cut "IP not
+ *            geolocatable" and "Elasticsearch API key" short. The pie legend takes no values option.
+ *   labels   'inside' (default) or 'outside': where slice labels go. Inside, Lens drops a label that
+ *            does not fit its slice, which is what a legend beside it makes acceptable.
+ *   values   percentages on the slices, at `percent_decimals` (default 1 — Lens otherwise mixed 1 and
+ *            2 decimals on one ring: 39.3% beside 58.29%).
+ *   colors   { value: '#hex' } pins slices, always on the eui_amsterdam palette. Unpinned, slice
+ *            colours follow slice ORDER, which follows volume, so the same realm was pink in one
+ *            render and blue in the next. Pin every value the query can produce.
+ *
+ * Every key was read back from a deployed panel (GET /api/dashboards).
+ */
+const PIE_LEGEND = {
+  right:  { visibility: 'visible', position: 'right', size: 'l' },
+  bottom: { visibility: 'visible', position: 'bottom' },
+  hidden: { visibility: 'hidden' },
+};
+export const pie = (x, y, w, h, title, q, sliceCol, metricCol, desc,
+  { donut = 'm', kind = 'pie', legend = 'right', labels = 'inside', percent_decimals = 1, colors } = {}) => {
+  if (!PIE_LEGEND[legend]) throw new Error(`pie "${title}": legend must be one of ${Object.keys(PIE_LEGEND).join(', ')}`);
   const config = {
     title, description: desc, type: kind,
     data_source: { type: 'esql', query: q },
-    metrics: [{ column: metricCol }], group_by: [{ column: sliceCol }],
+    metrics: [{ column: metricCol }], group_by: [{ column: sliceCol, color: colorMapping(colors) }],
+    legend: PIE_LEGEND[legend],
+    styling: { labels: { visible: true, position: labels }, values: { visible: true, mode: 'percentage', percent_decimals } },
   };
-  if (kind === 'pie') config.styling = { donut_hole: donut };
+  if (kind === 'pie') config.styling.donut_hole = donut;
   return { type: 'vis', id: nid('pie'), grid: { x, y, w, h }, config };
 };
 
@@ -707,10 +920,15 @@ export const vega = (x, y, w, h, ref, title, desc) => ({
   config: { ref_id: nsId(`cloud-audit-vega-${ref}`), title, description: desc },
 });
 
-export const search = (x, y, w, h, ref, title, desc) => ({
-  type: 'discover_session', id: nid('ds'), grid: { x, y, w, h },
-  config: { ref_id: nsId(`cloud-audit-search-${ref}`), title, description: desc },
-});
+/** A Discover session panel. Like table(), it explains an opaque Identity when the session shows one. */
+export const search = (x, y, w, h, ref, title, desc) => {
+  const cols = JSON.parse(readFileSync(join(ROOT, 'searches', `${ref}.json`), 'utf8')).columns || [];
+  const description = cols.includes('Identity') && !/opaque/i.test(desc || '') ? `${desc} ${OPAQUE_ID_NOTE}` : desc;
+  return {
+    type: 'discover_session', id: nid('ds'), grid: { x, y, w, h },
+    config: { ref_id: nsId(`cloud-audit-search-${ref}`), title, description },
+  };
+};
 
 /**
  * MARKDOWN SIZE. A markdown panel renders its body at 16px and `###` at ~20px, against 14px panel

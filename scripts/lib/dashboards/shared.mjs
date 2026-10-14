@@ -1,5 +1,4 @@
 /** Constants shared by more than one dashboard module. */
-import { cfg } from '../env.mjs';
 import {
   RISK, VERB, CSS_NAV, RISK_PREFILTER, RISK_KEYS, RISK_RESTORE, CHANGE, OBJ_GROK, OBJ_NAME, OBJ_TYPE, OUTCOME,
   filterable
@@ -16,43 +15,23 @@ import {
  */
 export const WHO = filterable('attributes.user.email');
 
+/**
+ * The suite legend on Command Center (16 columns: ~560px wide at 1920, ~410px at 1440, ~330px tall —
+ * at 1440 a separate closing line for the hover hint fell below the panel edge, so it ends the last paragraph).
+ * One source line per paragraph: Kibana's markdown renders a source newline as a line break, so a
+ * hard-wrapped paragraph breaks mid-sentence wherever the source did. A code chip cannot break either,
+ * so each paragraph ends on plain words — `authentication_success` used to land alone on a line of its
+ * own. The first sentence states the exception, because three panels on that page read all traffic and
+ * say so in their titles.
+ */
 export const LEGEND_MD = CSS_NAV + `
 ### How to read this suite
 
-**Noise gate is ON** — health pings, query internals and bulk \`authentication_success\`
-are excluded; how much that removes varies by workload. Unfiltered totals live on **📊 Platform Volume**.
+**Noise gate is ON** except where a title says *all traffic*: health pings, query internals and bulk \`authentication_success\` records are left out. Unfiltered totals are on **📊 Platform Volume**.
 
-**Identity is resolved** — \`user.name\` is a numeric id, so panels fall back
-\`user.email\` → \`api_key.name\`.
+**Identity is resolved** as email, then API key name, then the numeric \`user.name\`. An opaque id is usually an organisation-level Cloud API key.
 
-**Client IPs are real** — \`source.ip\` is the proxy; geography comes from
-\`network.forwarded_ip\`.
-
-*Hover any panel title for detail.*`;
-
-export const GEO_NOTE = `### 🌍 About this data
-
-Geo is resolved **at ingest** by \`${cfg.pipeline}\`, which lifts
-\`attributes.network.forwarded_ip\` to \`client.ip\` and resolves \`client.geo.*\`.
-
-**Not \`source.ip\`** — that is the *internal proxy* (\`100.64.x.x\` CGNAT, \`10.x.x.x\` mesh),
-never the real client.
-
-**Forward-only** — events from before the pipeline was installed have no geo.`;
-
-export const VOL_NOTE = `### 📊 The quarantine dashboard
-
-Every other dashboard applies a **noise gate**. This one deliberately does not, so the
-firehose stays measurable without drowning the forensic views.
-
-- **\`infra-noise\`** — \`cluster:monitor/main\` + \`elastic.maintenance\` health traffic
-- **\`query-noise\`** — search-phase internals, reader contexts, PITs, \`connection_granted\`
-- **\`authn-volume\`** — bulk \`authentication_success\`, one per request
-- **\`signal\`** — everything else: what the other dashboards read
-
-Elasticsearch stamps an API key's **creator's** email on every event the key emits, so a busy
-key's traffic resolves to a person's name on the identity panels — check the \`api_key\` column
-before reading a name as a human.`;
+**Client IPs are real**: geography comes from \`network.forwarded_ip\`; \`source.ip\` is only the proxy. *Hover a panel title for detail.*`;
 
 /** The raw identity fields ACTOR_RESOLVE reads, for a STATS that has to resolve the actor afterwards. */
 export const ACTOR_KEYS = 'attributes.user.email, attributes.api_key.name, attributes.user.name';

@@ -18,7 +18,10 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { ROOT, cfg } from './env.mjs';
 import { CONTROLS } from './controls.mjs';
-import { NAV_H, NOISE, BAND, RISK, RISK_KEYS, RISK_RESTORE, VERB, ACTOR_RESOLVE, OBJ, OBJ_ID, OBJ_TYPE, CHANGE_PRED, CRED, OBJ_PRESENT } from './panels.mjs';
+import {
+  NAV_H, NOISE, BAND, RISK, RISK_KEYS, RISK_RESTORE, VERB, ACTOR_RESOLVE, OBJ, OBJ_ID, OBJ_TYPE, CHANGE_PRED, CRED, OBJ_PRESENT,
+  CRED_TYPE_LABEL, INDEX_FAMILY, CONCRETE, SYS_INDEX,
+} from './panels.mjs';
 
 export const GRID_W = 48;
 
@@ -35,8 +38,8 @@ export const GRID_W = 48;
 const FRAGMENT_USES = {
   'vega/01-actor-risk-treemap.json': { NOISE, RISK, RISK_KEYS, RISK_RESTORE },
   'vega/03-object-verb-heatmap.json': { VERB, OBJ_ID, OBJ_TYPE },
-  'vega/02-auth-matrix.json': { ACTOR_RESOLVE },
-  'vega/04-actor-index-matrix.json': { ACTOR_RESOLVE },
+  'vega/02-auth-matrix.json': { ACTOR_RESOLVE, CRED_TYPE_LABEL },
+  'vega/04-actor-index-matrix.json': { ACTOR_RESOLVE, CONCRETE, INDEX_FAMILY },
   'vega/05-rare-event-scatter.json': { RISK, RISK_KEYS, RISK_RESTORE },
   'vega/06-geo-origin.json': { ACTOR_RESOLVE },
   'vega/07-noise-ratio-stream.json': { BAND },
@@ -46,8 +49,8 @@ const FRAGMENT_USES = {
   'searches/01-all-mutations.json': { CHANGE_PRED, ACTOR_RESOLVE, VERB, OBJ },
   'searches/02-failed-authentications.json': { ACTOR_RESOLVE },
   'searches/03-security-config-changes.json': { ACTOR_RESOLVE },
-  'searches/04-kibana-object-changes.json': { ACTOR_RESOLVE, VERB, OBJ },
-  'searches/05-system-index-access.json': { ACTOR_RESOLVE },
+  'searches/04-kibana-object-changes.json': { ACTOR_RESOLVE, VERB, OBJ, OBJ_PRESENT },
+  'searches/05-system-index-access.json': { ACTOR_RESOLVE, SYS_INDEX },
   // 06 and 10 previously carried a bare `NOT (... IN ...)` gate. That is null on Kibana events —
   // where the Elasticsearch action field does not exist — and `WHERE null` drops the row, so both
   // sessions were silently returning ZERO Kibana audit, measured live against an hour that held
@@ -312,6 +315,9 @@ export function checkLayout(all) {
     checkRefs(name, panels, problems);
     checkMarkdown(name, panels, problems);
     rows.push(`${name}: panels=${panels.length} rows=${maxY}`);
+    // Advisory, not a failure: a table whose columns cannot fit a 1440px viewport needs a layout
+    // decision (a wider panel or fewer columns), which no width arithmetic can make. See fitWidths().
+    for (const p of panels.filter((q) => q.narrow1440)) rows.push(`${name}: advisory — "${p.config.title}" (w=${p.grid.w}) clips its text columns at a 1440px viewport`);
   }
   checkFragmentDrift(problems);
   checkVega(problems);

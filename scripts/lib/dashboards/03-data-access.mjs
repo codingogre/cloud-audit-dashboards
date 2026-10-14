@@ -3,48 +3,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ROOT } from '../env.mjs';
 import {
-  IDX, ACTOR_RESOLVE, NOISE, TIME, BUCKET, ESS, dash, kpi, xy, table, vega, search, sized, resetIds
+  IDX, ACTOR_RESOLVE, NOISE, TIME, BUCKET, ESS, INDEX_FAMILY, CONCRETE, SYS_INDEX, dash, kpi, xy, table, vega, search, sized, resetIds
 } from '../panels.mjs';
-
-/**
- * Folds dated daily indices and data-stream backing indices into the family they belong to, so
- * `.ds-logs-x-2026.10.14-000001` and `logs-x` are one row and seven `.slo-…-2026-10-0N` days are one.
- * The same characters as 07-actor-360.mjs, so "index family" means one thing in the suite; it should
- * move to panels.mjs next to the other fragments (and into the vega/04 drift check) — that is a shared
- * file, so it is duplicated here for now.
- */
-const INDEX_FAMILY = String.raw`REPLACE(REPLACE(attributes.elasticsearch.audit.indices, """^\.ds-""", ""), """[-.]?\d{4}[.-]\d{2}[.-]\d{2}(-\d+)?$""", "")`;
-
-/**
- * Index EXPRESSIONS, not indices: `*`, `-*`, `syn-*` and date math like `<.slo-…{2026-10-14||/d}>`.
- * Elasticsearch records the expression as the client wrote it, and the concrete indices it resolved
- * to appear on the shard-level events beside it, so counting both double-counts and lists a pattern
- * as if it were something you could open. Applied to grouped rows, so it costs nothing per document.
- */
-const CONCRETE = 'WHERE LOCATE(attributes.elasticsearch.audit.indices, "*") == 0 AND NOT attributes.elasticsearch.audit.indices LIKE "<*"';
-
-/**
- * A request to a system or hidden index. Two corrections to the bare `LIKE ".*"` this used to be:
- *
- *   .ds-*      A data stream's backing index starts with a dot whatever the stream is, so
- *              `.ds-logs-…` (the audit stream itself, read by these very dashboards) counted as a
- *              system index and filled the top of the ⚠️ table with false positives. It is ordinary
- *              data. A backing index of a DOT-named stream (`.ds-.alerts-…`) is still system data, so
- *              it stays in — which is where this deliberately differs from 07's blanket `.ds-*`.
- *   *[*        Shard- and node-level fan-out (`search[phase/query]`, `search[can_match][n]`,
- *              `field_caps[n]`, `bulk[s][p]`). Each repeats a top-level request that is itself
- *              audited with the same index, so it multiplied one read into five rows. NOT the noise
- *              gate: NOISE also drops the top-level `indices:data/read/search`, and a real search of
- *              .security is exactly what this view exists to show.
- *
- * Null-guarded on the action, per the noise-gate lesson. Applied after MV_EXPAND, per index value.
- * searches/05-system-index-access.json carries the same text; it should become a drift-checked
- * fragment in panels.mjs (shared file — requested, not done here).
- */
-const SYS_INDEX =
-  'WHERE ((attributes.elasticsearch.audit.indices LIKE ".*" AND NOT attributes.elasticsearch.audit.indices LIKE ".ds-*") ' +
-  'OR attributes.elasticsearch.audit.indices LIKE ".ds-.*") ' +
-  'AND (attributes.elasticsearch.audit.action IS NULL OR NOT attributes.elasticsearch.audit.action LIKE "*[*")';
 
 /**
  * Transport fan-out, dropped AFTER aggregation so it costs nothing: shard/node copies (`…[s]`, `[n]`,

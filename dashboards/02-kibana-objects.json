@@ -291,7 +291,7 @@
       },
       "config": {
         "title": "⚠️ Mutations — the 30 most recent Kibana state changes",
-        "description": "The single most important panel in the suite: state changes in Kibana, with who did it, what it was called, and which space it lives in. These are the 30 most recent (scroll for the rest); every change in range is in \"All mutations\" on Security & Anomalies, and the \"Kibana saved-object activity\" session further down this page lists reads and changes together. Two columns to read carefully. Object type and Object are the real saved-object fields where Kibana records them and are otherwise recovered from the event message, because workflows, ML jobs and agent-builder objects carry no saved_object fields. A workflow cancel, or a test of an unsaved draft, names only its run, so it reads \"execution\" and the run id's first 8 characters. Result is \"attempted\" where Kibana logged the attempt rather than the outcome — that is how the saved-object path records things, so it is normal, and a \"failure\" here is a change that was denied.",
+        "description": "The single most important panel in the suite: state changes in Kibana, with who did it, what it was called, and which space it lives in. These are the 30 most recent (scroll for the rest); every change in range is in \"All mutations\" on Security & Anomalies, and the \"Kibana saved-object activity\" session further down this page lists reads and changes together. Two columns to read carefully. Object type and Object are the real saved-object fields where Kibana records them and are otherwise recovered from the event message, because workflows, ML jobs and agent-builder objects carry no saved_object fields. A workflow cancel, or a test of an unsaved draft, names only its run, so it reads \"execution\" and the run id's first 8 characters. Result is \"attempted\" where Kibana logged the attempt rather than the outcome — that is how the saved-object path records things, so it is normal, and a \"failure\" here is a change that was denied. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
@@ -597,7 +597,7 @@
       },
       "config": {
         "title": "Dashboards, SLOs and alert rules touched",
-        "description": "Audit trail for the high-value object types only: who touched which dashboard, SLO, rule, workflow or ML job, and when. Both `alert` and `alerting_rule` are included, because Kibana records the same rule under either type depending on which code path audited it.",
+        "description": "Audit trail for the high-value object types only: who touched which dashboard, SLO, rule, workflow or ML job, and when. Both `alert` and `alerting_rule` are included, because Kibana records the same rule under either type depending on which code path audited it. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
@@ -618,17 +618,17 @@
           {
             "label": "Identity",
             "column": "actor",
-            "width": 175
+            "width": 160
           },
           {
             "label": "Operation",
-            "width": 80,
+            "width": 72,
             "column": "verb"
           },
           {
             "label": "Object type",
             "column": "type",
-            "width": 125
+            "width": 88
           },
           {
             "label": "Object",
@@ -771,7 +771,7 @@
       "config": {
         "ref_id": "cloud-audit-search-08-cross-space-activity",
         "title": "Cross-space activity",
-        "description": "Identities ranked by how many Kibana spaces they touched. Anything above one space is worth understanding."
+        "description": "Identities ranked by how many Kibana spaces they touched. Anything above one space is worth understanding. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id."
       }
     },
     {
@@ -786,7 +786,7 @@
       "config": {
         "ref_id": "cloud-audit-search-04-kibana-object-changes",
         "title": "Kibana saved-object activity",
-        "description": "Every Kibana event that named an object, reads and changes, newest first; the newest 1,000 in range. Kibana's page requests, logins and point-in-time internals name no object and are left out. Message is the sentence Kibana wrote for the event. Open in Discover to filter on a column or page further back."
+        "description": "Every Kibana event that named an object, reads and changes, newest first; the newest 1,000 in range. Kibana's page requests, logins and point-in-time internals name no object and are left out. Message is the sentence Kibana wrote for the event. Open in Discover to filter on a column or page further back. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id."
       }
     },
     {
@@ -801,7 +801,7 @@
       "config": {
         "ref_id": "cloud-audit-search-09-session-reconstruction",
         "title": "Session reconstruction",
-        "description": "One person's Kibana sessions, event by event, newest first: every object they opened and changed, with the sentence Kibana wrote for each. Pin an identity first, then open in Discover, filter to one Session and sort Time ascending to replay it forward. Kibana's internal UI requests and point-in-time internals are left out; public API calls such as an export are kept. Empty when nobody used Kibana in a browser in range: API-key traffic carries no session."
+        "description": "One person's Kibana sessions, event by event, newest first: every object they opened and changed, with the sentence Kibana wrote for each. Pin an identity first, then open in Discover, filter to one Session and sort Time ascending to replay it forward. Kibana's internal UI requests and point-in-time internals are left out; public API calls such as an export are kept. Empty when nobody used Kibana in a browser in range: API-key traffic carries no session. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id."
       }
     }
   ]

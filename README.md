@@ -208,12 +208,15 @@ Probed against Kibana 9.6 serverless. Several are undocumented and cost real tim
 | Constraint | Handling |
 | --- | --- |
 | Generic `/api/saved_objects/{type}/{id}` CRUD is **disabled** on serverless | Vega and Discover sessions deploy through `_import` (multipart ndjson) |
-| The Dashboards API accepts only `links`, `markdown`, `vis`, `discover_session` panels | `map` is unavailable; geography uses the inline `region_map` chart type instead |
+| The Dashboards API accepts only `links`, `markdown`, `vis`, `discover_session` panels | `map` is unavailable. Inline `region_map` exists but takes no palette, legend or extent through the API (one alert-red fill over the basemap labels, a collapsed legend), so 05's map is a Vega choropleth over Elastic Maps Service (`vega/06-geo-origin.json`) |
 | A `vis` panel with `ref_id` **always** serialises its reference as `type: "lens"` | Vega charts are legacy `visualization` objects, so `repointVega()` rewrites those panels to the classic `panelRefName` form after deploy. Without it every Vega panel renders *"Visualization type not found."* |
 | ES\|QL visualizations cannot be standalone saved objects | Lens panels are inline in the dashboard definition, which also keeps each dashboard self-contained and diffable |
 | XY split key is `breakdown_by`, not `breakdown` | — |
 | Partition charts use `metrics[]` + `group_by[]`, not `slice_by`/`metric` | — |
 | A `data_table` with an empty `metrics` array crashes the API | Raw event listings are aggregated, or shipped as Discover panels |
+| A Lens table prints a null cell as `-` (a clickable, underlined `-` in a click-to-filter column) and an empty string as `(blank)`; a column the query assigns — even `EVAL attributes.user.email = COALESCE(…)` — loses click-to-filter (*"relies on a field created at query time"*) | `blankNull()` blanks display columns only; a filter column keeps its nulls, or is dropped where they dominate |
+| A pie's outside slice labels are dropped for small slices when the panel is short | `pie()` always draws a legend (`right`, size `l`), so every category is named somewhere |
+| On an ES\|QL Vega spec, `"domain": {"%timefilter%": true}` renders the bare "Error" | Echo `?_tstart` / `?_tend` after the `STATS` and draw them as an invisible mark, so the axis spans the whole window (vega/07) |
 | Metric items accept no per-item `color` | Styling lives at config root |
 | `dashboardLink` targets must already exist | Dashboards deploy in two passes |
 | Reporting API rejects `pngV2` / `printablePdfV2` | Verification drives Chromium directly |
@@ -246,15 +249,38 @@ in shared code rather than at call sites.
 - *Widths are roles.* Dates, counts, IPs and short enums have fixed widths from `COLUMNS`, on metrics as
   well as rows; text columns flex and share the rest. Lens hard-clips a cell without an ellipsis, so
   width is the only defence. Give a text column `sized()` only to stop a sibling taking all the slack.
+- *Narrow viewports.* A Lens width is absolute pixels, so `table()` budgets every table for a 1440px
+  viewport (a w-column panel's grid is w × 1324/48 − 24px there). When the fixed widths leave a text
+  column under 150px, they shrink toward their floors (dates never; counts to 72px, IPs to 118px; a `sized()` column
+  to 70%, or its own `min`). A table that cannot give its text columns ~120px even at its floors is listed as
+  an advisory by the layout check: it needs a wider panel or fewer columns. Render with
+  `AUDIT_VERIFY_WIDTH=1440` to see it.
 - *Visible rows.* Tables are compact density with one-line rows, and a trailing `| LIMIT n` is lowered
   to `fitRows(h)` (h=8 → 6, h=12 → 10, h=14 → 13) because a Lens table gives no cue that rows
-  continue. `{ scroll: true }` keeps the LIMIT when the title promises a count; `{ wrap: true }`
+  continue. Only a LIMIT that is the query's very last step is lowered, so per-row EVALs go before
+  the SORT/LIMIT. `{ scroll: true }` keeps the LIMIT when the title promises a count; `{ wrap: true }`
   gives auto-height rows for a column whose whole value matters.
+- *Empty cells.* A null prints as `-`. On a display column, end the query with `blankNull(col)` after
+  the `STATS` and it prints nothing. Never on a click-to-filter column: Lens refuses to filter on any
+  column the query assigns ("created at query time"), so a null there stays an underlined `-`. Where
+  those dominate, drop the column (00's Busiest identities has no Email column for that reason).
+- *Opaque identities.* An Identity that resolves to a bare id is a principal with no email or key name
+  — usually an organisation-level Cloud API key. `table()` appends that explanation to the description
+  of every table showing `actor`; Discover sessions with an Identity column say it themselves.
 
 **Charts — `xy()` / `bar()`.** A breakdown gets a legend (`legend: 'bottom' | 'right' | 'hidden'`).
 `bottom` is one line and clips past ~6 series: use `'right'`, or fold the tail into "other" in the
-query. `colors: { value: '#hex' }` pins a category to a colour so it matches across panels;
-`values: true` prints bar values.
+query. `colors: { value: '#hex' }` pins a category to a colour so it matches across panels — pin every
+value the query can produce, because an unpinned value takes the palette from its start, where a
+pinned one may already sit (shared maps: `CRED_TYPE_COLORS`, `SOURCE_COLORS`). End a breakdown query
+with a `SORT` on the breakdown (or an order column): Lens stacks and lists series in row order, and an
+unsorted `STATS` reshuffles them between refreshes. `values: true` labels only bars wide enough to hold
+the label, so it names the leaders, not the tail. `yScale: 'log'` for series that differ by orders of
+magnitude; `yTitle` for a measure the panel title does not name.
+
+**Pies — `pie()`.** Always a legend (`right`, size `l`, or `bottom`/`hidden`), slice labels `inside`
+(or `outside`), percentages at one decimal, and the `eui_amsterdam` palette with `colors` pinning —
+unpinned, slice colours follow slice order, which follows volume.
 
 **Markdown — `md()`.** A note's heading is its panel title. A leading `#`–`###` line is lifted into
 it; `####` is a bold run-in label (and what `section()` draws).
@@ -277,8 +303,9 @@ background (dark panels are ~`#111C2C`, light are white).
   (`symlog` only if zeros reach the chart, and never with `nice`). The 0.35 floor is what keeps the
   rarest cell ≥1.5:1 against both backgrounds — at the old 0.07 it was 1.1:1, invisible, and on the
   forensic panels the rare cell is the point. Legend: `"values"` at decades
-  (`[1, 10, 100, 1000, 10000]`) with `"labelExpr": "format(datum.value, '~s')"`; symlog places
-  default ticks linearly. Never a light-to-dark ramp, never a stop like `#0B1628` or `#1D2A3A`.
+  (`[1, 10, 100, 1000, 10000]`) with `"labelExpr": "format(datum.value, '~s')"`, filtered to the
+  decades inside the data's range — a `10k` entry when nothing reached 10,000 is a false reading, and
+  `tickCount` on a log scale draws one; symlog places default ticks linearly. Never a light-to-dark ramp, never a stop like `#0B1628` or `#1D2A3A`.
 - *Severity* (a second quantity on the same mark, as on the treemap and the rare-event scatter):
   `"range": ["#54B399", "#D6BF57", "#E7664C"]` over `[0, RISK_MAX]` — mid-tones only, monotone in
   meaning. Text drawn over a severity fill uses `#1D1E24` on the yellow and orange stops.
@@ -286,6 +313,9 @@ background (dark panels are ~`#111C2C`, light are white).
   #B9A888, #DA8B45, #AA6556, #E7664C`) — the same ten Lens draws breakdowns with, so a category
   pinned with `xy({ colors })` and the same category in Vega can match.
 - Legends sit outside the plot (`"orient": "bottom"` or `"right"`), never `bottom-right` inside it.
+- Rotated labels on a TOP axis use a positive `labelAngle` with `labelAlign: "right"`, so each ends at
+  its own column and runs inward: a negative angle runs the last label off the panel's right edge,
+  and no column count is safe from it (vega/04).
 
 **Vega empty states.** A selection that matches nothing must read as empty, not as a broken chart. Every
 spec says so in words — *No activity for this selection in this time range* (or *in the last 7 days*
@@ -314,6 +344,8 @@ legends over an empty domain, decade axes, solid placeholder cells, a flat line 
 ./audit --dashboards     Generate dashboards/*.json and deploy every dashboard
 ./audit --verify         Render every dashboard in Chromium and inspect for broken panels
                          AUDIT_VERIFY_THEME=light renders light mode (default: dark)
+                         AUDIT_VERIFY_RANGE=now-24h widens the window (default: now-1h)
+                         AUDIT_VERIFY_WIDTH=1440 narrows the viewport (default: 1920)
 ./audit --queries        List ES|QL queries registered on the project, and whether each is still
                          scanning. Check it before trusting any timing
 ./audit --deploy         Full pipeline
@@ -342,6 +374,9 @@ control bar that is not exactly `CONTROLS.length` wide, or a capture that never 
 viewport. Stuck loading states and panel counts are *recorded* in `report.json` but do not fail —
 they are noisy on a healthy dashboard. `AUDIT_VERIFY_THEME=light` renders light mode; the Vega
 specs are theme-aware and a dark-only verifier cannot see a regression in the other half.
+`AUDIT_VERIFY_WIDTH=1440` renders at a laptop viewport, where Lens' fixed pixel column widths clip what
+1920 does not (see *Presentation conventions*), and `AUDIT_VERIFY_RANGE=now-24h` renders a populated
+suite when synthetic traffic has been idle for the last hour.
 Three failures it was built to catch, all real:
 
 - a selector-based check reported zero broken panels while every Vega chart displayed

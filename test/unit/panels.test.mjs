@@ -6,7 +6,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  table, sized, filterable, label, humanise, fitRows, xy, bar, md, COLUMNS, PALETTE_ID,
+  table, sized, filterable, label, humanise, fitRows, xy, bar, md, pie, blankNull, gridPx, COLUMNS, PALETTE_ID,
+  OPAQUE_ID_NOTE,
 } from '../../scripts/lib/panels.mjs';
 import { buildAll } from '../../scripts/lib/definitions.mjs';
 import { sessionGrid } from '../../scripts/objects.mjs';
@@ -34,7 +35,7 @@ test('no table in the suite shows a raw dotted or snake_case header', () => {
 });
 
 test('table() labels without touching the filtered field, and sizes by role', () => {
-  const t = table(0, 0, 24, 12, 't', 'FROM x | LIMIT 5',
+  const t = table(0, 0, 48, 12, 't', 'FROM x | LIMIT 5',
     [filterable('attributes.user.email'), 'action', sized('name', 300, { label: 'Object' })], ['events', 'last_seen'], 'd');
   const [email, action, name] = t.config.rows;
   assert.deepEqual([email.column, email.label, email.click_filter], ['attributes.user.email', 'Email', true]);
@@ -48,6 +49,44 @@ test('a table whose every column is fixed lets its widest row column flex', () =
   const t = table(0, 0, 48, 12, 't', 'FROM x', [sized('actor', 200), sized('name', 400), 'verb'], ['events'], 'd');
   assert.equal(t.config.rows[1].width, undefined);
   assert.equal(t.config.rows[0].width, 200);
+});
+
+test('table() budgets fixed widths for a 1440px viewport, and flags a table it cannot rescue', () => {
+  assert.equal(gridPx(24), 638, 'measured: a 24-column table at 1440px has a 638px data grid');
+  const tight = table(0, 0, 15, 12, 't', 'q', ['location'], ['events', 'actors', 'ips'], 'd');
+  const w = tight.config.metrics.map((c) => c.width);
+  assert.ok(w.every((x) => x < 90 && x >= 72), `counts shrink toward their 72px floor: ${w}`);
+  assert.ok(gridPx(15) - w.reduce((a, b) => a + b, 0) >= 150, 'the text column gets its minimum');
+  assert.equal(tight.narrow1440, undefined);
+  // Dates never shrink; a table its floors cannot rescue is flagged for a layout decision.
+  const hopeless = table(0, 0, 12, 12, 't', 'q', ['actor'], ['first_seen', 'last_seen', 'events'], 'd');
+  assert.deepEqual(hopeless.config.metrics.map((c) => c.width), [190, 190, 72]);
+  assert.equal(hopeless.narrow1440, true);
+  assert.ok(!JSON.stringify(tight).includes('"min"'), 'floors never reach the API payload');
+  // Every table the suite ships either fits at 1440 or is flagged for a layout decision.
+  for (const [name, def] of Object.entries(buildAll())) {
+    for (const p of def.panels.filter((x) => x.config?.type === 'data_table' && !x.narrow1440)) {
+      const cols = [...p.config.rows, ...p.config.metrics];
+      const fixed = cols.filter((c) => c.width).reduce((a, c) => a + c.width, 0);
+      const flex = cols.filter((c) => !c.width).length;
+      assert.ok(!flex || (gridPx(p.grid.w) - fixed) / flex >= 120, `${name} "${p.config.title}" leaves its text columns under 120px at 1440`);
+    }
+  }
+});
+
+test('a table showing the resolved identity explains an opaque one; blankNull() blanks after the STATS', () => {
+  assert.ok(table(0, 0, 24, 12, 't', 'q', ['actor'], ['events'], 'Who.').config.description.endsWith(OPAQUE_ID_NOTE));
+  assert.equal(table(0, 0, 24, 12, 't', 'q', ['action'], ['events'], 'What.').config.description, 'What.');
+  assert.equal(blankNull('via_key', 'owner'), 'EVAL via_key = COALESCE(via_key, " "), owner = COALESCE(owner, " ")');
+  // A filter column must never be assigned in the query: Lens then refuses to filter on it.
+  for (const [name, def] of Object.entries(buildAll())) {
+    for (const p of def.panels.filter((x) => x.config?.type === 'data_table')) {
+      for (const c of p.config.rows.filter((r) => r.click_filter)) {
+        assert.doesNotMatch(p.config.data_source.query, new RegExp(`EVAL[^|]*\\b${c.column.replace(/\./g, '\\.')}\\s*=(?!=)`),
+          `${name} "${p.config.title}" assigns its filter column ${c.column}`);
+      }
+    }
+  }
 });
 
 test('fitRows() and the LIMIT clamp', () => {
@@ -69,6 +108,20 @@ test('xy() shows a legend exactly when there is a breakdown, on a distinct-hue p
   assert.equal(xy(0, 0, 24, 12, 't', 'q', 'e', 'd', { breakdown: 'v', legend: 'right' }).config.legend.position, 'right');
   assert.equal(bar(0, 0, 24, 12, 't', 'q', 'c', 'v', 'd', { values: true }).config.styling.bars.data_labels.visible, true);
   assert.throws(() => xy(0, 0, 24, 12, 't', 'q', 'e', 'd', { legend: 'inside' }));
+  const log = xy(0, 0, 24, 12, 't', 'q', 'e', 'd', { yScale: 'log', yTitle: 'Summed severity' });
+  assert.equal(log.config.axis.y.scale, 'log');
+  assert.deepEqual(log.config.axis.y.title, { visible: true, text: 'Summed severity' });
+  assert.deepEqual(xy(0, 0, 24, 12, 't', 'q', 'e', 'd').config.axis.y, { title: { visible: false } });
+});
+
+test('pie() always names its slices: a legend, inside labels, one-decimal percentages, pinned colours', () => {
+  const p = pie(0, 0, 12, 11, 't', 'q', 'slice', 'n', 'd', { donut: 's', colors: { A: '#54B399' } });
+  assert.deepEqual(p.config.legend, { visibility: 'visible', position: 'right', size: 'l' });
+  assert.deepEqual(p.config.styling, { labels: { visible: true, position: 'inside' },
+    values: { visible: true, mode: 'percentage', percent_decimals: 1 }, donut_hole: 's' });
+  assert.equal(p.config.group_by[0].color.palette, PALETTE_ID);
+  assert.deepEqual(p.config.group_by[0].color.mapping, [{ values: ['A'], color: { type: 'color_code', value: '#54B399' } }]);
+  assert.throws(() => pie(0, 0, 12, 11, 't', 'q', 's', 'n', 'd', { legend: 'top' }));
 });
 
 test('md() lifts a leading heading into the panel title', () => {

@@ -1,6 +1,6 @@
 {
   "title": "[Audit] Cross-space Kibana activity",
-  "description": "Which identities operate in which Kibana spaces. One row per identity: Spaces is how many distinct spaces they touched, and identities above 1 are the ones worth understanding.",
+  "description": "Which identities operate in which Kibana spaces. One row per identity: Spaces is how many distinct spaces they touched, and identities above 1 are the ones worth understanding. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id.",
   "esql": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE attributes.kibana.space.id IS NOT NULL | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | STATS events = COUNT(*), spaces = COUNT_DISTINCT(attributes.kibana.space.id), object_types = COUNT_DISTINCT(attributes.kibana.saved_object.type), space_list = VALUES(attributes.kibana.space.id) BY actor | SORT spaces DESC, events DESC | EVAL space_list = MV_CONCAT(MV_SORT(space_list), \", \") | RENAME actor AS Identity, spaces AS Spaces, space_list AS `Space list`, events AS Events, object_types AS `Object types`",
   "columns": [
     "Identity",

@@ -129,6 +129,7 @@ export async function run() {
     throw new Error(`${layout.problems.length} structural problem(s) — fix before deploying`);
   }
   success(`${layout.dashboards} dashboards, ${layout.panelCount} panels, grid clean`);
+  layout.rows.filter((r) => r.includes('advisory')).forEach((r) => warn(r));
 
   const items = gatherQueries();
   const timings = [];

@@ -14,17 +14,33 @@ FROM logs-elastic_cloud.serverless_audit.otel-default
 `attributes.user.name` is a numeric ID (`1234567890`), not a name. Human identity is in
 `attributes.user.email`; machine identity in `attributes.api_key.name`.
 
-`actor_org` splits traffic by the email on the event: `Elastic` is an `@elastic.co` address, `tenant`
-is any other address (including API-key traffic, which carries its creator's email), and `machine`
-is traffic with no email at all. This `tenant` is not the same as `actor_scope`'s `tenant` below,
-which means "neither platform automation nor unauthenticated".
+`actor_org` splits traffic by the email on the event: `Elastic` is an `@elastic.co` address, `Tenant`
+is any other address (including API-key traffic, which carries its creator's email), and `Machine`
+is traffic with no email at all. Its values are title case because they are display values — a pie
+prints them as they are. This `Tenant` is not the same as `actor_scope`'s `tenant` below, which means
+"neither platform automation nor unauthenticated".
 
 ```esql
 | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, "<anonymous>"),
        actor_kind = CASE(attributes.user.email IS NOT NULL, "human", "service"),
-       actor_org  = CASE(attributes.user.email IS NULL, "machine",
-                         attributes.user.email LIKE "*@elastic.co", "Elastic", "tenant")
+       actor_org  = CASE(attributes.user.email IS NULL, "Machine",
+                         attributes.user.email LIKE "*@elastic.co", "Elastic", "Tenant")
 ```
+
+`actor_org` is a two-condition `CASE`, so it runs after a `STATS` grouped on `attributes.user.email`,
+never per event (see *Query shape decides cost* below). `actor_kind` stays a one-condition cut for the
+same reason; a panel that shows the kind refines it on the grouped rows with `SCOPE`'s vocabulary, so
+`<anonymous>` reads `unauthenticated` and Elastic's own service accounts read `platform`, not `service`:
+
+```esql
+| EVAL actor_kind = CASE(actor IN (<unauthenticated principals>), "unauthenticated",
+                         actor IN (<platform principals>), "platform", actor_kind)
+```
+
+An identity that resolves to a 20-character opaque id is the end of the ladder, not a defect: a
+principal whose events carry no email and no key name, usually an organisation-level Elastic Cloud API
+key, which the audit stream records only by id. Every table that shows `actor` says so in its
+description (`table()` appends it).
 
 ## Noise gate — ON by default
 
@@ -172,8 +188,9 @@ carry the highest weight, so unsplit it can top the leaderboard.
 
 ```esql
 | EVAL actor_scope = CASE(actor IN ("elastic.maintenance","autoscaling","elasticsearch-controller",
-    "elastic/fleet-server"), "platform",
-    actor IN ("<anonymous>","<unauthenticated-cloud-access-token>","<unauthenticated-saml-user>"), "unauthenticated",
+    "elastic/fleet-server","elastic/kibana"), "platform",
+    actor IN ("<anonymous>","<unauthenticated-cloud-access-token>","<unauthenticated-saml-user>",
+    "<unauthenticated-cloud-api-key>"), "unauthenticated",
     "tenant")
 ```
 
@@ -274,6 +291,19 @@ credential dimension any fan-out on Kibana data, and it is the split between a p
 ```
 
 Derived, so never click-filter on it. To pin a credential, filter on either source field.
+
+`attributes.authentication.type` in words, for any chart that breaks down by it (01's line chart and
+the vega/02 matrix embed this text; the drift check pins vega/02). Apply it after a `STATS` that groups
+on the raw field, and pin a colour for every value it can produce (`CRED_TYPE_COLORS`): an unpinned
+breakdown value takes the palette from its start, which a pinned value already holds.
+
+```esql
+| EVAL auth = CASE(attributes.authentication.type == "api_key", "API key",
+    attributes.authentication.type == "token", "Token", attributes.authentication.type == "realm", "Realm",
+    attributes.authentication.type == "saml", "SAML",
+    attributes.authentication.type == "anonymous", "Anonymous", attributes.authentication.type == "internal", "Internal",
+    attributes.authentication.type)
+```
 
 ## Did the event touch an object?
 

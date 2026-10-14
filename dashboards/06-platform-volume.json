@@ -494,7 +494,7 @@
             "type": "bar_stacked",
             "data_source": {
               "type": "esql",
-              "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS events = COUNT(*) BY BUCKET(@timestamp, 75, ?_tstart, ?_tend), source = resource.attributes.service.name | EVAL source = CASE(source == \"serverless-elasticsearch\", \"Elasticsearch\", source == \"serverless-kibana\", \"Kibana\", source)"
+              "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS events = COUNT(*) BY BUCKET(@timestamp, 75, ?_tstart, ?_tend), source = resource.attributes.service.name | EVAL source = CASE(source == \"serverless-elasticsearch\", \"Elasticsearch\", source == \"serverless-kibana\", \"Kibana\", source) | SORT source"
             },
             "x": {
               "column": "BUCKET(@timestamp, 75, ?_tstart, ?_tend)",
@@ -606,7 +606,7 @@
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS events = COUNT(*), via_key = COUNT(attributes.api_key.name), actions = COUNT_DISTINCT(attributes.event.action) BY actor, actor_kind | EVAL actor_kind = CASE(actor IN (\"<anonymous>\",\"<unauthenticated-cloud-access-token>\",\"<unauthenticated-saml-user>\"), \"unauthenticated\", actor IN (\"elastic.maintenance\",\"autoscaling\",\"elasticsearch-controller\",\"elastic/fleet-server\"), \"platform\", actor_kind) | SORT events DESC | LIMIT 10"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS events = COUNT(*), via_key = COUNT(attributes.api_key.name), actions = COUNT_DISTINCT(attributes.event.action) BY actor, actor_kind | EVAL actor_kind = CASE(actor IN (\"<anonymous>\",\"<unauthenticated-cloud-access-token>\",\"<unauthenticated-saml-user>\",\"<unauthenticated-cloud-api-key>\"), \"unauthenticated\", actor IN (\"elastic.maintenance\",\"autoscaling\",\"elasticsearch-controller\",\"elastic/fleet-server\",\"elastic/kibana\"), \"platform\", actor_kind) | SORT events DESC | LIMIT 10"
         },
         "styling": {
           "density": {

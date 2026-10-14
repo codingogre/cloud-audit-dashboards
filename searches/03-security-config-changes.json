@@ -1,6 +1,6 @@
 {
   "title": "[Audit] Security configuration changes",
-  "description": "Raw security_config_change payloads, one row per event, newest first — API key invalidation, user profile writes, role and privilege edits. The field is a JSON string, shown verbatim. client.ip is not kept: Elasticsearch does not record it on security config events.",
+  "description": "Raw security_config_change payloads, one row per event, newest first — API key invalidation, user profile writes, role and privilege edits. The field is a JSON string, shown verbatim. client.ip is not kept: Elasticsearch does not record it on security config events. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id.",
   "esql": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE attributes.elasticsearch.audit.security_config_change IS NOT NULL | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | KEEP @timestamp, actor, attributes.event.action, attributes.elasticsearch.audit.security_config_change | SORT @timestamp DESC | RENAME @timestamp AS Time, actor AS Identity, attributes.event.action AS Action, attributes.elasticsearch.audit.security_config_change AS Change",
   "columns": [
     "Time",

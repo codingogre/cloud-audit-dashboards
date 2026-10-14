@@ -1,6 +1,6 @@
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
-  "description": "The 10 busiest identities across the top, and the 25 index families they read most down the side; a more solid cell is more requests, on a log scale. A data stream and its backing indices are one family, as is a run of dated daily indices; wildcard and date-math expressions are left out. A blank cell means that identity did not touch that family in range — or touched it too little to be among the 500 busiest identity/family pairs. A request naming several indices counts once per index.",
+  "description": "The 10 busiest identities across the top, and the 25 index families they read most down the side; a more solid cell is more requests, on a log scale. A data stream and its backing indices are one family, as is a run of dated daily indices; wildcard and date-math expressions are left out. A blank cell means that identity did not touch that family in range — or touched it too little to be among the 500 busiest identity/family pairs. A request naming several indices counts once per index. An identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id.",
   "title": { "text": { "expr": "length(data('rows')) ? '' : 'No activity for this selection in this time range'" } },
   "autosize": {
     "type": "fit",

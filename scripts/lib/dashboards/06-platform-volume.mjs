@@ -1,6 +1,6 @@
 /** 06 Platform Volume — see scripts/lib/definitions.mjs for how the suite is assembled. */
 import {
-  IDX, ACTOR, NOISE, BAND, TIME, BUCKET, UNAUTH_ACTORS, PLATFORM_ACTORS, PALETTE,
+  IDX, ACTOR, NOISE, BAND, TIME, BUCKET, KIND_REFINE, SOURCE_LABEL, SOURCE_COLORS, PALETTE,
   dash, kpi, xy, table, vega, md, filterable, resetIds
 } from '../panels.mjs';
 
@@ -98,22 +98,22 @@ export function build() {
       'events', 'Each bucket’s events as 100%, split by band. A rising Signal share means activity, not housekeeping, is driving the volume.',
       { kind: 'bar_percentage', breakdown: 'band', colors: BAND_COLORS }),
     // Grouped on the raw keyword, relabelled after: the two-condition CASE runs on the grouped rows,
-    // not on every event (panels.mjs QUERY SHAPE rules 1–2).
+    // not on every event (panels.mjs QUERY SHAPE rules 1–2). Same labels, colours and order as 00's.
     xy(24, 25, 24, 12, 'Audit volume by source service',
-      `FROM ${IDX} | ${TIME} | STATS events = COUNT(*) BY ${BUCKET}, source = resource.attributes.service.name | EVAL source = CASE(source == "serverless-elasticsearch", "Elasticsearch", source == "serverless-kibana", "Kibana", source)`,
+      `FROM ${IDX} | ${TIME} | STATS events = COUNT(*) BY ${BUCKET}, source = resource.attributes.service.name | ${SOURCE_LABEL}`,
       'events', 'Elasticsearch versus Kibana audit volume over time. Elasticsearch audits every transport action, so it usually dwarfs Kibana.',
-      { breakdown: 'source', colors: { Elasticsearch: PALETTE[3], Kibana: PALETTE[2] } }),
+      { breakdown: 'source', colors: SOURCE_COLORS }),
     table(0, 37, 24, 12, 'Noisiest transport actions',
       `FROM ${IDX} | ${TIME} | WHERE attributes.elasticsearch.audit.action IS NOT NULL | STATS events = COUNT(*), actors = COUNT_DISTINCT(COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name)) BY attributes.elasticsearch.audit.action | SORT events DESC | LIMIT 15`,
       ['attributes.elasticsearch.audit.action'], ['events', 'actors'],
       'Highest-volume Elasticsearch transport actions, unfiltered, with the number of identities behind each. ES|QL’s own fan-out (esql/compute, search_shards, field_caps[n]) is currently classed as Signal, and much of it is dashboards querying this stream.'),
-    // Kind is relabelled after the STATS, where it costs nothing: ACTOR's two-way CASE calls an
-    // unauthenticated principal a "service", which contradicts SCOPE's vocabulary on every other
-    // dashboard. via_key is COUNT(field) — non-null values — so it is the share of a row's volume that
+    // Kind is refined after the STATS (KIND_REFINE), where it costs nothing: ACTOR's two-way CASE calls
+    // an unauthenticated principal and Elastic's own service accounts "service", which contradicts
+    // SCOPE's vocabulary on every other dashboard. via_key is COUNT(field) — non-null values — so it is the share of a row's volume that
     // came through a named key, which is what the note's creator-stamping caveat asks the reader to
     // check, without splitting a person's row by key (measured: same cost as without it).
     table(24, 37, 24, 12, 'Highest-volume identities',
-      `FROM ${IDX} | ${TIME} | ${ACTOR} | STATS events = COUNT(*), via_key = COUNT(attributes.api_key.name), actions = COUNT_DISTINCT(attributes.event.action) BY actor, actor_kind | EVAL actor_kind = CASE(actor IN (${UNAUTH_ACTORS}), "unauthenticated", actor IN (${PLATFORM_ACTORS}), "platform", actor_kind) | SORT events DESC | LIMIT 15`,
+      `FROM ${IDX} | ${TIME} | ${ACTOR} | STATS events = COUNT(*), via_key = COUNT(attributes.api_key.name), actions = COUNT_DISTINCT(attributes.event.action) BY actor, actor_kind | ${KIND_REFINE} | SORT events DESC | LIMIT 15`,
       ['actor', 'actor_kind'], ['events', { column: 'via_key', label: 'Via API key', width: 105 }, 'actions'],
       'Unfiltered volume leaderboard — this is where the machine traffic shows up. An opaque id is a principal with no email or key name, usually an organisation-level Elastic Cloud API key, which the stream records only by id (often the credential running this suite). Via API key: how many of the row’s events came through a named API key.'),
   ];

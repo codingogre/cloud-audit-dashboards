@@ -340,17 +340,17 @@
         "metrics": [
           {
             "label": "Events",
-            "width": 90,
+            "width": 72,
             "column": "events"
           },
           {
             "label": "Identities",
-            "width": 90,
+            "width": 72,
             "column": "actors"
           },
           {
             "label": "Client IPs",
-            "width": 90,
+            "width": 72,
             "column": "ips"
           }
         ]
@@ -407,7 +407,7 @@
           {
             "label": "Reading",
             "column": "verdict",
-            "width": 115
+            "width": 100
           },
           {
             "label": "Countries seen",
@@ -417,22 +417,22 @@
         "metrics": [
           {
             "label": "Countries",
-            "width": 90,
+            "width": 72,
             "column": "countries"
           },
           {
             "label": "Cities",
-            "width": 90,
+            "width": 72,
             "column": "cities"
           },
           {
             "label": "Client IPs",
-            "width": 90,
+            "width": 72,
             "column": "ips"
           },
           {
             "label": "Events",
-            "width": 90,
+            "width": 72,
             "column": "events"
           }
         ]
@@ -469,7 +469,7 @@
         "rows": [
           {
             "label": "Client IP",
-            "width": 125,
+            "width": 123,
             "column": "client.ip",
             "click_filter": true
           },
@@ -481,12 +481,12 @@
         "metrics": [
           {
             "label": "Events",
-            "width": 90,
+            "width": 87,
             "column": "events"
           },
           {
             "label": "Identities",
-            "width": 90,
+            "width": 87,
             "column": "actors"
           },
           {
@@ -557,22 +557,22 @@
             }
           }
         ],
+        "legend": {
+          "visibility": "visible",
+          "position": "right",
+          "size": "l"
+        },
         "styling": {
-          "donut_hole": "m",
+          "labels": {
+            "visible": true,
+            "position": "outside"
+          },
           "values": {
             "visible": true,
             "mode": "percentage",
             "percent_decimals": 1
           },
-          "labels": {
-            "visible": true,
-            "position": "outside"
-          }
-        },
-        "legend": {
-          "visibility": "visible",
-          "position": "right",
-          "size": "l"
+          "donut_hole": "m"
         }
       }
     },

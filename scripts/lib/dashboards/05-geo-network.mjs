@@ -37,35 +37,14 @@ geo-resolved at ingest, so older events have none. \`source.ip\` is only a proxy
 \`100.64.x.x\` or \`10.x.x.x\` addresses no geoip database can place.`;
 
 /**
- * Pie slice colours, set on the panel here because pie() takes no colour option. The default
- * palette drew "resolved" and "not geolocatable" as two tints of one teal, so the success/failure
- * split carried no colour meaning; these are PALETTE hues, readable on both backgrounds.
+ * Slice names, pinned to PALETTE hues so resolved and unplaceable read as different things on both
+ * themes (the default palette drew them as two tints of one teal). "No client IP" is a ~2% sliver
+ * whose outside label Lens drops at this height, so pie()'s legend is what names it.
  */
 const RESOLVED = 'Resolved';
 const UNPLACEABLE = 'IP not geolocatable';
 const NO_IP = 'No client IP';
-const geoPie = (p) => {
-  Object.assign(p.config, {
-    // A legend as well as slice labels: "No client IP" is a ~2% sliver that lands at the bottom of
-    // the ring, and at h=9 Lens drops its outside label for want of room below — with the legend
-    // hidden that category vanished from the panel. The API's pie legend takes no values option
-    // (`values` is rejected), so the legend names it and its share is on hover. Size 'l' because
-    // the default width cut "IP not geolocatable" to "IP not geolo…" (the API takes s/m/l/xl/auto).
-    legend: { visibility: 'visible', position: 'right', size: 'l' },
-    styling: {
-      ...p.config.styling,
-      // Lens defaulted to 2 decimals on some slices and 1 on others (39.3% beside 58.29%).
-      values: { visible: true, mode: 'percentage', percent_decimals: 1 },
-      labels: { visible: true, position: 'outside' },
-    },
-  });
-  p.config.group_by[0].color = {
-    mode: 'categorical', palette: 'eui_amsterdam',
-    mapping: [[RESOLVED, PALETTE[0]], [UNPLACEABLE, PALETTE[5]], [NO_IP, PALETTE[1]]]
-      .map(([v, hex]) => ({ values: [v], color: { type: 'color_code', value: hex } })),
-  };
-  return p;
-};
+const GEO_COLORS = { [RESOLVED]: PALETTE[0], [UNPLACEABLE]: PALETTE[5], [NO_IP]: PALETTE[1] };
 
 export function build() {
   resetIds();
@@ -109,7 +88,7 @@ export function build() {
     // traveller still sorts to the top at any volume.
     table(0, 18, 24, 12, 'Countries per person (impossible travel)',
       `FROM ${IDX} | ${TIME} | WHERE attributes.user.email IS NOT NULL AND client.geo.country_iso_code IS NOT NULL | STATS countries = COUNT_DISTINCT(client.geo.country_iso_code), cities = COUNT_DISTINCT(client.geo.city_name), ips = COUNT_DISTINCT(client.ip), events = COUNT(*), names = VALUES(client.geo.country_name) BY attributes.user.email | EVAL verdict = CASE(countries > 1, "Check travel", "One country"), seen_from = MV_CONCAT(MV_SORT(names), ", ") | SORT countries DESC, events DESC | LIMIT 15`,
-      [filterable('attributes.user.email'), sized('verdict', 115, { label: 'Reading' }), { column: 'seen_from', label: 'Countries seen' }],
+      [filterable('attributes.user.email'), sized('verdict', 115, { label: 'Reading', min: 100 }), { column: 'seen_from', label: 'Countries seen' }],
       ['countries', 'cities', { column: 'ips', label: 'Client IPs' }, 'events'],
       'People (identities with an email) whose traffic resolved to a country in range, most countries first. Two or more countries inside one window is the classic impossible-travel indicator — compare "Countries seen" with where the person actually is. "One country" on every row is the clean state. Service credentials are excluded, since multi-region is normal for machines, and a person whose every address is unplaceable (CGNAT, private egress) cannot appear here — see Geo coverage. Click an email to scope the suite to that person.'),
     table(24, 18, 24, 12, 'Client IP footprint',
@@ -119,10 +98,11 @@ export function build() {
     // Three field counts, then one row per slice. The per-event CASE this replaces took ~1.9s at 1h;
     // COUNT(field) is answered from doc values and costs what the Geo coverage tile does (~40ms).
     // The slices are the same partition: an event with no client IP cannot have a country.
-    geoPie(pie(0, 30, 24, 9, 'Geo resolution of audited events',
+    pie(0, 30, 24, 9, 'Geo resolution of audited events',
       `FROM ${IDX} | ${TIME} | STATS total = COUNT(*), with_ip = COUNT(client.ip), resolved = COUNT(client.geo.country_iso_code) | EVAL geo_status = ["${RESOLVED}", "${UNPLACEABLE}", "${NO_IP}"] | MV_EXPAND geo_status | EVAL events = CASE(geo_status == "${RESOLVED}", resolved, geo_status == "${NO_IP}", total - with_ip, with_ip - resolved) | KEEP geo_status, events | SORT events DESC`,
       'geo_status', 'events',
-      `The denominator behind the map: only the "${RESOLVED}" slice appears on any geographic panel. "${UNPLACEABLE}" means a client IP was forwarded but sits in a range no geoip database can place (see the table beside). "${NO_IP}" is mostly Elasticsearch transport traffic, which carries no forwarded address at all.`)),
+      `The denominator behind the map: only the "${RESOLVED}" slice appears on any geographic panel. "${UNPLACEABLE}" means a client IP was forwarded but sits in a range no geoip database can place (see the table beside). "${NO_IP}" is mostly Elasticsearch transport traffic, which carries no forwarded address at all.`,
+      { labels: 'outside', colors: GEO_COLORS }),
     // h=9 rather than 12: there are only five address classes, and fitRows(9) is 7, so every row the
     // query can return is visible and the panel no longer carries ~200px of blank under one row.
     table(24, 30, 24, 9, 'Why client IPs do not resolve',

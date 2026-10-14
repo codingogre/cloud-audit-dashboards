@@ -612,7 +612,7 @@
         "rows": [
           {
             "label": "Client IP",
-            "width": 125,
+            "width": 120,
             "column": "client.ip",
             "click_filter": true
           },
@@ -622,14 +622,14 @@
           },
           {
             "label": "Country",
-            "width": 105,
+            "width": 97,
             "column": "country"
           }
         ],
         "metrics": [
           {
             "label": "Events",
-            "width": 90,
+            "width": 79,
             "column": "events"
           },
           {
@@ -739,7 +739,7 @@
       "config": {
         "ref_id": "cloud-audit-search-09-session-reconstruction",
         "title": "Session records",
-        "description": "The raw Kibana events behind every panel above, newest first, with full session and object ids and the message Kibana wrote."
+        "description": "The raw Kibana events behind every panel above, newest first, with full session and object ids and the message Kibana wrote. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id."
       }
     }
   ]

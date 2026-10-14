@@ -89,7 +89,8 @@ export function build() {
     table(24, 32, 24, 12, 'Dashboards, SLOs and alert rules touched',
       `FROM ${IDX} | ${TIME} | ${KIB} | ${NOT_HTTP} | ${OBJ_GROK} | ${OBJ_NAME} | ${EXEC_FLAG} | ${ACTOR} | STATS n = COUNT(*), last_ts = MAX(@timestamp) BY actor, ${CHANGED_KEYS}, obj_name, is_exec | ${CHANGED_DERIVE} | WHERE obj_type IN ("dashboard","slo","alert","alerting_rule","tag","index-pattern","workflow","agent-builder-agent","agent-builder-tool","ml-job") | STATS events = SUM(n), last_seen = MAX(last_ts) BY actor, verb, type = obj_type, name = obj_name, is_exec | SORT last_seen DESC | LIMIT 10 | ${EXEC_LABEL}`,
       // Half width: every pixel the fixed columns do not need goes to Object, the column that clipped.
-      [sized('actor', 175), sized('verb', 80), sized('type', 125, { label: 'Object type' }), sized('name', 250, { label: 'Object' })],
+      // Identity keeps its width at a narrow viewport (min): an email cut short names nobody.
+      [sized('actor', 175, { min: 160 }), sized('verb', 80), sized('type', 125, { label: 'Object type' }), sized('name', 250, { label: 'Object' })],
       [sized('events', 70), 'last_seen'],
       'Audit trail for the high-value object types only: who touched which dashboard, SLO, rule, workflow or ML job, and when. Both `alert` and `alerting_rule` are included, because Kibana records the same rule under either type depending on which code path audited it.'),
     bar(0, 44, 12, 11, 'Object types accessed',

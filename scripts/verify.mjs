@@ -55,14 +55,24 @@ export async function run(argv = []) {
   const { chromium } = loadPlaywright();
   const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+/, '').replace('T', '-');
   const theme = process.env.AUDIT_VERIFY_THEME === 'light' ? 'light' : 'dark';
+  /**
+   * The window and the viewport are overridable because each hides a different class of defect. The
+   * default now-1h is what a viewer opens, but when synthetic traffic is idle it renders half the suite
+   * empty: AUDIT_VERIFY_RANGE=now-24h shows the panels populated. And Lens column widths are absolute
+   * pixels, so truncation that a 1920px pass never sees appears at AUDIT_VERIFY_WIDTH=1440.
+   */
+  const range = process.env.AUDIT_VERIFY_RANGE || 'now-1h';
+  if (!/^now-\d+[smhdwMy]$/.test(range)) throw new Error(`AUDIT_VERIFY_RANGE "${range}" is not a relative range like now-24h`);
+  const width = Number(process.env.AUDIT_VERIFY_WIDTH || 1920);
+  if (!Number.isInteger(width) || width < 800 || width > 3840) throw new Error(`AUDIT_VERIFY_WIDTH "${process.env.AUDIT_VERIFY_WIDTH}" is not a pixel width between 800 and 3840`);
   const out = argv[0] || join(ROOT, 'build', `render-${stamp}-${theme}`);
   mkdirSync(out, { recursive: true });
   info(`rendering to ${out}`);
 
   const ids = Object.keys(buildAll()).map((n) => nsId(`cloud-audit-${n}`));
   const browser = await chromium.launch({ args: ['--no-sandbox', '--disable-dev-shm-usage'] });
-  const ctx = await browser.newContext({ viewport: { width: 1920, height: 1400 }, colorScheme: theme });
-  info(`colour scheme: ${theme}`);
+  const ctx = await browser.newContext({ viewport: { width, height: 1400 }, colorScheme: theme });
+  info(`colour scheme: ${theme} · window: ${range} → now · viewport: ${width}px`);
 
   const origin = new URL(cfg.kibana).origin;
   await ctx.route('**/*', async (route) => {
@@ -84,7 +94,7 @@ export async function run(argv = []) {
     });
     page.on('pageerror', (e) => errs.push({ text: `uncaught: ${String(e).slice(0, 300)}`, url: '' }));
     try {
-      await page.goto(`${cfg.kbs}/app/dashboards#/view/${id}?_g=(time:(from:now-1h,to:now))`,
+      await page.goto(`${cfg.kbs}/app/dashboards#/view/${id}?_g=(time:(from:${range},to:now))`,
         { waitUntil: 'domcontentloaded', timeout: 90000 });
       await page.waitForTimeout(20000);
       // Kibana scrolls an INNER container, so document.body.scrollHeight is only the viewport
@@ -119,7 +129,7 @@ export async function run(argv = []) {
       const measured = Math.max(h, h2);
       // Grow the viewport to the measured content so the capture is genuinely full-page.
       const shot = Math.min(Math.max(measured + 120, 1400), 12000);
-      await page.setViewportSize({ width: 1920, height: shot });
+      await page.setViewportSize({ width, height: shot });
       await page.waitForTimeout(18000);
       const stats = await page.evaluate(() => {
         const txt = document.body.innerText;
@@ -161,6 +171,8 @@ export async function run(argv = []) {
       report[report.length - 1].measuredPx = measured;
       report[report.length - 1].truncated = truncated;
       report[report.length - 1].theme = theme;
+      report[report.length - 1].range = range;
+      report[report.length - 1].width = width;
       // A capture that never grew past the viewport means the scroller selector stopped
       // matching — that is exactly how this script was silently blind before, so fail loud.
       if (stats.brokenPanels || stats.vegaErrors.length || stats.rawStyleLeak || stats.controls !== CONTROLS.length

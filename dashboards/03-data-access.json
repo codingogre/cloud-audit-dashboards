@@ -421,7 +421,7 @@
       "config": {
         "ref_id": "cloud-audit-vega-04-actor-index-matrix",
         "title": "Who reads which index family",
-        "description": "The 10 busiest identities across the top, and the 25 index families they read most down the side; a more solid cell is more requests, on a log scale. A data stream and its backing indices are one family, as is a run of dated daily indices; wildcard and date-math expressions are left out. A blank cell means that identity did not touch that family in range — or touched it too little to be among the 500 busiest identity/family pairs. A request naming several indices counts once per index."
+        "description": "The 10 busiest identities across the top, and the 25 index families they read most down the side; a more solid cell is more requests, on a log scale. A data stream and its backing indices are one family, as is a run of dated daily indices; wildcard and date-math expressions are left out. A blank cell means that identity did not touch that family in range — or touched it too little to be among the 500 busiest identity/family pairs. A request naming several indices counts once per index. An identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id."
       }
     },
     {
@@ -536,7 +536,7 @@
       },
       "config": {
         "title": "Denied requests",
-        "description": "Who was refused, what they asked for and on which index — newest first. This is the failure slice the old outcome donut drew as a hairline. Index \"—\" is a cluster-level request; <anonymous> with action \"—\" is an HTTP call that carried no credentials. A request naming several indices shows once per index. Empty means nothing was denied in range.",
+        "description": "Who was refused, what they asked for and on which index — newest first. This is the failure slice the old outcome donut drew as a hairline. Index \"—\" is a cluster-level request; <anonymous> with action \"—\" is an HTTP call that carried no credentials. A request naming several indices shows once per index. Empty means nothing was denied in range. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
@@ -565,13 +565,13 @@
           {
             "label": "Transport action",
             "column": "attributes.elasticsearch.audit.action",
-            "width": 290
+            "width": 234
           }
         ],
         "metrics": [
           {
             "label": "Events",
-            "width": 90,
+            "width": 78,
             "column": "events"
           },
           {
@@ -593,7 +593,7 @@
       },
       "config": {
         "title": "⚠️ System and hidden index access",
-        "description": "Who touched system and hidden indices — Kibana internals, the security index, alerting and SLO data — one row per identity, index group (.alerts*, .slo*, .kibana*…) and action. `Indices` says how many real indices the row covers; the Discover session below names each one. Sorted by most recent, not by volume: sorting by volume buries a one-off read under routine polling. Backing indices of ordinary data streams (.ds-logs-…) and shard-level copies of a request are left out. Expected from Kibana and platform automation; unexpected from anyone else.",
+        "description": "Who touched system and hidden indices — Kibana internals, the security index, alerting and SLO data — one row per identity, index group (.alerts*, .slo*, .kibana*…) and action. `Indices` says how many real indices the row covers; the Discover session below names each one. Sorted by most recent, not by volume: sorting by volume buries a one-off read under routine polling. Backing indices of ordinary data streams (.ds-logs-…) and shard-level copies of a request are left out. Expected from Kibana and platform automation; unexpected from anyone else. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
@@ -655,7 +655,7 @@
       "config": {
         "ref_id": "cloud-audit-search-05-system-index-access",
         "title": "System index access",
-        "description": "The newest 1,000 requests against a system or hidden index, one row per index named, newest first. It stops at 1,000, so it can hold fewer rows than the System index access tile counts."
+        "description": "The newest 1,000 requests against a system or hidden index, one row per index named, newest first. It stops at 1,000, so it can hold fewer rows than the System index access tile counts. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id."
       }
     }
   ]
