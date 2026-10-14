@@ -1,5 +1,6 @@
 {
   "$schema": "https://vega.github.io/schema/vega/v5.json",
+  "description": "Top 40 identities by signal volume, one tile per identity, in a block per kind. Area grows with the square root of event volume and every tile gets a minimum share so its name stays readable; colour is accumulated severity. Grouped on raw fields first and resolved afterwards, so an identity whose events disagree about its kind is still one tile, in its most specific block.",
   "autosize": {
     "type": "fit",
     "contains": "padding"
@@ -10,14 +11,45 @@
       "name": "raw",
       "url": {
         "%type%": "esql",
-        "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE (attributes.elasticsearch.audit.action IS NULL OR NOT (attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\") OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\")) AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"authentication_success\",\"connection_granted\"))) | EVAL actor = CASE(attributes.api_key.name IS NOT NULL, attributes.api_key.name, COALESCE(attributes.user.email, attributes.user.name, \"<anonymous>\")), actor_kind = CASE(attributes.api_key.name IS NOT NULL, \"service\", attributes.user.email IS NOT NULL, \"human\", attributes.user.domain == \"_cloud_api_key\", \"cloud API key\", \"unattributed\"), owner = CASE(attributes.api_key.name IS NOT NULL, COALESCE(attributes.user.email, attributes.user.name), null) | EVAL risk = CASE(attributes.event.action == \"invalidate_apikeys\", 45, attributes.event.action == \"anonymous_access_denied\", 35, attributes.elasticsearch.audit.security_config_change IS NOT NULL, 50, attributes.event.outcome == \"failure\", 40, (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) AND attributes.event.action IN (\"workflow_run\",\"workflow_test\",\"workflow_execution_cancel\"), 10, (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) AND (attributes.event.type == \"deletion\" OR attributes.event.action == \"rule_disable\"), 30, (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))), 25, 0) | STATS events = COUNT(*), severity = SUM(risk), scoring = COUNT(CASE(risk > 0, 1, null)) BY actor, actor_kind, owner | SORT events DESC | LIMIT 40",
+        "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE (attributes.elasticsearch.audit.action IS NULL OR NOT (attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\") OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\")) AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"authentication_success\",\"connection_granted\"))) | EVAL risk = CASE(attributes.event.action == \"invalidate_apikeys\", 45, attributes.event.action == \"anonymous_access_denied\", 35, attributes.elasticsearch.audit.security_config_change IS NOT NULL, 50, attributes.event.outcome == \"failure\", 40, (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) AND attributes.event.action IN (\"workflow_run\",\"workflow_test\",\"workflow_execution_cancel\"), 10, (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) AND (attributes.event.type == \"deletion\" OR attributes.event.action == \"rule_disable\"), 30, (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))), 25, 0) | STATS events = COUNT(*), severity = SUM(risk), scoring = COUNT(CASE(risk > 0, 1, null)) BY attributes.api_key.name, attributes.user.email, attributes.user.name, attributes.user.domain | EVAL actor = CASE(attributes.api_key.name IS NOT NULL, attributes.api_key.name, COALESCE(attributes.user.email, attributes.user.name, \"<anonymous>\")), kind_rank = CASE(attributes.api_key.name IS NOT NULL, 4, attributes.user.email IS NOT NULL, 3, attributes.user.domain == \"_cloud_api_key\", 2, 1), owner = CASE(attributes.api_key.name IS NOT NULL, COALESCE(attributes.user.email, attributes.user.name), null) | STATS events = SUM(events), severity = SUM(severity), scoring = SUM(scoring), kind_rank = MAX(kind_rank), owner = MAX(owner) BY actor | EVAL actor_kind = CASE(kind_rank == 4, \"named API key\", kind_rank == 3, \"person\", kind_rank == 2, \"cloud API key\", \"unattributed\") | SORT events DESC | LIMIT 40 | KEEP actor, actor_kind, owner, events, severity, scoring",
         "%timefield%": "@timestamp",
         "%context%": true
       }
     },
     {
-      "name": "tree",
+      "name": "sized",
       "source": "raw",
+      "transform": [
+        {
+          "type": "formula",
+          "as": "root",
+          "expr": "sqrt(datum.events)"
+        },
+        {
+          "type": "joinaggregate",
+          "ops": [
+            "sum",
+            "count"
+          ],
+          "fields": [
+            "root",
+            "root"
+          ],
+          "as": [
+            "root_total",
+            "n"
+          ]
+        },
+        {
+          "type": "formula",
+          "as": "area",
+          "expr": "max(datum.root, datum.root_total * 0.5 / datum.n)"
+        }
+      ]
+    },
+    {
+      "name": "tree",
+      "source": "sized",
       "transform": [
         {
           "type": "nest",
@@ -28,32 +60,48 @@
         },
         {
           "type": "treemap",
-          "field": "events",
+          "field": "area",
           "sort": {
             "field": "value",
             "order": "descending"
           },
           "round": true,
           "method": "squarify",
-          "padding": 2,
+          "paddingInner": 3,
+          "paddingTop": 15,
           "size": [
             {
               "signal": "width"
             },
             {
-              "signal": "height"
+              "signal": "height + 15"
             }
           ]
+        },
+        {
+          "type": "formula",
+          "as": "y0",
+          "expr": "datum.y0 - 15"
+        },
+        {
+          "type": "formula",
+          "as": "y1",
+          "expr": "datum.y1 - 15"
         }
       ]
     },
     {
-      "name": "nodes",
+      "name": "blocks",
       "source": "tree",
       "transform": [
         {
           "type": "filter",
-          "expr": "datum.children"
+          "expr": "datum.depth === 1"
+        },
+        {
+          "type": "formula",
+          "as": "header",
+          "expr": "(datum.x1 - datum.x0) >= (length(datum.key) + 5) * 6.4 ? datum.key + ' · ' + datum.children : (datum.x1 - datum.x0) >= length(datum.key) * 6.4 ? datum.key : ''"
         }
       ]
     },
@@ -64,6 +112,161 @@
         {
           "type": "filter",
           "expr": "!datum.children"
+        },
+        {
+          "type": "formula",
+          "as": "tw",
+          "expr": "datum.x1 - datum.x0"
+        },
+        {
+          "type": "formula",
+          "as": "th",
+          "expr": "datum.y1 - datum.y0"
+        },
+        {
+          "type": "formula",
+          "as": "fs1",
+          "expr": "(datum.tw - 8) / (length(datum.actor) * 0.6)"
+        },
+        {
+          "type": "formula",
+          "as": "fs",
+          "expr": "datum.fs1 >= 9 && datum.fs1 < 10 ? 9 : max(10, min(clamp(sqrt(datum.tw * datum.th) / 10, 10, 18), datum.fs1))"
+        },
+        {
+          "type": "formula",
+          "as": "lh",
+          "expr": "datum.fs * 1.2"
+        },
+        {
+          "type": "formula",
+          "as": "h_cpl",
+          "expr": "max(1, floor((datum.tw - 8) / (datum.fs * 0.6)))"
+        },
+        {
+          "type": "formula",
+          "as": "h_rows",
+          "expr": "floor((datum.th - 4) / datum.lh)"
+        },
+        {
+          "type": "formula",
+          "as": "h_l1",
+          "expr": "substring(datum.actor, 0, (length(datum.actor) <= datum.h_cpl ? length(datum.actor) : (max(lastindexof(substring(datum.actor, 0, datum.h_cpl), '-'), lastindexof(substring(datum.actor, 0, datum.h_cpl), '.'), lastindexof(substring(datum.actor, 0, datum.h_cpl), '@'), lastindexof(substring(datum.actor, 0, datum.h_cpl), '_'), lastindexof(substring(datum.actor, 0, datum.h_cpl), '/')) >= datum.h_cpl * 0.35 ? max(lastindexof(substring(datum.actor, 0, datum.h_cpl), '-'), lastindexof(substring(datum.actor, 0, datum.h_cpl), '.'), lastindexof(substring(datum.actor, 0, datum.h_cpl), '@'), lastindexof(substring(datum.actor, 0, datum.h_cpl), '_'), lastindexof(substring(datum.actor, 0, datum.h_cpl), '/')) + 1 : datum.h_cpl)))"
+        },
+        {
+          "type": "formula",
+          "as": "h_r1",
+          "expr": "substring(datum.actor, (length(datum.actor) <= datum.h_cpl ? length(datum.actor) : (max(lastindexof(substring(datum.actor, 0, datum.h_cpl), '-'), lastindexof(substring(datum.actor, 0, datum.h_cpl), '.'), lastindexof(substring(datum.actor, 0, datum.h_cpl), '@'), lastindexof(substring(datum.actor, 0, datum.h_cpl), '_'), lastindexof(substring(datum.actor, 0, datum.h_cpl), '/')) >= datum.h_cpl * 0.35 ? max(lastindexof(substring(datum.actor, 0, datum.h_cpl), '-'), lastindexof(substring(datum.actor, 0, datum.h_cpl), '.'), lastindexof(substring(datum.actor, 0, datum.h_cpl), '@'), lastindexof(substring(datum.actor, 0, datum.h_cpl), '_'), lastindexof(substring(datum.actor, 0, datum.h_cpl), '/')) + 1 : datum.h_cpl)))"
+        },
+        {
+          "type": "formula",
+          "as": "h_l2",
+          "expr": "substring(datum.h_r1, 0, (length(datum.h_r1) <= datum.h_cpl ? length(datum.h_r1) : (max(lastindexof(substring(datum.h_r1, 0, datum.h_cpl), '-'), lastindexof(substring(datum.h_r1, 0, datum.h_cpl), '.'), lastindexof(substring(datum.h_r1, 0, datum.h_cpl), '@'), lastindexof(substring(datum.h_r1, 0, datum.h_cpl), '_'), lastindexof(substring(datum.h_r1, 0, datum.h_cpl), '/')) >= datum.h_cpl * 0.35 ? max(lastindexof(substring(datum.h_r1, 0, datum.h_cpl), '-'), lastindexof(substring(datum.h_r1, 0, datum.h_cpl), '.'), lastindexof(substring(datum.h_r1, 0, datum.h_cpl), '@'), lastindexof(substring(datum.h_r1, 0, datum.h_cpl), '_'), lastindexof(substring(datum.h_r1, 0, datum.h_cpl), '/')) + 1 : datum.h_cpl)))"
+        },
+        {
+          "type": "formula",
+          "as": "h_r2",
+          "expr": "substring(datum.h_r1, (length(datum.h_r1) <= datum.h_cpl ? length(datum.h_r1) : (max(lastindexof(substring(datum.h_r1, 0, datum.h_cpl), '-'), lastindexof(substring(datum.h_r1, 0, datum.h_cpl), '.'), lastindexof(substring(datum.h_r1, 0, datum.h_cpl), '@'), lastindexof(substring(datum.h_r1, 0, datum.h_cpl), '_'), lastindexof(substring(datum.h_r1, 0, datum.h_cpl), '/')) >= datum.h_cpl * 0.35 ? max(lastindexof(substring(datum.h_r1, 0, datum.h_cpl), '-'), lastindexof(substring(datum.h_r1, 0, datum.h_cpl), '.'), lastindexof(substring(datum.h_r1, 0, datum.h_cpl), '@'), lastindexof(substring(datum.h_r1, 0, datum.h_cpl), '_'), lastindexof(substring(datum.h_r1, 0, datum.h_cpl), '/')) + 1 : datum.h_cpl)))"
+        },
+        {
+          "type": "formula",
+          "as": "h_l3",
+          "expr": "substring(datum.h_r2, 0, (length(datum.h_r2) <= datum.h_cpl ? length(datum.h_r2) : (max(lastindexof(substring(datum.h_r2, 0, datum.h_cpl), '-'), lastindexof(substring(datum.h_r2, 0, datum.h_cpl), '.'), lastindexof(substring(datum.h_r2, 0, datum.h_cpl), '@'), lastindexof(substring(datum.h_r2, 0, datum.h_cpl), '_'), lastindexof(substring(datum.h_r2, 0, datum.h_cpl), '/')) >= datum.h_cpl * 0.35 ? max(lastindexof(substring(datum.h_r2, 0, datum.h_cpl), '-'), lastindexof(substring(datum.h_r2, 0, datum.h_cpl), '.'), lastindexof(substring(datum.h_r2, 0, datum.h_cpl), '@'), lastindexof(substring(datum.h_r2, 0, datum.h_cpl), '_'), lastindexof(substring(datum.h_r2, 0, datum.h_cpl), '/')) + 1 : datum.h_cpl)))"
+        },
+        {
+          "type": "formula",
+          "as": "h_r3",
+          "expr": "substring(datum.h_r2, (length(datum.h_r2) <= datum.h_cpl ? length(datum.h_r2) : (max(lastindexof(substring(datum.h_r2, 0, datum.h_cpl), '-'), lastindexof(substring(datum.h_r2, 0, datum.h_cpl), '.'), lastindexof(substring(datum.h_r2, 0, datum.h_cpl), '@'), lastindexof(substring(datum.h_r2, 0, datum.h_cpl), '_'), lastindexof(substring(datum.h_r2, 0, datum.h_cpl), '/')) >= datum.h_cpl * 0.35 ? max(lastindexof(substring(datum.h_r2, 0, datum.h_cpl), '-'), lastindexof(substring(datum.h_r2, 0, datum.h_cpl), '.'), lastindexof(substring(datum.h_r2, 0, datum.h_cpl), '@'), lastindexof(substring(datum.h_r2, 0, datum.h_cpl), '_'), lastindexof(substring(datum.h_r2, 0, datum.h_cpl), '/')) + 1 : datum.h_cpl)))"
+        },
+        {
+          "type": "formula",
+          "as": "h_nl",
+          "expr": "datum.h_r1 === '' ? 1 : datum.h_r2 === '' ? 2 : 3"
+        },
+        {
+          "type": "formula",
+          "as": "h_ok",
+          "expr": "datum.h_r3 === '' && datum.h_nl <= datum.h_rows && datum.th >= 16"
+        },
+        {
+          "type": "formula",
+          "as": "h_own",
+          "expr": "datum.owner != null && datum.h_rows > datum.h_nl && length(datum.owner) + 7 <= datum.h_cpl"
+        },
+        {
+          "type": "formula",
+          "as": "h_lines",
+          "expr": "datum.h_nl === 1 ? (datum.h_own ? [datum.h_l1, 'owner: ' + datum.owner] : [datum.h_l1]) : datum.h_nl === 2 ? (datum.h_own ? [datum.h_l1, datum.h_l2, 'owner: ' + datum.owner] : [datum.h_l1, datum.h_l2]) : (datum.h_own ? [datum.h_l1, datum.h_l2, datum.h_l3, 'owner: ' + datum.owner] : [datum.h_l1, datum.h_l2, datum.h_l3])"
+        },
+        {
+          "type": "formula",
+          "as": "v_cpl",
+          "expr": "max(1, floor((datum.th - 8) / (datum.fs * 0.6)))"
+        },
+        {
+          "type": "formula",
+          "as": "v_rows",
+          "expr": "floor((datum.tw - 4) / datum.lh)"
+        },
+        {
+          "type": "formula",
+          "as": "v_l1",
+          "expr": "substring(datum.actor, 0, (length(datum.actor) <= datum.v_cpl ? length(datum.actor) : (max(lastindexof(substring(datum.actor, 0, datum.v_cpl), '-'), lastindexof(substring(datum.actor, 0, datum.v_cpl), '.'), lastindexof(substring(datum.actor, 0, datum.v_cpl), '@'), lastindexof(substring(datum.actor, 0, datum.v_cpl), '_'), lastindexof(substring(datum.actor, 0, datum.v_cpl), '/')) >= datum.v_cpl * 0.35 ? max(lastindexof(substring(datum.actor, 0, datum.v_cpl), '-'), lastindexof(substring(datum.actor, 0, datum.v_cpl), '.'), lastindexof(substring(datum.actor, 0, datum.v_cpl), '@'), lastindexof(substring(datum.actor, 0, datum.v_cpl), '_'), lastindexof(substring(datum.actor, 0, datum.v_cpl), '/')) + 1 : datum.v_cpl)))"
+        },
+        {
+          "type": "formula",
+          "as": "v_r1",
+          "expr": "substring(datum.actor, (length(datum.actor) <= datum.v_cpl ? length(datum.actor) : (max(lastindexof(substring(datum.actor, 0, datum.v_cpl), '-'), lastindexof(substring(datum.actor, 0, datum.v_cpl), '.'), lastindexof(substring(datum.actor, 0, datum.v_cpl), '@'), lastindexof(substring(datum.actor, 0, datum.v_cpl), '_'), lastindexof(substring(datum.actor, 0, datum.v_cpl), '/')) >= datum.v_cpl * 0.35 ? max(lastindexof(substring(datum.actor, 0, datum.v_cpl), '-'), lastindexof(substring(datum.actor, 0, datum.v_cpl), '.'), lastindexof(substring(datum.actor, 0, datum.v_cpl), '@'), lastindexof(substring(datum.actor, 0, datum.v_cpl), '_'), lastindexof(substring(datum.actor, 0, datum.v_cpl), '/')) + 1 : datum.v_cpl)))"
+        },
+        {
+          "type": "formula",
+          "as": "v_l2",
+          "expr": "substring(datum.v_r1, 0, (length(datum.v_r1) <= datum.v_cpl ? length(datum.v_r1) : (max(lastindexof(substring(datum.v_r1, 0, datum.v_cpl), '-'), lastindexof(substring(datum.v_r1, 0, datum.v_cpl), '.'), lastindexof(substring(datum.v_r1, 0, datum.v_cpl), '@'), lastindexof(substring(datum.v_r1, 0, datum.v_cpl), '_'), lastindexof(substring(datum.v_r1, 0, datum.v_cpl), '/')) >= datum.v_cpl * 0.35 ? max(lastindexof(substring(datum.v_r1, 0, datum.v_cpl), '-'), lastindexof(substring(datum.v_r1, 0, datum.v_cpl), '.'), lastindexof(substring(datum.v_r1, 0, datum.v_cpl), '@'), lastindexof(substring(datum.v_r1, 0, datum.v_cpl), '_'), lastindexof(substring(datum.v_r1, 0, datum.v_cpl), '/')) + 1 : datum.v_cpl)))"
+        },
+        {
+          "type": "formula",
+          "as": "v_r2",
+          "expr": "substring(datum.v_r1, (length(datum.v_r1) <= datum.v_cpl ? length(datum.v_r1) : (max(lastindexof(substring(datum.v_r1, 0, datum.v_cpl), '-'), lastindexof(substring(datum.v_r1, 0, datum.v_cpl), '.'), lastindexof(substring(datum.v_r1, 0, datum.v_cpl), '@'), lastindexof(substring(datum.v_r1, 0, datum.v_cpl), '_'), lastindexof(substring(datum.v_r1, 0, datum.v_cpl), '/')) >= datum.v_cpl * 0.35 ? max(lastindexof(substring(datum.v_r1, 0, datum.v_cpl), '-'), lastindexof(substring(datum.v_r1, 0, datum.v_cpl), '.'), lastindexof(substring(datum.v_r1, 0, datum.v_cpl), '@'), lastindexof(substring(datum.v_r1, 0, datum.v_cpl), '_'), lastindexof(substring(datum.v_r1, 0, datum.v_cpl), '/')) + 1 : datum.v_cpl)))"
+        },
+        {
+          "type": "formula",
+          "as": "v_l3",
+          "expr": "substring(datum.v_r2, 0, (length(datum.v_r2) <= datum.v_cpl ? length(datum.v_r2) : (max(lastindexof(substring(datum.v_r2, 0, datum.v_cpl), '-'), lastindexof(substring(datum.v_r2, 0, datum.v_cpl), '.'), lastindexof(substring(datum.v_r2, 0, datum.v_cpl), '@'), lastindexof(substring(datum.v_r2, 0, datum.v_cpl), '_'), lastindexof(substring(datum.v_r2, 0, datum.v_cpl), '/')) >= datum.v_cpl * 0.35 ? max(lastindexof(substring(datum.v_r2, 0, datum.v_cpl), '-'), lastindexof(substring(datum.v_r2, 0, datum.v_cpl), '.'), lastindexof(substring(datum.v_r2, 0, datum.v_cpl), '@'), lastindexof(substring(datum.v_r2, 0, datum.v_cpl), '_'), lastindexof(substring(datum.v_r2, 0, datum.v_cpl), '/')) + 1 : datum.v_cpl)))"
+        },
+        {
+          "type": "formula",
+          "as": "v_r3",
+          "expr": "substring(datum.v_r2, (length(datum.v_r2) <= datum.v_cpl ? length(datum.v_r2) : (max(lastindexof(substring(datum.v_r2, 0, datum.v_cpl), '-'), lastindexof(substring(datum.v_r2, 0, datum.v_cpl), '.'), lastindexof(substring(datum.v_r2, 0, datum.v_cpl), '@'), lastindexof(substring(datum.v_r2, 0, datum.v_cpl), '_'), lastindexof(substring(datum.v_r2, 0, datum.v_cpl), '/')) >= datum.v_cpl * 0.35 ? max(lastindexof(substring(datum.v_r2, 0, datum.v_cpl), '-'), lastindexof(substring(datum.v_r2, 0, datum.v_cpl), '.'), lastindexof(substring(datum.v_r2, 0, datum.v_cpl), '@'), lastindexof(substring(datum.v_r2, 0, datum.v_cpl), '_'), lastindexof(substring(datum.v_r2, 0, datum.v_cpl), '/')) + 1 : datum.v_cpl)))"
+        },
+        {
+          "type": "formula",
+          "as": "v_nl",
+          "expr": "datum.v_r1 === '' ? 1 : datum.v_r2 === '' ? 2 : 3"
+        },
+        {
+          "type": "formula",
+          "as": "v_ok",
+          "expr": "datum.v_r3 === '' && datum.v_nl <= datum.v_rows && datum.tw >= 16"
+        },
+        {
+          "type": "formula",
+          "as": "v_own",
+          "expr": "datum.owner != null && datum.v_rows > datum.v_nl && length(datum.owner) + 7 <= datum.v_cpl"
+        },
+        {
+          "type": "formula",
+          "as": "v_lines",
+          "expr": "datum.v_nl === 1 ? (datum.v_own ? [datum.v_l1, 'owner: ' + datum.owner] : [datum.v_l1]) : datum.v_nl === 2 ? (datum.v_own ? [datum.v_l1, datum.v_l2, 'owner: ' + datum.owner] : [datum.v_l1, datum.v_l2]) : (datum.v_own ? [datum.v_l1, datum.v_l2, datum.v_l3, 'owner: ' + datum.owner] : [datum.v_l1, datum.v_l2, datum.v_l3])"
+        },
+        {
+          "type": "formula",
+          "as": "vert",
+          "expr": "!datum.h_ok && datum.v_ok"
+        },
+        {
+          "type": "formula",
+          "as": "lines",
+          "expr": "datum.h_ok ? datum.h_lines : datum.v_ok ? datum.v_lines : []"
         }
       ]
     }
@@ -72,44 +275,45 @@
     {
       "name": "risk",
       "type": "sqrt",
+      "zero": true,
       "domain": {
         "data": "leaves",
         "field": "severity"
       },
       "range": [
-        "#4A6B85",
-        "#155C7A",
+        "#54B399",
         "#D6BF57",
         "#E7664C"
-      ],
-      "zero": true
+      ]
     }
   ],
   "marks": [
     {
-      "type": "rect",
+      "type": "text",
       "from": {
-        "data": "nodes"
+        "data": "blocks"
       },
+      "style": "guide-label",
+      "interactive": false,
       "encode": {
         "update": {
           "x": {
-            "field": "x0"
+            "signal": "datum.x0 + 1"
           },
           "y": {
-            "field": "y0"
+            "signal": "datum.y0 + 15 - 4"
           },
-          "x2": {
-            "field": "x1"
+          "baseline": {
+            "value": "alphabetic"
           },
-          "y2": {
-            "field": "y1"
+          "fontSize": {
+            "value": 10
           },
-          "fill": {
-            "value": "transparent"
+          "fontWeight": {
+            "value": 600
           },
-          "stroke": {
-            "value": "transparent"
+          "text": {
+            "field": "header"
           }
         }
       }
@@ -137,19 +341,16 @@
             "scale": "risk",
             "field": "severity"
           },
-          "stroke": {
-            "value": "#1D1E24"
-          },
           "strokeWidth": {
-            "value": 1
+            "value": 0
           },
           "tooltip": {
-            "signal": "{'Identity': datum.actor, 'Kind': datum.actor_kind, 'Key owner': datum.owner || '\u2014', 'Events': format(datum.events, ','), 'Accumulated severity': format(datum.severity, ','), 'Scoring events': format(datum.scoring, ',')}"
+            "signal": "{'Identity': datum.actor, 'Kind': datum.actor_kind, 'Key owner': datum.owner || '—', 'Events': format(datum.events, ','), 'Accumulated severity': format(datum.severity, ','), 'Scoring events': format(datum.scoring, ',')}"
           }
         },
         "hover": {
           "stroke": {
-            "value": "#FFFFFF"
+            "value": "#7B8496"
           },
           "strokeWidth": {
             "value": 2
@@ -166,10 +367,13 @@
       "encode": {
         "update": {
           "x": {
-            "signal": "(datum.x0 + datum.x1) / 2"
+            "signal": "(datum.x0 + datum.x1) / 2 - (datum.vert ? (length(datum.lines) - 1) * datum.lh / 2 : 0)"
           },
           "y": {
-            "signal": "(datum.y0 + datum.y1) / 2"
+            "signal": "(datum.y0 + datum.y1) / 2 - (datum.vert ? 0 : (length(datum.lines) - 1) * datum.lh / 2)"
+          },
+          "angle": {
+            "signal": "datum.vert ? -90 : 0"
           },
           "align": {
             "value": "center"
@@ -178,25 +382,22 @@
             "value": "middle"
           },
           "fill": {
-            "value": "#FFFFFF"
+            "signal": "contrast('#1D1E24', scale('risk', datum.severity)) >= contrast('#FFFFFF', scale('risk', datum.severity)) ? '#1D1E24' : '#FFFFFF'"
           },
           "fontSize": {
-            "value": 10
+            "field": "fs"
+          },
+          "lineHeight": {
+            "field": "lh"
           },
           "fontWeight": {
             "value": 600
           },
           "text": {
-            "signal": "(datum.x1 - datum.x0) > 70 && (datum.y1 - datum.y0) > 18 ? (datum.owner && (datum.y1 - datum.y0) > 38 ? [datum.actor, 'owner: ' + datum.owner] : datum.actor) : ''"
+            "field": "lines"
           },
           "limit": {
-            "signal": "datum.x1 - datum.x0 - 6"
-          },
-          "stroke": {
-            "value": "#0B1628"
-          },
-          "strokeWidth": {
-            "value": 0.6
+            "signal": "(datum.vert ? datum.th : datum.tw) - 4"
           }
         }
       }
@@ -207,13 +408,27 @@
       "fill": "risk",
       "type": "gradient",
       "title": "Accumulated severity",
-      "orient": "bottom-right",
+      "orient": "bottom",
       "direction": "horizontal",
-      "gradientLength": 140,
+      "titleOrient": "left",
+      "gradientLength": {
+        "signal": "min(220, width / 3)"
+      },
       "gradientThickness": 10,
       "titleFontSize": 10,
       "labelFontSize": 10,
-      "format": "~s"
+      "values": {
+        "signal": "[0, domain('risk')[1] / 4, domain('risk')[1]]"
+      },
+      "encode": {
+        "labels": {
+          "update": {
+            "text": {
+              "signal": "datum.value === 0 ? '0' : format(datum.value, '.2~s')"
+            }
+          }
+        }
+      }
     }
   ]
 }

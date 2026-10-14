@@ -121,12 +121,12 @@
         "type": "metric",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS `Total events` = COUNT(*)"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS `Total events · all traffic` = COUNT(*)"
         },
         "metrics": [
           {
             "type": "primary",
-            "column": "Total events",
+            "column": "Total events · all traffic",
             "format": {
               "type": "number",
               "decimals": 0
@@ -290,7 +290,7 @@
         "h": 13
       },
       "config": {
-        "title": "Audit volume by source",
+        "title": "Audit volume by source · all traffic",
         "description": "Total audited events over time, split by originating service. Elasticsearch audits every transport action, so its volume usually far exceeds Kibana’s — and the Kibana slice is where most of the forensic value is.",
         "type": "xy",
         "axis": {
@@ -315,7 +315,7 @@
             "type": "bar_stacked",
             "data_source": {
               "type": "esql",
-              "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS events = COUNT(*) BY BUCKET(@timestamp, 75, ?_tstart, ?_tend), source = resource.attributes.service.name"
+              "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS events = COUNT(*) BY BUCKET(@timestamp, 75, ?_tstart, ?_tend), service = resource.attributes.service.name | EVAL source = REPLACE(service, \"^serverless-\", \"\")"
             },
             "x": {
               "column": "BUCKET(@timestamp, 75, ?_tstart, ?_tend)",
@@ -331,7 +331,26 @@
               "color": {
                 "mode": "categorical",
                 "palette": "eui_amsterdam",
-                "mapping": []
+                "mapping": [
+                  {
+                    "values": [
+                      "kibana"
+                    ],
+                    "color": {
+                      "type": "color_code",
+                      "value": "#54B399"
+                    }
+                  },
+                  {
+                    "values": [
+                      "elasticsearch"
+                    ],
+                    "color": {
+                      "type": "color_code",
+                      "value": "#6092C0"
+                    }
+                  }
+                ]
               }
             }
           }
@@ -366,12 +385,12 @@
         "x": 0,
         "y": 21,
         "w": 24,
-        "h": 13
+        "h": 15
       },
       "config": {
         "ref_id": "cloud-audit-vega-01-actor-risk-treemap",
         "title": "Actor footprint sized by volume, coloured by severity",
-        "description": "Treemap of the top 40 identities in range, in blocks by kind: service (a named API key, labelled by the KEY, with its owner — the principal that created it — on a second line and in the tooltip), human (a real email address), cloud API key (an organisation-level Cloud key, which the audit stream records only by id and with no owner), and unattributed (a token or opaque principal). A credential is never shown under a person’s name, so no identity appears twice. Area is event volume; colour is accumulated severity, the same quantity the risk leaderboard ranks by."
+        "description": "The top 40 identities in range, in one block per kind: named API key (labelled by the KEY, with its owner — the principal that created it — on a further line when there is room, and in the tooltip), person (a real email address), cloud API key (an organisation-level Cloud key, which the audit stream records only by id and with no owner), and unattributed (a token or opaque principal). An identity is one tile even when its events disagree about its kind; it goes in the most specific block any of them supports. Area grows with the SQUARE ROOT of event volume, so one dominant identity cannot crush the rest into slivers, and the smallest identities get a minimum tile so every name stays readable — read exact counts from the tooltip. Colour is accumulated severity, the quantity the risk leaderboard ranks by."
       }
     },
     {
@@ -381,7 +400,7 @@
         "x": 24,
         "y": 21,
         "w": 24,
-        "h": 13
+        "h": 15
       },
       "config": {
         "ref_id": "cloud-audit-vega-07-noise-ratio-stream",
@@ -394,8 +413,8 @@
       "id": "tbl-11",
       "grid": {
         "x": 0,
-        "y": 34,
-        "w": 16,
+        "y": 36,
+        "w": 12,
         "h": 12
       },
       "config": {
@@ -404,7 +423,7 @@
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE (attributes.elasticsearch.audit.action IS NULL OR NOT (attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\") OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\")) AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"authentication_success\",\"connection_granted\"))) | STATS events = COUNT(*) BY action = attributes.event.action, source = resource.attributes.service.name | SORT events DESC | LIMIT 10"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE (attributes.elasticsearch.audit.action IS NULL OR NOT (attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\") OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\")) AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"authentication_success\",\"connection_granted\"))) | STATS events = COUNT(*) BY action = attributes.event.action, service = resource.attributes.service.name | EVAL source = REPLACE(service, \"^serverless-\", \"\") | SORT events DESC | LIMIT 10"
         },
         "styling": {
           "density": {
@@ -424,7 +443,8 @@
           },
           {
             "label": "Source",
-            "column": "source"
+            "column": "source",
+            "width": 105
           }
         ],
         "metrics": [
@@ -440,18 +460,18 @@
       "type": "vis",
       "id": "tbl-12",
       "grid": {
-        "x": 16,
-        "y": 34,
-        "w": 16,
+        "x": 12,
+        "y": 36,
+        "w": 24,
         "h": 12
       },
       "config": {
         "title": "Busiest identities",
-        "description": "Who is generating signal traffic, and how varied their behaviour is. The api_key column matters: Elasticsearch stamps the key CREATOR’s email on every event a key emits, so any number of machines authenticating with one key resolves to one person’s name. Where that column is populated, the traffic is a credential, not a human. Click an email to pin that identity across the suite.",
+        "description": "Who is generating signal traffic, and how varied their behaviour is. Identity resolves to an email, then an API key name, then a user id. Elasticsearch stamps an API key’s CREATOR’s email on every event the key emits, so any number of machines authenticating with one key resolves to one person’s name: where Via API key is filled in, that row is a credential’s traffic, not the person at a keyboard. Click an email to pin that identity across the suite.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE (attributes.elasticsearch.audit.action IS NULL OR NOT (attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\") OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\")) AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"authentication_success\",\"connection_granted\"))) | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS events = COUNT(*), actions = COUNT_DISTINCT(attributes.event.action) BY actor, attributes.api_key.name, attributes.user.email | SORT events DESC | LIMIT 10"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE (attributes.elasticsearch.audit.action IS NULL OR NOT (attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\") OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\")) AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"authentication_success\",\"connection_granted\"))) | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS events = COUNT(*), actions = COUNT_DISTINCT(attributes.event.action) BY actor, attributes.api_key.name, attributes.user.email | EVAL via_key = CASE(attributes.api_key.name != actor, attributes.api_key.name) | SORT events DESC | LIMIT 10"
         },
         "styling": {
           "density": {
@@ -467,11 +487,12 @@
         "rows": [
           {
             "label": "Identity",
-            "column": "actor"
+            "column": "actor",
+            "width": 260
           },
           {
-            "label": "API key",
-            "column": "attributes.api_key.name"
+            "label": "Via API key",
+            "column": "via_key"
           },
           {
             "label": "Email",
@@ -495,33 +516,56 @@
     },
     {
       "type": "vis",
-      "id": "pie-13",
+      "id": "xy-13",
       "grid": {
-        "x": 32,
-        "y": 34,
-        "w": 16,
+        "x": 36,
+        "y": 36,
+        "w": 12,
         "h": 12
       },
       "config": {
-        "title": "Event categories",
-        "description": "ECS event categories. event.category is a multi-value array, so rows are MV_EXPANDed before grouping — an event in two categories counts once in each. Percentages are therefore shares of category assignments, not of events, and sum to more than the event total.",
-        "type": "pie",
-        "data_source": {
-          "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | MV_EXPAND attributes.event.category | STATS events = COUNT(*) BY category = attributes.event.category"
+        "title": "Event categories · all traffic",
+        "description": "ECS event categories over the whole stream, noise included. event.category is a multi-value array, so an event in two categories counts once in each and the bars sum to more than the event total.",
+        "type": "xy",
+        "axis": {
+          "x": {
+            "title": {
+              "visible": false
+            }
+          },
+          "y": {
+            "title": {
+              "visible": false
+            }
+          }
         },
-        "metrics": [
+        "layers": [
           {
-            "column": "events"
+            "type": "bar_horizontal",
+            "data_source": {
+              "type": "esql",
+              "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS events = COUNT(*) BY category = attributes.event.category | SORT events DESC | LIMIT 8"
+            },
+            "x": {
+              "column": "category",
+              "label": "category"
+            },
+            "y": [
+              {
+                "column": "events"
+              }
+            ]
           }
         ],
-        "group_by": [
-          {
-            "column": "category"
-          }
-        ],
+        "legend": {
+          "visibility": "hidden"
+        },
         "styling": {
-          "donut_hole": "m"
+          "bars": {
+            "data_labels": {
+              "visible": true
+            }
+          }
         }
       }
     },
@@ -530,14 +574,14 @@
       "id": "ds-14",
       "grid": {
         "x": 0,
-        "y": 46,
+        "y": 48,
         "w": 48,
         "h": 15
       },
       "config": {
         "ref_id": "cloud-audit-search-10-raw-signal-feed",
         "title": "Live signal feed",
-        "description": "The audit stream with the noise gate applied — readable, newest first. Use the Discover session to pivot or add columns."
+        "description": "The newest 200 signal events, newest first. Detail is the Kibana message, or the transport action on an Elasticsearch event. Open the Discover session to page further back or add columns."
       }
     }
   ]
