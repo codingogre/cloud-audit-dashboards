@@ -68,7 +68,8 @@ function collectDsl(node, out) {
   if (Array.isArray(node)) { node.forEach((n) => collectDsl(n, out)); return; }
   if (!node || typeof node !== 'object') return;
   if (node.url && typeof node.url === 'object' && typeof node.url.index === 'string' && node.url.body) {
-    out.push({ index: node.url.index, body: node.url.body, property: node.format?.property });
+    // timefield is carried for --perf, which has to know whether Kibana would bind this spec to the picker.
+    out.push({ index: node.url.index, body: node.url.body, property: node.format?.property, timefield: node.url['%timefield%'] });
   }
   for (const v of Object.values(node)) collectDsl(v, out);
 }

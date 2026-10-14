@@ -36,6 +36,14 @@ const HELP = `Usage: ./audit <command>
                        run [--only ids] [--no-verify] [--keep] | loop [--minutes n] | schema |
                        list | clean [--dry-run]
 
+  Performance
+    --perf <sub>       Time every dashboard query at production volume, on a replica of the stream.
+                       seed [--copies 30] [--days 7] [--slices 4] [--max-minutes 25] [--force-append]
+                         replicate the live stream into logs-<dataset>-perf, re-stamped over D days
+                       run [--windows 1h,24h,7d] [--budget 30000] [--only name,...] [--anchor data|now]
+                         per-query and per-page-load timings -> build/perf-<stamp>/report.json
+                       clean   delete the -perf replica (never the live stream)
+
   Walkthrough
     --demo-guide       Generate the presenter runbook from live data (add --redact to mask identities)
 
@@ -71,6 +79,7 @@ const table = {
   '--queries': () => runModule('./queries.mjs'),
   '--demo-guide': () => runModule('./demo-guide.mjs'),
   '--synth': () => runModule('./synth.mjs'),
+  '--perf': () => runModule('./perf.mjs'),
   '--deploy': doDeploy,
   '--clean': () => runModule('./clean.mjs'),
 };
