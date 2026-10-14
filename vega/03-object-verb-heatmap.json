@@ -16,6 +16,9 @@
     "legend": {
       "labelFontSize": 11,
       "titleFontSize": 11
+    },
+    "scale": {
+      "rectBandPaddingInner": 0.08
     }
   },
   "data": {

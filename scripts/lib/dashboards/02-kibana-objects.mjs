@@ -47,6 +47,15 @@ const VERB_COLORS = {
   enable: PALETTE[3], disable: PALETTE[4], run: PALETTE[7], test: PALETTE[6], cancel: PALETTE[8], open: PALETTE[2], start: PALETTE[2],
 };
 
+/**
+ * Lens takes series order — stack order and legend order — from the order rows arrive in, and an
+ * unsorted STATS hands them back in whatever order the shards finished. Two renders minutes apart
+ * drew delete at the bottom of the stack and first in the legend, then read. Read first keeps the
+ * bulk as the stable base with the thin write slivers on top; the writes follow alphabetically.
+ * Sorting runs on the ≤ ~800 aggregated rows, so it costs nothing measurable.
+ */
+const SERIES_ORDER = 'SORT verb != "read", verb';
+
 export function build() {
   resetIds();
   const P = [
@@ -70,7 +79,7 @@ export function build() {
     vega(0, 19, 24, 13, '03-object-verb-heatmap', 'Object type × operation',
       'Saved-object type against operation, writes first. The more solid the cell, the more events it holds, on a log scale, so a single create, update or delete stays visible beside thousands of reads: the write columns are the forensic signal. Hover a cell for its count and how many distinct objects it covers.'),
     xy(24, 19, 24, 13, 'Saved-object activity over time',
-      `FROM ${IDX} | ${TIME} | WHERE attributes.kibana.saved_object.type IS NOT NULL | ${VERB} | EVAL verb = CASE(verb IN (${READS}), "read", verb) | STATS events = COUNT(*) BY ${BUCKET}, verb`,
+      `FROM ${IDX} | ${TIME} | WHERE attributes.kibana.saved_object.type IS NOT NULL | ${VERB} | EVAL verb = CASE(verb IN (${READS}), "read", verb) | STATS events = COUNT(*) BY ${BUCKET}, verb | ${SERIES_ORDER}`,
       'events', 'Saved-object operations over time. Get, find, resolve and the other read verbs are folded into one "read" series, so each write verb keeps its own colour and the legend stays short enough to read.',
       { breakdown: 'verb', colors: VERB_COLORS }),
     table(0, 32, 24, 12, 'Most-accessed objects by name',
