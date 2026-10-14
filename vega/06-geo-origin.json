@@ -1,6 +1,6 @@
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
-  "description": "Audited events by real client country. Countries are shaded by event volume on a log scale (one hue, opacity carries volume, so it reads the same in both themes); hover for events, identities, client IPs and share of placed traffic. The title line states how much of the stream could be placed at all: CGNAT and private addresses resolve to nothing and many events carry no client IP, so a blank country is not evidence of no traffic.",
+  "description": "Audited events by real client country. Countries are colored by event volume on a log scale, green (few) through blue to purple (most): three mid-tone hues from the suite palette, so every step stands apart from the grey no-data countries in both themes, and the gradient legend reads as a scale. An opacity ramp of one blue drew a 1-event country almost exactly like a country with no data in dark theme. Hover for events, identities, client IPs and share of placed traffic. The title line states how much of the stream could be placed at all: CGNAT and private addresses resolve to nothing and many events carry no client IP, so a blank country is not evidence of no traffic.",
   "autosize": {
     "type": "fit",
     "contains": "padding"
@@ -24,7 +24,10 @@
     "text": {
       "expr": "length(data('coverage')) && data('coverage')[0].total > 0 ? length(data('countries')) + (length(data('countries')) == 1 ? ' country' : ' countries') + ' · placed on the map: ' + format(data('coverage')[0].located / data('coverage')[0].total, '.1%') + ' of events · could not be placed: ' + format(1 - data('coverage')[0].located / data('coverage')[0].total, '.1%') : 'No activity for this selection in this time range'"
     },
-    "subtitle": "Shade is event volume, log scale. Unplaced events are explained below the map."
+    "subtitle": [
+      "Location is client.ip, the real client from network.forwarded_ip; source.ip is only the proxy hop.",
+      "Color is event volume, log scale. Why the rest could not be placed is broken down below the map."
+    ]
   },
   "projection": {
     "type": "naturalEarth1"
@@ -49,11 +52,11 @@
       ],
       "mark": {
         "type": "geoshape",
-        "fill": "#64A3DE",
-        "fillOpacity": 0.12,
-        "stroke": "#5082B1",
+        "fill": "#98A2B3",
+        "fillOpacity": 0.14,
+        "stroke": "#98A2B3",
         "strokeWidth": 0.4,
-        "strokeOpacity": 0.5
+        "strokeOpacity": 0.45
       }
     },
     {
@@ -126,33 +129,34 @@
       ],
       "mark": {
         "type": "geoshape",
-        "color": "#3987e5",
-        "stroke": "#3987e5",
-        "strokeWidth": 0.6
+        "stroke": "#98A2B3",
+        "strokeWidth": 0.5,
+        "strokeOpacity": 0.8
       },
       "encoding": {
         "shape": {
           "field": "geo",
           "type": "geojson"
         },
-        "opacity": {
+        "color": {
           "field": "events",
           "type": "quantitative",
           "scale": {
             "type": "log",
             "domainMin": 1,
             "range": [
-              0.35,
-              1
-            ]
+              "#54B399",
+              "#6092C0",
+              "#9170B8"
+            ],
+            "interpolate": "hcl"
           },
           "legend": {
             "title": "Events",
             "orient": "right",
             "direction": "vertical",
-            "symbolType": "square",
-            "symbolFillColor": "#3987e5",
-            "symbolStrokeWidth": 0,
+            "gradientLength": 120,
+            "gradientThickness": 10,
             "labelExpr": "format(datum.value, '~s')",
             "titleOpacity": {
               "expr": "length(data('countries')) ? 1 : 0"
@@ -160,7 +164,7 @@
             "labelOpacity": {
               "expr": "length(data('countries')) ? 1 : 0"
             },
-            "symbolOpacity": {
+            "gradientOpacity": {
               "expr": "length(data('countries')) ? 1 : 0"
             }
           }

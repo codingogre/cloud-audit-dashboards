@@ -1,6 +1,6 @@
 /** 05 Geo & Network — see scripts/lib/definitions.mjs for how the suite is assembled. */
 import {
-  IDX, ACTOR_RESOLVE, TIME, BUCKET, PALETTE, dash, kpi, xy, table, pie, vega, md, filterable, sized, resetIds
+  IDX, ACTOR_RESOLVE, IP_GEO, TIME, BUCKET, dash, kpi, xy, table, vega, filterable, sized, resetIds
 } from '../panels.mjs';
 
 /**
@@ -18,33 +18,47 @@ const ADDRESS_CLASS =
 /**
  * One readable place for an address. Lens prints a null cell as "-", which reads as missing data,
  * when for these rows it is a finding in its own right — an address no geoip database can place —
- * so the reason is spelled out instead. Expects `city` and `country` columns from the STATS.
+ * so the reason is spelled out instead. Expects the `country` and `city` columns of IP_GEO, from a
+ * STATS grouped BY client.ip only: `country` is then null exactly when `placed == 0`, so an address
+ * that resolved on any event is placed, and only one that never resolved is called unplaceable.
+ * (Grouped by the geo fields too, 65.185.62.22 printed twice at 24h — as Powell, and as "Public, no
+ * geoip match" for its 391 events from before enrichment.)
  */
 const LOCATION =
   `EVAL location = CASE(country IS NOT NULL, CONCAT(COALESCE(city, "city unknown"), ", ", country), ` +
   `CONCAT("Not placeable — ", ${ADDRESS_CLASS}))`;
 
 /**
- * The note beside the map. Kept short on purpose: at 1920px a longer draft already filled the panel,
- * at 1440px it is ~320px wide (rendered: a three-paragraph draft's last line sat on the border), and a
- * code span (the full pipeline name used to be one) cannot wrap, so a longer note scrolls or clips. The NAT sentence is about `client.ip`, because the tables beside
- * it show real client IPs in 100.64/10 — the old "100.64 is the proxy" wording read as contradicting them.
+ * The partition behind every geographic panel, one row per reason. Counted per ADDRESS (QUERY SHAPE
+ * rule 2, and IP_GEO's rule that only `placed == 0` is unplaceable), because the three field counts
+ * the old donut used put a placeable address's pre-enrichment events under "IP not geolocatable" —
+ * which "Why client IPs do not resolve", counting addresses, could not reconcile with.
+ *
+ *   Resolved                 events with a country: the map, Top client locations, travel
+ *   IP not geolocatable      events from addresses that never resolved: "Why client IPs do not resolve"
+ *   Predates geo enrichment  unresolved events of an address that did resolve (enrichment is forward-only)
+ *   No client IP             nothing forwarded, mostly Elasticsearch transport traffic
+ *
+ * A table, not the donut it replaces: Lens drew the second-largest slice's label inside the ring
+ * whenever that slice was ~40% (its outside label had no room at the top), the legend order followed
+ * volume and swapped between 1h and 24h, and a 0.05% slice is invisible on a ring. Here the order is
+ * fixed and every number sits beside the panel that explains it. The EVALs run on four rows.
  */
-const GEO_NOTE = `**Location is \`client.ip\`**, the real client from \`network.forwarded_ip\`,
-geo-resolved at ingest, so older events have none. \`source.ip\` is only a proxy hop.
-
-**Unplaceable IPs are expected:** clients behind carrier or private NAT forward
-\`100.64.x.x\` or \`10.x.x.x\` addresses no geoip database can place.`;
-
-/**
- * Slice names, pinned to PALETTE hues so resolved and unplaceable read as different things on both
- * themes (the default palette drew them as two tints of one teal). "No client IP" is a ~2% sliver
- * whose outside label Lens drops at this height, so pie()'s legend is what names it.
- */
-const RESOLVED = 'Resolved';
-const UNPLACEABLE = 'IP not geolocatable';
-const NO_IP = 'No client IP';
-const GEO_COLORS = { [RESOLVED]: PALETTE[0], [UNPLACEABLE]: PALETTE[5], [NO_IP]: PALETTE[1] };
+const GEO_STATUS = ['Resolved', 'IP not geolocatable', 'Predates geo enrichment', 'No client IP'];
+const GEO_SHOWN = ['Map, locations, travel', 'Why client IPs do not resolve', 'IP tables, at the IP\'s place', 'Nowhere: no address to place'];
+const GEO_RESOLUTION =
+  `FROM ${IDX} | ${TIME} | STATS n = COUNT(*), placed = COUNT(client.geo.country_iso_code) BY client.ip ` +
+  `| EVAL never = CASE(placed == 0, n, 0), late = n - placed, no_ip = CASE(client.ip IS NULL, n, 0) ` +
+  `| STATS total = SUM(n), resolved = SUM(placed), never = SUM(never), late = SUM(late), no_ip = SUM(no_ip) ` +
+  `| EVAL unplaceable = never - no_ip, late = late - never ` +
+  `| EVAL ord = [0, 1, 2, 3] | MV_EXPAND ord ` +
+  `| EVAL events = CASE(ord == 0, resolved, ord == 1, unplaceable, ord == 2, late, no_ip) ` +
+  `| WHERE events > 0 OR ord == 0 ` +
+  `| EVAL geo_status = CASE(${GEO_STATUS.slice(0, 3).map((g, i) => `ord == ${i}, "${g}"`).join(', ')}, "${GEO_STATUS[3]}"), ` +
+  `shown_in = CASE(${GEO_SHOWN.slice(0, 3).map((g, i) => `ord == ${i}, "${g}"`).join(', ')}, "${GEO_SHOWN[3]}"), ` +
+  `pct = ROUND(events * 100.0 / total, 1) ` +
+  `| EVAL share = CASE(events > 0 AND pct < 0.1, "<0.1%", CONCAT(TO_STRING(pct), "%")) ` +
+  `| SORT ord | KEEP geo_status, events, share, shown_in`;
 
 export function build() {
   resetIds();
@@ -71,56 +85,68 @@ export function build() {
       { secondary: 'detail' }),
     // The map is a Vega choropleth, not Lens region_map: region_map takes no palette, legend or extent
     // through the Dashboards API, so it drew one alert-red fill over the basemap's labels, kept its
-    // legend collapsed, and parked North America under its own zoom controls. See the spec.
+    // legend collapsed, and parked North America under its own zoom controls. See the spec. The spec's
+    // subtitle carries what the "About this data" note beside it used to say (client.ip, not the proxy):
+    // a markdown panel's title renders smaller than every other title and its body at 16px against 12px
+    // tables, with no API setting for either, and a code chip cannot wrap, so the note never sat right.
     vega(0, 5, 24, 13, '06-geo-origin', 'Audited traffic by country',
-      'Audited events by real client country (client.ip, geo-resolved at ingest). Shade is volume on a log scale; hover a country for events, identities and its share. The title line states how much of the stream could be placed at all — absence on the map is not absence of traffic.'),
+      'Audited events by real client country: client.ip, which ingest takes from network.forwarded_ip and geo-resolves; source.ip is only the proxy hop. Color is volume on a log scale, green (few) to purple (most); hover a country for events, identities and its share. The title line states how much of the stream could be placed at all — absence on the map is not absence of traffic, and "Geo resolution of audited events" says where the rest went.'),
     // A table rather than a bar chart: with one location the old bar filled the panel as a solid
     // block, and at 5-10x the cities its 25 rows overprinted their labels. A table keeps the exact
-    // count beside each place and stops at the rows that fit.
-    table(24, 5, 12, 13, 'Top client locations',
+    // count beside each place and stops at the rows that fit. Half the row since the note left: at 12
+    // columns its location column was under 120px at a 1440px viewport (a --lint advisory).
+    table(24, 5, 24, 13, 'Top client locations',
       `FROM ${IDX} | ${TIME} | WHERE client.geo.country_iso_code IS NOT NULL | ${ACTOR_RESOLVE} | STATS events = COUNT(*), actors = COUNT_DISTINCT(actor), ips = COUNT_DISTINCT(client.ip) BY city = client.geo.city_name, country = client.geo.country_name | EVAL location = CONCAT(COALESCE(city, "city unknown"), ", ", country) | SORT events DESC | LIMIT 25`,
       ['location'], ['events', 'actors', { column: 'ips', label: 'Client IPs' }],
-      'The busiest resolved client locations in range. City is often the ISP\'s point of presence rather than where the person sits; country is reliable.'),
-    md(36, 5, 12, 13, GEO_NOTE, { title: 'About this data' }),
+      'The busiest resolved client locations in range; the rest are beyond the panel. Events sum to the Geo-resolved events tile when every location fits. City is often the ISP\'s point of presence rather than where the person sits; country is reliable.'),
     // Every person with geo-resolved traffic, ranked — not only those over the threshold. Filtering to
     // `countries > 1` left the whole panel at "No results found" under a warning title whenever the
     // estate was clean, which read as a broken alert; ranked, the clean state is visible as such and a
-    // traveller still sorts to the top at any volume.
+    // traveller still sorts to the top at any volume. No Countries or Cities count: "Countries seen" and
+    // Reading already say both things a count would, and with them the email column was cut at a 1440px
+    // viewport ("shawn.hooton@elast"). City is the ISP's point of presence, not evidence of travel.
     table(0, 18, 24, 12, 'Countries per person (impossible travel)',
-      `FROM ${IDX} | ${TIME} | WHERE attributes.user.email IS NOT NULL AND client.geo.country_iso_code IS NOT NULL | STATS countries = COUNT_DISTINCT(client.geo.country_iso_code), cities = COUNT_DISTINCT(client.geo.city_name), ips = COUNT_DISTINCT(client.ip), events = COUNT(*), names = VALUES(client.geo.country_name) BY attributes.user.email | EVAL verdict = CASE(countries > 1, "Check travel", "One country"), seen_from = MV_CONCAT(MV_SORT(names), ", ") | SORT countries DESC, events DESC | LIMIT 15`,
+      `FROM ${IDX} | ${TIME} | WHERE attributes.user.email IS NOT NULL AND client.geo.country_iso_code IS NOT NULL | STATS countries = COUNT_DISTINCT(client.geo.country_iso_code), ips = COUNT_DISTINCT(client.ip), events = COUNT(*), names = VALUES(client.geo.country_name) BY attributes.user.email | EVAL verdict = CASE(countries > 1, "Check travel", "One country"), seen_from = MV_CONCAT(MV_SORT(names), ", ") | SORT countries DESC, events DESC | LIMIT 15`,
       [filterable('attributes.user.email'), sized('verdict', 115, { label: 'Reading', min: 100 }), { column: 'seen_from', label: 'Countries seen' }],
-      ['countries', 'cities', { column: 'ips', label: 'Client IPs' }, 'events'],
+      [{ column: 'ips', label: 'Client IPs' }, 'events'],
       'People (identities with an email) whose traffic resolved to a country in range, most countries first. Two or more countries inside one window is the classic impossible-travel indicator — compare "Countries seen" with where the person actually is. "One country" on every row is the clean state. Service credentials are excluded, since multi-region is normal for machines, and a person whose every address is unplaceable (CGNAT, private egress) cannot appear here — see Geo coverage. Click an email to scope the suite to that person.'),
-    table(24, 18, 24, 12, 'Client IP footprint',
-      `FROM ${IDX} | ${TIME} | WHERE client.ip IS NOT NULL | ${ACTOR_RESOLVE} | STATS events = COUNT(*), actors = COUNT_DISTINCT(actor), first_seen = MIN(@timestamp) BY client.ip, city = client.geo.city_name, country = client.geo.country_name | ${LOCATION} | SORT events DESC | LIMIT 15`,
-      [filterable('client.ip'), 'location'], ['events', 'actors', 'first_seen'],
-      'Real client IPs with their resolved location. An IP shared by many identities is usually a NAT gateway or CI runner. "Not placeable" is not an enrichment error — no geoip database can place an address in a private or CGNAT range; "Why client IPs do not resolve" accounts for every one of them. Click an IP to scope the suite to it.'),
-    // Three field counts, then one row per slice. The per-event CASE this replaces took ~1.9s at 1h;
-    // COUNT(field) is answered from doc values and costs what the Geo coverage tile does (~40ms).
-    // The slices are the same partition: an event with no client IP cannot have a country.
-    pie(0, 30, 24, 9, 'Geo resolution of audited events',
-      `FROM ${IDX} | ${TIME} | STATS total = COUNT(*), with_ip = COUNT(client.ip), resolved = COUNT(client.geo.country_iso_code) | EVAL geo_status = ["${RESOLVED}", "${UNPLACEABLE}", "${NO_IP}"] | MV_EXPAND geo_status | EVAL events = CASE(geo_status == "${RESOLVED}", resolved, geo_status == "${NO_IP}", total - with_ip, with_ip - resolved) | KEEP geo_status, events | SORT events DESC`,
-      'geo_status', 'events',
-      `The denominator behind the map: only the "${RESOLVED}" slice appears on any geographic panel. "${UNPLACEABLE}" means a client IP was forwarded but sits in a range no geoip database can place (see the table beside). "${NO_IP}" is mostly Elasticsearch transport traffic, which carries no forwarded address at all.`,
-      { labels: 'outside', colors: GEO_COLORS }),
+    // One row per address (IP_GEO): grouped by the geo fields too, an address with events from before
+    // enrichment printed twice — placed, and "not placeable" — and the table outgrew the Client IPs tile.
+    // No "First seen": it was the first event IN RANGE, so two busy addresses read as "first seen" 4ms
+    // apart at the window's start — a discovery time that was not one — and its 190px cut the location
+    // ("Not placeable — Carrier N") at a 1440px viewport. Actor 360 carries first-seen per identity.
+    table(24, 18, 24, 12, 'Busiest client IPs',
+      `FROM ${IDX} | ${TIME} | WHERE client.ip IS NOT NULL | ${ACTOR_RESOLVE} | STATS events = COUNT(*), actors = COUNT_DISTINCT(actor), ${IP_GEO} BY client.ip | ${LOCATION} | SORT events DESC | LIMIT 15`,
+      [filterable('client.ip'), 'location'], ['events', 'actors'],
+      'Real client IPs, busiest first, with where each resolved; the Client IPs tile counts every one, and the rest are beyond the panel. An IP shared by many identities is usually a NAT gateway or CI runner. An address that resolved on any event shows that place, even if some of its events predate geo enrichment. "Not placeable" means no event from it ever resolved — not an enrichment error: no geoip database can place an address in a private or CGNAT range; "Why client IPs do not resolve" accounts for every one. Click an IP to scope the suite to it.'),
+    table(0, 30, 24, 9, 'Geo resolution of audited events', GEO_RESOLUTION,
+      ['geo_status', { column: 'shown_in', label: 'Where it shows' }], ['events', sized('share', 90, { label: 'Share' })],
+      `Every audited event in range, by whether it could be placed on a map. The Resolved share is the Geo coverage tile, and only those events appear on any geographic panel. "IP not geolocatable" is events from addresses that never resolved — private or CGNAT ranges no geoip database can place; the table beside breaks them down. "Predates geo enrichment" is events from an address that did resolve, sent before enrichment was in place (enrichment is forward-only). "No client IP" is mostly Elasticsearch transport traffic, which forwards no address at all.`),
     // h=9 rather than 12: there are only five address classes, and fitRows(9) is 7, so every row the
     // query can return is visible and the panel no longer carries ~200px of blank under one row.
+    // Addresses with placed == 0 only (IP_GEO): selecting unresolved EVENTS called a resolvable public
+    // address "Public, no geoip match" for its pre-enrichment events.
     table(24, 30, 24, 9, 'Why client IPs do not resolve',
-      `FROM ${IDX} | ${TIME} | WHERE client.ip IS NOT NULL AND client.geo.country_iso_code IS NULL | STATS events = COUNT(*) BY client.ip | EVAL address_class = ${ADDRESS_CLASS} | STATS events = SUM(events), addresses = COUNT(*) BY address_class | SORT events DESC`,
+      `FROM ${IDX} | ${TIME} | WHERE client.ip IS NOT NULL | STATS events = COUNT(*), placed = COUNT(client.geo.country_iso_code) BY client.ip | WHERE placed == 0 | EVAL address_class = ${ADDRESS_CLASS} | STATS events = SUM(events), addresses = COUNT(*) BY address_class | SORT events DESC`,
       ['address_class'], ['events', 'addresses'],
-      'Every forwarded client IP that did not resolve, by address class. Carrier NAT and RFC1918 rows are expected — clients reaching the project through a NAT or private egress, whose addresses no geoip database can place — and are not an enrichment failure. A "Public, no geoip match" row WOULD be a geoip problem worth chasing.'),
+      'Every forwarded client IP that never resolved in range, by address class; the events add up to the "IP not geolocatable" row beside. Carrier NAT and RFC1918 rows are expected — clients reaching the project through a NAT or private egress, whose addresses no geoip database can place — and are not an enrichment failure. A "Public, no geoip match" row WOULD be a geoip problem worth chasing. An address that resolved on any event is not here, even if some of its events predate enrichment.',
+      { empty: 'empty when every IP placed' }),
     // By name, not ISO code, so the legend reads "United States". Countries under 5% of resolved
     // traffic fold into "Other": that caps the split at 19 named series in theory and a handful in
-    // practice, and the right-hand legend (one per line) cannot clip the way a bottom row does.
+    // practice, and the right-hand legend (one per line) cannot clip the way a bottom row does — which
+    // is why it keeps its ~140px even when one country is all there is.
     // Aggregated on the raw keyword first, so the fold runs over buckets, not events.
     xy(0, 39, 24, 12, 'Geo-resolved traffic over time, by country',
-      `FROM ${IDX} | ${TIME} | WHERE client.geo.country_iso_code IS NOT NULL | STATS events = COUNT(*) BY ts = ${BUCKET}, c = client.geo.country_name | INLINE STATS ctot = SUM(events) BY c | INLINE STATS total = SUM(events) | EVAL country = CASE(ctot >= total * 0.05, c, "Other") | STATS events = SUM(events) BY ts, country`,
-      'events', 'Resolved client traffic over time, split by country. Countries under 5% of resolved events in range are folded into "Other". Unresolved events are not drawn — see Geo coverage.',
-      { breakdown: 'country', xcol: 'ts', legend: 'right', colors: { Other: '#B9A888' } }),
-    table(24, 39, 24, 12, 'Proxy vs real client IP',
-      `FROM ${IDX} | ${TIME} | WHERE client.ip IS NOT NULL | STATS events = COUNT(*) BY proxy = attributes.source.ip, client.ip, city = client.geo.city_name, country = client.geo.country_name | ${LOCATION} | SORT events DESC | LIMIT 15`,
-      ['proxy', filterable('client.ip'), 'location'], ['events'],
-      'Side-by-side proof that source.ip is the internal proxy and client.ip (from network.forwarded_ip) is the real origin; the busiest proxy/client pairs first. Analysing the wrong field would put every user in the datacentre. Only proxies that forwarded a client address appear here, which is why the Proxy IPs tile can count more.'),
+      `FROM ${IDX} | ${TIME} | WHERE client.geo.country_iso_code IS NOT NULL | STATS events = COUNT(*) BY ts = ${BUCKET}, c = client.geo.country_name | INLINE STATS ctot = SUM(events) BY c | INLINE STATS total = SUM(events) | EVAL country = CASE(ctot >= total * 0.05, c, "Other") | STATS events = SUM(events) BY ts, country | SORT country`,
+      'events', 'Resolved client traffic over time, split by country: events per bar, where the range is cut into about 75 bars (under a minute each at 1h, about 20 minutes at 24h). Countries under 5% of resolved events in range are folded into "Other". Unresolved events are not drawn — see Geo coverage.',
+      { breakdown: 'country', xcol: 'ts', legend: 'right', colors: { Other: '#B9A888' }, yTitle: 'Events per bar' }),
+    // Pairs, not proxies: the Client IP column is the point. Grouped BY the two raw addresses only, with
+    // IP_GEO, for the same reason as Busiest client IPs. The proxy column is the raw field, labelled, so
+    // it is a click-to-filter link like the client IP beside it (an ES|QL alias would cost the pill).
+    table(24, 39, 24, 12, 'Proxy vs real client IP · top pairs',
+      `FROM ${IDX} | ${TIME} | WHERE client.ip IS NOT NULL | STATS events = COUNT(*), ${IP_GEO} BY attributes.source.ip, client.ip | ${LOCATION} | SORT events DESC | LIMIT 15`,
+      [filterable('attributes.source.ip', { label: 'Proxy IP', width: 125 }), filterable('client.ip'), 'location'], ['events'],
+      'Side-by-side proof that source.ip is the internal proxy and client.ip (from network.forwarded_ip) is the real origin: the busiest proxy/client pairs, with the rest beyond the panel. Analysing the wrong field would put every user in the datacentre. Only proxies that forwarded a client address appear here, which is why the Proxy IPs tile can count more; the line beneath it counts the ones that did. Click either address to scope the suite to it.'),
   ];
   return dash('cloud-audit-05-geo-network', '[Audit] 🌍 Geo & Network',
     'Real client geography from forwarded_ip, geo-resolved at ingest. Impossible-travel detection.', P);
