@@ -21,7 +21,7 @@
   "data": {
     "url": {
       "%type%": "esql",
-      "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | EVAL band = CASE(attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\"), \"infra-noise\", attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\", \"query-noise\", attributes.event.action == \"connection_granted\", \"query-noise\", attributes.event.action == \"authentication_success\", \"authn-volume\", \"signal\") | STATS events = COUNT(*) BY ts = BUCKET(@timestamp, 75, ?_tstart, ?_tend), band | EVAL band = CASE(band == \"signal\", \"Signal\", band == \"authn-volume\", \"Auth success\", band == \"query-noise\", \"Query internals\", \"Infra health\") | SORT ts ASC",
+      "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | EVAL band = CASE(attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\"), \"infra-noise\", attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\", \"query-noise\", attributes.event.action == \"connection_granted\", \"query-noise\", attributes.event.action == \"authentication_success\", \"authn-volume\", \"signal\") | STATS events = COUNT(*) BY ts = BUCKET(@timestamp, 75, ?_tstart, ?_tend), band | EVAL band = CASE(band == \"signal\", \"Signal\", band == \"authn-volume\", \"Auth success\", band == \"query-noise\", \"Query internals\", \"Infra health\") | EVAL t0 = TO_DATETIME(?_tstart), t1 = TO_DATETIME(?_tend) | SORT ts ASC",
       "%timefield%": "@timestamp",
       "%context%": true
     }
@@ -31,59 +31,60 @@
     { "calculate": "indexof(['Signal', 'Auth success', 'Query internals', 'Infra health'], datum.band)", "as": "ord" },
     { "stack": "events", "groupby": ["ts"], "sort": [{ "field": "ord", "order": "ascending" }], "as": ["y0", "y1"] },
     { "joinaggregate": [{ "op": "sum", "field": "events", "as": "total" }], "groupby": ["ts"] },
-    { "window": [{ "op": "lead", "field": "ts", "as": "ts_next" }, { "op": "lag", "field": "ts", "as": "ts_prev" }], "groupby": ["band"], "sort": [{ "field": "ts", "order": "ascending" }] },
-    { "calculate": "datum.ts_next ? toDate(datum.ts_next) : datum.ts_prev ? toDate(datum.ts) + (toDate(datum.ts) - toDate(datum.ts_prev)) : toDate(datum.ts) + 60000", "as": "ts_end" }
+    { "window": [{ "op": "lag", "field": "ts", "as": "ts_prev" }], "groupby": ["band"], "sort": [{ "field": "ts", "order": "ascending" }] },
+    { "calculate": "datum.ts_prev ? toDate(datum.ts) - toDate(datum.ts_prev) : null", "as": "gap" },
+    { "joinaggregate": [{ "op": "min", "field": "gap", "as": "min_gap" }] },
+    { "calculate": "(toDate(datum.t1) - toDate(datum.t0)) / 75", "as": "need" },
+    { "calculate": "datum.need <= 1e3 ? 1e3 : datum.need <= 5e3 ? 5e3 : datum.need <= 1e4 ? 1e4 : datum.need <= 3e4 ? 3e4 : datum.need <= 6e4 ? 6e4 : datum.need <= 3e5 ? 3e5 : datum.need <= 6e5 ? 6e5 : datum.need <= 18e5 ? 18e5 : datum.need <= 36e5 ? 36e5 : datum.need <= 108e5 ? 108e5 : datum.need <= 432e5 ? 432e5 : datum.need <= 864e5 ? 864e5 : datum.need <= 6048e5 ? 6048e5 : datum.need <= 2592e6 ? 2592e6 : datum.need <= 7776e6 ? 7776e6 : 31536e6", "as": "interval" },
+    { "calculate": "toDate(datum.ts) + (datum.min_gap ? min(datum.min_gap, datum.interval) : datum.interval)", "as": "ts_end" }
   ],
-  "mark": {
-    "type": "rect",
-    "opacity": 1,
-    "strokeWidth": 0
-  },
-  "encoding": {
-    "x": {
-      "field": "ts",
-      "type": "temporal",
-      "axis": {
-        "title": null,
-        "labelAngle": 0,
-        "tickCount": 8,
-        "grid": false,
-        "labelExpr": "timeFormat(datum.value, hours(datum.value) == 0 && minutes(datum.value) == 0 ? '%b %d' : '%H:%M')"
+  "layer": [
+    { "mark": { "type": "rule", "opacity": 0 }, "encoding": { "x": { "field": "t0", "type": "temporal" }, "x2": { "field": "t1" } } },
+    {
+      "mark": { "type": "rect", "opacity": 1, "strokeWidth": 0 },
+      "encoding": {
+        "x": {
+          "field": "ts",
+          "type": "temporal",
+          "axis": {
+            "title": null,
+            "labelAngle": 0,
+            "tickCount": 8,
+            "grid": false,
+            "labelExpr": "timeFormat(datum.value, hours(datum.value) == 0 && minutes(datum.value) == 0 ? '%b %d' : '%H:%M')"
+          }
+        },
+        "x2": { "field": "ts_end" },
+        "y": {
+          "field": "y1",
+          "type": "quantitative",
+          "axis": { "title": null, "labelExpr": "format(datum.value, ',')", "grid": true }
+        },
+        "y2": { "field": "y0" },
+        "color": {
+          "field": "band",
+          "type": "nominal",
+          "scale": {
+            "domain": ["Signal", "Auth success", "Query internals", "Infra health"],
+            "range": ["#54B399", "#6092C0", "#B9A888", "#DA8B45"]
+          },
+          "legend": {
+            "title": null,
+            "orient": "bottom",
+            "direction": "horizontal",
+            "symbolType": "circle",
+            "symbolOpacity": 1,
+            "symbolStrokeWidth": 0,
+            "labelFontSize": 12
+          }
+        },
+        "tooltip": [
+          { "field": "ts", "type": "temporal", "title": "Bucket start", "format": "%b %d, %H:%M" },
+          { "field": "band", "title": "Band" },
+          { "field": "events", "type": "quantitative", "title": "Events", "format": "," },
+          { "field": "total", "type": "quantitative", "title": "All bands", "format": "," }
+        ]
       }
-    },
-    "x2": { "field": "ts_end" },
-    "y": {
-      "field": "y1",
-      "type": "quantitative",
-      "axis": {
-        "title": null,
-        "labelExpr": "format(datum.value, ',')",
-        "grid": true
-      }
-    },
-    "y2": { "field": "y0" },
-    "color": {
-      "field": "band",
-      "type": "nominal",
-      "scale": {
-        "domain": ["Signal", "Auth success", "Query internals", "Infra health"],
-        "range": ["#54B399", "#6092C0", "#B9A888", "#DA8B45"]
-      },
-      "legend": {
-        "title": null,
-        "orient": "bottom",
-        "direction": "horizontal",
-        "symbolType": "circle",
-        "symbolOpacity": 1,
-        "symbolStrokeWidth": 0,
-        "labelFontSize": 12
-      }
-    },
-    "tooltip": [
-      { "field": "ts", "type": "temporal", "title": "Bucket start", "format": "%b %d, %H:%M" },
-      { "field": "band", "title": "Band" },
-      { "field": "events", "type": "quantitative", "title": "Events", "format": "," },
-      { "field": "total", "type": "quantitative", "title": "All bands", "format": "," }
-    ]
-  }
+    }
+  ]
 }

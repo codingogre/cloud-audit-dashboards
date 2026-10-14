@@ -69,6 +69,14 @@ export function build() {
     kpi(40, 0, 8, 5, `FROM ${IDX} | ${TIME} | ${BAND} | STATS total = COUNT(*), sig = COUNT(CASE(band == "signal", 1, null)) | EVAL \`Signal share\` = ROUND(sig * 1.0 / total, 4) | KEEP \`Signal share\``, 'Signal share',
       'Percentage of the firehose that survives the noise gate. The lower this is, the more the other dashboards are earning their keep.', { fmt: 'percent', dec: 2 }),
     md(0, 5, 48, 7, VOL_NOTE),
+    // vega/07 draws one rect per band per bucket, and JSON has nowhere to say why it looks as it
+    // does. A rect is one bucket wide: the smaller of the closest gap between buckets and the
+    // interval BUCKET(…, 75, …) picks for the window (ES|QL's auto-date roundings, 1s … 1y), never
+    // "until the next bucket", which stretched one minute's count across every empty minute after
+    // it once a filter made the data sparse. The x domain is the whole time window, so the chart
+    // lines up with the Lens charts below: t0/t1 are ?_tstart/?_tend echoed after the STATS and
+    // drawn as an invisible rule. `"domain": {"%timefilter%": true}` was tried — on an ES|QL spec
+    // it renders the bare Vega "Error".
     vega(0, 12, 30, 13, '07-noise-ratio-stream', 'Signal vs noise over time',
       'Audit events per time bucket, stacked by band, so the top edge is the whole firehose and Signal sits on the baseline. Hover a segment for its band and the bucket total.'),
     table(30, 12, 18, 13, 'API key throughput',
