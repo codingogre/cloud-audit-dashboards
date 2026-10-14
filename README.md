@@ -27,7 +27,7 @@ design decision that follows.
 | **A single high-volume API key can dominate the stream**, and Elasticsearch stamps that key's **creator** on every event it emits | A noise gate is ON by default everywhere except the Platform Volume dashboard. Actor-facing panels also carry the `api_key` column, so an automated workload is never mistaken for the person who minted its credential. |
 | The gate's old `NOT (field IN (...))` form was **null for every Kibana event**, and `WHERE null` drops the row | Both halves are explicitly null-guarded. Before the fix the "Signal events" KPI excluded 100% of Kibana audit. |
 | Composition depends on the workload, so no single noise class can be assumed to be the bulk — health checks (`cluster:monitor/main`), **search-phase internals** and transport **`connection_granted`** are all targeted | The gate and the volume bands share one vocabulary (`NOISE_ES_ACTIONS`, `NOISE_ES_QUERY_INTERNALS`, `NOISE_EVENT_ACTIONS`) so they cannot disagree. |
-| Wide time windows once looked unservable — "2h, 3h and 4h all exceed 60s" | Those readings were taken back to back, and a synchronous ES\|QL query outlives the client that gave up on it and **cannot be cancelled** on serverless. Every query this repo runs now goes through a cancellable, budgeted call, and `--lint` reports its timings. Dashboards default to `now-1h` as the readable view of right now; what actually costs is query *shape* — see [`esql/fragments.md`](esql/fragments.md). |
+| Wide time windows once looked unservable — "2h, 3h and 4h all exceed 60s" | Those readings were taken back to back, and a synchronous ES\|QL query outlives the client that gave up on it and **cannot be cancelled** on serverless. Every query this repo runs now goes through a cancellable, budgeted call, and `--lint` reports its timings. What actually costs is query *shape* — see [`esql/fragments.md`](esql/fragments.md). Measured with `./audit --perf` on a 2.6M-event, 7-day replica, every panel query now returns in under 0.9s at 7 days and every dashboard loads in under 2.5s (see *Performance*). Dashboards still default to `now-1h` as the readable view of right now. |
 | `attributes.source.ip` is the **internal proxy** (`100.64.x.x` CGNAT, `10.x.x.x` mesh) | All geography uses `attributes.network.forwarded_ip`, the real public client IP. Using the obvious field would place every user in the datacentre. |
 | `attributes.event.category` / `.type` are **arrays** | `MV_EXPAND` before any `STATS ... BY`. |
 | `attributes.event.type` is **single-valued on Kibana** but **multi-valued on Elasticsearch** (`access_granted` = `["access","allowed"]`), and ES\|QL returns **null, not false**, for `IN` on a multi-value operand | The "what changed" predicate selects on `event.type` and is therefore implicitly Kibana-only. It carries an explicit `service.name` test so that is visible rather than accidental, and it is fail-closed everywhere else. |
@@ -346,6 +346,7 @@ legends over an empty domain, decade axes, solid placeholder cells, a flat line 
                          AUDIT_VERIFY_THEME=light renders light mode (default: dark)
                          AUDIT_VERIFY_RANGE=now-24h widens the window (default: now-1h)
                          AUDIT_VERIFY_WIDTH=1440 narrows the viewport (default: 1920)
+./audit --perf <sub>     Time every query at production volume on a replica: seed | run | clean
 ./audit --queries        List ES|QL queries registered on the project, and whether each is still
                          scanning. Check it before trusting any timing
 ./audit --deploy         Full pipeline
@@ -390,6 +391,29 @@ Three failures it was built to catch, all real:
   fails rather than degrading quietly to one screen.
 
 **Screenshots are written, not judged.** Open them.
+
+### Performance
+
+`--lint` times queries on the live stream, which holds only a few hours of events, so a 7-day panel
+looks as cheap there as a 1-hour one. `./audit --perf seed` copies the live stream into a sibling
+`-perf` data stream under the production template, re-stamped over 7 days. `./audit --perf run` then
+times every dashboard query on it, one at a time and as a concurrent page load per dashboard. Windows
+end at the newest replica document. Each run writes `build/perf-<stamp>/report.json`, and it warns
+when ES|QL work is already resident on the dataset, because that load skews every timing.
+
+Measured 2026-10-14 with `./audit --perf run --windows 1h,24h,7d` on a 2,625,300-event replica
+(117 queries per window, 30s budget per query, quiet cluster):
+
+| Window | Slowest query | Median query | Slowest dashboard load (all its queries at once) |
+| --- | --- | --- | --- |
+| 1h | 139ms | 34ms | 237ms (Actor 360) |
+| 24h | 197ms | 43ms | 547ms (Kibana Objects) |
+| 7d | 819ms (Command Center treemap) | 73ms | 2.3s (Actor 360) |
+
+Before the query-shape rewrites in [`esql/fragments.md`](esql/fragments.md), the 7-day Command
+Center, Kibana Objects, Security Anomalies and Platform Volume loads each hit the 30s budget, and the
+treemap alone took 30s at 24 hours. No query fails or is cancelled now. A new panel should be checked
+with `--perf run --only <dashboard>` (a substring of the dashboard name, e.g. `07-actor`) before it ships.
 
 ---
 
