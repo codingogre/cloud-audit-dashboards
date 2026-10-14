@@ -1,6 +1,6 @@
 {
   "$schema": "https://vega.github.io/schema/vega/v5.json",
-  "description": "The top 12 identities (fewer on a narrow panel, down to 8) by signal volume, one tile per identity, in a block per kind; the rest of each kind is folded into one grey \"+N more\" tile. Area grows with the square root of event volume and every tile gets a minimum share so its name stays readable; colour is accumulated severity on a square-root scale. Grouped on raw fields first and resolved afterwards, so an identity whose events disagree about its kind is still one tile, in its most specific block.",
+  "description": "The top 12 identities (fewer on a narrow panel, down to 8) by signal volume, one tile per identity, in a block per kind; the rest of each kind is folded into one grey \"+N more\" tile. Area grows with the square root of event volume and every tile gets a minimum share so its name stays readable (a name too long to break at its separators is shortened with an ellipsis; the tooltip has it in full); colour is accumulated severity on a square-root scale. Grouped on raw fields first and resolved afterwards, so an identity whose events disagree about its kind is still one tile, in its most specific block.",
   "autosize": {
     "type": "fit",
     "contains": "padding"
@@ -414,7 +414,7 @@
         {
           "type": "formula",
           "as": "lines",
-          "expr": "datum.a_ok ? datum.a_lines : datum.fs > 9 && datum.b_ok ? datum.b_lines : []"
+          "expr": "datum.a_ok ? datum.a_lines : datum.fs > 9 && datum.b_ok ? datum.b_lines : datum.th >= 14 && datum.tw >= 30 ? [datum.actor] : []"
         }
       ]
     }
