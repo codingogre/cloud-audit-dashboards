@@ -138,7 +138,7 @@ export function build() {
     // Aggregated on the raw keyword first, so the fold runs over buckets, not events.
     xy(0, 39, 24, 12, 'Geo-resolved traffic over time, by country',
       `FROM ${IDX} | ${TIME} | WHERE client.geo.country_iso_code IS NOT NULL | STATS events = COUNT(*) BY ts = ${BUCKET}, c = client.geo.country_name | INLINE STATS ctot = SUM(events) BY c | INLINE STATS total = SUM(events) | EVAL country = CASE(ctot >= total * 0.05, c, "Other") | STATS events = SUM(events) BY ts, country | SORT country`,
-      'events', 'Resolved client traffic over time, split by country: events per bar, where the range is cut into about 75 bars (under a minute each at 1h, about 20 minutes at 24h). Countries under 5% of resolved events in range are folded into "Other". Unresolved events are not drawn — see Geo coverage.',
+      'events', 'Resolved client traffic over time, split by country: events per bar, where each bar is a round interval sized so the range holds at most 75 of them (1 minute at 1h, 30 minutes at 24h, 3 hours at 7d). Countries under 5% of resolved events in range are folded into "Other". Unresolved events are not drawn — see Geo coverage.',
       { breakdown: 'country', xcol: 'ts', legend: 'right', colors: { Other: '#B9A888' }, yTitle: 'Events per bar' }),
     // Pairs, not proxies: the Client IP column is the point. Grouped BY the two raw addresses only, with
     // IP_GEO, for the same reason as Busiest client IPs. The proxy column is the raw field, labelled, so

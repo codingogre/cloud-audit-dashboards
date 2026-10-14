@@ -579,7 +579,7 @@
       },
       "config": {
         "title": "Geo-resolved traffic over time, by country",
-        "description": "Resolved client traffic over time, split by country: events per bar, where the range is cut into about 75 bars (under a minute each at 1h, about 20 minutes at 24h). Countries under 5% of resolved events in range are folded into \"Other\". Unresolved events are not drawn — see Geo coverage.",
+        "description": "Resolved client traffic over time, split by country: events per bar, where each bar is a round interval sized so the range holds at most 75 of them (1 minute at 1h, 30 minutes at 24h, 3 hours at 7d). Countries under 5% of resolved events in range are folded into \"Other\". Unresolved events are not drawn — see Geo coverage.",
         "type": "xy",
         "axis": {
           "x": {

@@ -157,7 +157,10 @@
             "direction": "vertical",
             "gradientLength": 120,
             "gradientThickness": 10,
-            "labelExpr": "format(datum.value, '~s')",
+            "values": {
+              "expr": "length(data('countries')) && data('countries')[0].events > 1 ? [1, data('countries')[0].events] : [1]"
+            },
+            "labelExpr": "format(datum.value, '.3~s')",
             "titleOpacity": {
               "expr": "length(data('countries')) ? 1 : 0"
             },
