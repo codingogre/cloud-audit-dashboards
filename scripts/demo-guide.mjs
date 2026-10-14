@@ -17,7 +17,7 @@ import { join } from 'node:path';
 import { cfg, ROOT, nsId } from './lib/env.mjs';
 import { es } from './lib/http.mjs';
 import { success, info, detail, warn } from './lib/log.mjs';
-import { IDX, NOISE, BAND, ACTOR, RISK, RISK_PREFILTER, CHANGE } from './lib/panels.mjs';
+import { IDX, NOISE, BAND, BAND_KEYS, ACTOR, RISK, RISK_PREFILTER, CHANGE } from './lib/panels.mjs';
 import {
   CSS, COPY_JS, esc, rich, fmt, codeblock, talk, check, callout, a, rows, useCase,
   stepper, minutesIn, stepsIn,
@@ -114,7 +114,7 @@ export async function run(argv = []) {
          cfgChanges, mutations, geoCov, riskTop] = await Promise.all([
     q('stream span', `FROM ${IDX} | STATS oldest = MIN(@timestamp), newest = MAX(@timestamp), docs = COUNT(*)`),
     q('window total', `FROM ${IDX} | ${W} | STATS total = COUNT(*)`),
-    q('band mix', `FROM ${IDX} | ${W} | ${BAND} | STATS events = COUNT(*) BY band | SORT events DESC`),
+    q('band mix', `FROM ${IDX} | ${W} | STATS n = COUNT(*) BY ${BAND_KEYS} | ${BAND} | STATS events = SUM(n) BY band | SORT events DESC`),
     q('signal by service', `FROM ${IDX} | ${W} | ${NOISE} | STATS events = COUNT(*) BY svc = resource.attributes.service.name | SORT events DESC`),
     q('top identities (24h)', `FROM ${IDX} | ${EV} | WHERE attributes.api_key.name IS NOT NULL | STATS events = COUNT(*), ips = COUNT_DISTINCT(client.ip) BY key = attributes.api_key.name, owner = attributes.user.email | SORT events DESC | LIMIT 8`),
     q('human interaction', `FROM ${IDX} | ${W} | WHERE resource.attributes.service.name == "serverless-kibana" AND attributes.user.email IS NOT NULL | STATS events = COUNT(*), people = COUNT_DISTINCT(attributes.user.email)`),

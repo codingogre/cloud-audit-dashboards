@@ -56,8 +56,7 @@ Facts behind them, verified on the live 9.6 project (private space, read back wi
   the last label off the panel edge (vega/04). No other spec rotates top-axis labels.
 
 Declined, with reasons, in the commit message of this change: extending the noise gate to ES|QL's own
-fan-out (a change to what every gated panel counts, and to five static copies — needs a product call and
-a perf pass); naming Elasticsearch security actions inside the OBJ fragment; a `label` on `kpi()`
+fan-out (since done, with the perf pass — see *The noise gate's share depends on the workload*); naming Elasticsearch security actions inside the OBJ fragment; a `label` on `kpi()`
 secondaries (unverified against the API); a lint check comparing `vega()` descriptions with spec
 descriptions. `ACTOR_RESOLVE` is unchanged by decision: the opaque id stays, and every table, session
 and Vega panel that shows it now says what it is.
@@ -415,8 +414,16 @@ exactly those keys when a spec does not override them. Do not reintroduce them.
 ## The noise gate's share depends on the workload
 
 **`NOISE`/`BAND` in `scripts/lib/panels.mjs` target connection housekeeping**
-(`authentication_success` plus `GET /` → `cluster:monitor/main`), search-phase internals and
-transport `connection_granted`. How much the gate removes is a property of the stream, not of the
+(`authentication_success` plus `GET /` → `cluster:monitor/main`), query internals and transport
+`connection_granted`. Query internals took in ES|QL and all its sub-requests, `field_caps`,
+`async_search`, index resolution, Kibana `/internal/` page requests and reads of the suite's own
+`cloud-audit-*` objects (`KIBANA_INTERNALS`), because with many viewers their own panel queries were
+the top "signal" (7-day replica: signal 1.54M → 0.38M of 2.6M). `BAND` now needs `BAND_KEYS`, which
+groups a `kib_internal` boolean; band queries cost ~450ms at 7 days instead of ~100ms. `space_get` /
+`space_find` and the dashboard app's `/api/content_management/rpc/{get,search,mget,bulkGet}` reads are
+in it too (one per page load per viewer). Still signal on purpose: other public `/api/` page plumbing
+(`/api/core`, `/api/licensing`, `/bootstrap.js`, `/api/ui_counters`) — the next candidates if Command
+Center's top actions fill with them. How much the gate removes is a property of the stream, not of the
 gate, so the legend panel quotes no number; `--demo-guide` reads the share live. The vocabulary has
 been validated against a limited set of workloads — revisit it when the bulk of a project's stream
 is something else.

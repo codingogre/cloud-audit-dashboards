@@ -19,7 +19,7 @@ import { join } from 'node:path';
 import { ROOT, cfg } from './env.mjs';
 import { CONTROLS } from './controls.mjs';
 import {
-  NAV_H, NOISE, BAND, RISK, RISK_KEYS, RISK_RESTORE, VERB, ACTOR_RESOLVE, OBJ, OBJ_ID, OBJ_TYPE, CHANGE_PRED, CRED, OBJ_PRESENT,
+  NAV_H, NOISE, BAND, BAND_KEYS, RISK, RISK_KEYS, RISK_RESTORE, VERB, ACTOR_RESOLVE, OBJ, OBJ_ID, OBJ_TYPE, CHANGE_PRED, CRED, OBJ_PRESENT,
   CRED_TYPE_LABEL, INDEX_FAMILY, CONCRETE, SYS_INDEX,
 } from './panels.mjs';
 
@@ -42,7 +42,7 @@ const FRAGMENT_USES = {
   'vega/04-actor-index-matrix.json': { ACTOR_RESOLVE, CONCRETE, INDEX_FAMILY },
   'vega/05-rare-event-scatter.json': { RISK, RISK_KEYS, RISK_RESTORE },
   'vega/06-geo-origin.json': { ACTOR_RESOLVE },
-  'vega/07-noise-ratio-stream.json': { BAND },
+  'vega/07-noise-ratio-stream.json': { BAND_KEYS, BAND },
   // Groups on the real attributes.user.email (never the actor COALESCE), so there is no fragment to pin.
   'vega/10-actor-geography.json': {},
   'vega/11-actor-object-flow.json': { OBJ_PRESENT, CRED, VERB, OBJ_TYPE },
@@ -302,6 +302,24 @@ function checkSessions(problems) {
   }
 }
 
+/**
+ * A title must not promise more rows than the panel shows. table() clamps a trailing LIMIT to the rows
+ * that fit (panels.mjs, COMPLETENESS), so "Every address they used" over a LIMITed table is false as
+ * soon as the data outgrows the panel — and Lens gives no cue that rows were cut. Retitle it ("Busiest
+ * addresses", "Top 10 …"), or pass { scroll: true } when the LIMIT is itself the promise. The words are
+ * matched whole, so "allowed" and "overall" do not trip it.
+ */
+export const PROMISES_ALL = /\b(every|everything|all)\b/i;
+function checkCompleteness(name, panels, problems) {
+  for (const p of panels) {
+    if (p.config?.type !== 'data_table' || !p.lint?.limit || p.lint.scroll) continue;
+    const t = p.config.title || '';
+    if (PROMISES_ALL.test(t)) {
+      problems.push(`${name}: table ${p.id} "${t}" promises every row but is LIMITed to ${p.lint.limit} — retitle it (top/busiest/most recent), or pass { scroll: true } if the LIMIT is the promise`);
+    }
+  }
+}
+
 /** Returns an array of human-readable problems; empty means clean. */
 export function checkLayout(all) {
   const problems = [];
@@ -314,6 +332,7 @@ export function checkLayout(all) {
     const maxY = checkGrid(name, panels, problems);
     checkRefs(name, panels, problems);
     checkMarkdown(name, panels, problems);
+    checkCompleteness(name, panels, problems);
     rows.push(`${name}: panels=${panels.length} rows=${maxY}`);
     // Advisory, not a failure: a table whose columns cannot fit a 1440px viewport needs a layout
     // decision (a wider panel or fewer columns), which no width arithmetic can make. See fitWidths().

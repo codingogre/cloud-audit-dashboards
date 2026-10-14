@@ -27,7 +27,8 @@ design decision that follows.
 | **A single high-volume API key can dominate the stream**, and Elasticsearch stamps that key's **creator** on every event it emits | A noise gate is ON by default everywhere except the Platform Volume dashboard. Actor-facing panels also carry the `api_key` column, so an automated workload is never mistaken for the person who minted its credential. |
 | The gate's old `NOT (field IN (...))` form was **null for every Kibana event**, and `WHERE null` drops the row | Both halves are explicitly null-guarded. Before the fix the "Signal events" KPI excluded 100% of Kibana audit. |
 | Composition depends on the workload, so no single noise class can be assumed to be the bulk — health checks (`cluster:monitor/main`), **search-phase internals** and transport **`connection_granted`** are all targeted | The gate and the volume bands share one vocabulary (`NOISE_ES_ACTIONS`, `NOISE_ES_QUERY_INTERNALS`, `NOISE_EVENT_ACTIONS`) so they cannot disagree. |
-| Wide time windows once looked unservable — "2h, 3h and 4h all exceed 60s" | Those readings were taken back to back, and a synchronous ES\|QL query outlives the client that gave up on it and **cannot be cancelled** on serverless. Every query this repo runs now goes through a cancellable, budgeted call, and `--lint` reports its timings. What actually costs is query *shape* — see [`esql/fragments.md`](esql/fragments.md). Measured with `./audit --perf` on a 2.6M-event, 7-day replica, every panel query now returns in under 0.9s at 7 days and every dashboard loads in under 2.5s (see *Performance*). Dashboards still default to `now-1h` as the readable view of right now. |
+| **Reading the audit stream is audited.** Every dashboard panel, Discover tab and API client that queries data emits ES\|QL sub-requests (`esql/compute`, `esql/data`, `esql/search_shards`, `resolve_fields`), `field_caps`, `async_search`, Kibana `/internal/*` and content-management page requests, "User has accessed space" and "User has accessed dashboard" reads — with thousands of viewers, the viewers' own queries were the top "signal" | All of it is **Query internals**, gated out with search phases (`KIBANA_INTERNALS` covers the Kibana half). The suite's own views — a get/resolve/find of a `cloud-audit-*` object — are noise; a *change* to a suite object stays signal. Unfiltered counts stay on Platform Volume and on 02's object panels. 7-day replica: signal 1.54M → 0.38M of 2.6M events. |
+| Wide time windows once looked unservable — "2h, 3h and 4h all exceed 60s" | Those readings were taken back to back, and a synchronous ES\|QL query outlives the client that gave up on it and **cannot be cancelled** on serverless. Every query this repo runs now goes through a cancellable, budgeted call, and `--lint` reports its timings. What actually costs is query *shape* — see [`esql/fragments.md`](esql/fragments.md). Measured with `./audit --perf` on a 2.6M-event, 7-day replica, every panel query now returns in under 0.7s at 7 days and every dashboard loads in under 3.5s (see *Performance*). Dashboards still default to `now-1h` as the readable view of right now. |
 | `attributes.source.ip` is the **internal proxy** (`100.64.x.x` CGNAT, `10.x.x.x` mesh) | All geography uses `attributes.network.forwarded_ip`, the real public client IP. Using the obvious field would place every user in the datacentre. |
 | `attributes.event.category` / `.type` are **arrays** | `MV_EXPAND` before any `STATS ... BY`. |
 | `attributes.event.type` is **single-valued on Kibana** but **multi-valued on Elasticsearch** (`access_granted` = `["access","allowed"]`), and ES\|QL returns **null, not false**, for `IN` on a multi-value operand | The "what changed" predicate selects on `event.type` and is therefore implicitly Kibana-only. It carries an explicit `service.name` test so that is visible rather than accidental, and it is fail-closed everywhere else. |
@@ -264,9 +265,42 @@ in shared code rather than at call sites.
   the `STATS` and it prints nothing. Never on a click-to-filter column: Lens refuses to filter on any
   column the query assigns ("created at query time"), so a null there stays an underlined `-`. Where
   those dominate, drop the column (00's Busiest identities has no Email column for that reason).
+- *Empty states.* Kibana prints a bare "No results found" for an empty ES\|QL table or Discover session,
+  no 9.6 setting replaces it, and a description is only a tooltip. A query cannot add a placeholder row
+  without making every row column "created at query time" (no click-to-filter, no drilldown). So the
+  meaning goes in the title: `table(…, { empty: 'good' })` → *"⚠️ System index reads · none is good"*;
+  `'quiet'` → *"· often empty at 1h"*; or your own short words. `search()` takes the same option, and the
+  description gains the matching sentence. Use it on every panel a default 1h render shows empty on a
+  healthy project.
+- *Completeness.* A title must not promise more than the panel shows. A LIMITed table whose title says
+  *every*, *everything* or *all* fails `--lint` (`layout.mjs` `PROMISES_ALL`): say *top*, *busiest* or
+  *most recent*, or pass `{ scroll: true }` when the LIMIT is itself the promise ("the 30 most recent").
 - *Opaque identities.* An Identity that resolves to a bare id is a principal with no email or key name
   — usually an organisation-level Cloud API key. `table()` appends that explanation to the description
   of every table showing `actor`; Discover sessions with an Identity column say it themselves.
+
+**Numbers that sit together must reconcile.** A KPI and the table beside or below it, two tables
+counting "the same" identities or events, or a tile and the chart under it must agree, or say on the
+panel why not. Two things make them disagree, and both are rules:
+- *Same gate.* Both are gated by `NOISE`, or neither is. A presence panel (rule 4 of QUERY SHAPE) is
+  ungated by design; one beside a gated panel says *all traffic* in its title, as 00's do.
+- *Same resolution.* Both count the same key: the `actor` COALESCE (`ACTOR_RESOLVE`), or the raw
+  `attributes.user.email`, or `attributes.api_key.name` — not one of each. The email groups an API key's
+  events under its creator; the COALESCE gives the key its own row. A distinct count
+  (`COUNT_DISTINCT(actor)`) counts what the table beside it groups by. (The review that set this rule
+  found 32 identities in a KPI over a 28-row table, and one person at 12,649 events in one panel and
+  8,526 in another.)
+- *Same population otherwise.* A table cut by LIMIT does not sum to its KPI; its title says *top* (see
+  *Completeness*) and, where a reader will add the rows up, the description says the rest is beyond the
+  limit. A table that adds a filter the KPI lacks (Kibana only, humans only, client IP present) names it in
+  the title.
+Where a difference is the point (gated vs all traffic, email vs key), the title or the first sentence
+of the description names it — never only the tooltip of the other panel.
+
+**IP tables group by the address.** `STATS … , ${IP_GEO} BY client.ip` (see
+[`esql/fragments.md`](esql/fragments.md), *Location per address*): never `BY client.ip, client.geo.*`,
+which prints an address twice when some of its events predate enrichment. `placed == 0` is the only
+"not placeable".
 
 **Charts — `xy()` / `bar()`.** A breakdown gets a legend (`legend: 'bottom' | 'right' | 'hidden'`).
 `bottom` is one line and clips past ~6 series: use `'right'`, or fold the tail into "other" in the
@@ -406,9 +440,16 @@ Measured 2026-10-14 with `./audit --perf run --windows 1h,24h,7d` on a 2,625,300
 
 | Window | Slowest query | Median query | Slowest dashboard load (all its queries at once) |
 | --- | --- | --- | --- |
-| 1h | 139ms | 34ms | 237ms (Actor 360) |
-| 24h | 197ms | 43ms | 547ms (Kibana Objects) |
-| 7d | 819ms (Command Center treemap) | 73ms | 2.3s (Actor 360) |
+| 1h | 146ms | 33ms | 223ms (Actor 360) |
+| 24h | 208ms | 43ms | 516ms (Platform Volume) |
+| 7d | 642ms (Signal vs noise, vega/07) | 76ms | 3.2s (Platform Volume) |
+
+Re-measured after the noise gate took in ES\|QL, field_caps, async-search and Kibana `/internal/`
+internals (see *Noise gate* in [`esql/fragments.md`](esql/fragments.md)). The gated panels got cheaper
+where they had the most signal to chew — the treemap 819ms → 309ms, *Identity first and last seen*
+392ms → 159ms — and the band panels dearer: `BAND_KEYS` loads `url.original` and `saved_object.id` for
+every event, so each band query on Platform Volume went from ~100ms to ~450ms at 7 days (Signal vs noise
+294ms → 642ms), and that page's concurrent load from 1.9s to 3.2s.
 
 Before the query-shape rewrites in [`esql/fragments.md`](esql/fragments.md), the 7-day Command
 Center, Kibana Objects, Security Anomalies and Platform Volume loads each hit the 30s budget, and the

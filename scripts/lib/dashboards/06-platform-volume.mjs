@@ -1,6 +1,6 @@
 /** 06 Platform Volume — see scripts/lib/definitions.mjs for how the suite is assembled. */
 import {
-  IDX, ACTOR, NOISE, BAND, TIME, BUCKET, KIND_REFINE, SOURCE_LABEL, SOURCE_COLORS, PALETTE,
+  IDX, ACTOR, NOISE, BAND, BAND_KEYS, TIME, BUCKET, KIND_REFINE, SOURCE_LABEL, SOURCE_COLORS, PALETTE,
   dash, kpi, xy, table, vega, md, filterable, resetIds
 } from '../panels.mjs';
 
@@ -30,13 +30,6 @@ const BAND_ORDER =
  * noise bands take the warm, low-salience hues so the eye goes to Signal first; no grey, because a
  * grey that reads on white sits on the gridlines in dark theme.
  */
-/**
- * The two raw fields BAND reads. BAND is a five-way CASE, and a CASE with two or more conditions costs
- * ~4µs per event (panels.mjs, QUERY SHAPE), so every band panel counts BY these first and classifies
- * the few hundred grouped rows: the share tile went from 2.8s to 0.05s over 24h on the perf replica.
- */
-const BAND_KEYS = 'attributes.elasticsearch.audit.action, attributes.event.action';
-
 const BAND_COLORS = { 'Signal': PALETTE[0], 'Auth success': PALETTE[1], 'Query internals': PALETTE[6], 'Infra health': PALETTE[7] };
 
 /**
@@ -48,7 +41,7 @@ const VOL_NOTE = `### The quarantine dashboard
 
 Every other dashboard applies a **noise gate**; this one does not, so the whole firehose stays measurable. Every event lands in exactly one band:
 **Signal** — what the other dashboards read · **Auth success** — Elasticsearch's \`authentication_success\`, one per authenticated request
-**Query internals** — search phases, reader contexts, point-in-time, \`connection_granted\` · **Infra health** — \`cluster:monitor/main\`, \`elastic.maintenance\`
+**Query internals** — search, ES|QL, Kibana \`/internal/\`, suite self-views, \`connection_granted\` · **Infra health** — \`cluster:monitor/main\`, \`elastic.maintenance\`
 
 An API key's events carry its **creator's** email, so a busy key can read as a person: **Via API key** in *Highest-volume identities* shows how much of a name is a key.`;
 
@@ -65,12 +58,12 @@ export function build() {
     kpi(8, 0, 8, 5, `FROM ${IDX} | ${TIME} | ${NOISE} | STATS \`Signal\` = COUNT(*)`, 'Signal', 'Events that survive the noise gate: what every other dashboard reads.'),
     kpi(16, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE attributes.event.action == "authentication_success" | STATS \`Auth success\` = COUNT(*)`, 'Auth success',
       'Successful authentication events. Elasticsearch logs one per authenticated request, so credentials making many calls generate most of them.'),
-    // The positive LIKE/== term is a superset of the query-internals band and pushes down to the
-    // index; BAND then decides membership exactly, over the grouped rows, so this tile cannot drift
-    // from the charts. If NOISE_ES_QUERY_INTERNALS ever gains an action outside indices:data/read/*,
-    // widen the prefilter with it. COALESCE because SUM over no rows is null, where COUNT was 0.
-    kpi(24, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE attributes.elasticsearch.audit.action LIKE "indices:data/read/*" OR attributes.event.action == "connection_granted" | STATS n = COUNT(*) BY ${BAND_KEYS} | ${BAND} | WHERE band == "query-noise" | STATS q = SUM(n) | EVAL \`Query internals\` = COALESCE(q, 0) | KEEP \`Query internals\``, 'Query internals',
-      'Search phases, reader contexts, point-in-time and transport connection_granted: the machinery behind a query, not a decision anyone made.'),
+    // Counted BY BAND_KEYS with no prefilter, like Signal share: BAND decides membership over the
+    // grouped rows, so this tile cannot drift from the charts. A positive superset prefilter measured
+    // no faster (450ms vs 454ms, 7d replica) once KIBANA_INTERNALS joined the band, and it was one more
+    // list to keep in step. COALESCE because SUM over no rows is null, where COUNT was 0.
+    kpi(24, 0, 8, 5, `FROM ${IDX} | ${TIME} | STATS n = COUNT(*) BY ${BAND_KEYS} | ${BAND} | WHERE band == "query-noise" | STATS q = SUM(n) | EVAL \`Query internals\` = COALESCE(q, 0) | KEEP \`Query internals\``, 'Query internals',
+      'The machinery behind a query, not a decision anyone made: Elasticsearch search phases, ES|QL sub-requests, field_caps, async search and point-in-time; Kibana /internal/ page requests; reads of this suite’s own saved objects; and transport connection_granted.'),
     kpi(32, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE attributes.elasticsearch.audit.action IN ("cluster:monitor/main","elastic.maintenance") | STATS \`Infra health\` = COUNT(*)`, 'Infra health',
       'Health-check and platform maintenance traffic.'),
     kpi(40, 0, 8, 5, `FROM ${IDX} | ${TIME} | STATS n = COUNT(*) BY ${BAND_KEYS} | ${BAND} | STATS total = SUM(n), sig = SUM(CASE(band == "signal", n, 0)) | EVAL \`Signal share\` = ROUND(sig * 1.0 / total, 4) | KEEP \`Signal share\``, 'Signal share',
@@ -106,7 +99,7 @@ export function build() {
     table(0, 37, 24, 12, 'Noisiest transport actions',
       `FROM ${IDX} | ${TIME} | WHERE attributes.elasticsearch.audit.action IS NOT NULL | STATS events = COUNT(*), actors = COUNT_DISTINCT(COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name)) BY attributes.elasticsearch.audit.action | SORT events DESC | LIMIT 15`,
       ['attributes.elasticsearch.audit.action'], ['events', 'actors'],
-      'Highest-volume Elasticsearch transport actions, unfiltered, with the number of identities behind each. ES|QL’s own fan-out (esql/compute, search_shards, field_caps[n]) is currently classed as Signal, and much of it is dashboards querying this stream.'),
+      'Highest-volume Elasticsearch transport actions, unfiltered, with the number of identities behind each. ES|QL’s own fan-out (esql/compute, search_shards, field_caps[n]) is in Query internals, and much of it is dashboards querying this stream.'),
     // Kind is refined after the STATS (KIND_REFINE), where it costs nothing: ACTOR's two-way CASE calls
     // an unauthenticated principal and Elastic's own service accounts "service", which contradicts
     // SCOPE's vocabulary on every other dashboard. via_key is COUNT(field) — non-null values — so it is the share of a row's volume that

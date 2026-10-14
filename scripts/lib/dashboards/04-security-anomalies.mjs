@@ -70,7 +70,7 @@ export function build() {
       ['actor', 'actor_scope', WHO],
       ['risk_total', 'scoring_events', { column: 'mean_severity', format: { type: 'number', decimals: 1 } }, 'privileged'],
       'Identities ranked by total accumulated severity, so sustained behaviour outranks a single high-severity event. Scope separates tenant identities from Elastic platform automation and unauthenticated requests — without it elastic.maintenance can top this table, because Elastic platform automation performs routine security config changes itself. API keys and native users carry no email; click an email, where there is one, to pin that identity across the whole suite.'),
-    table(0, 42, 48, 12, 'Why these identities scored — every risky action, with its weight',
+    table(0, 42, 48, 12, 'Why these identities scored — top risky actions, with their weight',
       `FROM ${IDX} | ${TIME} | ${riskScored({ by: ACTOR_KEYS, aggs: 'last_ts = MAX(@timestamp)' })} | ${ACTOR_RESOLVE} | ${SCOPE} | STATS events = SUM(n), risk_total = SUM(risk * n), last_seen = MAX(last_ts) BY actor, actor_scope, attributes.user.email, action = attributes.event.action, weight = risk | SORT risk_total DESC | LIMIT 30`,
       // weight is a group key, but listed as a metric so it right-aligns with the numbers it multiplies.
       ['actor', 'actor_scope', WHO, 'action'], ['weight', 'events', 'risk_total', 'last_seen'],

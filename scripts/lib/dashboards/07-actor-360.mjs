@@ -121,12 +121,12 @@ export function build() {
     ]),
     row(12, [
       [24, vegaPanel('10-actor-geography', 'Where they connected from')],
-      [24, (x, y, w, h) => drillTo('cloud-audit-05-geo-network', table(x, y, w, h, 'Every address they used',
+      [24, (x, y, w, h) => drillTo('cloud-audit-05-geo-network', table(x, y, w, h, 'Busiest addresses they used',
         `FROM ${IDX} | ${TIME} | WHERE client.ip IS NOT NULL | STATS events = COUNT(*), last_seen = MAX(@timestamp) BY client.ip, city = client.geo.city_name, country = client.geo.country_name | EVAL city = COALESCE(city, CASE(country IS NULL, "unplaced", "—")), country = COALESCE(country, "unplaced") | SORT events DESC | LIMIT 25`,
         [filterable('client.ip'), 'city', 'country'], ['events', 'last_seen'],
         'Every real client address, including the ones the map cannot show: "unplaced" means geoip could not place it, which is always the case for a private or CGNAT address, and "—" is a country with no city. Click an address to pin it, then "Open in Geo & Network".'))],
     ]),
-    row(10, [[48, (x, y, w, h) => drillTo('cloud-audit-04-security-anomalies', table(x, y, w, h, 'Everything that scored, with its weight',
+    row(10, [[48, (x, y, w, h) => drillTo('cloud-audit-04-security-anomalies', table(x, y, w, h, 'What scored most, with its weight',
       `FROM ${IDX} | ${TIME} | ${riskScored({ aggs: 'last_ts = MAX(@timestamp)' })} | STATS events = SUM(n), severity = SUM(risk * n), last_seen = MAX(last_ts) BY attributes.event.action, weight = risk | SORT severity DESC | LIMIT 25`,
       // weight is a number, so it reads as one (right-aligned, beside the other numbers); it stays in the
       // BY clause, so the grouping is unchanged.

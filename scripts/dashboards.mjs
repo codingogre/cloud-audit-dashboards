@@ -31,11 +31,11 @@ import { checkLayout } from './lib/layout.mjs';
 /**
  * The Dashboards API payload: the definitions minus the in-memory annotations the post-pass and the
  * layout check read. `PUT /api/dashboards/{id}` is Zod-strict, so a panel's `drill` destination and
- * table()'s `narrow1440` flag cannot ride along — they are kept on the in-memory definition and
+ * table()'s `narrow1440` flag and the `lint` annotation (table(), search()) cannot ride along — they are kept on the in-memory definition and
  * stripped here, which is also what gets written to dashboards/*.json, since those files are the
  * payload as sent.
  */
-const payload = (def) => ({ ...def, panels: def.panels.map(({ drill, narrow1440, ...p }) => p) });
+const payload = (def) => ({ ...def, panels: def.panels.map(({ drill, narrow1440, lint, ...p }) => p) });
 
 /** Write the generated definitions to disk so they are diffable in review. */
 export function emit() {

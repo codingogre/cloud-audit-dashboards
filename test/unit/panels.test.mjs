@@ -150,3 +150,41 @@ test('nsId() is the identity unless AUDIT_ID_NS is set', () => {
     if (was === undefined) delete process.env.AUDIT_ID_NS; else process.env.AUDIT_ID_NS = was;
   }
 });
+
+test('empty states live in the title; completeness is a lint failure on a LIMITed table', async () => {
+  const { EMPTY } = await import('../../scripts/lib/panels.mjs');
+  const { PROMISES_ALL, checkLayout } = await import('../../scripts/lib/layout.mjs');
+  const good = table(0, 0, 24, 12, '⚠️ System index reads', 'FROM x | LIMIT 30', ['a'], ['b'], 'Reads.', { empty: 'good' });
+  assert.equal(good.config.title, `⚠️ System index reads · ${EMPTY.good.title}`);
+  assert.ok(good.config.description.startsWith('Reads. ') && good.config.description.endsWith(EMPTY.good.desc));
+  const own = table(0, 0, 24, 12, 'API key throughput', 'q', ['a'], ['b'], 'Keys.', { empty: 'empty without API-key traffic' });
+  assert.equal(own.config.title, 'API key throughput · empty without API-key traffic');
+  assert.equal(table(0, 0, 24, 12, 't', 'q', ['a'], ['b'], 'd').config.title, 't', 'no empty option, title untouched');
+  assert.equal(good.lint.limit, 10);
+  assert.ok(PROMISES_ALL.test('Every address they used') && PROMISES_ALL.test('all changes'));
+  assert.ok(!PROMISES_ALL.test('Allowed overall callers'));
+  // The rule is wired into checkLayout: a suite that passes today must fail with one promising title.
+  const all = buildAll();
+  const [name, def] = Object.entries(all).find(([, d]) => d.panels.some((p) => p.lint?.limit && !p.lint.scroll));
+  const p = def.panels.find((x) => x.lint?.limit && !x.lint.scroll);
+  const saved = p.config.title;
+  p.config.title = 'Every row';
+  assert.ok(checkLayout(all).problems.some((m) => m.startsWith(`${name}: table ${p.id} "Every row" promises every row`)));
+  p.config.title = saved;
+  // In-memory annotations never reach the Dashboards API payload.
+  const text = JSON.stringify(Object.values(all).map((d) => d.panels.map(({ drill, narrow1440, lint, ...q }) => q)));
+  assert.doesNotMatch(text, /"lint":/);
+});
+
+test('NOISE and BAND share one vocabulary; BAND reads the kib_internal key BAND_KEYS defines; IP_GEO groups by address', async () => {
+  const { NOISE, BAND, BAND_KEYS, KIBANA_INTERNALS, IP_GEO } = await import('../../scripts/lib/panels.mjs');
+  assert.ok(NOISE.includes(KIBANA_INTERNALS) && BAND_KEYS.includes(`kib_internal = (${KIBANA_INTERNALS})`));
+  assert.match(BAND, /kib_internal, "query-noise"/);
+  for (const a of ['indices:data/read/esql*', 'indices:data/read/field_caps*', 'indices:data/read/async_search/*', 'indices:admin/resolve/*']) {
+    assert.ok(NOISE.includes(`"${a}"`) && BAND.includes(`"${a}"`), a);
+  }
+  // Every non-action field KIBANA_INTERNALS reads is IS NOT NULL-guarded, so the gate never yields null.
+  for (const f of ['attributes.url.original', 'attributes.kibana.saved_object.id']) assert.ok(KIBANA_INTERNALS.includes(`${f} IS NOT NULL AND ${f}`), f);
+  assert.doesNotMatch(IP_GEO, /\bBY\b/);
+  assert.match(IP_GEO, /placed = COUNT\(client\.geo\.country_iso_code\)/);
+});

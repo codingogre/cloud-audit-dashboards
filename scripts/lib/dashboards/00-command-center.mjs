@@ -19,7 +19,7 @@ export function build() {
     kpi(0, 0, 8, 5, `FROM ${IDX} | ${TIME} | STATS \`Total events${ALL}\` = COUNT(*)`, `Total events${ALL}`,
       'Every audited event in range, including machine noise. Compare with Signal to see how much the noise gate removes.'),
     kpi(8, 0, 8, 5, `FROM ${IDX} | ${TIME} | ${NOISE} | STATS \`Signal events\` = COUNT(*)`, 'Signal events',
-      'Events left after the noise gate removes health checks (cluster:monitor/main, elastic.maintenance), search-phase internals, connection_granted and bulk authentication_success.'),
+      'Events left after the noise gate removes health checks (cluster:monitor/main, elastic.maintenance), query internals (search, ES|QL, field_caps and async-search sub-requests, Kibana /internal/ page requests, and this suite reading its own saved objects), connection_granted and bulk authentication_success.'),
     kpi(16, 0, 8, 5, `FROM ${IDX} | ${TIME} | ${ACTOR} | STATS \`Distinct actors\` = COUNT_DISTINCT(actor)`, 'Distinct actors',
       'Unique identities resolved as email, then API key name, then numeric user id.'),
     kpi(24, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE attributes.user.email IS NOT NULL | STATS \`Human actors\` = COUNT_DISTINCT(attributes.user.email)`, 'Human actors',

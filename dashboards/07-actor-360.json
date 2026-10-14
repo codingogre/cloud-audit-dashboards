@@ -591,7 +591,7 @@
         "h": 12
       },
       "config": {
-        "title": "Every address they used",
+        "title": "Busiest addresses they used",
         "description": "Every real client address, including the ones the map cannot show: \"unplaced\" means geoip could not place it, which is always the case for a private or CGNAT address, and \"—\" is a country with no city. Click an address to pin it, then \"Open in Geo & Network\".",
         "type": "data_table",
         "data_source": {
@@ -650,7 +650,7 @@
         "h": 10
       },
       "config": {
-        "title": "Everything that scored, with its weight",
+        "title": "What scored most, with its weight",
         "description": "The receipts behind the Risk tile: exactly which actions carried a weight, what each weighed, how often, and when last. Click an action to pin it, then \"Open in Security & Anomalies\" to see who else does it — the pinned person and action combine, so clear the person pill first to compare.",
         "type": "data_table",
         "data_source": {

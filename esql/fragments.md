@@ -49,33 +49,84 @@ Kibana audit events, so a bare `NOT (field IN (...))` evaluates to null there �
 drops the row. The previous gate therefore discarded 100% of Kibana audit, which is a small
 fraction of the stream carrying nearly all of the forensic value.
 
-Composition varies by workload, so the gate targets several noise classes — `cluster:monitor/main`,
-search-phase internals, transport `connection_granted` — rather than assuming any one of them is the
-bulk.
+Composition varies by workload, so the gate targets several noise classes rather than assuming any
+one of them is the bulk:
+
+| Class | What | Why it is noise |
+| --- | --- | --- |
+| Infra health | `cluster:monitor/main`, `elastic.maintenance` | pings and platform housekeeping |
+| Query internals, Elasticsearch | search phases, `msearch`, `scroll`, PIT and reader contexts; **ES\|QL and every sub-request** (`esql/compute`, `esql/data`, `esql/search_shards`, `esql/resolve_fields`, `esql/async/get`, `indices:admin/esql/*`); `field_caps` and `field_caps[n]`; `async_search/*`; `indices:admin/resolve/*`; `indices:admin/shards/search_shards` | the machinery every dashboard, Discover tab and client runs to read data. With many viewers, each viewer's own panel queries were the top "signal" |
+| Query internals, Kibana | `http_request` to an `/internal/` route (with or without `/s/<space>`): `/internal/search/esql_async`, feature flags, controls options, session checks; the dashboard app's content-management reads (`/api/content_management/rpc/get`, `search`, `mget`, `bulkGet`); `saved_object_open/close_point_in_time`; `space_get` / `space_find` ("User has accessed space", once per page load) | what the browser calls to draw a page. A content-management read is also audited as its own `saved_object_*` event. Every other public `/api/` route, an rpc create/update/delete, and a space create/update/delete stay signal |
+| The suite itself | `saved_object_get` / `_resolve` / `_find` of a `cloud-audit-*` object — "User has accessed dashboard [id=cloud-audit-…]" | one per panel load per viewer. A **change** to a suite object is not a read and stays signal: editing the audit dashboards is what an auditor wants to see. Views remain visible on 02's object panels, which read all traffic |
+| Connection / authn volume | `connection_granted`, `authentication_success` | one per transport connection / authenticated request |
+
+A read of a system index is not lost to the gate: `SYS_INDEX` selects on the index name and never
+passes through it.
 
 ```esql
 | WHERE (attributes.elasticsearch.audit.action IS NULL OR NOT (
       attributes.elasticsearch.audit.action IN ("cluster:monitor/main", "elastic.maintenance")
       OR attributes.elasticsearch.audit.action LIKE "indices:data/read/search*"
+      OR attributes.elasticsearch.audit.action LIKE "indices:data/read/msearch*"
+      OR attributes.elasticsearch.audit.action LIKE "indices:data/read/scroll*"
       OR attributes.elasticsearch.audit.action LIKE "indices:data/read/*point_in_time"
-      OR attributes.elasticsearch.audit.action == "indices:data/read/open_reader_context"))
-    AND (attributes.event.action IS NULL
-      OR NOT (attributes.event.action IN ("authentication_success","connection_granted")))
+      OR attributes.elasticsearch.audit.action == "indices:data/read/open_reader_context"
+      OR attributes.elasticsearch.audit.action LIKE "indices:data/read/esql*"
+      OR attributes.elasticsearch.audit.action LIKE "indices:admin/esql/*"
+      OR attributes.elasticsearch.audit.action LIKE "indices:data/read/field_caps*"
+      OR attributes.elasticsearch.audit.action LIKE "indices:data/read/async_search/*"
+      OR attributes.elasticsearch.audit.action LIKE "indices:admin/resolve/*"
+      OR attributes.elasticsearch.audit.action == "indices:admin/shards/search_shards"))
+    AND (attributes.event.action IS NULL OR NOT (
+      attributes.event.action IN ("authentication_success","connection_granted")
+      OR <KIBANA_INTERNALS>))
 ```
 
-Band classification shares the same vocabulary, so the gate and the bands cannot disagree. A CASE
-condition that evaluates to null falls through rather than matching, so Kibana events land in
-`signal` as intended.
+`KIBANA_INTERNALS` (exported from `panels.mjs`):
 
 ```esql
+attributes.event.action IN ("saved_object_open_point_in_time","saved_object_close_point_in_time","space_get","space_find")
+  OR (attributes.event.action == "http_request" AND attributes.url.original IS NOT NULL
+      AND attributes.url.original RLIKE "https?://[^/]+(/s/[^/]+)?/(internal/|api/content_management/rpc/(get|search|mget|bulkGet)).*")
+  OR (attributes.event.action IN ("saved_object_get","saved_object_resolve","saved_object_find")
+      AND attributes.kibana.saved_object.id IS NOT NULL AND attributes.kibana.saved_object.id LIKE "cloud-audit-*")
+```
+
+It only runs where `event.action` is non-null, and each extra field is `IS NOT NULL AND …`
+(`false AND null` is false), so it never yields null and never drops a row. `url.original` is a
+`wildcard` field; `RLIKE` on it costs the same as `LIKE "*/internal/*"` (36ms vs 34ms, 7 days) and is
+exact where the `LIKE` also matched `/api/internal/…`. (Measured before the content-management
+alternation was added to the same pattern; the whole gate re-measured with it is below.)
+
+Measured on the 2.6M-event, 7-day replica: the gate keeps 377,070 events where the narrower one kept
+1,539,450; the gated count takes 70ms against 45ms (a gated `STATS BY event.action` 72ms against 75ms,
+fewer rows to group), and no gated dashboard query moved past its old
+cost class (see *Performance* in the README).
+
+### Bands
+
+Band classification shares the same vocabulary, so the gate and the bands cannot disagree (on the
+replica, Signal from `NOISE` and the `signal` band are both 377,070). `BAND` is a multi-branch `CASE`,
+so it only ever runs on rows grouped `BY BAND_KEYS`. Two fields `KIBANA_INTERNALS` reads are near-unique
+per event (a URL, a saved-object id), so they are grouped as one boolean, `kib_internal` — the
+`RISK_KEYS` trick — and `BAND` reads that column. A `CASE` condition that evaluates to null falls
+through, so Kibana events with no internal match land in `signal`.
+
+```esql
+| STATS n = COUNT(*) BY <panel keys>,
+    attributes.elasticsearch.audit.action, attributes.event.action, kib_internal = (<KIBANA_INTERNALS>)
 | EVAL band = CASE(
     attributes.elasticsearch.audit.action IN ("cluster:monitor/main", "elastic.maintenance"), "infra-noise",
-    attributes.elasticsearch.audit.action LIKE "indices:data/read/search*"
-      OR attributes.elasticsearch.audit.action LIKE "indices:data/read/*point_in_time"
-      OR attributes.elasticsearch.audit.action == "indices:data/read/open_reader_context", "query-noise",
+    <the Elasticsearch query-internals disjunction above>, "query-noise",
+    kib_internal, "query-noise",
     attributes.event.action == "connection_granted", "query-noise",
     attributes.event.action == "authentication_success", "authn-volume", "signal")
+| STATS events = SUM(n) BY <panel keys>, band
 ```
+
+`kib_internal` has to be computed per event, and loading `url.original` and `saved_object.id` for every
+event is what that costs: a band query over 7 days went from ~100ms to ~450ms (the share-over-time
+chart 541ms, the vega/07 stream 642ms). A positive prefilter does not help — `BAND` must see every event to share out 100%.
 
 ## Source split
 
@@ -350,6 +401,28 @@ rewritten to `SUM(n)` `COALESCE`s after the `STATS` so an empty window still rea
 | WHERE client.geo.country_iso_code IS NOT NULL
 | STATS events = COUNT(*) BY country = client.geo.country_iso_code, city = client.geo.city_name
 ```
+
+### Location per address — `IP_GEO`
+
+Enrichment is forward-only, so one client IP can carry both enriched events and older ones with no
+`client.geo.*`. Grouping `BY client.ip, client.geo.*` prints that address twice — placed, and "not
+placeable" — and a breakdown that selects `client.geo.country_iso_code IS NULL` per event calls a
+resolvable public address "no geoip match" (live, 24h: `65.185.62.22` as Powell with 434,065 events and
+as unplaceable with 391). An IP table groups by the address only:
+
+```esql
+| STATS events = COUNT(*),
+        country = MAX(client.geo.country_name), city = MAX(client.geo.city_name),
+        placed = COUNT(client.geo.country_iso_code)
+    BY client.ip
+```
+
+`placed == 0` is the only honest "cannot be placed"; on a placed address, `events - placed` is events
+that predate enrichment (or the seconds before the geoip database loaded) — show it if useful, never
+call it unplaceable. Why addresses do not resolve: `STATS events = COUNT(*), placed = COUNT(client.geo.country_iso_code)
+BY client.ip | WHERE placed == 0 | <address class>`. Measured, 7 days: the IP footprint 306ms → 394ms,
+the unresolved breakdown 35ms → 81ms. `MAX` over a keyword is lexicographic; pairing city and country
+through one `CONCAT` measured 484ms and is not worth it.
 
 ## Gotchas
 

@@ -386,32 +386,112 @@ export const RISK_RESTORE =
  * row, so the gate silently discarded 100% of Kibana audit: the small slice of the stream that
  * carries nearly all of the forensic value. Every predicate below is explicitly null-guarded.
  *
- * cluster:monitor/main is not the only bulk. Search-phase internals (scroll/query/can_match,
- * reader contexts, PITs) and transport connection_granted can outweigh it, so all of them are
- * gated. What survives is a small fraction of the stream, and Kibana audit is part of it rather
- * than being thrown away.
+ * QUERY INTERNALS are the machinery every dashboard, Discover tab and API client runs to read data,
+ * not something a person chose to do. With thousands of viewers they are the bulk of what is left
+ * after the health pings, and before they were gated each viewer's own panel queries were the top
+ * "signal" on Command Center. Measured on the 7-day replica: the gate keeps 377,070 of 2,625,300
+ * events where the narrower one kept 1,539,450, at 70ms against 45ms for the whole gated count.
+ *
+ *   Elasticsearch   search phases, scroll, msearch, PIT and reader contexts; ES|QL and its
+ *                   sub-requests (compute, data, search_shards, resolve_fields, async/get, and
+ *                   indices:admin/esql/*); field_caps and its per-node fan-out; async_search; index
+ *                   resolution; search_shards. A read of a system index is NOT lost: SYS_INDEX
+ *                   selects on the index, not through this gate.
+ *   Kibana          http_request to an /internal/ route (with or without the /s/<space> prefix) —
+ *                   what the browser calls to draw a page: /internal/search/esql_async, feature
+ *                   flags, controls options, session checks — and the content-management READS the
+ *                   dashboard app makes to load and list objects (/api/content_management/rpc/get,
+ *                   search, mget, bulkGet), each of which Kibana also audits as a saved_object_*
+ *                   event. Every other public /api/ route stays signal, as does an rpc create,
+ *                   update or delete. And saved_object_open/close_point_in_time: the saved-objects
+ *                   client paging a find. And space_get / space_find: "User has accessed space", which
+ *                   every Kibana page load emits for the active space — with the rest gated it was the
+ *                   top "signal" action on Command Center. Creating, changing or deleting a space
+ *                   stays signal.
+ *   The suite       a read (get, resolve, find) of the suite's own saved objects — `cloud-audit-*`,
+ *                   which covers every AUDIT_ID_NS namespace too. "User has accessed dashboard
+ *                   [id=cloud-audit-…]" is the suite watching itself be watched, one per panel load
+ *                   per viewer. A CHANGE to a suite object is not a read, and stays signal (and in
+ *                   CHANGE_PRED, which this gate never touches): someone editing the audit dashboards
+ *                   is exactly what an auditor wants to see. Who viewed them is still on 02's object
+ *                   panels, which read all traffic.
+ *
+ * KIBANA_INTERNALS is evaluated only where event.action is known to be non-null (inside NOISE's
+ * `IS NULL OR NOT (…)` and as a BAND_KEYS boolean), and the two fields it reads beyond the action are
+ * each `IS NOT NULL AND …` — `false AND null` is false, so it never yields null and never drops a row.
+ * url.original is a `wildcard` field: RLIKE on it measured the same as a LIKE (36ms vs 34ms, 7d) and is
+ * exact where `LIKE "*\/internal/*"` also matched /api/internal/….
  */
 const NOISE_ES_ACTIONS = '"cluster:monitor/main", "elastic.maintenance"';
+const A_ = 'attributes.elasticsearch.audit.action';
 const NOISE_ES_QUERY_INTERNALS =
-  'attributes.elasticsearch.audit.action LIKE "indices:data/read/search*" ' +
-  'OR attributes.elasticsearch.audit.action LIKE "indices:data/read/*point_in_time" ' +
-  'OR attributes.elasticsearch.audit.action == "indices:data/read/open_reader_context"';
+  `${A_} LIKE "indices:data/read/search*" OR ${A_} LIKE "indices:data/read/msearch*" ` +
+  `OR ${A_} LIKE "indices:data/read/scroll*" ` +
+  `OR ${A_} LIKE "indices:data/read/*point_in_time" OR ${A_} == "indices:data/read/open_reader_context" ` +
+  `OR ${A_} LIKE "indices:data/read/esql*" OR ${A_} LIKE "indices:admin/esql/*" ` +
+  `OR ${A_} LIKE "indices:data/read/field_caps*" OR ${A_} LIKE "indices:data/read/async_search/*" ` +
+  `OR ${A_} LIKE "indices:admin/resolve/*" OR ${A_} == "indices:admin/shards/search_shards"`;
 const NOISE_EVENT_ACTIONS = '"authentication_success","connection_granted"';
 
+export const KIBANA_INTERNALS =
+  'attributes.event.action IN ("saved_object_open_point_in_time","saved_object_close_point_in_time","space_get","space_find") ' +
+  'OR (attributes.event.action == "http_request" AND attributes.url.original IS NOT NULL ' +
+  'AND attributes.url.original RLIKE "https?://[^/]+(/s/[^/]+)?/(internal/|api/content_management/rpc/(get|search|mget|bulkGet)).*") ' +
+  'OR (attributes.event.action IN ("saved_object_get","saved_object_resolve","saved_object_find") ' +
+  'AND attributes.kibana.saved_object.id IS NOT NULL AND attributes.kibana.saved_object.id LIKE "cloud-audit-*")';
+
 export const NOISE =
-  `WHERE (attributes.elasticsearch.audit.action IS NULL OR NOT (` +
-  `attributes.elasticsearch.audit.action IN (${NOISE_ES_ACTIONS}) OR ${NOISE_ES_QUERY_INTERNALS})) ` +
-  `AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (${NOISE_EVENT_ACTIONS})))`;
+  `WHERE (${A_} IS NULL OR NOT (` +
+  `${A_} IN (${NOISE_ES_ACTIONS}) OR ${NOISE_ES_QUERY_INTERNALS})) ` +
+  `AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (${NOISE_EVENT_ACTIONS}) OR ${KIBANA_INTERNALS}))`;
 
 /**
- * Band classification for the quarantine dashboard. A CASE condition that evaluates to null
- * falls through rather than matching, so Kibana events land in "signal" as intended.
+ * The raw keys BAND reads, for `STATS n = COUNT(*) BY …, BAND_KEYS | BAND | STATS SUM(n) BY band`.
+ * BAND is a multi-branch CASE, so it never runs per event (QUERY SHAPE rule 1). Two of the fields
+ * KIBANA_INTERNALS reads are near-unique per event (a URL, a saved-object id), so they are grouped as
+ * the one boolean `kib_internal` — the same trick RISK_KEYS plays with security_config_change — and
+ * BAND reads that column. It is null where event.action is null, which BAND's CASE falls through.
+ */
+export const BAND_KEYS =
+  `${A_}, attributes.event.action, kib_internal = (${KIBANA_INTERNALS})`;
+
+/**
+ * Band classification for the quarantine dashboard, over rows grouped BY BAND_KEYS. A CASE condition
+ * that evaluates to null falls through rather than matching, so Kibana events land in "signal" unless
+ * kib_internal says otherwise. "query-noise" is the reader's "Query internals" and covers the
+ * Kibana and suite-self reads above as well as Elasticsearch's.
  */
 export const BAND =
-  `EVAL band = CASE(attributes.elasticsearch.audit.action IN (${NOISE_ES_ACTIONS}), "infra-noise", ` +
+  `EVAL band = CASE(${A_} IN (${NOISE_ES_ACTIONS}), "infra-noise", ` +
   `${NOISE_ES_QUERY_INTERNALS}, "query-noise", ` +
+  `kib_internal, "query-noise", ` +
   `attributes.event.action == "connection_granted", "query-noise", ` +
   `attributes.event.action == "authentication_success", "authn-volume", "signal")`;
+
+/**
+ * Location PER ADDRESS. Enrichment is forward-only (README, Geo enrichment), so one client IP can carry
+ * both enriched events and older ones with no client.geo.* at all. Grouping BY client.ip AND the geo
+ * fields then prints the same address twice — once placed, once "not placeable" — and a breakdown that
+ * selects `client.geo.country_iso_code IS NULL` per event calls a resolvable public address "no geoip
+ * match" (05 and 07, 24h on the live stream: 65.185.62.22 as Powell with 434,065 events and as
+ * unplaceable with 391).
+ *
+ * So an IP table groups BY client.ip ONLY and takes these aggregates: the address's location from any
+ * event that resolved, and `placed`, how many of its events did. `placed == 0` is the only honest
+ * "cannot be placed"; `events - placed` on a placed address is events that predate enrichment (or the
+ * seconds before the geoip database loaded), which a table may show but must not call unplaceable.
+ * MAX over a keyword is lexicographic, so if an address ever resolved to two places the row shows one
+ * of them; GeoLite2 does not move an address within a retention window in practice, and pairing the
+ * two through CONCAT (so city and country come from one event) measured 484ms against 394ms at 7d.
+ *
+ *   STATS events = COUNT(*), ${IP_GEO} BY client.ip | …                       an IP table
+ *   STATS events = COUNT(*), placed = COUNT(client.geo.country_iso_code) BY client.ip
+ *     | WHERE placed == 0 | …                                                    why addresses do not resolve
+ *
+ * Measured on the 7-day replica: the IP footprint 306ms → 394ms; the unresolved breakdown 35ms → 81ms.
+ */
+export const IP_GEO =
+  'country = MAX(client.geo.country_name), city = MAX(client.geo.city_name), placed = COUNT(client.geo.country_iso_code)';
 
 export const TIME   = 'WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart';
 export const BUCKET = 'BUCKET(@timestamp, 75, ?_tstart, ?_tend)';
@@ -830,7 +910,39 @@ const withIdNote = (desc, cols) =>
  */
 export const blankNull = (...cols) => `EVAL ${cols.map((c) => `${c} = COALESCE(${c}, " ")`).join(', ')}`;
 
-export const table = (x, y, w, h, title, q, rows, metrics, desc, { scroll = false, wrap = false } = {}) => {
+/**
+ * EMPTY STATES. A Lens ES|QL table and a Discover session that match nothing print Kibana's bare "No
+ * results found". No setting to replace it was found for 9.6 — none in an exported data_table or
+ * discover_session panel, and the serverless OAS route is a 404 — and a panel description is only a
+ * hover tooltip. A query cannot supply a placeholder row either: ES|QL has no UNION, a STATS with no
+ * BY is the only shape that always returns a row, and turning a grouped table into one (EVAL key =
+ * CASE(match, raw), STATS BY key, INLINE STATS to know whether anything matched) makes every row
+ * column "created at query time", which costs the click-to-filter pill and the Actor 360 drilldown,
+ * and scans the whole window.
+ *
+ * So the meaning of an empty panel goes in its TITLE, the one text a reader sees with the panel:
+ * `table(…, { empty: 'good' })` titles it "⚠️ System index reads · none is good", and search() takes
+ * the same option. `empty` is an EMPTY key ('good': empty is the healthy state; 'quiet': often empty
+ * over the default hour) or the reader-facing words themselves ("empty without API-key traffic"); the
+ * description gains the matching sentence. Use it on every table or session that a verify render at
+ * the default 1h shows empty on a healthy project. Keep the words short: they share the title line.
+ */
+export const EMPTY = {
+  good: { title: 'none is good', desc: 'An empty panel means nothing matched in the time range, which is the healthy state.' },
+  quiet: { title: 'often empty at 1h', desc: 'Often empty over the default hour on a healthy project; widen the time range to see older rows.' },
+};
+const emptyOf = (empty) => EMPTY[empty] ?? { title: empty, desc: `When this panel is empty: ${empty}.` };
+const withEmptyTitle = (title, empty) => (empty ? `${title} · ${emptyOf(empty).title}` : title);
+const withEmptyDesc = (desc, empty) => (empty ? `${desc || ''} ${emptyOf(empty).desc}`.trim() : desc);
+
+/**
+ * COMPLETENESS. A table whose trailing LIMIT is clamped to fitRows() shows the top rows only, so a
+ * title that promises every row ("Every address they used", "everything that scored") is false as
+ * soon as the data outgrows the panel. layout.mjs fails a LIMITed table whose title says every,
+ * everything or all, unless it is { scroll: true } (and then the LIMIT itself is the promise). The
+ * in-memory `lint` annotation carries what the check needs; dashboards.mjs strips it from the payload.
+ */
+export const table = (x, y, w, h, title, q, rows, metrics, desc, { scroll = false, wrap = false, empty } = {}) => {
   let query = q;
   if (!scroll && !wrap) {
     query = q.replace(/\|\s*LIMIT\s+(\d+)\s*$/i, (m, n) => `| LIMIT ${Math.min(Number(n), fitRows(h))}`);
@@ -844,10 +956,12 @@ export const table = (x, y, w, h, title, q, rows, metrics, desc, { scroll = fals
     delete r.reduce((a, b) => (b.width > a.width ? b : a)).width;
   }
   const fits = fitWidths([...r, ...m], w);
+  const limit = Number(/\|\s*LIMIT\s+(\d+)\s*$/i.exec(query)?.[1]) || undefined;
   return {
     type: 'vis', id: nid('tbl'), grid: { x, y, w, h }, ...(fits ? {} : { narrow1440: true }),
+    lint: { limit, scroll: scroll || wrap, ...(empty ? { empty } : {}) },
     config: {
-      title, description: withIdNote(desc, r), type: 'data_table',
+      title: withEmptyTitle(title, empty), description: withEmptyDesc(withIdNote(desc, r), empty), type: 'data_table',
       data_source: { type: 'esql', query },
       styling: { density: wrap ? DENSITY_WRAP : DENSITY },
       rows: r, metrics: m,
@@ -920,13 +1034,16 @@ export const vega = (x, y, w, h, ref, title, desc) => ({
   config: { ref_id: nsId(`cloud-audit-vega-${ref}`), title, description: desc },
 });
 
-/** A Discover session panel. Like table(), it explains an opaque Identity when the session shows one. */
-export const search = (x, y, w, h, ref, title, desc) => {
+/**
+ * A Discover session panel. Like table(), it explains an opaque Identity when the session shows one,
+ * and takes `{ empty }` (see EMPTY STATES above) for a session that is often empty.
+ */
+export const search = (x, y, w, h, ref, title, desc, { empty } = {}) => {
   const cols = JSON.parse(readFileSync(join(ROOT, 'searches', `${ref}.json`), 'utf8')).columns || [];
   const description = cols.includes('Identity') && !/opaque/i.test(desc || '') ? `${desc} ${OPAQUE_ID_NOTE}` : desc;
   return {
-    type: 'discover_session', id: nid('ds'), grid: { x, y, w, h },
-    config: { ref_id: nsId(`cloud-audit-search-${ref}`), title, description },
+    type: 'discover_session', id: nid('ds'), grid: { x, y, w, h }, ...(empty ? { lint: { empty } } : {}),
+    config: { ref_id: nsId(`cloud-audit-search-${ref}`), title: withEmptyTitle(title, empty), description: withEmptyDesc(description, empty) },
   };
 };
 
