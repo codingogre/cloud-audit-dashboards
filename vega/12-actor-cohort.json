@@ -507,7 +507,7 @@
     },
     {
       "name": "headline",
-      "update": "empty ? 'No activity for this selection in the last 7 days' : nPeople === 0 ? 'No identities with an email' + sp + ' in the last 7 days' : nPeople === 1 ? 'Only one identity' + sp + ' in 7 days \u2014 a rank needs two or more' : 'Rank among ' + nPeople + ' identities' + sp + ' \u00b7 last 7 days' + (approx ? ' \u00b7 approximate' : '')"
+      "update": "empty ? ['No activity for this selection', 'in the last 7 days'] : nPeople === 0 ? ['No identities with an email', (scopeText ? scopeText + ' \u00b7 ' : '') + 'last 7 days'] : nPeople === 1 ? ['Only one identity' + sp + ' in 7 days', 'a rank needs two or more'] : ['Rank among ' + nPeople + ' identities' + (approx ? ' \u00b7 approximate' : ''), (scopeText ? scopeText + ' \u00b7 ' : '') + 'last 7 days']"
     },
     {
       "name": "basis",

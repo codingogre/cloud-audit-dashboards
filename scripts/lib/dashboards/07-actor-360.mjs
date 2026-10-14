@@ -63,7 +63,7 @@ const weightWords = (col) => `CASE(${WEIGHT_WORDS.map(([w, words]) => `${col} ==
  * the browser's zone like the rest of Kibana. Side by side they disagree by the viewer's UTC offset,
  * and nothing else on the page says which is which.
  */
-const ORIENTATION = `👤 **Pick a person in the control bar** and every panel becomes their story; with nobody selected it describes the whole estate. **① Is this normal?** reads a fixed 7 days in UTC, whatever the time picker says · **② What they did** follows the picker · **③ Evidence** ends in the raw records. Table times and the session timeline are in your time zone.`;
+const ORIENTATION = `👤 **Pick a person in the control bar** and every panel becomes their story; with nobody selected it is the whole estate. **① Is this normal?** is a fixed 7 days in UTC · **② What they did** follows the time picker · **③ Evidence** ends in the raw records. Table times and the session timeline are in your time zone.`;
 
 export function build() {
   resetIds();
@@ -101,7 +101,7 @@ export function build() {
     row(2, [[48, (x, y, w, h) => section(x, y, w, h, '① Is this normal?', 'fixed 7-day window in UTC — ignores the time picker')]]),
     row(14, [
       [20, vegaPanel('08-actor-baseline-band', 'Is this normal for them? — hourly, last 7 days (UTC)')],
-      [12, vegaPanel('12-actor-cohort', 'Where they rank among the busiest — last 7 days')],
+      [12, vegaPanel('12-actor-cohort', 'Where they rank — last 7 days')],
       [16, vegaPanel('09-activity-punchcard', 'Working rhythm — last 7 days (UTC)')],
     ]),
 

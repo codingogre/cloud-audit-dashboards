@@ -116,7 +116,7 @@
         "h": 3
       },
       "config": {
-        "content": "👤 **Pick a person in the control bar** and every panel becomes their story; with nobody selected it describes the whole estate. **① Is this normal?** reads a fixed 7 days in UTC, whatever the time picker says · **② What they did** follows the picker · **③ Evidence** ends in the raw records. Table times and the session timeline are in your time zone."
+        "content": "👤 **Pick a person in the control bar** and every panel becomes their story; with nobody selected it is the whole estate. **① Is this normal?** is a fixed 7 days in UTC · **② What they did** follows the time picker · **③ Evidence** ends in the raw records. Table times and the session timeline are in your time zone."
       }
     },
     {
@@ -339,7 +339,7 @@
       },
       "config": {
         "ref_id": "cloud-audit-vega-12-actor-cohort",
-        "title": "Where they rank among the busiest — last 7 days",
+        "title": "Where they rank — last 7 days",
         "description": "The 40 busiest identities by user email over the last 7 days, placed by percentile rank on three measures: how much they did, how many different things they did, and how many kinds of Kibana object they touched. The cohort follows the Project control and nothing else: the people it ranks against are everyone active in the projects in scope, so a Person or Client IP selection highlights that identity (an orange diamond, drawn only when exactly one identity is in scope) instead of shrinking the cohort to one. The projects in scope are the projects the current selection is active in. When that is every project the ranks are exact; when it is one project they are exact for that project; when it is several, events are summed across them and the two distinct counts take the largest per-project value, which can undercount, so the title says approximate. Rank rather than raw value so all three measures share one honest axis: a person can be busier than 90% of the cohort while touching fewer kinds of object than most. Hover any point for its raw numbers. With fewer than two identities there is no rank to draw, and the panel says so instead of plotting one. Fixed 7-day window: does not follow the time picker."
       }
     },
