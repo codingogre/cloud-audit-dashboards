@@ -1,6 +1,6 @@
 {
   "$schema": "https://vega.github.io/schema/vega/v5.json",
-  "description": "The 40 busiest identities by user email over the last 7 days, placed by percentile rank on three measures: how much they did, how many different things they did, and how many kinds of Kibana object they touched. The cohort follows the Project control and nothing else: the people it ranks against are everyone active in the projects in scope, so a Person or Client IP selection highlights that identity (an orange diamond, drawn only when exactly one identity is in scope) instead of shrinking the cohort to one. The projects in scope are the projects the current selection is active in. When that is every project the ranks are exact; when it is one project they are exact for that project; when it is several, events are summed across them and the two distinct counts take the largest per-project value, which can undercount, so the title says approximate. Rank rather than raw value so all three measures share one honest axis: a person can be busier than 90% of the cohort while touching fewer kinds of object than most. Hover any point for its raw numbers. Fixed 7-day window: does not follow the time picker.",
+  "description": "The 40 busiest identities by user email over the last 7 days, placed by percentile rank on three measures: how much they did, how many different things they did, and how many kinds of Kibana object they touched. The cohort follows the Project control and nothing else: the people it ranks against are everyone active in the projects in scope, so a Person or Client IP selection highlights that identity (an orange diamond, drawn only when exactly one identity is in scope) instead of shrinking the cohort to one. The projects in scope are the projects the current selection is active in. When that is every project the ranks are exact; when it is one project they are exact for that project; when it is several, events are summed across them and the two distinct counts take the largest per-project value, which can undercount, so the title says approximate. Rank rather than raw value so all three measures share one honest axis: a person can be busier than 90% of the cohort while touching fewer kinds of object than most. Hover any point for its raw numbers. With fewer than two identities there is no rank to draw, and the panel says so instead of plotting one. Fixed 7-day window: does not follow the time picker.",
   "autosize": {
     "type": "fit",
     "contains": "padding"
@@ -507,7 +507,7 @@
     },
     {
       "name": "headline",
-      "update": "empty ? 'No activity for this selection in the last 7 days' : nPeople === 0 ? 'No identities with an email' + sp + ' in the last 7 days' : nPeople === 1 ? 'Only one identity' + sp + ' in 7 days \u2014 a rank needs two or more' : 'Rank among ' + nPeople + ' identities' + sp + ' \u00b7 last 7 days' + (approx ? ' \u00b7 approximate' : '')"
+      "update": "empty ? ['No activity for this selection', 'in the last 7 days'] : nPeople === 0 ? ['No identities with an email', (scopeText ? scopeText + ' \u00b7 ' : '') + 'last 7 days'] : nPeople === 1 ? ['Only one identity' + sp + ' in 7 days', 'a rank needs two or more'] : ['Rank among ' + nPeople + ' identities' + (approx ? ' \u00b7 approximate' : ''), (scopeText ? scopeText + ' \u00b7 ' : '') + 'last 7 days']"
     },
     {
       "name": "basis",
@@ -551,7 +551,7 @@
         "labels": {
           "update": {
             "opacity": {
-              "signal": "nPeople > 0 ? 1 : 0"
+              "signal": "nPeople > 1 ? 1 : 0"
             }
           }
         }
@@ -570,28 +570,28 @@
         "labels": {
           "update": {
             "opacity": {
-              "signal": "nPeople > 0 ? 1 : 0"
+              "signal": "nPeople > 1 ? 1 : 0"
             }
           }
         },
         "grid": {
           "update": {
             "opacity": {
-              "signal": "nPeople > 0 ? 1 : 0"
+              "signal": "nPeople > 1 ? 1 : 0"
             }
           }
         },
         "ticks": {
           "update": {
             "opacity": {
-              "signal": "nPeople > 0 ? 1 : 0"
+              "signal": "nPeople > 1 ? 1 : 0"
             }
           }
         },
         "title": {
           "update": {
             "opacity": {
-              "signal": "nPeople > 0 ? 1 : 0"
+              "signal": "nPeople > 1 ? 1 : 0"
             }
           }
         }
@@ -617,13 +617,13 @@
             "value": "circle"
           },
           "size": {
-            "signal": "datum.highlight ? 0 : datum.maxTie > 20 ? 18 : 34"
+            "signal": "datum.highlight || nPeople < 2 ? 0 : datum.maxTie > 20 ? 22 : 40"
           },
           "fill": {
-            "value": "#5082B1"
+            "value": "#3987e5"
           },
           "fillOpacity": {
-            "value": 0.55
+            "value": 0.75
           },
           "tooltip": {
             "signal": "datum.highlight ? null : {'Identity': datum.key, 'Measure': datum.measure, 'Value': format(datum.value, ','), 'Percentile': format(datum.pct, '.0%'), 'Ranked within': basis}"

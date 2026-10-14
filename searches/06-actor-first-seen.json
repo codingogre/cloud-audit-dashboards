@@ -1,15 +1,16 @@
 {
   "title": "[Audit] Actor first-seen and footprint",
-  "description": "Every identity active in the selected time range: its first and last appearance within that range, event count, and how many distinct client IPs, countries and actions it used. Sorted by first appearance, so an identity that only started acting partway through the range is at the top. First seen is bounded by the time picker: widen the range to tell a brand-new identity from one that was simply quiet. The noise gate is applied (health pings, query internals and bulk authentication_success are excluded), so event counts are lower than on the ungated panels above. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id.",
-  "esql": "FROM logs-elastic_cloud.serverless_audit.otel-default | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | WHERE (attributes.elasticsearch.audit.action IS NULL OR NOT (attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\") OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/msearch*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/scroll*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/esql*\" OR attributes.elasticsearch.audit.action LIKE \"indices:admin/esql/*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/field_caps*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/async_search/*\" OR attributes.elasticsearch.audit.action LIKE \"indices:admin/resolve/*\" OR attributes.elasticsearch.audit.action == \"indices:admin/shards/search_shards\")) AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"authentication_success\",\"connection_granted\") OR attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\",\"space_get\",\"space_find\") OR (attributes.event.action == \"http_request\" AND attributes.url.original IS NOT NULL AND attributes.url.original RLIKE \"https?://[^/]+(/s/[^/]+)?/(internal/|api/content_management/rpc/(get|search|mget|bulkGet)).*\") OR (attributes.event.action IN (\"saved_object_get\",\"saved_object_resolve\",\"saved_object_find\") AND attributes.kibana.saved_object.id IS NOT NULL AND attributes.kibana.saved_object.id LIKE \"cloud-audit-*\"))) | STATS first_seen = MIN(@timestamp), last_seen = MAX(@timestamp), events = COUNT(*), ips = COUNT_DISTINCT(client.ip), countries = COUNT_DISTINCT(client.geo.country_iso_code), actions = COUNT_DISTINCT(attributes.event.action) BY actor | SORT first_seen DESC | LIMIT 200 | RENAME actor AS Identity, first_seen AS `First seen`, last_seen AS `Last seen`, events AS Events, ips AS IPs, countries AS Countries, actions AS Actions",
+  "description": "One row per identity active in the selected range, all traffic: the identities the Identities tile counts, newest first appearance on top (up to 1,000). Events is everything the identity did, the same count as Busiest human identities; Signal events is what is left after the noise gate (health pings, query internals including dashboard and Discover reads, bulk authentication_success), the count the gated panels across the suite use, so an identity that only read dashboards shows few or none. IPs, Countries and Action types are distinct counts. First seen is bounded by the time picker: widen the range to tell a brand-new identity from one that was simply quiet. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id.",
+  "esql": "FROM logs-elastic_cloud.serverless_audit.otel-default | FORK (EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | STATS first_seen = MIN(@timestamp), last_seen = MAX(@timestamp), events = COUNT(*), ips = COUNT_DISTINCT(client.ip), countries = COUNT_DISTINCT(client.geo.country_iso_code), actions = COUNT_DISTINCT(attributes.event.action) BY actor) (WHERE (attributes.elasticsearch.audit.action IS NULL OR NOT (attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\") OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/msearch*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/scroll*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/esql*\" OR attributes.elasticsearch.audit.action LIKE \"indices:admin/esql/*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/field_caps*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/async_search/*\" OR attributes.elasticsearch.audit.action LIKE \"indices:admin/resolve/*\" OR attributes.elasticsearch.audit.action == \"indices:admin/shards/search_shards\")) AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"authentication_success\",\"connection_granted\") OR attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\",\"space_get\",\"space_find\") OR (attributes.event.action == \"http_request\" AND attributes.url.original IS NOT NULL AND attributes.url.original RLIKE \"https?://[^/]+(/s/[^/]+)?/(internal/|api/content_management/rpc/(get|search|mget|bulkGet)).*\") OR (attributes.event.action IN (\"saved_object_get\",\"saved_object_resolve\",\"saved_object_find\") AND attributes.kibana.saved_object.id IS NOT NULL AND attributes.kibana.saved_object.id LIKE \"cloud-audit-*\"))) | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | STATS signal = COUNT(*) BY actor) | STATS first_seen = MIN(first_seen), last_seen = MAX(last_seen), events = MAX(events), signal = MAX(signal), ips = MAX(ips), countries = MAX(countries), actions = MAX(actions) BY actor | EVAL signal = COALESCE(signal, 0) | SORT first_seen DESC | LIMIT 1000 | KEEP actor, first_seen, last_seen, events, signal, ips, countries, actions | RENAME actor AS Identity, first_seen AS `First seen`, last_seen AS `Last seen`, events AS Events, signal AS `Signal events`, ips AS IPs, countries AS Countries, actions AS `Action types`",
   "columns": [
     "Identity",
     "First seen",
     "Last seen",
     "Events",
+    "Signal events",
     "IPs",
     "Countries",
-    "Actions"
+    "Action types"
   ],
   "hide_chart": true,
   "sort": [
@@ -20,17 +21,26 @@
   ],
   "grid": {
     "columns": {
+      "First seen": {
+        "width": 225
+      },
+      "Last seen": {
+        "width": 225
+      },
       "Events": {
-        "width": 110
+        "width": 95
+      },
+      "Signal events": {
+        "width": 115
       },
       "IPs": {
-        "width": 90
+        "width": 65
       },
       "Countries": {
-        "width": 110
+        "width": 90
       },
-      "Actions": {
-        "width": 100
+      "Action types": {
+        "width": 110
       }
     }
   }

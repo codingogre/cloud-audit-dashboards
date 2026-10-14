@@ -175,11 +175,11 @@
       },
       "config": {
         "title": "",
-        "description": "Distinct Elasticsearch transport actions (cluster:*, indices:*), shard-level variants included.",
+        "description": "Distinct Elasticsearch transport actions (cluster:*, indices:*), with shard-level copies and ES|QL sub-steps folded away — the same actions Top transport actions lists, all traffic.",
         "type": "metric",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS `Distinct actions` = COUNT_DISTINCT(attributes.elasticsearch.audit.action)"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.action IS NOT NULL | STATS BY attributes.elasticsearch.audit.action | WHERE NOT (attributes.elasticsearch.audit.action LIKE \"*[*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/esql/*\") | STATS `Distinct actions` = COUNT(*)"
         },
         "metrics": [
           {
@@ -291,7 +291,7 @@
       },
       "config": {
         "title": "Data access over time by action family",
-        "description": "Elasticsearch audit volume over time by kind of transport action, after the noise gate and with shard-level and ES|QL sub-step fan-out removed, so each request counts once. \"other\" is mostly authentication events that carry no transport action.",
+        "description": "Every Elasticsearch request that names a transport action, by kind of action — all traffic, the searches and ES|QL these dashboards run among the reads. Shard-level copies, ES|QL sub-steps and the search an async search runs for itself are folded away so a request counts once, and authentication and connection events (which name no action) are left out, so it sums to less than the Elasticsearch events tile.",
         "type": "xy",
         "axis": {
           "x": {
@@ -315,7 +315,7 @@
             "type": "bar_stacked",
             "data_source": {
               "type": "esql",
-              "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE resource.attributes.service.name == \"serverless-elasticsearch\" | WHERE (attributes.elasticsearch.audit.action IS NULL OR NOT (attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\") OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/msearch*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/scroll*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/esql*\" OR attributes.elasticsearch.audit.action LIKE \"indices:admin/esql/*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/field_caps*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/async_search/*\" OR attributes.elasticsearch.audit.action LIKE \"indices:admin/resolve/*\" OR attributes.elasticsearch.audit.action == \"indices:admin/shards/search_shards\")) AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"authentication_success\",\"connection_granted\") OR attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\",\"space_get\",\"space_find\") OR (attributes.event.action == \"http_request\" AND attributes.url.original IS NOT NULL AND attributes.url.original RLIKE \"https?://[^/]+(/s/[^/]+)?/(internal/|api/content_management/rpc/(get|search|mget|bulkGet)).*\") OR (attributes.event.action IN (\"saved_object_get\",\"saved_object_resolve\",\"saved_object_find\") AND attributes.kibana.saved_object.id IS NOT NULL AND attributes.kibana.saved_object.id LIKE \"cloud-audit-*\"))) | STATS n = COUNT(*) BY time = BUCKET(@timestamp, 75, ?_tstart, ?_tend), attributes.elasticsearch.audit.action | WHERE attributes.elasticsearch.audit.action IS NULL OR NOT (attributes.elasticsearch.audit.action LIKE \"*[*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/esql/*\") | EVAL family = CASE(attributes.elasticsearch.audit.action LIKE \"indices:data/read*\", \"read\", attributes.elasticsearch.audit.action LIKE \"indices:data/write*\", \"write\", attributes.elasticsearch.audit.action LIKE \"indices:admin*\", \"index admin\", attributes.elasticsearch.audit.action LIKE \"cluster:admin/xpack/security*\", \"security admin\", attributes.elasticsearch.audit.action LIKE \"cluster:admin*\", \"cluster admin\", attributes.elasticsearch.audit.action LIKE \"*:monitor*\", \"monitor\", \"other\") | STATS events = SUM(n) BY time, family"
+              "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.action IS NOT NULL | STATS n = COUNT(*) BY time = BUCKET(@timestamp, 75, ?_tstart, ?_tend), attributes.elasticsearch.audit.action, request = attributes.elasticsearch.audit.request.name | WHERE NOT (attributes.elasticsearch.audit.action LIKE \"*[*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/esql/*\") AND NOT (attributes.elasticsearch.audit.action == \"indices:data/read/search\" AND COALESCE(request, \"-\") == \"\") | EVAL family = CASE(attributes.elasticsearch.audit.action LIKE \"indices:data/read*\", \"read\", attributes.elasticsearch.audit.action LIKE \"indices:data/write*\", \"write\", attributes.elasticsearch.audit.action LIKE \"indices:admin*\", \"index admin\", attributes.elasticsearch.audit.action LIKE \"cluster:admin/xpack/security*\", \"security admin\", attributes.elasticsearch.audit.action LIKE \"cluster:admin*\", \"cluster admin\", attributes.elasticsearch.audit.action LIKE \"*:monitor*\", \"monitor\", \"other\") | STATS events = SUM(n) BY time, family | SORT family"
             },
             "x": {
               "column": "time",
@@ -383,7 +383,7 @@
                     ],
                     "color": {
                       "type": "color_code",
-                      "value": "#B9A888"
+                      "value": "#D36086"
                     }
                   },
                   {
@@ -392,7 +392,7 @@
                     ],
                     "color": {
                       "type": "color_code",
-                      "value": "#CA8EAE"
+                      "value": "#B9A888"
                     }
                   }
                 ]
@@ -421,7 +421,7 @@
       "config": {
         "ref_id": "cloud-audit-vega-04-actor-index-matrix",
         "title": "Who reads which index family",
-        "description": "The 10 busiest identities across the top, and the 25 index families they read most down the side; a more solid cell is more requests, on a log scale. A data stream and its backing indices are one family, as is a run of dated daily indices; wildcard and date-math expressions are left out. A blank cell means that identity did not touch that family in range — or touched it too little to be among the 500 busiest identity/family pairs. A request naming several indices counts once per index. An identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id."
+        "description": "The 10 busiest identities across the top, and the 25 index families they read most down the side; a more solid cell is more requests, on a log scale. A data stream and its backing indices are one family, as is a run of dated daily indices; wildcard and date-math expressions are left out. A blank cell means that identity did not touch that family in range — or touched it too little to be among the 500 busiest identity/family pairs. A request naming several indices counts once per index. An identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id; one the audit names as such is labelled \"· Cloud API key\". Cells keep a heatmap's size when only a few identities or families are in range, so a sparse window draws a few cells, not solid blocks."
       }
     },
     {
@@ -434,8 +434,8 @@
         "h": 15
       },
       "config": {
-        "title": "Most-accessed index families",
-        "description": "Which indices see the most audited access, and how many distinct identities touch each. A data stream and its backing indices are one row, as is a run of dated daily indices; `Indices` says how many real indices the row folds together. Wildcard and date-math expressions are left out. A request naming several indices counts once per index.",
+        "title": "Top index families by events",
+        "description": "The busiest index families, all traffic; the Index families tile counts every one, so the rest are beyond this list. How many distinct identities touch each is beside it. A data stream and its backing indices are one row, as is a run of dated daily indices; `Indices` says how many real indices the row folds together. Wildcard and date-math expressions are left out. A request naming several indices counts once per index.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
@@ -483,16 +483,16 @@
       "grid": {
         "x": 0,
         "y": 38,
-        "w": 18,
-        "h": 12
+        "w": 48,
+        "h": 11
       },
       "config": {
-        "title": "Transport actions",
-        "description": "Elasticsearch transport actions with their request class, after the noise gate removes health pings, query internals (search, ES|QL, field_caps and async search — the queries these dashboards run among them) and connection and bulk-authentication events. Shard-level copies are folded away, so a request counts once.",
+        "title": "Top transport actions",
+        "description": "The busiest Elasticsearch transport actions with their request class, all traffic — the searches and ES|QL reads these dashboards run included, since reads are what this page is about. The Distinct actions tile counts every one; the rest are beyond this list. Shard-level copies, ES|QL sub-steps and the search an async search runs for itself are folded away, so a request counts once. Identities is how many distinct identities sent the action; Request \"—\" means the event named no request class.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.action IS NOT NULL | WHERE (attributes.elasticsearch.audit.action IS NULL OR NOT (attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\") OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/msearch*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/scroll*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/esql*\" OR attributes.elasticsearch.audit.action LIKE \"indices:admin/esql/*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/field_caps*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/async_search/*\" OR attributes.elasticsearch.audit.action LIKE \"indices:admin/resolve/*\" OR attributes.elasticsearch.audit.action == \"indices:admin/shards/search_shards\")) AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"authentication_success\",\"connection_granted\") OR attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\",\"space_get\",\"space_find\") OR (attributes.event.action == \"http_request\" AND attributes.url.original IS NOT NULL AND attributes.url.original RLIKE \"https?://[^/]+(/s/[^/]+)?/(internal/|api/content_management/rpc/(get|search|mget|bulkGet)).*\") OR (attributes.event.action IN (\"saved_object_get\",\"saved_object_resolve\",\"saved_object_find\") AND attributes.kibana.saved_object.id IS NOT NULL AND attributes.kibana.saved_object.id LIKE \"cloud-audit-*\"))) | STATS events = COUNT(*) BY attributes.elasticsearch.audit.action, request = attributes.elasticsearch.audit.request.name | WHERE NOT (attributes.elasticsearch.audit.action LIKE \"*[*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/esql/*\") | SORT events DESC | LIMIT 10"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.action IS NOT NULL | STATS n = COUNT(*), seen = MAX(@timestamp) BY attributes.user.email, attributes.api_key.name, attributes.user.name, attributes.elasticsearch.audit.action, request = attributes.elasticsearch.audit.request.name | WHERE NOT (attributes.elasticsearch.audit.action LIKE \"*[*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/esql/*\") AND NOT (attributes.elasticsearch.audit.action == \"indices:data/read/search\" AND COALESCE(request, \"-\") == \"\") | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), request = CASE(request IS NULL OR request == \"\", \"—\", request) | STATS events = SUM(n), actors = COUNT_DISTINCT(actor), last_seen = MAX(seen) BY attributes.elasticsearch.audit.action, request | SORT events DESC | LIMIT 9"
         },
         "styling": {
           "density": {
@@ -508,19 +508,29 @@
         "rows": [
           {
             "label": "Transport action",
-            "column": "attributes.elasticsearch.audit.action"
+            "column": "attributes.elasticsearch.audit.action",
+            "width": 420
           },
           {
             "label": "Request",
-            "column": "request",
-            "width": 170
+            "column": "request"
           }
         ],
         "metrics": [
           {
+            "label": "Identities",
+            "width": 90,
+            "column": "actors"
+          },
+          {
             "label": "Events",
             "width": 90,
             "column": "events"
+          },
+          {
+            "label": "Last seen",
+            "width": 190,
+            "column": "last_seen"
           }
         ]
       }
@@ -529,18 +539,18 @@
       "type": "vis",
       "id": "tbl-11",
       "grid": {
-        "x": 18,
-        "y": 38,
-        "w": 30,
-        "h": 12
+        "x": 0,
+        "y": 49,
+        "w": 48,
+        "h": 9
       },
       "config": {
-        "title": "Denied requests",
-        "description": "Who was refused, what they asked for and on which index — newest first. This is the failure slice the old outcome donut drew as a hairline. Index \"—\" is a cluster-level request; <anonymous> with action \"—\" is an HTTP call that carried no credentials. A request naming several indices shows once per index. Empty means nothing was denied in range. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id.",
+        "title": "Denied requests · none is good",
+        "description": "Who was refused, what they asked for and on which index — newest first, the most recent of what the Access denied tile counts. Index \"—\" is a cluster-level request; <anonymous> with action \"—\" is an HTTP call that carried no credentials. A request naming several indices shows once per index. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id. An empty panel means nothing matched in the time range, which is the healthy state.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.event.action == \"access_denied\" OR attributes.event.action == \"anonymous_access_denied\" | STATS events = COUNT(*), last_seen = MAX(@timestamp) BY attributes.user.email, attributes.api_key.name, attributes.user.name, attributes.elasticsearch.audit.action, index = attributes.elasticsearch.audit.indices | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), index = COALESCE(index, \"—\"), attributes.elasticsearch.audit.action = COALESCE(attributes.elasticsearch.audit.action, \"—\") | KEEP actor, index, attributes.elasticsearch.audit.action, events, last_seen | SORT last_seen DESC | LIMIT 10"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.event.action == \"access_denied\" OR attributes.event.action == \"anonymous_access_denied\" | STATS events = COUNT(*), last_seen = MAX(@timestamp) BY attributes.user.email, attributes.api_key.name, attributes.user.name, attributes.elasticsearch.audit.action, index = attributes.elasticsearch.audit.indices | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), index = COALESCE(index, \"—\"), attributes.elasticsearch.audit.action = COALESCE(attributes.elasticsearch.audit.action, \"—\") | KEEP actor, index, attributes.elasticsearch.audit.action, events, last_seen | SORT last_seen DESC | LIMIT 7"
         },
         "styling": {
           "density": {
@@ -565,13 +575,13 @@
           {
             "label": "Transport action",
             "column": "attributes.elasticsearch.audit.action",
-            "width": 234
+            "width": 420
           }
         ],
         "metrics": [
           {
             "label": "Events",
-            "width": 78,
+            "width": 90,
             "column": "events"
           },
           {
@@ -587,17 +597,17 @@
       "id": "tbl-12",
       "grid": {
         "x": 0,
-        "y": 50,
+        "y": 58,
         "w": 48,
-        "h": 14
+        "h": 11
       },
       "config": {
-        "title": "⚠️ System and hidden index access",
-        "description": "Who touched system and hidden indices — Kibana internals, the security index, alerting and SLO data — one row per identity, index group (.alerts*, .slo*, .kibana*…) and action. `Indices` says how many real indices the row covers; the Discover session below names each one. Sorted by most recent, not by volume: sorting by volume buries a one-off read under routine polling. Backing indices of ordinary data streams (.ds-logs-…) and shard-level copies of a request are left out. Expected from Kibana and platform automation; unexpected from anyone else. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id.",
+        "title": "⚠️ Who touched system and hidden indices · often empty at 1h",
+        "description": "Who touched system and hidden indices — Kibana internals, the security index, alerting and SLO data — one row per identity, index group (.alerts*, .slo*, .kibana*…) and action. `Indices` says how many real indices the row covers; the Discover session below names each one. Sorted by most recent, not by volume: sorting by volume buries a one-off read under routine polling. Backing indices of ordinary data streams (.ds-logs-…) and shard-level copies of a request are left out. Expected from Kibana and platform automation; unexpected from anyone else. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id. Often empty over the default hour on a healthy project; widen the time range to see older rows.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.indices IS NOT NULL | MV_EXPAND attributes.elasticsearch.audit.indices | WHERE ((attributes.elasticsearch.audit.indices LIKE \".*\" AND NOT attributes.elasticsearch.audit.indices LIKE \".ds-*\") OR attributes.elasticsearch.audit.indices LIKE \".ds-.*\") AND (attributes.elasticsearch.audit.action IS NULL OR NOT attributes.elasticsearch.audit.action LIKE \"*[*\") | STATS n = COUNT(*), seen = MAX(@timestamp) BY attributes.user.email, attributes.api_key.name, attributes.user.name, attributes.elasticsearch.audit.indices, action = attributes.elasticsearch.audit.action | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), area = CONCAT(REPLACE(attributes.elasticsearch.audit.indices, \"\"\"^(?:\\.ds-)?(\\.[^-._]+).*$\"\"\", \"$1\"), \"*\") | STATS events = SUM(n), indices = COUNT_DISTINCT(attributes.elasticsearch.audit.indices), last_seen = MAX(seen) BY actor, area, action | SORT last_seen DESC | LIMIT 13"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.indices IS NOT NULL | MV_EXPAND attributes.elasticsearch.audit.indices | WHERE ((attributes.elasticsearch.audit.indices LIKE \".*\" AND NOT attributes.elasticsearch.audit.indices LIKE \".ds-*\") OR attributes.elasticsearch.audit.indices LIKE \".ds-.*\") AND (attributes.elasticsearch.audit.action IS NULL OR NOT attributes.elasticsearch.audit.action LIKE \"*[*\") | STATS n = COUNT(*), seen = MAX(@timestamp) BY attributes.user.email, attributes.api_key.name, attributes.user.name, attributes.elasticsearch.audit.indices, action = attributes.elasticsearch.audit.action | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), area = CONCAT(REPLACE(attributes.elasticsearch.audit.indices, \"\"\"^(?:\\.ds-)?(\\.[^-._]+).*$\"\"\", \"$1\"), \"*\") | STATS events = SUM(n), indices = COUNT_DISTINCT(attributes.elasticsearch.audit.indices), last_seen = MAX(seen) BY actor, area, action | SORT last_seen DESC | LIMIT 9"
         },
         "styling": {
           "density": {
@@ -648,14 +658,14 @@
       "id": "ds-13",
       "grid": {
         "x": 0,
-        "y": 64,
+        "y": 69,
         "w": 48,
-        "h": 15
+        "h": 12
       },
       "config": {
         "ref_id": "cloud-audit-search-05-system-index-access",
-        "title": "System index access",
-        "description": "The newest 1,000 requests against a system or hidden index, one row per index named, newest first. It stops at 1,000, so it can hold fewer rows than the System index access tile counts. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id."
+        "title": "System index requests, newest 1,000 (raw) · often empty at 1h",
+        "description": "The raw events behind the table above: the newest 1,000 requests against a system or hidden index, one row per index named, newest first. It stops at 1,000, so it can hold fewer rows than the System index access tile counts — the \"1,000 results\" above the grid is that cap, not the total. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id. Often empty over the default hour on a healthy project; widen the time range to see older rows."
       }
     }
   ]

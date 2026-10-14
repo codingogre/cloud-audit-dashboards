@@ -1,6 +1,6 @@
 {
   "$schema": "https://vega.github.io/schema/vega/v5.json",
-  "description": "Top 40 identities by signal volume, one tile per identity, in a block per kind. Area grows with the square root of event volume and every tile gets a minimum share so its name stays readable; colour is accumulated severity. Grouped on raw fields first and resolved afterwards, so an identity whose events disagree about its kind is still one tile, in its most specific block.",
+  "description": "The top 12 identities (fewer on a narrow panel, down to 8) by signal volume, one tile per identity, in a block per kind; the rest of each kind is folded into one grey \"+N more\" tile. Area grows with the square root of event volume and every tile gets a minimum share so its name stays readable (a name too long to break at its separators is shortened with an ellipsis; the tooltip has it in full); colour is accumulated severity on a square-root scale. Grouped on raw fields first and resolved afterwards, so an identity whose events disagree about its kind is still one tile, in its most specific block.",
   "autosize": {
     "type": "fit",
     "contains": "padding"
@@ -10,6 +10,10 @@
     {
       "name": "empty",
       "update": "length(data('raw')) === 0"
+    },
+    {
+      "name": "keep",
+      "update": "max(8, min(12, floor(width / 70)))"
     }
   ],
   "data": [
@@ -17,14 +21,105 @@
       "name": "raw",
       "url": {
         "%type%": "esql",
-        "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE (attributes.elasticsearch.audit.action IS NULL OR NOT (attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\") OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/msearch*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/scroll*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/esql*\" OR attributes.elasticsearch.audit.action LIKE \"indices:admin/esql/*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/field_caps*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/async_search/*\" OR attributes.elasticsearch.audit.action LIKE \"indices:admin/resolve/*\" OR attributes.elasticsearch.audit.action == \"indices:admin/shards/search_shards\")) AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"authentication_success\",\"connection_granted\") OR attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\",\"space_get\",\"space_find\") OR (attributes.event.action == \"http_request\" AND attributes.url.original IS NOT NULL AND attributes.url.original RLIKE \"https?://[^/]+(/s/[^/]+)?/(internal/|api/content_management/rpc/(get|search|mget|bulkGet)).*\") OR (attributes.event.action IN (\"saved_object_get\",\"saved_object_resolve\",\"saved_object_find\") AND attributes.kibana.saved_object.id IS NOT NULL AND attributes.kibana.saved_object.id LIKE \"cloud-audit-*\"))) | STATS n = COUNT(*) BY attributes.api_key.name, attributes.user.email, attributes.user.name, attributes.user.domain, attributes.event.action, scc = attributes.elasticsearch.audit.security_config_change IS NOT NULL, attributes.event.outcome, resource.attributes.service.name, et = MV_CONCAT(attributes.event.type, \",\") | EVAL attributes.event.type = SPLIT(et, \",\"), attributes.elasticsearch.audit.security_config_change = CASE(scc, \"present\") | EVAL risk = CASE(attributes.event.action == \"invalidate_apikeys\", 45, attributes.event.action == \"anonymous_access_denied\", 35, attributes.elasticsearch.audit.security_config_change IS NOT NULL, 50, attributes.event.outcome == \"failure\", 40, (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) AND attributes.event.action IN (\"workflow_run\",\"workflow_test\",\"workflow_execution_cancel\"), 10, (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) AND (attributes.event.type == \"deletion\" OR attributes.event.action == \"rule_disable\"), 30, (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))), 25, 0) | STATS events = SUM(n), severity = SUM(risk * n), scoring = SUM(CASE(risk > 0, n, 0)) BY attributes.api_key.name, attributes.user.email, attributes.user.name, attributes.user.domain | EVAL actor = CASE(attributes.api_key.name IS NOT NULL, attributes.api_key.name, COALESCE(attributes.user.email, attributes.user.name, \"<anonymous>\")), kind_rank = CASE(attributes.api_key.name IS NOT NULL, 4, attributes.user.email IS NOT NULL, 3, attributes.user.domain == \"_cloud_api_key\", 2, 1), owner = CASE(attributes.api_key.name IS NOT NULL, COALESCE(attributes.user.email, attributes.user.name), null) | STATS events = SUM(events), severity = SUM(severity), scoring = SUM(scoring), kind_rank = MAX(kind_rank), owner = MAX(owner) BY actor | EVAL actor_kind = CASE(kind_rank == 4, \"named API key\", kind_rank == 3, \"person\", kind_rank == 2, \"cloud API key\", \"unattributed\") | SORT events DESC | LIMIT 40 | KEEP actor, actor_kind, owner, events, severity, scoring",
+        "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE (attributes.elasticsearch.audit.action IS NULL OR NOT (attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\") OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/msearch*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/scroll*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/esql*\" OR attributes.elasticsearch.audit.action LIKE \"indices:admin/esql/*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/field_caps*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/async_search/*\" OR attributes.elasticsearch.audit.action LIKE \"indices:admin/resolve/*\" OR attributes.elasticsearch.audit.action == \"indices:admin/shards/search_shards\")) AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"authentication_success\",\"connection_granted\") OR attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\",\"space_get\",\"space_find\") OR (attributes.event.action == \"http_request\" AND attributes.url.original IS NOT NULL AND attributes.url.original RLIKE \"https?://[^/]+(/s/[^/]+)?/(internal/|api/content_management/rpc/(get|search|mget|bulkGet)).*\") OR (attributes.event.action IN (\"saved_object_get\",\"saved_object_resolve\",\"saved_object_find\") AND attributes.kibana.saved_object.id IS NOT NULL AND attributes.kibana.saved_object.id LIKE \"cloud-audit-*\"))) | STATS n = COUNT(*) BY attributes.api_key.name, attributes.user.email, attributes.user.name, attributes.user.domain, attributes.event.action, scc = attributes.elasticsearch.audit.security_config_change IS NOT NULL, attributes.event.outcome, resource.attributes.service.name, et = MV_CONCAT(attributes.event.type, \",\") | EVAL attributes.event.type = SPLIT(et, \",\"), attributes.elasticsearch.audit.security_config_change = CASE(scc, \"present\") | EVAL risk = CASE(attributes.event.action == \"invalidate_apikeys\", 45, attributes.event.action == \"anonymous_access_denied\", 35, attributes.elasticsearch.audit.security_config_change IS NOT NULL, 50, attributes.event.outcome == \"failure\", 40, (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) AND attributes.event.action IN (\"workflow_run\",\"workflow_test\",\"workflow_execution_cancel\"), 10, (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) AND (attributes.event.type == \"deletion\" OR attributes.event.action == \"rule_disable\"), 30, (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))), 25, 0) | STATS events = SUM(n), severity = SUM(risk * n), scoring = SUM(CASE(risk > 0, n, 0)) BY attributes.api_key.name, attributes.user.email, attributes.user.name, attributes.user.domain | EVAL actor = CASE(attributes.api_key.name IS NOT NULL, attributes.api_key.name, COALESCE(attributes.user.email, attributes.user.name, \"<anonymous>\")), kind_rank = CASE(attributes.api_key.name IS NOT NULL, 4, attributes.user.email IS NOT NULL, 3, attributes.user.domain == \"_cloud_api_key\", 2, 1), owner = CASE(attributes.api_key.name IS NOT NULL, COALESCE(attributes.user.email, attributes.user.name), null) | STATS events = SUM(events), severity = SUM(severity), scoring = SUM(scoring), kind_rank = MAX(kind_rank), owner = MAX(owner) BY actor | EVAL actor_kind = CASE(kind_rank == 4, \"named API key\", kind_rank == 3, \"person\", kind_rank == 2, \"cloud API key\", \"unattributed\") | SORT events DESC | LIMIT 500 | KEEP actor, actor_kind, owner, events, severity, scoring",
         "%timefield%": "@timestamp",
         "%context%": true
       }
     },
     {
-      "name": "sized",
+      "name": "ranked",
       "source": "raw",
+      "transform": [
+        {
+          "type": "window",
+          "sort": {
+            "field": "events",
+            "order": "descending"
+          },
+          "ops": [
+            "row_number"
+          ],
+          "as": [
+            "rank"
+          ]
+        },
+        {
+          "type": "formula",
+          "as": "folded",
+          "expr": "false"
+        },
+        {
+          "type": "formula",
+          "as": "members",
+          "expr": "1"
+        }
+      ]
+    },
+    {
+      "name": "kept",
+      "source": "ranked",
+      "transform": [
+        {
+          "type": "filter",
+          "expr": "datum.rank <= keep"
+        }
+      ]
+    },
+    {
+      "name": "rest",
+      "source": "ranked",
+      "transform": [
+        {
+          "type": "filter",
+          "expr": "datum.rank > keep"
+        },
+        {
+          "type": "aggregate",
+          "groupby": [
+            "actor_kind"
+          ],
+          "ops": [
+            "sum",
+            "sum",
+            "sum",
+            "count"
+          ],
+          "fields": [
+            "events",
+            "severity",
+            "scoring",
+            null
+          ],
+          "as": [
+            "events",
+            "severity",
+            "scoring",
+            "members"
+          ]
+        },
+        {
+          "type": "formula",
+          "as": "actor",
+          "expr": "'+' + datum.members + ' more'"
+        },
+        {
+          "type": "formula",
+          "as": "owner",
+          "expr": "null"
+        },
+        {
+          "type": "formula",
+          "as": "folded",
+          "expr": "true"
+        }
+      ]
+    },
+    {
+      "name": "sized",
+      "source": [
+        "kept",
+        "rest"
+      ],
       "transform": [
         {
           "type": "formula",
@@ -49,7 +144,7 @@
         {
           "type": "formula",
           "as": "area",
-          "expr": "max(datum.root, datum.root_total * 0.5 / datum.n)"
+          "expr": "max(datum.root, datum.root_total * 0.7 / datum.n)"
         }
       ]
     },
@@ -97,6 +192,27 @@
       ]
     },
     {
+      "name": "kinds",
+      "source": "sized",
+      "transform": [
+        {
+          "type": "aggregate",
+          "groupby": [
+            "actor_kind"
+          ],
+          "ops": [
+            "sum"
+          ],
+          "fields": [
+            "members"
+          ],
+          "as": [
+            "kn"
+          ]
+        }
+      ]
+    },
+    {
       "name": "blocks",
       "source": "tree",
       "transform": [
@@ -105,9 +221,20 @@
           "expr": "datum.depth === 1"
         },
         {
+          "type": "lookup",
+          "from": "kinds",
+          "key": "actor_kind",
+          "fields": [
+            "key"
+          ],
+          "values": [
+            "kn"
+          ]
+        },
+        {
           "type": "formula",
           "as": "header",
-          "expr": "(datum.x1 - datum.x0) >= (length(datum.key) + 5) * 6.4 ? datum.key + ' · ' + datum.children : (datum.x1 - datum.x0) >= length(datum.key) * 6.4 ? datum.key : ''"
+          "expr": "(datum.x1 - datum.x0) >= (length(datum.key) + 5) * 6.4 ? datum.key + ' · ' + datum.kn : (datum.x1 - datum.x0) >= length(datum.key) * 6.4 ? datum.key : ''"
         }
       ]
     },
@@ -146,143 +273,148 @@
         },
         {
           "type": "formula",
-          "as": "h_cpl",
+          "as": "a_cpl",
           "expr": "max(1, floor((datum.tw - 8) / (datum.fs * 0.6)))"
         },
         {
           "type": "formula",
-          "as": "h_rows",
-          "expr": "floor((datum.th - 4) / datum.lh)"
+          "as": "a_rows",
+          "expr": "floor((datum.th - 4) / (datum.lh))"
         },
         {
           "type": "formula",
-          "as": "h_l1",
-          "expr": "substring(datum.actor, 0, (length(datum.actor) <= datum.h_cpl ? length(datum.actor) : (max(lastindexof(substring(datum.actor, 0, datum.h_cpl), '-'), lastindexof(substring(datum.actor, 0, datum.h_cpl), '.'), lastindexof(substring(datum.actor, 0, datum.h_cpl), '@'), lastindexof(substring(datum.actor, 0, datum.h_cpl), '_'), lastindexof(substring(datum.actor, 0, datum.h_cpl), '/')) >= datum.h_cpl * 0.35 ? max(lastindexof(substring(datum.actor, 0, datum.h_cpl), '-'), lastindexof(substring(datum.actor, 0, datum.h_cpl), '.'), lastindexof(substring(datum.actor, 0, datum.h_cpl), '@'), lastindexof(substring(datum.actor, 0, datum.h_cpl), '_'), lastindexof(substring(datum.actor, 0, datum.h_cpl), '/')) + 1 : datum.h_cpl)))"
+          "as": "a_l1",
+          "expr": "substring(datum.actor, 0, (length(datum.actor) <= datum.a_cpl ? length(datum.actor) : (indexof(datum.actor, '@') >= 1 && indexof(datum.actor, '@') < datum.a_cpl && length(datum.actor) - indexof(datum.actor, '@') - 1 <= datum.a_cpl) ? indexof(datum.actor, '@') + 1 : max(lastindexof(substring(datum.actor, 0, datum.a_cpl), '-'), lastindexof(substring(datum.actor, 0, datum.a_cpl), '.'), lastindexof(substring(datum.actor, 0, datum.a_cpl), '@'), lastindexof(substring(datum.actor, 0, datum.a_cpl), '_'), lastindexof(substring(datum.actor, 0, datum.a_cpl), '/'), lastindexof(substring(datum.actor, 0, datum.a_cpl), ' ')) >= 1 ? max(lastindexof(substring(datum.actor, 0, datum.a_cpl), '-'), lastindexof(substring(datum.actor, 0, datum.a_cpl), '.'), lastindexof(substring(datum.actor, 0, datum.a_cpl), '@'), lastindexof(substring(datum.actor, 0, datum.a_cpl), '_'), lastindexof(substring(datum.actor, 0, datum.a_cpl), '/'), lastindexof(substring(datum.actor, 0, datum.a_cpl), ' ')) + 1 : datum.a_cpl))"
         },
         {
           "type": "formula",
-          "as": "h_r1",
-          "expr": "substring(datum.actor, (length(datum.actor) <= datum.h_cpl ? length(datum.actor) : (max(lastindexof(substring(datum.actor, 0, datum.h_cpl), '-'), lastindexof(substring(datum.actor, 0, datum.h_cpl), '.'), lastindexof(substring(datum.actor, 0, datum.h_cpl), '@'), lastindexof(substring(datum.actor, 0, datum.h_cpl), '_'), lastindexof(substring(datum.actor, 0, datum.h_cpl), '/')) >= datum.h_cpl * 0.35 ? max(lastindexof(substring(datum.actor, 0, datum.h_cpl), '-'), lastindexof(substring(datum.actor, 0, datum.h_cpl), '.'), lastindexof(substring(datum.actor, 0, datum.h_cpl), '@'), lastindexof(substring(datum.actor, 0, datum.h_cpl), '_'), lastindexof(substring(datum.actor, 0, datum.h_cpl), '/')) + 1 : datum.h_cpl)))"
+          "as": "a_r1",
+          "expr": "substring(datum.actor, (length(datum.actor) <= datum.a_cpl ? length(datum.actor) : (indexof(datum.actor, '@') >= 1 && indexof(datum.actor, '@') < datum.a_cpl && length(datum.actor) - indexof(datum.actor, '@') - 1 <= datum.a_cpl) ? indexof(datum.actor, '@') + 1 : max(lastindexof(substring(datum.actor, 0, datum.a_cpl), '-'), lastindexof(substring(datum.actor, 0, datum.a_cpl), '.'), lastindexof(substring(datum.actor, 0, datum.a_cpl), '@'), lastindexof(substring(datum.actor, 0, datum.a_cpl), '_'), lastindexof(substring(datum.actor, 0, datum.a_cpl), '/'), lastindexof(substring(datum.actor, 0, datum.a_cpl), ' ')) >= 1 ? max(lastindexof(substring(datum.actor, 0, datum.a_cpl), '-'), lastindexof(substring(datum.actor, 0, datum.a_cpl), '.'), lastindexof(substring(datum.actor, 0, datum.a_cpl), '@'), lastindexof(substring(datum.actor, 0, datum.a_cpl), '_'), lastindexof(substring(datum.actor, 0, datum.a_cpl), '/'), lastindexof(substring(datum.actor, 0, datum.a_cpl), ' ')) + 1 : datum.a_cpl))"
         },
         {
           "type": "formula",
-          "as": "h_l2",
-          "expr": "substring(datum.h_r1, 0, (length(datum.h_r1) <= datum.h_cpl ? length(datum.h_r1) : (max(lastindexof(substring(datum.h_r1, 0, datum.h_cpl), '-'), lastindexof(substring(datum.h_r1, 0, datum.h_cpl), '.'), lastindexof(substring(datum.h_r1, 0, datum.h_cpl), '@'), lastindexof(substring(datum.h_r1, 0, datum.h_cpl), '_'), lastindexof(substring(datum.h_r1, 0, datum.h_cpl), '/')) >= datum.h_cpl * 0.35 ? max(lastindexof(substring(datum.h_r1, 0, datum.h_cpl), '-'), lastindexof(substring(datum.h_r1, 0, datum.h_cpl), '.'), lastindexof(substring(datum.h_r1, 0, datum.h_cpl), '@'), lastindexof(substring(datum.h_r1, 0, datum.h_cpl), '_'), lastindexof(substring(datum.h_r1, 0, datum.h_cpl), '/')) + 1 : datum.h_cpl)))"
+          "as": "a_l2",
+          "expr": "substring(datum.a_r1, 0, (length(datum.a_r1) <= datum.a_cpl ? length(datum.a_r1) : (indexof(datum.a_r1, '@') >= 1 && indexof(datum.a_r1, '@') < datum.a_cpl && length(datum.a_r1) - indexof(datum.a_r1, '@') - 1 <= datum.a_cpl) ? indexof(datum.a_r1, '@') + 1 : max(lastindexof(substring(datum.a_r1, 0, datum.a_cpl), '-'), lastindexof(substring(datum.a_r1, 0, datum.a_cpl), '.'), lastindexof(substring(datum.a_r1, 0, datum.a_cpl), '@'), lastindexof(substring(datum.a_r1, 0, datum.a_cpl), '_'), lastindexof(substring(datum.a_r1, 0, datum.a_cpl), '/'), lastindexof(substring(datum.a_r1, 0, datum.a_cpl), ' ')) >= 1 ? max(lastindexof(substring(datum.a_r1, 0, datum.a_cpl), '-'), lastindexof(substring(datum.a_r1, 0, datum.a_cpl), '.'), lastindexof(substring(datum.a_r1, 0, datum.a_cpl), '@'), lastindexof(substring(datum.a_r1, 0, datum.a_cpl), '_'), lastindexof(substring(datum.a_r1, 0, datum.a_cpl), '/'), lastindexof(substring(datum.a_r1, 0, datum.a_cpl), ' ')) + 1 : datum.a_cpl))"
         },
         {
           "type": "formula",
-          "as": "h_r2",
-          "expr": "substring(datum.h_r1, (length(datum.h_r1) <= datum.h_cpl ? length(datum.h_r1) : (max(lastindexof(substring(datum.h_r1, 0, datum.h_cpl), '-'), lastindexof(substring(datum.h_r1, 0, datum.h_cpl), '.'), lastindexof(substring(datum.h_r1, 0, datum.h_cpl), '@'), lastindexof(substring(datum.h_r1, 0, datum.h_cpl), '_'), lastindexof(substring(datum.h_r1, 0, datum.h_cpl), '/')) >= datum.h_cpl * 0.35 ? max(lastindexof(substring(datum.h_r1, 0, datum.h_cpl), '-'), lastindexof(substring(datum.h_r1, 0, datum.h_cpl), '.'), lastindexof(substring(datum.h_r1, 0, datum.h_cpl), '@'), lastindexof(substring(datum.h_r1, 0, datum.h_cpl), '_'), lastindexof(substring(datum.h_r1, 0, datum.h_cpl), '/')) + 1 : datum.h_cpl)))"
+          "as": "a_r2",
+          "expr": "substring(datum.a_r1, (length(datum.a_r1) <= datum.a_cpl ? length(datum.a_r1) : (indexof(datum.a_r1, '@') >= 1 && indexof(datum.a_r1, '@') < datum.a_cpl && length(datum.a_r1) - indexof(datum.a_r1, '@') - 1 <= datum.a_cpl) ? indexof(datum.a_r1, '@') + 1 : max(lastindexof(substring(datum.a_r1, 0, datum.a_cpl), '-'), lastindexof(substring(datum.a_r1, 0, datum.a_cpl), '.'), lastindexof(substring(datum.a_r1, 0, datum.a_cpl), '@'), lastindexof(substring(datum.a_r1, 0, datum.a_cpl), '_'), lastindexof(substring(datum.a_r1, 0, datum.a_cpl), '/'), lastindexof(substring(datum.a_r1, 0, datum.a_cpl), ' ')) >= 1 ? max(lastindexof(substring(datum.a_r1, 0, datum.a_cpl), '-'), lastindexof(substring(datum.a_r1, 0, datum.a_cpl), '.'), lastindexof(substring(datum.a_r1, 0, datum.a_cpl), '@'), lastindexof(substring(datum.a_r1, 0, datum.a_cpl), '_'), lastindexof(substring(datum.a_r1, 0, datum.a_cpl), '/'), lastindexof(substring(datum.a_r1, 0, datum.a_cpl), ' ')) + 1 : datum.a_cpl))"
         },
         {
           "type": "formula",
-          "as": "h_l3",
-          "expr": "substring(datum.h_r2, 0, (length(datum.h_r2) <= datum.h_cpl ? length(datum.h_r2) : (max(lastindexof(substring(datum.h_r2, 0, datum.h_cpl), '-'), lastindexof(substring(datum.h_r2, 0, datum.h_cpl), '.'), lastindexof(substring(datum.h_r2, 0, datum.h_cpl), '@'), lastindexof(substring(datum.h_r2, 0, datum.h_cpl), '_'), lastindexof(substring(datum.h_r2, 0, datum.h_cpl), '/')) >= datum.h_cpl * 0.35 ? max(lastindexof(substring(datum.h_r2, 0, datum.h_cpl), '-'), lastindexof(substring(datum.h_r2, 0, datum.h_cpl), '.'), lastindexof(substring(datum.h_r2, 0, datum.h_cpl), '@'), lastindexof(substring(datum.h_r2, 0, datum.h_cpl), '_'), lastindexof(substring(datum.h_r2, 0, datum.h_cpl), '/')) + 1 : datum.h_cpl)))"
+          "as": "a_l3",
+          "expr": "substring(datum.a_r2, 0, (length(datum.a_r2) <= datum.a_cpl ? length(datum.a_r2) : (indexof(datum.a_r2, '@') >= 1 && indexof(datum.a_r2, '@') < datum.a_cpl && length(datum.a_r2) - indexof(datum.a_r2, '@') - 1 <= datum.a_cpl) ? indexof(datum.a_r2, '@') + 1 : max(lastindexof(substring(datum.a_r2, 0, datum.a_cpl), '-'), lastindexof(substring(datum.a_r2, 0, datum.a_cpl), '.'), lastindexof(substring(datum.a_r2, 0, datum.a_cpl), '@'), lastindexof(substring(datum.a_r2, 0, datum.a_cpl), '_'), lastindexof(substring(datum.a_r2, 0, datum.a_cpl), '/'), lastindexof(substring(datum.a_r2, 0, datum.a_cpl), ' ')) >= 1 ? max(lastindexof(substring(datum.a_r2, 0, datum.a_cpl), '-'), lastindexof(substring(datum.a_r2, 0, datum.a_cpl), '.'), lastindexof(substring(datum.a_r2, 0, datum.a_cpl), '@'), lastindexof(substring(datum.a_r2, 0, datum.a_cpl), '_'), lastindexof(substring(datum.a_r2, 0, datum.a_cpl), '/'), lastindexof(substring(datum.a_r2, 0, datum.a_cpl), ' ')) + 1 : datum.a_cpl))"
         },
         {
           "type": "formula",
-          "as": "h_r3",
-          "expr": "substring(datum.h_r2, (length(datum.h_r2) <= datum.h_cpl ? length(datum.h_r2) : (max(lastindexof(substring(datum.h_r2, 0, datum.h_cpl), '-'), lastindexof(substring(datum.h_r2, 0, datum.h_cpl), '.'), lastindexof(substring(datum.h_r2, 0, datum.h_cpl), '@'), lastindexof(substring(datum.h_r2, 0, datum.h_cpl), '_'), lastindexof(substring(datum.h_r2, 0, datum.h_cpl), '/')) >= datum.h_cpl * 0.35 ? max(lastindexof(substring(datum.h_r2, 0, datum.h_cpl), '-'), lastindexof(substring(datum.h_r2, 0, datum.h_cpl), '.'), lastindexof(substring(datum.h_r2, 0, datum.h_cpl), '@'), lastindexof(substring(datum.h_r2, 0, datum.h_cpl), '_'), lastindexof(substring(datum.h_r2, 0, datum.h_cpl), '/')) + 1 : datum.h_cpl)))"
+          "as": "a_r3",
+          "expr": "substring(datum.a_r2, (length(datum.a_r2) <= datum.a_cpl ? length(datum.a_r2) : (indexof(datum.a_r2, '@') >= 1 && indexof(datum.a_r2, '@') < datum.a_cpl && length(datum.a_r2) - indexof(datum.a_r2, '@') - 1 <= datum.a_cpl) ? indexof(datum.a_r2, '@') + 1 : max(lastindexof(substring(datum.a_r2, 0, datum.a_cpl), '-'), lastindexof(substring(datum.a_r2, 0, datum.a_cpl), '.'), lastindexof(substring(datum.a_r2, 0, datum.a_cpl), '@'), lastindexof(substring(datum.a_r2, 0, datum.a_cpl), '_'), lastindexof(substring(datum.a_r2, 0, datum.a_cpl), '/'), lastindexof(substring(datum.a_r2, 0, datum.a_cpl), ' ')) >= 1 ? max(lastindexof(substring(datum.a_r2, 0, datum.a_cpl), '-'), lastindexof(substring(datum.a_r2, 0, datum.a_cpl), '.'), lastindexof(substring(datum.a_r2, 0, datum.a_cpl), '@'), lastindexof(substring(datum.a_r2, 0, datum.a_cpl), '_'), lastindexof(substring(datum.a_r2, 0, datum.a_cpl), '/'), lastindexof(substring(datum.a_r2, 0, datum.a_cpl), ' ')) + 1 : datum.a_cpl))"
         },
         {
           "type": "formula",
-          "as": "h_nl",
-          "expr": "datum.h_r1 === '' ? 1 : datum.h_r2 === '' ? 2 : 3"
+          "as": "a_nl",
+          "expr": "datum.a_r1 === '' ? 1 : datum.a_r2 === '' ? 2 : 3"
         },
         {
           "type": "formula",
-          "as": "h_ok",
-          "expr": "datum.h_r3 === '' && datum.h_nl <= datum.h_rows && datum.th >= 16"
+          "as": "a_hard",
+          "expr": "(datum.a_r1 !== '' && indexof('-._@/ ', substring(datum.a_l1, length(datum.a_l1) - 1)) < 0) || (datum.a_r2 !== '' && indexof('-._@/ ', substring(datum.a_l2, length(datum.a_l2) - 1)) < 0)"
         },
         {
           "type": "formula",
-          "as": "h_own",
-          "expr": "datum.owner != null && datum.h_rows > datum.h_nl && length(datum.owner) + 7 <= datum.h_cpl"
+          "as": "a_ok",
+          "expr": "!datum.a_hard && datum.a_r3 === '' && datum.a_nl <= datum.a_rows && datum.th >= 16"
         },
         {
           "type": "formula",
-          "as": "h_lines",
-          "expr": "datum.h_nl === 1 ? (datum.h_own ? [datum.h_l1, 'owner: ' + datum.owner] : [datum.h_l1]) : datum.h_nl === 2 ? (datum.h_own ? [datum.h_l1, datum.h_l2, 'owner: ' + datum.owner] : [datum.h_l1, datum.h_l2]) : (datum.h_own ? [datum.h_l1, datum.h_l2, datum.h_l3, 'owner: ' + datum.owner] : [datum.h_l1, datum.h_l2, datum.h_l3])"
+          "as": "a_own",
+          "expr": "datum.owner != null && datum.a_rows > datum.a_nl && length(datum.owner) + 7 <= datum.a_cpl"
         },
         {
           "type": "formula",
-          "as": "v_cpl",
-          "expr": "max(1, floor((datum.th - 8) / (datum.fs * 0.6)))"
+          "as": "a_lines",
+          "expr": "datum.a_nl === 1 ? (datum.a_own ? [datum.a_l1, 'owner: ' + datum.owner] : [datum.a_l1]) : datum.a_nl === 2 ? (datum.a_own ? [datum.a_l1, datum.a_l2, 'owner: ' + datum.owner] : [datum.a_l1, datum.a_l2]) : (datum.a_own ? [datum.a_l1, datum.a_l2, datum.a_l3, 'owner: ' + datum.owner] : [datum.a_l1, datum.a_l2, datum.a_l3])"
         },
         {
           "type": "formula",
-          "as": "v_rows",
-          "expr": "floor((datum.tw - 4) / datum.lh)"
+          "as": "b_cpl",
+          "expr": "max(1, floor((datum.tw - 8) / (9 * 0.6)))"
         },
         {
           "type": "formula",
-          "as": "v_l1",
-          "expr": "substring(datum.actor, 0, (length(datum.actor) <= datum.v_cpl ? length(datum.actor) : (max(lastindexof(substring(datum.actor, 0, datum.v_cpl), '-'), lastindexof(substring(datum.actor, 0, datum.v_cpl), '.'), lastindexof(substring(datum.actor, 0, datum.v_cpl), '@'), lastindexof(substring(datum.actor, 0, datum.v_cpl), '_'), lastindexof(substring(datum.actor, 0, datum.v_cpl), '/')) >= datum.v_cpl * 0.35 ? max(lastindexof(substring(datum.actor, 0, datum.v_cpl), '-'), lastindexof(substring(datum.actor, 0, datum.v_cpl), '.'), lastindexof(substring(datum.actor, 0, datum.v_cpl), '@'), lastindexof(substring(datum.actor, 0, datum.v_cpl), '_'), lastindexof(substring(datum.actor, 0, datum.v_cpl), '/')) + 1 : datum.v_cpl)))"
+          "as": "b_rows",
+          "expr": "floor((datum.th - 4) / (10.8))"
         },
         {
           "type": "formula",
-          "as": "v_r1",
-          "expr": "substring(datum.actor, (length(datum.actor) <= datum.v_cpl ? length(datum.actor) : (max(lastindexof(substring(datum.actor, 0, datum.v_cpl), '-'), lastindexof(substring(datum.actor, 0, datum.v_cpl), '.'), lastindexof(substring(datum.actor, 0, datum.v_cpl), '@'), lastindexof(substring(datum.actor, 0, datum.v_cpl), '_'), lastindexof(substring(datum.actor, 0, datum.v_cpl), '/')) >= datum.v_cpl * 0.35 ? max(lastindexof(substring(datum.actor, 0, datum.v_cpl), '-'), lastindexof(substring(datum.actor, 0, datum.v_cpl), '.'), lastindexof(substring(datum.actor, 0, datum.v_cpl), '@'), lastindexof(substring(datum.actor, 0, datum.v_cpl), '_'), lastindexof(substring(datum.actor, 0, datum.v_cpl), '/')) + 1 : datum.v_cpl)))"
+          "as": "b_l1",
+          "expr": "substring(datum.actor, 0, (length(datum.actor) <= datum.b_cpl ? length(datum.actor) : (indexof(datum.actor, '@') >= 1 && indexof(datum.actor, '@') < datum.b_cpl && length(datum.actor) - indexof(datum.actor, '@') - 1 <= datum.b_cpl) ? indexof(datum.actor, '@') + 1 : max(lastindexof(substring(datum.actor, 0, datum.b_cpl), '-'), lastindexof(substring(datum.actor, 0, datum.b_cpl), '.'), lastindexof(substring(datum.actor, 0, datum.b_cpl), '@'), lastindexof(substring(datum.actor, 0, datum.b_cpl), '_'), lastindexof(substring(datum.actor, 0, datum.b_cpl), '/'), lastindexof(substring(datum.actor, 0, datum.b_cpl), ' ')) >= 1 ? max(lastindexof(substring(datum.actor, 0, datum.b_cpl), '-'), lastindexof(substring(datum.actor, 0, datum.b_cpl), '.'), lastindexof(substring(datum.actor, 0, datum.b_cpl), '@'), lastindexof(substring(datum.actor, 0, datum.b_cpl), '_'), lastindexof(substring(datum.actor, 0, datum.b_cpl), '/'), lastindexof(substring(datum.actor, 0, datum.b_cpl), ' ')) + 1 : datum.b_cpl))"
         },
         {
           "type": "formula",
-          "as": "v_l2",
-          "expr": "substring(datum.v_r1, 0, (length(datum.v_r1) <= datum.v_cpl ? length(datum.v_r1) : (max(lastindexof(substring(datum.v_r1, 0, datum.v_cpl), '-'), lastindexof(substring(datum.v_r1, 0, datum.v_cpl), '.'), lastindexof(substring(datum.v_r1, 0, datum.v_cpl), '@'), lastindexof(substring(datum.v_r1, 0, datum.v_cpl), '_'), lastindexof(substring(datum.v_r1, 0, datum.v_cpl), '/')) >= datum.v_cpl * 0.35 ? max(lastindexof(substring(datum.v_r1, 0, datum.v_cpl), '-'), lastindexof(substring(datum.v_r1, 0, datum.v_cpl), '.'), lastindexof(substring(datum.v_r1, 0, datum.v_cpl), '@'), lastindexof(substring(datum.v_r1, 0, datum.v_cpl), '_'), lastindexof(substring(datum.v_r1, 0, datum.v_cpl), '/')) + 1 : datum.v_cpl)))"
+          "as": "b_r1",
+          "expr": "substring(datum.actor, (length(datum.actor) <= datum.b_cpl ? length(datum.actor) : (indexof(datum.actor, '@') >= 1 && indexof(datum.actor, '@') < datum.b_cpl && length(datum.actor) - indexof(datum.actor, '@') - 1 <= datum.b_cpl) ? indexof(datum.actor, '@') + 1 : max(lastindexof(substring(datum.actor, 0, datum.b_cpl), '-'), lastindexof(substring(datum.actor, 0, datum.b_cpl), '.'), lastindexof(substring(datum.actor, 0, datum.b_cpl), '@'), lastindexof(substring(datum.actor, 0, datum.b_cpl), '_'), lastindexof(substring(datum.actor, 0, datum.b_cpl), '/'), lastindexof(substring(datum.actor, 0, datum.b_cpl), ' ')) >= 1 ? max(lastindexof(substring(datum.actor, 0, datum.b_cpl), '-'), lastindexof(substring(datum.actor, 0, datum.b_cpl), '.'), lastindexof(substring(datum.actor, 0, datum.b_cpl), '@'), lastindexof(substring(datum.actor, 0, datum.b_cpl), '_'), lastindexof(substring(datum.actor, 0, datum.b_cpl), '/'), lastindexof(substring(datum.actor, 0, datum.b_cpl), ' ')) + 1 : datum.b_cpl))"
         },
         {
           "type": "formula",
-          "as": "v_r2",
-          "expr": "substring(datum.v_r1, (length(datum.v_r1) <= datum.v_cpl ? length(datum.v_r1) : (max(lastindexof(substring(datum.v_r1, 0, datum.v_cpl), '-'), lastindexof(substring(datum.v_r1, 0, datum.v_cpl), '.'), lastindexof(substring(datum.v_r1, 0, datum.v_cpl), '@'), lastindexof(substring(datum.v_r1, 0, datum.v_cpl), '_'), lastindexof(substring(datum.v_r1, 0, datum.v_cpl), '/')) >= datum.v_cpl * 0.35 ? max(lastindexof(substring(datum.v_r1, 0, datum.v_cpl), '-'), lastindexof(substring(datum.v_r1, 0, datum.v_cpl), '.'), lastindexof(substring(datum.v_r1, 0, datum.v_cpl), '@'), lastindexof(substring(datum.v_r1, 0, datum.v_cpl), '_'), lastindexof(substring(datum.v_r1, 0, datum.v_cpl), '/')) + 1 : datum.v_cpl)))"
+          "as": "b_l2",
+          "expr": "substring(datum.b_r1, 0, (length(datum.b_r1) <= datum.b_cpl ? length(datum.b_r1) : (indexof(datum.b_r1, '@') >= 1 && indexof(datum.b_r1, '@') < datum.b_cpl && length(datum.b_r1) - indexof(datum.b_r1, '@') - 1 <= datum.b_cpl) ? indexof(datum.b_r1, '@') + 1 : max(lastindexof(substring(datum.b_r1, 0, datum.b_cpl), '-'), lastindexof(substring(datum.b_r1, 0, datum.b_cpl), '.'), lastindexof(substring(datum.b_r1, 0, datum.b_cpl), '@'), lastindexof(substring(datum.b_r1, 0, datum.b_cpl), '_'), lastindexof(substring(datum.b_r1, 0, datum.b_cpl), '/'), lastindexof(substring(datum.b_r1, 0, datum.b_cpl), ' ')) >= 1 ? max(lastindexof(substring(datum.b_r1, 0, datum.b_cpl), '-'), lastindexof(substring(datum.b_r1, 0, datum.b_cpl), '.'), lastindexof(substring(datum.b_r1, 0, datum.b_cpl), '@'), lastindexof(substring(datum.b_r1, 0, datum.b_cpl), '_'), lastindexof(substring(datum.b_r1, 0, datum.b_cpl), '/'), lastindexof(substring(datum.b_r1, 0, datum.b_cpl), ' ')) + 1 : datum.b_cpl))"
         },
         {
           "type": "formula",
-          "as": "v_l3",
-          "expr": "substring(datum.v_r2, 0, (length(datum.v_r2) <= datum.v_cpl ? length(datum.v_r2) : (max(lastindexof(substring(datum.v_r2, 0, datum.v_cpl), '-'), lastindexof(substring(datum.v_r2, 0, datum.v_cpl), '.'), lastindexof(substring(datum.v_r2, 0, datum.v_cpl), '@'), lastindexof(substring(datum.v_r2, 0, datum.v_cpl), '_'), lastindexof(substring(datum.v_r2, 0, datum.v_cpl), '/')) >= datum.v_cpl * 0.35 ? max(lastindexof(substring(datum.v_r2, 0, datum.v_cpl), '-'), lastindexof(substring(datum.v_r2, 0, datum.v_cpl), '.'), lastindexof(substring(datum.v_r2, 0, datum.v_cpl), '@'), lastindexof(substring(datum.v_r2, 0, datum.v_cpl), '_'), lastindexof(substring(datum.v_r2, 0, datum.v_cpl), '/')) + 1 : datum.v_cpl)))"
+          "as": "b_r2",
+          "expr": "substring(datum.b_r1, (length(datum.b_r1) <= datum.b_cpl ? length(datum.b_r1) : (indexof(datum.b_r1, '@') >= 1 && indexof(datum.b_r1, '@') < datum.b_cpl && length(datum.b_r1) - indexof(datum.b_r1, '@') - 1 <= datum.b_cpl) ? indexof(datum.b_r1, '@') + 1 : max(lastindexof(substring(datum.b_r1, 0, datum.b_cpl), '-'), lastindexof(substring(datum.b_r1, 0, datum.b_cpl), '.'), lastindexof(substring(datum.b_r1, 0, datum.b_cpl), '@'), lastindexof(substring(datum.b_r1, 0, datum.b_cpl), '_'), lastindexof(substring(datum.b_r1, 0, datum.b_cpl), '/'), lastindexof(substring(datum.b_r1, 0, datum.b_cpl), ' ')) >= 1 ? max(lastindexof(substring(datum.b_r1, 0, datum.b_cpl), '-'), lastindexof(substring(datum.b_r1, 0, datum.b_cpl), '.'), lastindexof(substring(datum.b_r1, 0, datum.b_cpl), '@'), lastindexof(substring(datum.b_r1, 0, datum.b_cpl), '_'), lastindexof(substring(datum.b_r1, 0, datum.b_cpl), '/'), lastindexof(substring(datum.b_r1, 0, datum.b_cpl), ' ')) + 1 : datum.b_cpl))"
         },
         {
           "type": "formula",
-          "as": "v_r3",
-          "expr": "substring(datum.v_r2, (length(datum.v_r2) <= datum.v_cpl ? length(datum.v_r2) : (max(lastindexof(substring(datum.v_r2, 0, datum.v_cpl), '-'), lastindexof(substring(datum.v_r2, 0, datum.v_cpl), '.'), lastindexof(substring(datum.v_r2, 0, datum.v_cpl), '@'), lastindexof(substring(datum.v_r2, 0, datum.v_cpl), '_'), lastindexof(substring(datum.v_r2, 0, datum.v_cpl), '/')) >= datum.v_cpl * 0.35 ? max(lastindexof(substring(datum.v_r2, 0, datum.v_cpl), '-'), lastindexof(substring(datum.v_r2, 0, datum.v_cpl), '.'), lastindexof(substring(datum.v_r2, 0, datum.v_cpl), '@'), lastindexof(substring(datum.v_r2, 0, datum.v_cpl), '_'), lastindexof(substring(datum.v_r2, 0, datum.v_cpl), '/')) + 1 : datum.v_cpl)))"
+          "as": "b_l3",
+          "expr": "substring(datum.b_r2, 0, (length(datum.b_r2) <= datum.b_cpl ? length(datum.b_r2) : (indexof(datum.b_r2, '@') >= 1 && indexof(datum.b_r2, '@') < datum.b_cpl && length(datum.b_r2) - indexof(datum.b_r2, '@') - 1 <= datum.b_cpl) ? indexof(datum.b_r2, '@') + 1 : max(lastindexof(substring(datum.b_r2, 0, datum.b_cpl), '-'), lastindexof(substring(datum.b_r2, 0, datum.b_cpl), '.'), lastindexof(substring(datum.b_r2, 0, datum.b_cpl), '@'), lastindexof(substring(datum.b_r2, 0, datum.b_cpl), '_'), lastindexof(substring(datum.b_r2, 0, datum.b_cpl), '/'), lastindexof(substring(datum.b_r2, 0, datum.b_cpl), ' ')) >= 1 ? max(lastindexof(substring(datum.b_r2, 0, datum.b_cpl), '-'), lastindexof(substring(datum.b_r2, 0, datum.b_cpl), '.'), lastindexof(substring(datum.b_r2, 0, datum.b_cpl), '@'), lastindexof(substring(datum.b_r2, 0, datum.b_cpl), '_'), lastindexof(substring(datum.b_r2, 0, datum.b_cpl), '/'), lastindexof(substring(datum.b_r2, 0, datum.b_cpl), ' ')) + 1 : datum.b_cpl))"
         },
         {
           "type": "formula",
-          "as": "v_nl",
-          "expr": "datum.v_r1 === '' ? 1 : datum.v_r2 === '' ? 2 : 3"
+          "as": "b_r3",
+          "expr": "substring(datum.b_r2, (length(datum.b_r2) <= datum.b_cpl ? length(datum.b_r2) : (indexof(datum.b_r2, '@') >= 1 && indexof(datum.b_r2, '@') < datum.b_cpl && length(datum.b_r2) - indexof(datum.b_r2, '@') - 1 <= datum.b_cpl) ? indexof(datum.b_r2, '@') + 1 : max(lastindexof(substring(datum.b_r2, 0, datum.b_cpl), '-'), lastindexof(substring(datum.b_r2, 0, datum.b_cpl), '.'), lastindexof(substring(datum.b_r2, 0, datum.b_cpl), '@'), lastindexof(substring(datum.b_r2, 0, datum.b_cpl), '_'), lastindexof(substring(datum.b_r2, 0, datum.b_cpl), '/'), lastindexof(substring(datum.b_r2, 0, datum.b_cpl), ' ')) >= 1 ? max(lastindexof(substring(datum.b_r2, 0, datum.b_cpl), '-'), lastindexof(substring(datum.b_r2, 0, datum.b_cpl), '.'), lastindexof(substring(datum.b_r2, 0, datum.b_cpl), '@'), lastindexof(substring(datum.b_r2, 0, datum.b_cpl), '_'), lastindexof(substring(datum.b_r2, 0, datum.b_cpl), '/'), lastindexof(substring(datum.b_r2, 0, datum.b_cpl), ' ')) + 1 : datum.b_cpl))"
         },
         {
           "type": "formula",
-          "as": "v_ok",
-          "expr": "datum.v_r3 === '' && datum.v_nl <= datum.v_rows && datum.tw >= 16"
+          "as": "b_nl",
+          "expr": "datum.b_r1 === '' ? 1 : datum.b_r2 === '' ? 2 : 3"
         },
         {
           "type": "formula",
-          "as": "v_own",
-          "expr": "datum.owner != null && datum.v_rows > datum.v_nl && length(datum.owner) + 7 <= datum.v_cpl"
+          "as": "b_hard",
+          "expr": "(datum.b_r1 !== '' && indexof('-._@/ ', substring(datum.b_l1, length(datum.b_l1) - 1)) < 0) || (datum.b_r2 !== '' && indexof('-._@/ ', substring(datum.b_l2, length(datum.b_l2) - 1)) < 0)"
         },
         {
           "type": "formula",
-          "as": "v_lines",
-          "expr": "datum.v_nl === 1 ? (datum.v_own ? [datum.v_l1, 'owner: ' + datum.owner] : [datum.v_l1]) : datum.v_nl === 2 ? (datum.v_own ? [datum.v_l1, datum.v_l2, 'owner: ' + datum.owner] : [datum.v_l1, datum.v_l2]) : (datum.v_own ? [datum.v_l1, datum.v_l2, datum.v_l3, 'owner: ' + datum.owner] : [datum.v_l1, datum.v_l2, datum.v_l3])"
+          "as": "b_ok",
+          "expr": "!datum.b_hard && datum.b_r3 === '' && datum.b_nl <= datum.b_rows && datum.th >= 16"
         },
         {
           "type": "formula",
-          "as": "h_hard",
-          "expr": "(datum.h_r1 !== '' && indexof('-._@/', substring(datum.h_l1, length(datum.h_l1) - 1)) < 0) || (datum.h_r2 !== '' && indexof('-._@/', substring(datum.h_l2, length(datum.h_l2) - 1)) < 0)"
+          "as": "b_own",
+          "expr": "datum.owner != null && datum.b_rows > datum.b_nl && length(datum.owner) + 7 <= datum.b_cpl"
         },
         {
           "type": "formula",
-          "as": "v_hard",
-          "expr": "(datum.v_r1 !== '' && indexof('-._@/', substring(datum.v_l1, length(datum.v_l1) - 1)) < 0) || (datum.v_r2 !== '' && indexof('-._@/', substring(datum.v_l2, length(datum.v_l2) - 1)) < 0)"
+          "as": "b_lines",
+          "expr": "datum.b_nl === 1 ? (datum.b_own ? [datum.b_l1, 'owner: ' + datum.owner] : [datum.b_l1]) : datum.b_nl === 2 ? (datum.b_own ? [datum.b_l1, datum.b_l2, 'owner: ' + datum.owner] : [datum.b_l1, datum.b_l2]) : (datum.b_own ? [datum.b_l1, datum.b_l2, datum.b_l3, 'owner: ' + datum.owner] : [datum.b_l1, datum.b_l2, datum.b_l3])"
         },
         {
           "type": "formula",
-          "as": "vert",
-          "expr": "datum.v_ok && (!datum.h_ok || (datum.h_hard && !datum.v_hard))"
+          "as": "ffs",
+          "expr": "datum.a_ok ? datum.fs : 9"
+        },
+        {
+          "type": "formula",
+          "as": "flh",
+          "expr": "datum.ffs * 1.2"
         },
         {
           "type": "formula",
           "as": "lines",
-          "expr": "datum.vert ? datum.v_lines : datum.h_ok ? datum.h_lines : []"
+          "expr": "datum.a_ok ? datum.a_lines : datum.fs > 9 && datum.b_ok ? datum.b_lines : datum.th >= 14 && datum.tw >= 30 ? [datum.actor] : []"
         }
       ]
     }
@@ -293,7 +425,7 @@
       "type": "sqrt",
       "zero": true,
       "domain": {
-        "data": "leaves",
+        "data": "kept",
         "field": "severity"
       },
       "range": [
@@ -354,14 +486,13 @@
             "field": "y1"
           },
           "fill": {
-            "scale": "risk",
-            "field": "severity"
+            "signal": "datum.folded ? '#98A2B3' : scale('risk', datum.severity)"
           },
           "strokeWidth": {
             "value": 0
           },
           "tooltip": {
-            "signal": "{'Identity': datum.actor, 'Kind': datum.actor_kind, 'Key owner': datum.owner || '—', 'Events': format(datum.events, ','), 'Accumulated severity': format(datum.severity, ','), 'Scoring events': format(datum.scoring, ',')}"
+            "signal": "datum.folded ? {'Folded': datum.members + (datum.members === 1 ? ' identity' : ' identities') + ' beyond the top ' + keep, 'Kind': datum.actor_kind, 'Events': format(datum.events, ','), 'Accumulated severity': format(datum.severity, ',')} : {'Identity': datum.actor, 'Kind': datum.actor_kind, 'Key owner': datum.owner || '—', 'Events': format(datum.events, ','), 'Accumulated severity': format(datum.severity, ','), 'Scoring events': format(datum.scoring, ',')}"
           }
         },
         "hover": {
@@ -383,13 +514,10 @@
       "encode": {
         "update": {
           "x": {
-            "signal": "(datum.x0 + datum.x1) / 2 - (datum.vert ? (length(datum.lines) - 1) * datum.lh / 2 : 0)"
+            "signal": "(datum.x0 + datum.x1) / 2"
           },
           "y": {
-            "signal": "(datum.y0 + datum.y1) / 2 - (datum.vert ? 0 : (length(datum.lines) - 1) * datum.lh / 2)"
-          },
-          "angle": {
-            "signal": "datum.vert ? -90 : 0"
+            "signal": "(datum.y0 + datum.y1) / 2 - (length(datum.lines) - 1) * datum.flh / 2"
           },
           "align": {
             "value": "center"
@@ -398,13 +526,13 @@
             "value": "middle"
           },
           "fill": {
-            "signal": "contrast('#1D1E24', scale('risk', datum.severity)) >= contrast('#FFFFFF', scale('risk', datum.severity)) ? '#1D1E24' : '#FFFFFF'"
+            "signal": "contrast('#1D1E24', datum.folded ? '#98A2B3' : scale('risk', datum.severity)) >= contrast('#FFFFFF', datum.folded ? '#98A2B3' : scale('risk', datum.severity)) ? '#1D1E24' : '#FFFFFF'"
           },
           "fontSize": {
-            "field": "fs"
+            "field": "ffs"
           },
           "lineHeight": {
-            "field": "lh"
+            "field": "flh"
           },
           "fontWeight": {
             "value": 600
@@ -413,7 +541,7 @@
             "field": "lines"
           },
           "limit": {
-            "signal": "(datum.vert ? datum.th : datum.tw) - 4"
+            "signal": "datum.tw - 4"
           }
         }
       }
@@ -453,7 +581,7 @@
     {
       "fill": "risk",
       "type": "gradient",
-      "title": "Accumulated severity",
+      "title": "Accumulated severity (√ scale)",
       "orient": "bottom",
       "direction": "horizontal",
       "titleOrient": "left",

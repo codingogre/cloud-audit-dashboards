@@ -1,6 +1,6 @@
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
-  "description": "The 10 busiest identities across the top, and the 25 index families they read most down the side; a more solid cell is more requests, on a log scale. A data stream and its backing indices are one family, as is a run of dated daily indices; wildcard and date-math expressions are left out. A blank cell means that identity did not touch that family in range — or touched it too little to be among the 500 busiest identity/family pairs. A request naming several indices counts once per index. An identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id.",
+  "description": "The 10 busiest identities across the top, and the 25 index families they read most down the side; a more solid cell is more requests, on a log scale. A data stream and its backing indices are one family, as is a run of dated daily indices; wildcard and date-math expressions are left out. A blank cell means that identity did not touch that family in range — or touched it too little to be among the 500 busiest identity/family pairs. A request naming several indices counts once per index. An identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id; one the audit names as such is labelled \"· Cloud API key\". Cells keep a heatmap's size when only a few identities or families are in range, so a sparse window draws a few cells, not solid blocks.",
   "title": { "text": { "expr": "length(data('rows')) ? '' : 'No activity for this selection in this time range'" } },
   "autosize": {
     "type": "fit",
@@ -26,7 +26,7 @@
       "%type%": "esql",
       "%timefield%": "@timestamp",
       "%context%": true,
-      "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.indices IS NOT NULL | STATS n = COUNT(*) BY attributes.user.email, attributes.api_key.name, attributes.user.name, attributes.elasticsearch.audit.indices | WHERE LOCATE(attributes.elasticsearch.audit.indices, \"*\") == 0 AND NOT attributes.elasticsearch.audit.indices LIKE \"<*\" | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | EVAL idx = REPLACE(REPLACE(attributes.elasticsearch.audit.indices, \"\"\"^\\.ds-\"\"\", \"\"), \"\"\"[-.]?\\d{4}[.-]\\d{2}[.-]\\d{2}(-\\d+)?$\"\"\", \"\") | STATS events = SUM(n) BY actor, idx | SORT events DESC | LIMIT 500"
+      "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.indices IS NOT NULL | STATS n = COUNT(*) BY attributes.user.email, attributes.api_key.name, attributes.user.name, attributes.user.domain, attributes.elasticsearch.audit.indices | WHERE LOCATE(attributes.elasticsearch.audit.indices, \"*\") == 0 AND NOT attributes.elasticsearch.audit.indices LIKE \"<*\" | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | EVAL actor = CASE(attributes.api_key.name IS NULL AND attributes.user.domain == \"_cloud_api_key\", CONCAT(actor, \" · Cloud API key\"), actor) | EVAL idx = REPLACE(REPLACE(attributes.elasticsearch.audit.indices, \"\"\"^\\.ds-\"\"\", \"\"), \"\"\"[-.]?\\d{4}[.-]\\d{2}[.-]\\d{2}(-\\d+)?$\"\"\", \"\") | STATS events = SUM(n) BY actor, idx | SORT events DESC | LIMIT 500"
     }
   },
   "transform": [
@@ -52,7 +52,9 @@
   "mark": {
     "type": "rect",
     "cornerRadius": 2,
-    "color": "#3987e5"
+    "color": "#3987e5",
+    "width": { "expr": "min(bandwidth('x'), 64)" },
+    "height": { "expr": "min(bandwidth('y'), 30)" }
   },
   "encoding": {
     "y": {
@@ -68,7 +70,11 @@
         "title": null,
         "labelLimit": 280,
         "ticks": false,
-        "domain": false
+        "domain": false,
+        "grid": true,
+        "bandPosition": 0.5,
+        "gridOpacity": 0.35,
+        "zindex": 0
       }
     },
     "x": {
@@ -87,10 +93,14 @@
         "labelAngle": 35,
         "labelAlign": "right",
         "labelBaseline": "middle",
-        "labelLimit": 200,
+        "labelLimit": 230,
         "labelPadding": 4,
         "ticks": false,
-        "domain": false
+        "domain": false,
+        "grid": true,
+        "bandPosition": 0.5,
+        "gridOpacity": 0.35,
+        "zindex": 0
       }
     },
     "opacity": {
@@ -104,7 +114,7 @@
       "legend": {
         "title": "Requests",
         "orient": "bottom",
-        "values": { "expr": "length(data('rows')) ? [1, 10, 100, 1000, 10000] : []" },
+        "values": { "expr": "length(data('rows')) ? slice([1, 10, 100, 1000, 10000, 100000, 1000000], 0, floor(log(max(1, extent(pluck(data('rows'), 'events'))[1])) / LN10 + 1e-9) + 1) : []" },
         "titleOpacity": { "expr": "length(data('rows')) ? 1 : 0" },
         "labelExpr": "format(datum.value, '~s')"
       }

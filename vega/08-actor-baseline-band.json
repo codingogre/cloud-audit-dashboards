@@ -192,12 +192,12 @@
         {
           "type": "formula",
           "as": "line1",
-          "expr": "datum.total === 0 ? 'No activity for this selection in the last 7 days' : format(datum.events, ',') + ' events in the last full hour (' + utcFormat(datum.key, '%H:00') + ' UTC) — ' + (datum.med > 0 ? format(datum.events / datum.med, '.1f') + '× their median for that hour' : 'an hour they are usually idle')"
+          "expr": "datum.total === 0 ? 'No activity for this selection in the last 7 days' : utcFormat(datum.key, '%H:00') + ' UTC (last full hour): ' + format(datum.events, ',') + ' events, ' + (datum.med > 0 ? format(datum.events / datum.med, '.1f') + '× their median' : 'usually an idle hour')"
         },
         {
           "type": "formula",
           "as": "line2",
-          "expr": "datum.total === 0 ? '' : datum.n_out + ' of ' + datum.n_hours + ' hours this week unusual for that hour of day'"
+          "expr": "datum.total === 0 ? '' : datum.n_out + ' of ' + datum.n_hours + ' hours unusual for the time of day'"
         }
       ]
     }

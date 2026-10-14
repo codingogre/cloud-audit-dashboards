@@ -1,6 +1,6 @@
 /** 02 Kibana Object Forensics — see scripts/lib/definitions.mjs for how the suite is assembled. */
 import {
-  IDX, ACTOR, TIME, BUCKET, KIB, VERB, CHANGE, OBJ_GROK, OBJ_NAME, OBJ_ID, OBJ_TYPE, PALETTE, dash, kpi, xy, bar, table,
+  IDX, ACTOR, TIME, BUCKET, KIB, VERB, CHANGE, OBJ_GROK, OBJ_NAME, OBJ_ID, OBJ_TYPE, PALETTE, KIBANA_INTERNALS, dash, kpi, xy, bar, table,
   vega, search, resetIds, sized
 } from '../panels.mjs';
 import {
@@ -29,6 +29,18 @@ const EXEC_LABEL = 'EVAL name = CASE(is_exec, CONCAT("execution ", LEFT(name, 8)
  * action at all, and `!=` on null would drop those along with the noise.
  */
 const NOT_HTTP = 'WHERE attributes.kibana.saved_object.type IS NOT NULL OR attributes.event.action IS NULL OR attributes.event.action != "http_request"';
+
+/**
+ * The high-value table is sorted newest first, and every dashboard view by every viewer is a
+ * saved_object_resolve of a cloud-audit-* dashboard plus a find of its data view, so on a deployed suite
+ * its ten rows were always the suite watching itself be watched (24h render: all ten). This leaves out
+ * exactly what the noise gate calls query internals — the suite's own READS, space lookups and
+ * point-in-time paging — through the same KIBANA_INTERNALS vocabulary, so the two can never disagree. A
+ * change to a suite object is not a read and stays. Null-guarded: Fleet emits events with no action.
+ * Runs after NOT_HTTP, so the url.original RLIKE inside it only ever sees the few http_request rows that
+ * name a saved-object type.
+ */
+const NOT_INTERNAL = `WHERE attributes.event.action IS NULL OR NOT (${KIBANA_INTERNALS})`;
 
 /**
  * The read verbs VERB can emit. Folding them into one series is what lets the activity chart carry
@@ -77,34 +89,45 @@ export function build() {
       // The title promises thirty, so the LIMIT stays above the 13 rows the panel shows.
       { scroll: true }),
     vega(0, 19, 24, 13, '03-object-verb-heatmap', 'Object type × operation',
-      'Saved-object type against operation, writes first. The more solid the cell, the more events it holds, on a log scale, so a single create, update or delete stays visible beside thousands of reads: the write columns are the forensic signal. Hover a cell for its count and how many distinct objects it covers.'),
+      'Saved-object type against operation, writes first. The more solid the cell, the more events it holds, on a log scale, and every cell has a solid outline, so a single create, update or delete stays visible beside thousands of reads: the write columns are the forensic signal. Past 13 object types the rest share one "N more types" row at the bottom; types with any write rank first, so a rare change is never the one folded away. Hover a cell for its count and how many distinct objects it covers.'),
     xy(24, 19, 24, 13, 'Saved-object activity over time',
       `FROM ${IDX} | ${TIME} | WHERE attributes.kibana.saved_object.type IS NOT NULL | STATS n = COUNT(*) BY ${BUCKET}, attributes.event.action | ${VERB} | EVAL verb = CASE(verb IN (${READS}), "read", verb) | STATS events = SUM(n) BY \`${BUCKET}\`, verb | ${SERIES_ORDER}`,
       'events', 'Saved-object operations over time. Get, find, resolve and the other read verbs are folded into one "read" series, so each write verb keeps its own colour and the legend stays short enough to read.',
       { breakdown: 'verb', colors: VERB_COLORS }),
-    table(0, 32, 24, 12, 'Most-accessed objects by name',
+    table(0, 32, 20, 12, 'Most-accessed objects by name',
       `FROM ${IDX} | ${TIME} | WHERE attributes.kibana.saved_object.name IS NOT NULL | ${ACTOR} | STATS events = COUNT(*), actors = COUNT_DISTINCT(actor) BY name = attributes.kibana.saved_object.name, type = attributes.kibana.saved_object.type | SORT events DESC | LIMIT 15`,
-      ['name', sized('type', 150, { label: 'Object type' })], ['events', 'actors'],
+      ['name', sized('type', 110, { label: 'Object type' })], ['events', 'actors'],
       'Real object titles from kibana.saved_object.name: the dashboards, rules and other objects people actually opened. Identities counts people and API keys alike, resolved the way every actor panel resolves them. Opening one of these audit dashboards is itself a read, so the suite\'s own dashboards and data view rank here in proportion to how much it is used.'),
-    table(24, 32, 24, 12, 'Dashboards, SLOs and alert rules touched',
-      `FROM ${IDX} | ${TIME} | ${KIB} | ${NOT_HTTP} | ${OBJ_GROK} | ${OBJ_NAME} | ${EXEC_FLAG} | ${ACTOR} | STATS n = COUNT(*), last_ts = MAX(@timestamp) BY actor, ${CHANGED_KEYS}, obj_name, is_exec | ${CHANGED_DERIVE} | WHERE obj_type IN ("dashboard","slo","alert","alerting_rule","tag","index-pattern","workflow","agent-builder-agent","agent-builder-tool","ml-job") | STATS events = SUM(n), last_seen = MAX(last_ts) BY actor, verb, type = obj_type, name = obj_name, is_exec | SORT last_seen DESC | LIMIT 10 | ${EXEC_LABEL}`,
-      // Half width: every pixel the fixed columns do not need goes to Object, the column that clipped.
-      // Identity keeps its width at a narrow viewport (min): an email cut short names nobody.
-      [sized('actor', 175, { min: 160 }), sized('verb', 80), sized('type', 125, { label: 'Object type' }), sized('name', 250, { label: 'Object' })],
-      [sized('events', 70), 'last_seen'],
-      'Audit trail for the high-value object types only: who touched which dashboard, SLO, rule, workflow or ML job, and when. Both `alert` and `alerting_rule` are included, because Kibana records the same rule under either type depending on which code path audited it.'),
+    table(20, 32, 28, 12, 'Latest high-value object access · suite views left out',
+      `FROM ${IDX} | ${TIME} | ${KIB} | ${NOT_HTTP} | ${NOT_INTERNAL} | ${OBJ_GROK} | ${OBJ_NAME} | ${EXEC_FLAG} | ${ACTOR} | STATS n = COUNT(*), last_ts = MAX(@timestamp) BY actor, ${CHANGED_KEYS}, obj_name, is_exec | ${CHANGED_DERIVE} | WHERE obj_type IN ("dashboard","slo","alert","alerting_rule","tag","index-pattern","workflow","agent-builder-agent","agent-builder-tool","ml-job") | STATS last_seen = MAX(last_ts) BY actor, verb, type = obj_type, name = obj_name, is_exec | SORT last_seen DESC | LIMIT 10 | ${EXEC_LABEL}`,
+      // 28 of 48 columns, taken from the four-column table beside it: at half width its six columns
+      // clipped at a 1440px viewport (the layout advisory). Every pixel the fixed columns do not need
+      // goes to Object, the column that clipped.
+      // Identity keeps its width at a narrow viewport (min): an email cut short names nobody. 190, not
+      // 175: a 20-character opaque key id filled 175 to within 8px of Operation, and the two read as one.
+      [sized('actor', 190, { min: 175 }), sized('verb', 80), sized('type', 110, { label: 'Object type' }), sized('name', 250, { label: 'Object' })],
+      // No Events column: the panel answers "who touched it, and when", and the 72px a count took was
+      // what left Object clipped at a 1440px viewport.
+      ['last_seen'],
+      'The ten most recent reads and changes of the high-value object types: dashboards, data views, SLOs, alert rules, tags, workflows, agent-builder agents and tools, and ML jobs — who touched which one, and when. A type that nobody touched in range has no rows. Unlike the panel beside it, this one leaves out what the noise gate calls query internals: views of this audit suite\'s own dashboards and data view, space lookups and point-in-time paging, which on a deployed suite would fill every row; a change to a suite object is kept. Both `alert` and `alerting_rule` are included, because Kibana records the same rule under either type depending on which code path audited it. On a narrow screen a long object name wraps onto a second line; scroll the table for the last rows.',
+      // Wrapped: at a 1440px viewport Object gets ~180px, and Lens hard-cuts a clipped cell mid-glyph
+      // ("[Audit] Elasticsearch Data A"), which reads as a different name. No width split of this row
+      // fits both tables' names at 1440 without dropping a column, so the long names take a second line
+      // there instead. At 1920 every name fits on one line and the rows render as before.
+      { wrap: true }),
     bar(0, 44, 12, 11, 'Object types accessed',
       `FROM ${IDX} | ${TIME} | WHERE attributes.kibana.saved_object.type IS NOT NULL | STATS events = COUNT(*) BY type = attributes.kibana.saved_object.type | SORT events DESC | LIMIT 10`,
-      'type', 'events', 'The ten saved-object types with the most traffic. Background reads by Kibana features and integrations can outweigh human activity; the heatmap above splits each type by operation.', { values: true }),
+      'type', 'events', 'The ten saved-object types with the most traffic; hover a bar for its count. Background reads by Kibana features and integrations can outweigh human activity; the heatmap above splits each type by operation.'),
     bar(12, 44, 12, 11, 'Activity by space',
       `FROM ${IDX} | ${TIME} | WHERE attributes.kibana.space.id IS NOT NULL | STATS events = COUNT(*) BY space = attributes.kibana.space.id | SORT events DESC | LIMIT 10`,
-      'space', 'events', 'Kibana activity in the ten busiest spaces. Viewing these audit dashboards counts too, so the space they are installed in carries their own reads.', { values: true }),
+      'space', 'events', 'Kibana activity in the ten busiest spaces; hover a bar for its count. Viewing these audit dashboards counts too, so the space they are installed in carries their own reads.'),
     search(24, 44, 24, 11, '08-cross-space-activity', 'Cross-space activity',
-      'Identities ranked by how many Kibana spaces they touched. Anything above one space is worth understanding.'),
-    search(0, 55, 48, 15, '04-kibana-object-changes', 'Kibana saved-object activity',
-      'Every Kibana event that named an object, reads and changes, newest first; the newest 1,000 in range. Kibana\'s page requests, logins and point-in-time internals name no object and are left out. Message is the sentence Kibana wrote for the event. Open in Discover to filter on a column or page further back.'),
-    search(0, 70, 48, 14, '09-session-reconstruction', 'Session reconstruction',
-      'One person\'s Kibana sessions, event by event, newest first: every object they opened and changed, with the sentence Kibana wrote for each. Pin an identity first, then open in Discover, filter to one Session and sort Time ascending to replay it forward. Kibana\'s internal UI requests and point-in-time internals are left out; public API calls such as an export are kept. Empty when nobody used Kibana in a browser in range: API-key traffic carries no session.'),
+      'Identities ranked by how many Kibana spaces they touched, with every space named. Anything above one space is worth understanding. All Kibana traffic, like the Spaces tile.'),
+    search(0, 55, 48, 15, '04-kibana-object-changes', 'Kibana saved-object activity · newest 1,000 at most',
+      'Every Kibana event that named an object, reads and changes, newest first; the newest 1,000 in range, so the result count above the grid is that cap, not a total. Kibana\'s page requests, logins and point-in-time internals name no object and are left out. Message is the sentence Kibana wrote for the event. Open in Discover to filter on a column or page further back.'),
+    search(0, 70, 48, 14, '09-session-reconstruction', 'Session reconstruction · newest 1,000 at most',
+      'One person\'s Kibana sessions, event by event, newest first: every object they opened and changed, with the sentence Kibana wrote for each. Operation uses the same words as the activity panel above (get, resolve, create …); an event that names no object keeps its own action, such as "http request" for a public API call. Pin an identity first, then open in Discover, filter to one Session and sort Time ascending to replay it forward. Kibana\'s internal UI requests, space lookups and point-in-time internals are left out; public API calls such as an export are kept. API-key traffic carries no session, so this is empty when nobody used Kibana in a browser in range.',
+      { empty: 'empty without browser sessions' }),
   ];
   return dash('cloud-audit-02-kibana-objects', '[Audit] 🗂️ Kibana Object Forensics',
     'Every Kibana saved-object read and change, by type, name, space and actor.', P);

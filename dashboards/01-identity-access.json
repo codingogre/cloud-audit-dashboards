@@ -117,11 +117,11 @@
       },
       "config": {
         "title": "",
-        "description": "All distinct identities, human and machine.",
+        "description": "Distinct identities in all traffic, resolved as email, then API key name, then user.name — one per row of Identity first and last seen. The line under the number splits them: humans have an email on their events (the Humans tile), machines do not (service accounts, API keys, internal and anonymous principals).",
         "type": "metric",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS `Identities` = COUNT_DISTINCT(actor)"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | STATS `Identities` = COUNT_DISTINCT(actor), human = COUNT_DISTINCT(attributes.user.email), machine = COUNT_DISTINCT(actor) WHERE attributes.user.email IS NULL | EVAL detail = CONCAT(CASE(human == 0, \"no humans\", human == 1, \"1 human\", CONCAT(TO_STRING(human), \" humans\")), \" · \", CASE(machine == 0, \"no machine\", machine == 1, \"1 machine\", CONCAT(TO_STRING(machine), \" machine\"))) | KEEP `Identities`, detail"
         },
         "metrics": [
           {
@@ -131,6 +131,10 @@
               "type": "number",
               "decimals": 0
             }
+          },
+          {
+            "type": "secondary",
+            "column": "detail"
           }
         ]
       }
@@ -146,11 +150,11 @@
       },
       "config": {
         "title": "",
-        "description": "Distinct human identities by email address.",
+        "description": "Distinct email addresses in all traffic — the people Busiest human identities ranks. An Elasticsearch API key carries its creator's email, so a person can count here through a key they made without signing in; the line under the number says how many signed in through SAML SSO.",
         "type": "metric",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS `Humans` = COUNT_DISTINCT(attributes.user.email)"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS `Humans` = COUNT_DISTINCT(attributes.user.email), sso = COUNT_DISTINCT(attributes.user.email) WHERE attributes.user.domain == \"cloud-saml-kibana\" | EVAL detail = CASE(sso == 0, \"none signed in by SSO\", CONCAT(TO_STRING(sso), \" signed in by SSO\")) | KEEP `Humans`, detail"
         },
         "metrics": [
           {
@@ -160,6 +164,10 @@
               "type": "number",
               "decimals": 0
             }
+          },
+          {
+            "type": "secondary",
+            "column": "detail"
           }
         ]
       }
@@ -175,11 +183,11 @@
       },
       "config": {
         "title": "",
-        "description": "Distinct API key ids seen authenticating in range, and how many names they go by. A re-issued key keeps its name under a new id, so there can be fewer names than keys.",
+        "description": "Distinct API keys seen in range, of both kinds: Elastic Cloud API keys (recorded by id only) and Elasticsearch (ES) API keys (by id and name); the line under the number splits them. One per row of API key inventory. A re-issued Elasticsearch key keeps its name under a new id and counts again.",
         "type": "metric",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.api_key.id IS NOT NULL | STATS `API keys` = COUNT_DISTINCT(attributes.api_key.id), names = COUNT_DISTINCT(attributes.api_key.name) | EVAL detail = CASE(names == 0, \"none in range\", CONCAT(\"under \", TO_STRING(names), CASE(names == 1, \" name\", \" names\"))) | KEEP `API keys`, detail"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.api_key.id IS NOT NULL OR attributes.user.domain == \"_cloud_api_key\" | STATS es = COUNT_DISTINCT(attributes.api_key.id), cloud = COUNT_DISTINCT(attributes.user.name) WHERE attributes.api_key.id IS NULL | EVAL `API keys` = es + cloud, detail = CASE(es + cloud == 0, \"none in range\", CONCAT(CASE(cloud == 0, \"no Cloud\", cloud == 1, \"1 Cloud\", CONCAT(TO_STRING(cloud), \" Cloud\")), \" · \", CASE(es == 0, \"no ES\", es == 1, \"1 ES\", CONCAT(TO_STRING(es), \" ES\")))) | KEEP `API keys`, detail"
         },
         "metrics": [
           {
@@ -208,11 +216,11 @@
       },
       "config": {
         "title": "",
-        "description": "Events authenticated through the cloud-saml-kibana SAML realm — interactive human sign-in.",
+        "description": "Events authenticated through the cloud-saml-kibana SAML realm — a person in a browser. The line under the number counts Kibana user_login events: a session that began before the range shows events here but no new sign-in.",
         "type": "metric",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.user.domain == \"cloud-saml-kibana\" | STATS `SSO events` = COUNT(*)"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.user.domain == \"cloud-saml-kibana\" | STATS `SSO events` = COUNT(*), logins = COUNT(*) WHERE attributes.event.action == \"user_login\" | EVAL detail = CASE(logins == 0, \"no new sign-ins\", logins == 1, \"1 new sign-in\", CONCAT(TO_STRING(logins), \" new sign-ins\")) | KEEP `SSO events`, detail"
         },
         "metrics": [
           {
@@ -222,6 +230,10 @@
               "type": "number",
               "decimals": 0
             }
+          },
+          {
+            "type": "secondary",
+            "column": "detail"
           }
         ]
       }
@@ -237,11 +249,11 @@
       },
       "config": {
         "title": "",
-        "description": "Failed sign-ins (authentication_failed, realm_authentication_failed, anonymous_access_denied) plus requests refused or failed after sign-in (access_denied and any failed outcome). The line under the number splits the two: a denial is an authenticated identity hitting a permission wall, not someone guessing credentials. Same predicate as the Failed or denied access table, so the two always agree.",
+        "description": "Failed sign-ins (authentication_failed, realm_authentication_failed, anonymous_access_denied) plus requests refused or failed after sign-in (access_denied and any failed outcome). The line under the number splits the two — failed logins, then denied (refused or failed after sign-in): a denial is an authenticated identity hitting a permission wall, not someone guessing credentials. Same predicate as the two failure panels below.",
         "type": "metric",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.event.action IN (\"authentication_failed\",\"realm_authentication_failed\",\"anonymous_access_denied\") OR attributes.event.outcome == \"failure\" | STATS `Failed or denied` = COUNT(*), signin = COUNT(*) WHERE attributes.event.action IN (\"authentication_failed\",\"realm_authentication_failed\",\"anonymous_access_denied\") | EVAL detail = CONCAT(TO_STRING(signin), CASE(signin == 1, \" failed sign-in · \", \" failed sign-ins · \"), TO_STRING(`Failed or denied` - signin), \" denied\") | KEEP `Failed or denied`, detail"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.event.action IN (\"authentication_failed\",\"realm_authentication_failed\",\"anonymous_access_denied\") OR attributes.event.outcome == \"failure\" | STATS `Failed or denied` = COUNT(*), signin = COUNT(*) WHERE attributes.event.action IN (\"authentication_failed\",\"realm_authentication_failed\",\"anonymous_access_denied\") | EVAL after = `Failed or denied` - signin, detail = CONCAT(CASE(signin == 0, \"no logins\", signin == 1, \"1 login\", CONCAT(TO_STRING(signin), \" logins\")), \" · \", CASE(after == 0, \"none denied\", CONCAT(TO_STRING(after), \" denied\"))) | KEEP `Failed or denied`, detail"
         },
         "metrics": [
           {
@@ -270,11 +282,11 @@
       },
       "config": {
         "title": "",
-        "description": "Distinct Kibana browser sessions observed in range.",
+        "description": "Distinct Kibana browser sessions observed in range, and how many people (by email) they belong to.",
         "type": "metric",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS `Kibana sessions` = COUNT_DISTINCT(attributes.kibana.session.id)"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.kibana.session.id IS NOT NULL | STATS `Kibana sessions` = COUNT_DISTINCT(attributes.kibana.session.id), people = COUNT_DISTINCT(attributes.user.email) | EVAL detail = CASE(`Kibana sessions` == 0, \"none in range\", CASE(people == 0, \"no email recorded\", people == 1, \"1 person\", CONCAT(TO_STRING(people), \" people\"))) | KEEP `Kibana sessions`, detail"
         },
         "metrics": [
           {
@@ -284,6 +296,10 @@
               "type": "number",
               "decimals": 0
             }
+          },
+          {
+            "type": "secondary",
+            "column": "detail"
           }
         ]
       }
@@ -299,7 +315,7 @@
       },
       "config": {
         "title": "Authentication method over time",
-        "description": "Elasticsearch requests per interval by how they presented credentials: API key, token (SSO browser sessions and service accounts) or realm (username and password). Log scale, one line per credential type, so a type carrying a fraction of a percent of the traffic is as readable as the bulk. A shift in this mix is worth explaining.",
+        "description": "Elasticsearch requests per interval by how they presented credentials: API key, token (SSO browser sessions and service accounts) or realm (username and password). One bar per credential type per interval, on a log scale, so a type carrying a fraction of a percent of the traffic is as readable as the bulk; an interval with no bar had no requests of that type. A shift in this mix is worth explaining.",
         "type": "xy",
         "axis": {
           "x": {
@@ -316,12 +332,18 @@
             "title": {
               "visible": false
             },
-            "scale": "log"
+            "scale": "log",
+            "domain": {
+              "type": "custom",
+              "min": 0.5,
+              "max": 1000000,
+              "rounding": false
+            }
           }
         },
         "layers": [
           {
-            "type": "line",
+            "type": "bar",
             "data_source": {
               "type": "esql",
               "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.authentication.type IS NOT NULL | STATS events = COUNT(*) BY BUCKET(@timestamp, 75, ?_tstart, ?_tend), attributes.authentication.type | EVAL auth = CASE(attributes.authentication.type == \"api_key\", \"API key\", attributes.authentication.type == \"token\", \"Token\", attributes.authentication.type == \"realm\", \"Realm\", attributes.authentication.type == \"saml\", \"SAML\", attributes.authentication.type == \"anonymous\", \"Anonymous\", attributes.authentication.type == \"internal\", \"Internal\", attributes.authentication.type) | SORT auth"
@@ -421,7 +443,7 @@
       "config": {
         "ref_id": "cloud-audit-vega-02-auth-matrix",
         "title": "Credential type by identity",
-        "description": "Which credential type each of the 12 busiest identities presents; the stronger the colour, the more events. Humans should authenticate by token (SSO); service identities by API key. Only Elasticsearch requests record a credential type, so identities seen only in Kibana or only anonymously are counted in Identities above but are not on this chart. A Cloud API key with no name is shown by its id."
+        "description": "Which credential type each of the 12 busiest identities presents; the stronger the fill, the more events (log scale; the legend lists the decades the chart spans). Humans should authenticate by token (SSO); service identities by API key. Only Elasticsearch requests record a credential type, so identities seen only in Kibana or only anonymously are counted in Identities above but are not on this chart. A Cloud API key has no name and is shown by its id."
       }
     },
     {
@@ -434,8 +456,8 @@
         "h": 11
       },
       "config": {
-        "title": "Identity origin",
-        "description": "Traffic split by the email on the event: Elastic (@elastic.co), Tenant (any other address), or Machine (no email: service accounts, Cloud API keys, internal users and anonymous requests). An Elasticsearch API key carries its creator's email, so traffic from a key a person created counts under that person's origin.",
+        "title": "Events by identity origin",
+        "description": "Share of events, not of identities, by the email on the event: Elastic (@elastic.co), Tenant (any other address), or Machine (no email: service accounts, Cloud API keys, internal users and anonymous requests). One busy key can make Machine nearly all of it while most identities are people. An Elasticsearch API key carries its creator's email, so traffic from a key a person created counts under that person's origin.",
         "type": "pie",
         "data_source": {
           "type": "esql",
@@ -513,8 +535,8 @@
         "h": 11
       },
       "config": {
-        "title": "Authentication realm",
-        "description": "Which security realm authenticated the request. SAML SSO is interactive human sign-in (cloud-saml-kibana); Elasticsearch API key (_es_api_key) and Cloud API key (_cloud_api_key) are programmatic; Service account is Elastic's own components (_service_account). Any other realm is shown by its name.",
+        "title": "Events by authentication realm",
+        "description": "Share of events by the security realm that authenticated them. SAML SSO is interactive human sign-in (cloud-saml-kibana); Elasticsearch API key (_es_api_key) and Cloud API key (_cloud_api_key) are programmatic — an Elasticsearch key minted by a Cloud API key authenticates in the Cloud key's realm; Service account is Elastic's own components (_service_account). Any other realm is shown by its name.",
         "type": "pie",
         "data_source": {
           "type": "esql",
@@ -611,11 +633,11 @@
       },
       "config": {
         "title": "Busiest API keys",
-        "description": "The busiest API keys, one row per key id, with the owner (the creator's email, stamped on keys a person created; a Cloud API key records none), request volume and how many distinct client IPs used it. A key used from many IPs is worth investigating. A re-issued key keeps its name under a new id, so a name can appear twice. The full list, with first and last use, is API key inventory below.",
+        "description": "The busiest API keys of both kinds, one row per key, with request volume and how many distinct client IPs used it. Kind is Cloud (an Elastic Cloud API key: no name, so its API key cell is \"-\", recorded by its id) or Elasticsearch (an Elasticsearch API key: id and name). A key used from many IPs is worth investigating. A re-issued key keeps its name under a new id, so a name can appear twice. The full list, with owner and first and last use, is API key inventory below.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.api_key.name IS NOT NULL | STATS events = COUNT(*), ips = COUNT_DISTINCT(client.ip) BY api_key = attributes.api_key.name, key_id = attributes.api_key.id, owner = attributes.user.email | EVAL owner = COALESCE(owner, \"none recorded\") | SORT events DESC | LIMIT 9"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.api_key.id IS NOT NULL OR attributes.user.domain == \"_cloud_api_key\" | STATS events = COUNT(*), ips = COUNT_DISTINCT(client.ip) BY api_key = attributes.api_key.name, attributes.api_key.id, attributes.user.name | EVAL key_id = COALESCE(attributes.api_key.id, attributes.user.name), kind = CASE(attributes.api_key.id IS NULL, \"Cloud\", \"Elasticsearch\") | SORT events DESC | LIMIT 9"
         },
         "styling": {
           "density": {
@@ -636,22 +658,23 @@
           {
             "label": "Key ID",
             "column": "key_id",
-            "width": 164
+            "width": 175
           },
           {
-            "label": "Owner",
-            "column": "owner"
+            "label": "Kind",
+            "column": "kind",
+            "width": 105
           }
         ],
         "metrics": [
           {
             "label": "Events",
-            "width": 86,
+            "width": 90,
             "column": "events"
           },
           {
             "label": "IPs",
-            "width": 86,
+            "width": 90,
             "column": "ips"
           }
         ]
@@ -663,16 +686,16 @@
       "grid": {
         "x": 0,
         "y": 31,
-        "w": 24,
+        "w": 12,
         "h": 12
       },
       "config": {
-        "title": "Human identity footprint",
-        "description": "People by email, busiest first, with their first and last appearance in the selected range and how many client IPs they came from. Click an email to pin that person across the suite.",
+        "title": "Busiest human identities",
+        "description": "People by email, busiest first: the people the Humans tile counts, over all traffic, with the same event counts as Identity first and last seen, which also has when each was first and last seen and from how many IPs. The panel shows the top rows; the rest are in that session. Click an email to pin that person across the suite.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.user.email IS NOT NULL | STATS events = COUNT(*), first_seen = MIN(@timestamp), last_seen = MAX(@timestamp), ips = COUNT_DISTINCT(client.ip) BY attributes.user.email | SORT events DESC | LIMIT 10"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.user.email IS NOT NULL | STATS events = COUNT(*) BY attributes.user.email | SORT events DESC | LIMIT 10"
         },
         "styling": {
           "density": {
@@ -695,23 +718,8 @@
         "metrics": [
           {
             "label": "Events",
-            "width": 72,
+            "width": 90,
             "column": "events"
-          },
-          {
-            "label": "First seen",
-            "width": 190,
-            "column": "first_seen"
-          },
-          {
-            "label": "Last seen",
-            "width": 190,
-            "column": "last_seen"
-          },
-          {
-            "label": "IPs",
-            "width": 72,
-            "column": "ips"
           }
         ]
       }
@@ -720,18 +728,18 @@
       "type": "vis",
       "id": "tbl-13",
       "grid": {
-        "x": 24,
+        "x": 12,
         "y": 31,
-        "w": 24,
+        "w": 36,
         "h": 12
       },
       "config": {
-        "title": "Failed or denied access",
-        "description": "Failed sign-ins and refused requests grouped by identity, action and source IP, most frequent first. authentication_failed, realm_authentication_failed and anonymous_access_denied are failed sign-ins; access_denied is an authenticated identity refused an action. Empty is good. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id.",
+        "title": "Most frequent failed or denied access · none is good",
+        "description": "Failed sign-ins and refused requests grouped by identity, action and source IP, most frequent first; the top rows of what the Failed or denied tile counts. Result names the kind, as in the session below: failed sign-in (authentication_failed, realm_authentication_failed, anonymous_access_denied), denied (access_denied: an authenticated identity refused an action), or failed (any other action, here because its outcome was failure). An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id. An empty panel means nothing matched in the time range, which is the healthy state.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.event.action IN (\"authentication_failed\",\"realm_authentication_failed\",\"anonymous_access_denied\") OR attributes.event.outcome == \"failure\" | STATS events = COUNT(*), last_seen = MAX(@timestamp) BY attributes.user.email, attributes.api_key.name, attributes.user.name, action = attributes.event.action, ip = client.ip | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | STATS events = SUM(events), last_seen = MAX(last_seen) BY actor, action, ip | SORT events DESC | LIMIT 10"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.event.action IN (\"authentication_failed\",\"realm_authentication_failed\",\"anonymous_access_denied\") OR attributes.event.outcome == \"failure\" | STATS events = COUNT(*), last_seen = MAX(@timestamp) BY attributes.user.email, attributes.api_key.name, attributes.user.name, action = attributes.event.action, ip = client.ip | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | STATS events = SUM(events), last_seen = MAX(last_seen) BY actor, action, ip | EVAL result = CASE(action IN (\"authentication_failed\",\"realm_authentication_failed\",\"anonymous_access_denied\"), \"failed sign-in\", action == \"access_denied\", \"denied\", \"failed\") | SORT events DESC | LIMIT 10"
         },
         "styling": {
           "density": {
@@ -751,18 +759,24 @@
           },
           {
             "label": "Action",
-            "column": "action"
+            "column": "action",
+            "width": 175
+          },
+          {
+            "label": "Result",
+            "width": 105,
+            "column": "result"
           },
           {
             "label": "IP",
-            "width": 118,
+            "width": 125,
             "column": "ip"
           }
         ],
         "metrics": [
           {
             "label": "Events",
-            "width": 72,
+            "width": 90,
             "column": "events"
           },
           {
@@ -784,8 +798,8 @@
       },
       "config": {
         "ref_id": "cloud-audit-search-02-failed-authentications",
-        "title": "Failed sign-ins and denied access",
-        "description": "Every failed sign-in and refused request, newest first. Read Action: authentication_failed, realm_authentication_failed and anonymous_access_denied are failed sign-ins; access_denied is an authenticated identity refused an action. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id."
+        "title": "Failed sign-ins and denied access, newest 1,000 · none is good",
+        "description": "The newest failed sign-ins and refused requests, record by record. Discover stops at 1,000 rows, so on a busy range its result count is that cap and the Failed or denied tile is the total. Result names the kind: failed sign-in, denied (access_denied), or failed (any other failed outcome). An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id. An empty panel means nothing matched in the time range, which is the healthy state."
       }
     },
     {
@@ -800,7 +814,7 @@
       "config": {
         "ref_id": "cloud-audit-search-07-api-key-activity",
         "title": "API key inventory",
-        "description": "Every API key id seen in range, busiest first, with owner, volume, IP spread, indices touched and first and last use."
+        "description": "Every API key seen in range (up to 1,000), Cloud and Elasticsearch, busiest first — one row per key the API keys tile counts — with owner, volume, IP spread, indices touched and first and last use. Owner is the identity that created the key: a person's email, or for a key minted programmatically the id of the Cloud API key that minted it (its own row reads \"(no name)\"); a Cloud API key's own creator is not in the audit stream, so its Owner reads Cloud organisation."
       }
     },
     {
@@ -815,7 +829,7 @@
       "config": {
         "ref_id": "cloud-audit-search-06-actor-first-seen",
         "title": "Identity first and last seen",
-        "description": "Every identity with its first and last appearance within the selected time range, its event count, and how many IPs, countries and actions it used. Newest first appearance on top. Widen the time range to tell a brand-new identity from one that was simply quiet. Noise gate applied, so counts run lower than on the panels above. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id."
+        "description": "Every identity in range (up to 1,000), all traffic — one row per identity the Identities tile counts — with its first and last appearance, Events (everything it did, the same count as Busiest human identities) and Signal events (what is left after the noise gate, the count the gated panels across the suite use). Newest first appearance on top. Widen the time range to tell a brand-new identity from one that was simply quiet. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id."
       }
     }
   ]

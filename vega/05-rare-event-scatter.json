@@ -1,9 +1,9 @@
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
-  "description": "The highest-severity scoring actions in range, one row per action and weight, placed by how often each happened. Rarest is on the left, so the top-left corner is rare and high-severity: where to look first. A failed change scores 40 whatever it changed, so it gets its own row, marked (failed). Hover a point for how many identities did it and when.",
+  "description": "The highest-severity scoring actions in range (the top 12 by severity, rarest first within a weight), one row per action and weight, placed by how often each happened. Rarest is on the left, so the top-left corner is rare and high-severity: where to look first. A failed change scores 40 whatever it changed, so it gets its own row, marked (failed). Hover a point for how many identities did it and when.",
   "title": {
     "text": {
-      "expr": "length(data('actions')) > 12 ? 'Top 12 of ' + length(data('actions')) + ' scoring actions, by severity then rarity · the rest are in Why these identities scored' : length(data('actions')) ? length(data('actions')) + ' scoring actions, by severity, rarest first within a weight' : 'No scoring actions for this selection in this time range'"
+      "expr": "length(data('actions')) > 12 ? 'Top 12 of ' + length(data('actions')) + ' scoring actions, by severity, rarest first within a weight' : length(data('actions')) ? (length(data('actions')) == 1 ? '1 scoring action' : length(data('actions')) + ' scoring actions') + ', by severity, rarest first within a weight' : 'No scoring actions for this selection in this time range'"
     }
   },
   "autosize": {
@@ -128,14 +128,17 @@
         ]
       },
       "legend": {
-        "title": "Severity weight (0–50)",
+        "title": "Severity weight",
         "orient": "bottom",
         "direction": "horizontal",
-        "gradientLength": 160,
+        "offset": 6,
+        "gradientLength": 200,
         "gradientThickness": 8,
         "values": [
+          0,
           10,
-          25,
+          20,
+          30,
           40,
           50
         ]

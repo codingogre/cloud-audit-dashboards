@@ -1,9 +1,15 @@
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
-  "description": "Saved-object type against operation. Writes come first and reads after; cell volume is opacity on a log scale, so a single delete stays visible beside thousands of reads.",
+  "description": "Saved-object type against operation. Writes come first and reads after; cell volume is fill opacity on a log scale inside a solid outline, so a single delete stays visible beside thousands of reads. Past 13 object types the rest fold into one \"N more types\" row so every row stays readable at any volume; types with a write rank first, so a rare change is not the one folded.",
   "title": {
     "text": {
       "expr": "length(data('rows')) ? '' : 'No activity for this selection in this time range'"
+    },
+    "fontSize": {
+      "expr": "length(data('rows')) ? 0 : 12"
+    },
+    "offset": {
+      "expr": "length(data('rows')) ? 0 : 4"
     }
   },
   "autosize": {
@@ -40,18 +46,114 @@
       "%context%": true
     }
   },
-  "mark": {
-    "type": "rect",
-    "cornerRadius": 2,
-    "color": "#3987e5"
-  },
+  "transform": [
+    {
+      "joinaggregate": [
+        {
+          "op": "sum",
+          "field": "events",
+          "as": "type_events"
+        }
+      ],
+      "groupby": [
+        "so_type"
+      ]
+    },
+    {
+      "calculate": "indexof(['create','update','delete','enable','disable','run','test','cancel','open','start'], datum.verb) >= 0 ? datum.events : 0",
+      "as": "write_events"
+    },
+    {
+      "joinaggregate": [
+        {
+          "op": "sum",
+          "field": "write_events",
+          "as": "type_writes"
+        }
+      ],
+      "groupby": [
+        "so_type"
+      ]
+    },
+    {
+      "calculate": "(datum.type_writes > 0 ? 1e12 : 0) + datum.type_events",
+      "as": "priority"
+    },
+    {
+      "window": [
+        {
+          "op": "dense_rank",
+          "as": "type_rank"
+        }
+      ],
+      "sort": [
+        {
+          "field": "priority",
+          "order": "descending"
+        },
+        {
+          "field": "so_type",
+          "order": "ascending"
+        }
+      ]
+    },
+    {
+      "joinaggregate": [
+        {
+          "op": "max",
+          "field": "type_rank",
+          "as": "type_count"
+        }
+      ]
+    },
+    {
+      "calculate": "datum.type_rank <= 13 || datum.type_count <= 14",
+      "as": "kept"
+    },
+    {
+      "calculate": "datum.kept ? datum.so_type : (datum.type_count - 13) + ' more types'",
+      "as": "row"
+    },
+    {
+      "calculate": "datum.kept ? datum.type_events : -1",
+      "as": "row_order"
+    },
+    {
+      "aggregate": [
+        {
+          "op": "sum",
+          "field": "events",
+          "as": "events"
+        },
+        {
+          "op": "sum",
+          "field": "objects",
+          "as": "objects"
+        },
+        {
+          "op": "distinct",
+          "field": "so_type",
+          "as": "types"
+        },
+        {
+          "op": "max",
+          "field": "row_order",
+          "as": "row_order"
+        }
+      ],
+      "groupby": [
+        "row",
+        "verb"
+      ]
+    }
+  ],
   "encoding": {
     "y": {
-      "field": "so_type",
+      "field": "row",
       "type": "nominal",
       "sort": {
-        "op": "sum",
-        "field": "events",
+        "op": "max",
+        "field": "row_order",
         "order": "descending"
       },
       "axis": {
@@ -96,7 +198,7 @@
     },
     "tooltip": [
       {
-        "field": "so_type",
+        "field": "row",
         "title": "Object type"
       },
       {
@@ -110,37 +212,63 @@
       },
       {
         "field": "objects",
-        "title": "Distinct objects"
-      }
-    ],
-    "opacity": {
-      "field": "events",
-      "type": "quantitative",
-      "scale": {
-        "type": "log",
-        "range": [
-          0.35,
-          1
-        ]
+        "title": "Distinct objects",
+        "format": ","
       },
-      "legend": {
-        "title": "Events",
-        "orient": "right",
-        "symbolType": "square",
-        "symbolFillColor": "#3987e5",
-        "symbolStrokeWidth": 0,
-        "labelExpr": "format(datum.value, \"~s\")",
-        "tickCount": 4,
-        "titleOpacity": {
-          "expr": "length(data('rows')) ? 1 : 0"
-        },
-        "labelOpacity": {
-          "expr": "length(data('rows')) ? 1 : 0"
-        },
-        "symbolOpacity": {
-          "expr": "length(data('rows')) ? 1 : 0"
+      {
+        "field": "types",
+        "title": "Object types in this row"
+      }
+    ]
+  },
+  "layer": [
+    {
+      "mark": {
+        "type": "rect",
+        "cornerRadius": 2,
+        "color": "#3987e5"
+      },
+      "encoding": {
+        "opacity": {
+          "field": "events",
+          "type": "quantitative",
+          "scale": {
+            "type": "log",
+            "range": [
+              0.35,
+              1
+            ]
+          },
+          "legend": {
+            "title": "Events",
+            "orient": "right",
+            "symbolType": "square",
+            "symbolFillColor": "#3987e5",
+            "symbolStrokeWidth": 0,
+            "labelExpr": "format(datum.value, \"~s\")",
+            "tickCount": 4,
+            "titleOpacity": {
+              "expr": "length(data('rows')) ? 1 : 0"
+            },
+            "labelOpacity": {
+              "expr": "length(data('rows')) ? 1 : 0"
+            },
+            "symbolOpacity": {
+              "expr": "length(data('rows')) ? 1 : 0"
+            }
+          }
         }
       }
+    },
+    {
+      "mark": {
+        "type": "rect",
+        "cornerRadius": 2,
+        "filled": false,
+        "stroke": "#3987e5",
+        "strokeWidth": 1,
+        "strokeOpacity": 0.9
+      }
     }
-  }
+  ]
 }
