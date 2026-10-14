@@ -20,19 +20,19 @@
   "grid": {
     "columns": {
       "Identity": {
-        "width": 220
+        "width": 200
       },
       "Operation": {
-        "width": 100
+        "width": 90
       },
       "Object type": {
-        "width": 160
+        "width": 140
       },
       "Object": {
-        "width": 300
+        "width": 380
       },
       "Space": {
-        "width": 130
+        "width": 110
       }
     }
   }

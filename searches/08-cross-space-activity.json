@@ -1,29 +1,26 @@
 {
   "title": "[Audit] Cross-space Kibana activity",
-  "description": "Which identities operate in which Kibana spaces. One row per identity: Spaces is how many distinct spaces they touched, and identities above 1 are the ones worth understanding. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id.",
-  "esql": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE attributes.kibana.space.id IS NOT NULL | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | STATS events = COUNT(*), spaces = COUNT_DISTINCT(attributes.kibana.space.id), object_types = COUNT_DISTINCT(attributes.kibana.saved_object.type), space_list = VALUES(attributes.kibana.space.id) BY actor | SORT spaces DESC, events DESC | EVAL space_list = MV_CONCAT(MV_SORT(space_list), \", \") | RENAME actor AS Identity, spaces AS Spaces, space_list AS `Space list`, events AS Events, object_types AS `Object types`",
+  "description": "Which identities operate in which Kibana spaces, across all Kibana traffic. One row per identity: Spaces is how many distinct spaces they touched, listed alphabetically in Space list (wrapped to two lines; expand a row for the rest), and identities above 1 are the ones worth understanding. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id.",
+  "esql": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE attributes.kibana.space.id IS NOT NULL | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | STATS events = COUNT(*), spaces = COUNT_DISTINCT(attributes.kibana.space.id), space_list = VALUES(attributes.kibana.space.id) BY actor | SORT spaces DESC, events DESC | EVAL space_list = MV_CONCAT(MV_SORT(space_list), \", \") | RENAME actor AS Identity, spaces AS Spaces, space_list AS `Space list`, events AS Events",
   "columns": [
     "Identity",
     "Spaces",
-    "Space list",
     "Events",
-    "Object types"
+    "Space list"
   ],
   "hide_chart": true,
   "grid": {
     "columns": {
       "Identity": {
-        "width": 200
+        "width": 220
       },
       "Spaces": {
         "width": 80
       },
       "Events": {
         "width": 90
-      },
-      "Object types": {
-        "width": 110
       }
     }
-  }
+  },
+  "row_height": 2
 }

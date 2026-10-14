@@ -365,7 +365,7 @@
       "config": {
         "ref_id": "cloud-audit-vega-03-object-verb-heatmap",
         "title": "Object type × operation",
-        "description": "Saved-object type against operation, writes first. The more solid the cell, the more events it holds, on a log scale, so a single create, update or delete stays visible beside thousands of reads: the write columns are the forensic signal. Hover a cell for its count and how many distinct objects it covers."
+        "description": "Saved-object type against operation, writes first. The more solid the cell, the more events it holds, on a log scale, and every cell has a solid outline, so a single create, update or delete stays visible beside thousands of reads: the write columns are the forensic signal. Past 13 object types the rest share one \"N more types\" row at the bottom; types with any write rank first, so a rare change is never the one folded away. Hover a cell for its count and how many distinct objects it covers."
       }
     },
     {
@@ -539,7 +539,7 @@
       "grid": {
         "x": 0,
         "y": 35,
-        "w": 24,
+        "w": 20,
         "h": 12
       },
       "config": {
@@ -569,7 +569,7 @@
           {
             "label": "Object type",
             "column": "type",
-            "width": 150
+            "width": 110
           }
         ],
         "metrics": [
@@ -590,18 +590,18 @@
       "type": "vis",
       "id": "tbl-11",
       "grid": {
-        "x": 24,
+        "x": 20,
         "y": 35,
-        "w": 24,
+        "w": 28,
         "h": 12
       },
       "config": {
-        "title": "Dashboards, SLOs and alert rules touched",
-        "description": "Audit trail for the high-value object types only: who touched which dashboard, SLO, rule, workflow or ML job, and when. Both `alert` and `alerting_rule` are included, because Kibana records the same rule under either type depending on which code path audited it. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id.",
+        "title": "Latest high-value object access · suite views left out",
+        "description": "The ten most recent reads and changes of the high-value object types: dashboards, data views, SLOs, alert rules, tags, workflows, agent-builder agents and tools, and ML jobs — who touched which one, and when. A type that nobody touched in range has no rows. Unlike the panel beside it, this one leaves out what the noise gate calls query internals: views of this audit suite's own dashboards and data view, space lookups and point-in-time paging, which on a deployed suite would fill every row; a change to a suite object is kept. Both `alert` and `alerting_rule` are included, because Kibana records the same rule under either type depending on which code path audited it. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE resource.attributes.service.name == \"serverless-kibana\" | WHERE attributes.kibana.saved_object.type IS NOT NULL OR attributes.event.action IS NULL OR attributes.event.action != \"http_request\" | GROK body.text \"\"\"\\[(?:id|workflowId)=%{DATA:g_id}(?:,|\\])\"\"\" | GROK body.text \"\"\"\\[name=%{GREEDYDATA:g_name}\\]\"\"\" | GROK body.text \"\"\"\\[executionId=%{DATA:g_exec}\\]\"\"\" | GROK body.text \"\"\"case id: %{NOTSPACE:g_case}\"\"\" | GROK body.text \"\"\"(?:job|datafeed) %{NOTSPACE:g_ml}\"\"\" | EVAL obj_name = COALESCE(attributes.kibana.saved_object.name, g_name, g_id, attributes.kibana.saved_object.id, g_case, g_ml, g_exec, body.text) | EVAL is_exec = obj_name == g_exec | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS n = COUNT(*), last_ts = MAX(@timestamp) BY actor, attributes.event.action, attributes.kibana.saved_object.type, obj_name, is_exec | EVAL verb = CASE(attributes.event.action LIKE \"*_execution_cancel\", \"cancel\", attributes.event.action LIKE \"*_run_soon\", \"run\", attributes.event.action LIKE \"*_run\", \"run\", attributes.event.action LIKE \"*_test\", \"test\", attributes.event.action LIKE \"*_enable\", \"enable\", attributes.event.action LIKE \"*_disable\", \"disable\", attributes.event.action LIKE \"ml_put_*\", \"create\", attributes.event.action LIKE \"ml_open_*\", \"open\", attributes.event.action LIKE \"ml_start_*\", \"start\", attributes.event.action LIKE \"*point_in_time\", \"pit\", attributes.event.action LIKE \"*_create*\", \"create\", attributes.event.action LIKE \"*_update*\", \"update\", attributes.event.action LIKE \"*_delete\", \"delete\", attributes.event.action LIKE \"*_find\", \"find\", attributes.event.action LIKE \"*_get\", \"get\", attributes.event.action LIKE \"*_resolve\", \"resolve\", \"other\") | EVAL obj_type = CASE(attributes.kibana.saved_object.type IS NOT NULL, attributes.kibana.saved_object.type, attributes.event.action LIKE \"ml_*ad_job\", \"ml-job\", attributes.event.action LIKE \"ml_*ad_datafeed\", \"ml-datafeed\", attributes.event.action LIKE \"workflow_execution_*\", \"workflow-execution\", attributes.event.action LIKE \"workflow_*\", \"workflow\", attributes.event.action LIKE \"agent_builder_agent_*\", \"agent-builder-agent\", attributes.event.action LIKE \"agent_builder_tool_*\", \"agent-builder-tool\", attributes.event.action LIKE \"product_documentation_*\", \"product-documentation\", attributes.event.action == \"secret_create\", \"secret\", attributes.event.action IS NULL, \"unclassified\", REPLACE(attributes.event.action, \"_(create|update|delete|enable|disable|run|run_soon|test|cancel)$\", \"\")) | WHERE obj_type IN (\"dashboard\",\"slo\",\"alert\",\"alerting_rule\",\"tag\",\"index-pattern\",\"workflow\",\"agent-builder-agent\",\"agent-builder-tool\",\"ml-job\") | STATS events = SUM(n), last_seen = MAX(last_ts) BY actor, verb, type = obj_type, name = obj_name, is_exec | SORT last_seen DESC | LIMIT 10 | EVAL name = CASE(is_exec, CONCAT(\"execution \", LEFT(name, 8)), name)"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE resource.attributes.service.name == \"serverless-kibana\" | WHERE attributes.kibana.saved_object.type IS NOT NULL OR attributes.event.action IS NULL OR attributes.event.action != \"http_request\" | WHERE attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\",\"space_get\",\"space_find\") OR (attributes.event.action == \"http_request\" AND attributes.url.original IS NOT NULL AND attributes.url.original RLIKE \"https?://[^/]+(/s/[^/]+)?/(internal/|api/content_management/rpc/(get|search|mget|bulkGet)).*\") OR (attributes.event.action IN (\"saved_object_get\",\"saved_object_resolve\",\"saved_object_find\") AND attributes.kibana.saved_object.id IS NOT NULL AND attributes.kibana.saved_object.id LIKE \"cloud-audit-*\")) | GROK body.text \"\"\"\\[(?:id|workflowId)=%{DATA:g_id}(?:,|\\])\"\"\" | GROK body.text \"\"\"\\[name=%{GREEDYDATA:g_name}\\]\"\"\" | GROK body.text \"\"\"\\[executionId=%{DATA:g_exec}\\]\"\"\" | GROK body.text \"\"\"case id: %{NOTSPACE:g_case}\"\"\" | GROK body.text \"\"\"(?:job|datafeed) %{NOTSPACE:g_ml}\"\"\" | EVAL obj_name = COALESCE(attributes.kibana.saved_object.name, g_name, g_id, attributes.kibana.saved_object.id, g_case, g_ml, g_exec, body.text) | EVAL is_exec = obj_name == g_exec | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS n = COUNT(*), last_ts = MAX(@timestamp) BY actor, attributes.event.action, attributes.kibana.saved_object.type, obj_name, is_exec | EVAL verb = CASE(attributes.event.action LIKE \"*_execution_cancel\", \"cancel\", attributes.event.action LIKE \"*_run_soon\", \"run\", attributes.event.action LIKE \"*_run\", \"run\", attributes.event.action LIKE \"*_test\", \"test\", attributes.event.action LIKE \"*_enable\", \"enable\", attributes.event.action LIKE \"*_disable\", \"disable\", attributes.event.action LIKE \"ml_put_*\", \"create\", attributes.event.action LIKE \"ml_open_*\", \"open\", attributes.event.action LIKE \"ml_start_*\", \"start\", attributes.event.action LIKE \"*point_in_time\", \"pit\", attributes.event.action LIKE \"*_create*\", \"create\", attributes.event.action LIKE \"*_update*\", \"update\", attributes.event.action LIKE \"*_delete\", \"delete\", attributes.event.action LIKE \"*_find\", \"find\", attributes.event.action LIKE \"*_get\", \"get\", attributes.event.action LIKE \"*_resolve\", \"resolve\", \"other\") | EVAL obj_type = CASE(attributes.kibana.saved_object.type IS NOT NULL, attributes.kibana.saved_object.type, attributes.event.action LIKE \"ml_*ad_job\", \"ml-job\", attributes.event.action LIKE \"ml_*ad_datafeed\", \"ml-datafeed\", attributes.event.action LIKE \"workflow_execution_*\", \"workflow-execution\", attributes.event.action LIKE \"workflow_*\", \"workflow\", attributes.event.action LIKE \"agent_builder_agent_*\", \"agent-builder-agent\", attributes.event.action LIKE \"agent_builder_tool_*\", \"agent-builder-tool\", attributes.event.action LIKE \"product_documentation_*\", \"product-documentation\", attributes.event.action == \"secret_create\", \"secret\", attributes.event.action IS NULL, \"unclassified\", REPLACE(attributes.event.action, \"_(create|update|delete|enable|disable|run|run_soon|test|cancel)$\", \"\")) | WHERE obj_type IN (\"dashboard\",\"slo\",\"alert\",\"alerting_rule\",\"tag\",\"index-pattern\",\"workflow\",\"agent-builder-agent\",\"agent-builder-tool\",\"ml-job\") | STATS last_seen = MAX(last_ts) BY actor, verb, type = obj_type, name = obj_name, is_exec | SORT last_seen DESC | LIMIT 10 | EVAL name = CASE(is_exec, CONCAT(\"execution \", LEFT(name, 8)), name)"
         },
         "styling": {
           "density": {
@@ -618,17 +618,17 @@
           {
             "label": "Identity",
             "column": "actor",
-            "width": 160
+            "width": 190
           },
           {
             "label": "Operation",
-            "width": 72,
+            "width": 80,
             "column": "verb"
           },
           {
             "label": "Object type",
             "column": "type",
-            "width": 88
+            "width": 110
           },
           {
             "label": "Object",
@@ -636,11 +636,6 @@
           }
         ],
         "metrics": [
-          {
-            "label": "Events",
-            "width": 70,
-            "column": "events"
-          },
           {
             "label": "Last seen",
             "width": 190,
@@ -660,7 +655,7 @@
       },
       "config": {
         "title": "Object types accessed",
-        "description": "The ten saved-object types with the most traffic. Background reads by Kibana features and integrations can outweigh human activity; the heatmap above splits each type by operation.",
+        "description": "The ten saved-object types with the most traffic; hover a bar for its count. Background reads by Kibana features and integrations can outweigh human activity; the heatmap above splits each type by operation.",
         "type": "xy",
         "axis": {
           "x": {
@@ -694,13 +689,6 @@
         ],
         "legend": {
           "visibility": "hidden"
-        },
-        "styling": {
-          "bars": {
-            "data_labels": {
-              "visible": true
-            }
-          }
         }
       }
     },
@@ -715,7 +703,7 @@
       },
       "config": {
         "title": "Activity by space",
-        "description": "Kibana activity in the ten busiest spaces. Viewing these audit dashboards counts too, so the space they are installed in carries their own reads.",
+        "description": "Kibana activity in the ten busiest spaces; hover a bar for its count. Viewing these audit dashboards counts too, so the space they are installed in carries their own reads.",
         "type": "xy",
         "axis": {
           "x": {
@@ -749,13 +737,6 @@
         ],
         "legend": {
           "visibility": "hidden"
-        },
-        "styling": {
-          "bars": {
-            "data_labels": {
-              "visible": true
-            }
-          }
         }
       }
     },
@@ -771,7 +752,7 @@
       "config": {
         "ref_id": "cloud-audit-search-08-cross-space-activity",
         "title": "Cross-space activity",
-        "description": "Identities ranked by how many Kibana spaces they touched. Anything above one space is worth understanding. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id."
+        "description": "Identities ranked by how many Kibana spaces they touched, with every space named. Anything above one space is worth understanding. All Kibana traffic, like the Spaces tile. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id."
       }
     },
     {
@@ -785,8 +766,8 @@
       },
       "config": {
         "ref_id": "cloud-audit-search-04-kibana-object-changes",
-        "title": "Kibana saved-object activity",
-        "description": "Every Kibana event that named an object, reads and changes, newest first; the newest 1,000 in range. Kibana's page requests, logins and point-in-time internals name no object and are left out. Message is the sentence Kibana wrote for the event. Open in Discover to filter on a column or page further back. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id."
+        "title": "Kibana saved-object activity · newest 1,000 at most",
+        "description": "Every Kibana event that named an object, reads and changes, newest first; the newest 1,000 in range, so the result count above the grid is that cap, not a total. Kibana's page requests, logins and point-in-time internals name no object and are left out. Message is the sentence Kibana wrote for the event. Open in Discover to filter on a column or page further back. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id."
       }
     },
     {
@@ -800,8 +781,8 @@
       },
       "config": {
         "ref_id": "cloud-audit-search-09-session-reconstruction",
-        "title": "Session reconstruction",
-        "description": "One person's Kibana sessions, event by event, newest first: every object they opened and changed, with the sentence Kibana wrote for each. Pin an identity first, then open in Discover, filter to one Session and sort Time ascending to replay it forward. Kibana's internal UI requests and point-in-time internals are left out; public API calls such as an export are kept. Empty when nobody used Kibana in a browser in range: API-key traffic carries no session. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id."
+        "title": "Session reconstruction · newest 1,000 at most · empty without browser sessions",
+        "description": "One person's Kibana sessions, event by event, newest first: every object they opened and changed, with the sentence Kibana wrote for each. Operation uses the same words as the activity panel above (get, resolve, create …); an event that names no object keeps its own action, such as \"http request\" for a public API call. Pin an identity first, then open in Discover, filter to one Session and sort Time ascending to replay it forward. Kibana's internal UI requests, space lookups and point-in-time internals are left out; public API calls such as an export are kept. API-key traffic carries no session, so this is empty when nobody used Kibana in a browser in range. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id. When this panel is empty: empty without browser sessions."
       }
     }
   ]
