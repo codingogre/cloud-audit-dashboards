@@ -1,9 +1,6 @@
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
-  "title": {
-    "text": "",
-    "subtitle": "Reads typically outnumber mutations by orders of magnitude — the colour scale is logarithmic so mutations stay visible."
-  },
+  "description": "Saved-object type against operation. Writes come first and reads after; cell volume is opacity on a log scale, so a single delete stays visible beside thousands of reads.",
   "autosize": {
     "type": "fit",
     "contains": "padding"
@@ -16,11 +13,6 @@
     "view": {
       "stroke": null
     },
-    "title": {
-      "fontSize": 14,
-      "subtitleFontSize": 11,
-      "anchor": "start"
-    },
     "legend": {
       "labelFontSize": 11,
       "titleFontSize": 11
@@ -29,14 +21,15 @@
   "data": {
     "url": {
       "%type%": "esql",
-      "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE resource.attributes.service.name == \"serverless-kibana\" | EVAL verb = CASE(attributes.event.action LIKE \"*_execution_cancel\", \"cancel\", attributes.event.action LIKE \"*_run_soon\", \"run\", attributes.event.action LIKE \"*_run\", \"run\", attributes.event.action LIKE \"*_test\", \"test\", attributes.event.action LIKE \"*_enable\", \"enable\", attributes.event.action LIKE \"*_disable\", \"disable\", attributes.event.action LIKE \"ml_put_*\", \"create\", attributes.event.action LIKE \"ml_open_*\", \"open\", attributes.event.action LIKE \"ml_start_*\", \"start\", attributes.event.action LIKE \"*point_in_time\", \"pit\", attributes.event.action LIKE \"*_create*\", \"create\", attributes.event.action LIKE \"*_update*\", \"update\", attributes.event.action LIKE \"*_delete\", \"delete\", attributes.event.action LIKE \"*_find\", \"find\", attributes.event.action LIKE \"*_get\", \"get\", attributes.event.action LIKE \"*_resolve\", \"resolve\", \"other\") | GROK body.text \"\"\"\\[(?:id|workflowId)=%{DATA:g_id}(?:,|\\])\"\"\" | EVAL obj_id = COALESCE(attributes.kibana.saved_object.id, g_id) | EVAL obj_type = CASE(attributes.kibana.saved_object.type IS NOT NULL, attributes.kibana.saved_object.type, attributes.event.action LIKE \"ml_*ad_job\", \"ml-job\", attributes.event.action LIKE \"ml_*ad_datafeed\", \"ml-datafeed\", attributes.event.action LIKE \"workflow_execution_*\", \"workflow-execution\", attributes.event.action LIKE \"workflow_*\", \"workflow\", attributes.event.action LIKE \"agent_builder_agent_*\", \"agent-builder-agent\", attributes.event.action LIKE \"agent_builder_tool_*\", \"agent-builder-tool\", attributes.event.action LIKE \"product_documentation_*\", \"product-documentation\", attributes.event.action == \"secret_create\", \"secret\", attributes.event.action IS NULL, \"unclassified\", REPLACE(attributes.event.action, \"_(create|update|delete|enable|disable|run|run_soon|test|cancel)$\", \"\")) | WHERE obj_id IS NOT NULL | STATS events = COUNT(*), objects = COUNT_DISTINCT(obj_id) BY so_type = obj_type, verb | SORT events DESC | LIMIT 80",
+      "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE resource.attributes.service.name == \"serverless-kibana\" | EVAL verb = CASE(attributes.event.action LIKE \"*_execution_cancel\", \"cancel\", attributes.event.action LIKE \"*_run_soon\", \"run\", attributes.event.action LIKE \"*_run\", \"run\", attributes.event.action LIKE \"*_test\", \"test\", attributes.event.action LIKE \"*_enable\", \"enable\", attributes.event.action LIKE \"*_disable\", \"disable\", attributes.event.action LIKE \"ml_put_*\", \"create\", attributes.event.action LIKE \"ml_open_*\", \"open\", attributes.event.action LIKE \"ml_start_*\", \"start\", attributes.event.action LIKE \"*point_in_time\", \"pit\", attributes.event.action LIKE \"*_create*\", \"create\", attributes.event.action LIKE \"*_update*\", \"update\", attributes.event.action LIKE \"*_delete\", \"delete\", attributes.event.action LIKE \"*_find\", \"find\", attributes.event.action LIKE \"*_get\", \"get\", attributes.event.action LIKE \"*_resolve\", \"resolve\", \"other\") | GROK body.text \"\"\"\\[(?:id|workflowId)=%{DATA:g_id}(?:,|\\])\"\"\" | EVAL obj_id = COALESCE(attributes.kibana.saved_object.id, g_id) | EVAL obj_type = CASE(attributes.kibana.saved_object.type IS NOT NULL, attributes.kibana.saved_object.type, attributes.event.action LIKE \"ml_*ad_job\", \"ml-job\", attributes.event.action LIKE \"ml_*ad_datafeed\", \"ml-datafeed\", attributes.event.action LIKE \"workflow_execution_*\", \"workflow-execution\", attributes.event.action LIKE \"workflow_*\", \"workflow\", attributes.event.action LIKE \"agent_builder_agent_*\", \"agent-builder-agent\", attributes.event.action LIKE \"agent_builder_tool_*\", \"agent-builder-tool\", attributes.event.action LIKE \"product_documentation_*\", \"product-documentation\", attributes.event.action == \"secret_create\", \"secret\", attributes.event.action IS NULL, \"unclassified\", REPLACE(attributes.event.action, \"_(create|update|delete|enable|disable|run|run_soon|test|cancel)$\", \"\")) | WHERE obj_id IS NOT NULL | STATS events = COUNT(*), objects = COUNT_DISTINCT(obj_id) BY so_type = obj_type, verb",
       "%timefield%": "@timestamp",
       "%context%": true
     }
   },
   "mark": {
     "type": "rect",
-    "cornerRadius": 2
+    "cornerRadius": 2,
+    "color": "#3987e5"
   },
   "encoding": {
     "y": {
@@ -48,7 +41,7 @@
         "order": "descending"
       },
       "axis": {
-        "title": "Saved-object type",
+        "title": "Object type",
         "labelLimit": 200
       }
     },
@@ -59,33 +52,23 @@
         "create",
         "update",
         "delete",
+        "enable",
+        "disable",
+        "run",
+        "test",
+        "cancel",
+        "open",
+        "start",
         "get",
         "find",
+        "resolve",
+        "pit",
         "other"
       ],
       "axis": {
-        "title": "Operation",
+        "title": null,
         "labelAngle": 0,
         "orient": "top"
-      }
-    },
-    "color": {
-      "field": "events",
-      "type": "quantitative",
-      "scale": {
-        "type": "log",
-        "range": [
-          "#0B1628",
-          "#155C7A",
-          "#1BA9F5",
-          "#7DD3FC",
-          "#FDE68A",
-          "#E7664C"
-        ]
-      },
-      "legend": {
-        "title": "Events (log)",
-        "format": "~s"
       }
     },
     "tooltip": [
@@ -106,6 +89,26 @@
         "field": "objects",
         "title": "Distinct objects"
       }
-    ]
+    ],
+    "opacity": {
+      "field": "events",
+      "type": "quantitative",
+      "scale": {
+        "type": "log",
+        "range": [
+          0.35,
+          1
+        ]
+      },
+      "legend": {
+        "title": "Events",
+        "orient": "right",
+        "symbolType": "square",
+        "symbolFillColor": "#3987e5",
+        "symbolStrokeWidth": 0,
+        "labelExpr": "format(datum.value, \"~s\")",
+        "tickCount": 4
+      }
+    }
   }
 }

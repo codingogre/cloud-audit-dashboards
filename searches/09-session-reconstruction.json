@@ -1,20 +1,39 @@
 {
   "title": "[Audit] Kibana session reconstruction",
-  "description": "Replay a user's Kibana session end to end. Filter to one kibana.session.id to see exactly what that person did, in order. Kibana events only \u2014 sessions are a Kibana concept, and body.text renders each one as a sentence.",
-  "esql": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE resource.attributes.service.name == \"serverless-kibana\" | WHERE attributes.kibana.session.id IS NOT NULL | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | KEEP @timestamp, actor, attributes.kibana.session.id, attributes.event.action, attributes.kibana.saved_object.type, attributes.kibana.saved_object.name, attributes.kibana.space.id, client.ip, body.text | SORT @timestamp DESC",
+  "description": "Replay a user’s Kibana session. Filter to one Session to see exactly what that person did; newest first, so sort Time ascending to read it forward. Kibana events only, because sessions are a Kibana concept. Kibana’s internal UI requests, page assets, usage telemetry, the content-management calls that duplicate each object read, and point-in-time internals are left out; public /api/ requests are kept, because an export or import is one. Message is the sentence Kibana wrote for each event.",
+  "esql": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE resource.attributes.service.name == \"serverless-kibana\" | WHERE attributes.kibana.session.id IS NOT NULL | WHERE attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\", \"saved_object_close_point_in_time\") OR (attributes.event.action == \"http_request\" AND (NOT body.text LIKE \"*/api/*\" OR body.text LIKE \"*/api/ui_counters/*\" OR body.text LIKE \"*/api/content_management/*\"))) | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | KEEP @timestamp, actor, attributes.kibana.session.id, attributes.event.action, attributes.kibana.saved_object.type, attributes.kibana.saved_object.name, attributes.kibana.space.id, client.ip, body.text | SORT @timestamp DESC | RENAME @timestamp AS Time, actor AS Identity, attributes.kibana.session.id AS Session, attributes.event.action AS Action, attributes.kibana.saved_object.type AS `Object type`, attributes.kibana.saved_object.name AS Object, attributes.kibana.space.id AS Space, client.ip AS `Client IP`, body.text AS Message",
   "columns": [
-    "actor",
-    "attributes.kibana.session.id",
-    "attributes.event.action",
-    "attributes.kibana.saved_object.name",
-    "attributes.kibana.space.id",
-    "client.ip",
-    "body.text"
+    "Time",
+    "Identity",
+    "Session",
+    "Action",
+    "Object",
+    "Space",
+    "Message"
   ],
   "sort": [
     [
-      "@timestamp",
+      "Time",
       "desc"
     ]
-  ]
+  ],
+  "grid": {
+    "columns": {
+      "Identity": {
+        "width": 210
+      },
+      "Session": {
+        "width": 200
+      },
+      "Action": {
+        "width": 250
+      },
+      "Object": {
+        "width": 260
+      },
+      "Space": {
+        "width": 120
+      }
+    }
+  }
 }
