@@ -662,6 +662,18 @@
           "type": "formula",
           "as": "rank",
           "expr": "datum.rank - 1"
+        },
+        {
+          "type": "joinaggregate",
+          "groupby": [
+            "stage"
+          ],
+          "ops": [
+            "count"
+          ],
+          "as": [
+            "nInStage"
+          ]
         }
       ]
     },
@@ -1034,7 +1046,7 @@
             "signal": "datum.label + '  ' + format(datum.value, ',')"
           },
           "opacity": {
-            "signal": "indexof(datum.label, 'other (') === 0 || scale('y', datum.y1) - scale('y', datum.y0) + gap >= 12 ? 1 : 0"
+            "signal": "datum.rank === datum.nInStage - 1 || indexof(datum.label, 'other (') === 0 || scale('y', datum.y1) - scale('y', datum.y0) + gap >= 12 ? 1 : 0"
           },
           "limit": {
             "signal": "width / 3 - 24"

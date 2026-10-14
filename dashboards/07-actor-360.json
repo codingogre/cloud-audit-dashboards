@@ -245,11 +245,11 @@
       },
       "config": {
         "title": "",
-        "description": "The width of their reach: index families named in their requests, the Kibana spaces worked in, and browser sessions. A family folds dated daily indices and data-stream backing indices together, as \"What they read, by index family\" does, so one dashboard reading thirty days of a daily index is one family. Request patterns such as * are not counted.",
+        "description": "The width of their reach: index families named in their requests, the Kibana spaces worked in, and browser sessions. A family folds dated daily indices and data-stream backing indices together, as \"What they read, by index family\" does, so one dashboard reading thirty days of a daily index is one family. Request patterns such as * and date-math names are not counted.",
         "type": "metric",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS idx = VALUES(attributes.elasticsearch.audit.indices), spaces = COUNT_DISTINCT(attributes.kibana.space.id, 100), sessions = COUNT_DISTINCT(attributes.kibana.session.id, 100) | MV_EXPAND idx | EVAL family = CASE(LOCATE(idx, \"*\") > 0, null, REPLACE(REPLACE(idx, \"\"\"^\\.ds-\"\"\", \"\"), \"\"\"[-.]?\\d{4}[.-]\\d{2}[.-]\\d{2}(-\\d+)?$\"\"\", \"\")) | STATS `Index families` = COUNT_DISTINCT(family), spaces = MAX(spaces), sessions = MAX(sessions) | EVAL detail = CONCAT(TO_STRING(spaces), CASE(spaces == 1, \" Kibana space · \", \" Kibana spaces · \"), TO_STRING(sessions), CASE(sessions == 1, \" session\", \" sessions\")) | KEEP `Index families`, detail"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS idx = VALUES(attributes.elasticsearch.audit.indices), spaces = COUNT_DISTINCT(attributes.kibana.space.id, 100), sessions = COUNT_DISTINCT(attributes.kibana.session.id, 100) | MV_EXPAND idx | EVAL family = CASE(LOCATE(idx, \"*\") > 0 OR STARTS_WITH(idx, \"<\"), null, REPLACE(REPLACE(idx, \"\"\"^\\.ds-\"\"\", \"\"), \"\"\"[-.]?\\d{4}[.-]\\d{2}[.-]\\d{2}(-\\d+)?$\"\"\", \"\")) | STATS `Index families` = COUNT_DISTINCT(family), spaces = MAX(spaces), sessions = MAX(sessions) | EVAL detail = CONCAT(TO_STRING(spaces), CASE(spaces == 1, \" Kibana space · \", \" Kibana spaces · \"), TO_STRING(sessions), CASE(sessions == 1, \" session\", \" sessions\")) | KEEP `Index families`, detail"
         },
         "metrics": [
           {
@@ -470,11 +470,11 @@
       },
       "config": {
         "title": "What they read, by index family",
-        "description": "Where their reads concentrate, busiest first. Dated daily indices and data-stream backing indices are folded into the family they belong to, so a date-suffixed series is one row and `Indices` says how many of its members were read. A request naming several indices counts once per index; request patterns such as * are left out. The audit stream itself usually tops the list, because every dashboard on this page reads it.",
+        "description": "Where their reads concentrate, busiest first. Dated daily indices and data-stream backing indices are folded into the family they belong to, so a date-suffixed series is one row and `Indices` says how many of its members were read. A request naming several indices counts once per index; request patterns such as * and date-math names are left out. The audit stream itself usually tops the list, because every dashboard on this page reads it.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.indices IS NOT NULL | MV_EXPAND attributes.elasticsearch.audit.indices | STATS n = COUNT(*) BY attributes.elasticsearch.audit.indices | WHERE LOCATE(attributes.elasticsearch.audit.indices, \"*\") == 0 | EVAL family = REPLACE(REPLACE(attributes.elasticsearch.audit.indices, \"\"\"^\\.ds-\"\"\", \"\"), \"\"\"[-.]?\\d{4}[.-]\\d{2}[.-]\\d{2}(-\\d+)?$\"\"\", \"\") | STATS events = SUM(n), indices = COUNT(*) BY family | SORT events DESC | LIMIT 9"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.indices IS NOT NULL | MV_EXPAND attributes.elasticsearch.audit.indices | STATS n = COUNT(*) BY attributes.elasticsearch.audit.indices | WHERE NOT (LOCATE(attributes.elasticsearch.audit.indices, \"*\") > 0 OR STARTS_WITH(attributes.elasticsearch.audit.indices, \"<\")) | EVAL family = REPLACE(REPLACE(attributes.elasticsearch.audit.indices, \"\"\"^\\.ds-\"\"\", \"\"), \"\"\"[-.]?\\d{4}[.-]\\d{2}[.-]\\d{2}(-\\d+)?$\"\"\", \"\") | STATS events = SUM(n), indices = COUNT(*) BY family | SORT events DESC | LIMIT 9"
         },
         "styling": {
           "density": {

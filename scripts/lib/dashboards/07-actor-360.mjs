@@ -36,10 +36,14 @@ const drillTo = (destination, panel) => Object.assign(panel, { drill: destinatio
 const indexFamily = (col) => String.raw`REPLACE(REPLACE(${col}, """^\.ds-""", ""), """[-.]?\d{4}[.-]\d{2}[.-]\d{2}(-\d+)?$""", "")`;
 const INDEX_FAMILY = indexFamily('attributes.elasticsearch.audit.indices');
 /**
- * `*`, `-*` and `syn-*` arrive in the indices field as REQUEST PATTERNS, not indices. Applied to the
- * grouped rows (after a STATS), never per document, so it costs nothing.
+ * `*`, `-*` and `syn-*` arrive in the indices field as REQUEST PATTERNS, not indices — and so does
+ * date math: the SLO writer names `<.slo-observability.sli-v3.6.{2026-10-13||/d{yyyy-MM-dd|UTC}}>`,
+ * one distinct string per day, which no fold recognises. Each one counted as a family of its own (7 of
+ * the 54 on the review render) beside the real dated indices it resolves to, which are already there.
+ * Applied to the grouped rows (after a STATS), never per document, so it costs nothing.
  */
-const NOT_PATTERN = 'WHERE LOCATE(attributes.elasticsearch.audit.indices, "*") == 0';
+const isPattern = (col) => `LOCATE(${col}, "*") > 0 OR STARTS_WITH(${col}, "<")`;
+const NOT_PATTERN = `WHERE NOT (${isPattern('attributes.elasticsearch.audit.indices')})`;
 
 /**
  * One paragraph with a bold lead rather than a `####` heading over a paragraph: markdown renders
@@ -73,12 +77,12 @@ export function build() {
         { secondary: 'detail' })],
       // Families, not raw names, so the tile counts the same thing as "What they read, by index family"
       // below: a raw count put every dated daily index and its .ds- backing index in separately, and
-      // counted request patterns like `*` and `-*` as indices. VALUES first keeps the scan a single
-      // keyword aggregation — the fold runs over the handful of distinct names, not over documents.
+      // counted request patterns like `*`, `-*` and date math as indices. VALUES first keeps the scan a
+      // single keyword aggregation — the fold runs over the handful of distinct names, not documents.
       // Measured against the raw COUNT_DISTINCT it replaced: 55ms vs 50ms at 1h, 57ms vs 52ms at 24h.
       [8, (x, y, w, h) => kpi(x, y, w, h,
-        `FROM ${IDX} | ${TIME} | STATS idx = VALUES(attributes.elasticsearch.audit.indices), spaces = COUNT_DISTINCT(attributes.kibana.space.id, 100), sessions = COUNT_DISTINCT(attributes.kibana.session.id, 100) | MV_EXPAND idx | EVAL family = CASE(LOCATE(idx, "*") > 0, null, ${indexFamily('idx')}) | STATS \`Index families\` = COUNT_DISTINCT(family), spaces = MAX(spaces), sessions = MAX(sessions) | EVAL detail = CONCAT(TO_STRING(spaces), CASE(spaces == 1, " Kibana space · ", " Kibana spaces · "), TO_STRING(sessions), CASE(sessions == 1, " session", " sessions")) | KEEP \`Index families\`, detail`,
-        'Index families', 'The width of their reach: index families named in their requests, the Kibana spaces worked in, and browser sessions. A family folds dated daily indices and data-stream backing indices together, as "What they read, by index family" does, so one dashboard reading thirty days of a daily index is one family. Request patterns such as * are not counted.',
+        `FROM ${IDX} | ${TIME} | STATS idx = VALUES(attributes.elasticsearch.audit.indices), spaces = COUNT_DISTINCT(attributes.kibana.space.id, 100), sessions = COUNT_DISTINCT(attributes.kibana.session.id, 100) | MV_EXPAND idx | EVAL family = CASE(${isPattern('idx')}, null, ${indexFamily('idx')}) | STATS \`Index families\` = COUNT_DISTINCT(family), spaces = MAX(spaces), sessions = MAX(sessions) | EVAL detail = CONCAT(TO_STRING(spaces), CASE(spaces == 1, " Kibana space · ", " Kibana spaces · "), TO_STRING(sessions), CASE(sessions == 1, " session", " sessions")) | KEEP \`Index families\`, detail`,
+        'Index families', 'The width of their reach: index families named in their requests, the Kibana spaces worked in, and browser sessions. A family folds dated daily indices and data-stream backing indices together, as "What they read, by index family" does, so one dashboard reading thirty days of a daily index is one family. Request patterns such as * and date-math names are not counted.',
         { secondary: 'detail' })],
       [8, (x, y, w, h) => kpi(x, y, w, h,
         `FROM ${IDX} | ${TIME} | ${CRED} | STATS \`Client IPs\` = COUNT_DISTINCT(client.ip), countries = COUNT_DISTINCT(client.geo.country_iso_code, 100), creds = VALUES(credential) | EVAL detail = CONCAT(TO_STRING(countries), CASE(countries == 1, " country · ", " countries · "), CASE(MV_COUNT(creds) == 1, creds, CONCAT(TO_STRING(MV_COUNT(creds)), " credential kinds"))) | KEEP \`Client IPs\`, detail`,
@@ -110,7 +114,7 @@ export function build() {
       [18, (x, y, w, h) => table(x, y, w, h, 'What they read, by index family',
         `FROM ${IDX} | ${TIME} | WHERE attributes.elasticsearch.audit.indices IS NOT NULL | MV_EXPAND attributes.elasticsearch.audit.indices | STATS n = COUNT(*) BY attributes.elasticsearch.audit.indices | ${NOT_PATTERN} | EVAL family = ${INDEX_FAMILY} | STATS events = SUM(n), indices = COUNT(*) BY family | SORT events DESC | LIMIT 12`,
         [{ column: 'family', label: 'Index family' }], ['indices', 'events'],
-        'Where their reads concentrate, busiest first. Dated daily indices and data-stream backing indices are folded into the family they belong to, so a date-suffixed series is one row and `Indices` says how many of its members were read. A request naming several indices counts once per index; request patterns such as * are left out. The audit stream itself usually tops the list, because every dashboard on this page reads it.')],
+        'Where their reads concentrate, busiest first. Dated daily indices and data-stream backing indices are folded into the family they belong to, so a date-suffixed series is one row and `Indices` says how many of its members were read. A request naming several indices counts once per index; request patterns such as * and date-math names are left out. The audit stream itself usually tops the list, because every dashboard on this page reads it.')],
       [30, (x, y, w, h) => drillTo('cloud-audit-03-data-access', table(x, y, w, h, '⚠️ System and hidden index reads',
         `FROM ${IDX} | ${TIME} | WHERE attributes.elasticsearch.audit.indices IS NOT NULL | MV_EXPAND attributes.elasticsearch.audit.indices | WHERE attributes.elasticsearch.audit.indices LIKE ".*" AND NOT attributes.elasticsearch.audit.indices LIKE ".ds-*" | STATS n = COUNT(*), seen = MAX(@timestamp) BY attributes.elasticsearch.audit.indices, action = attributes.elasticsearch.audit.action | EVAL family = ${INDEX_FAMILY} | STATS events = SUM(n), indices = COUNT_DISTINCT(attributes.elasticsearch.audit.indices), actions = COUNT_DISTINCT(action), last_seen = MAX(seen), \`attributes.elasticsearch.audit.indices\` = MIN(attributes.elasticsearch.audit.indices) BY family | SORT events DESC | LIMIT 20`,
         // Unsized: every metric has a role width, so the index takes the rest of the panel. A fixed 420
