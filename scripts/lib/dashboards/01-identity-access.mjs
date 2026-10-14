@@ -35,7 +35,7 @@ const AUTH_LABEL = `EVAL ${CRED_TYPE_LABEL}`;
  */
 const KEYED = 'WHERE attributes.api_key.id IS NOT NULL OR attributes.user.domain == "_cloud_api_key"';
 const KEY_DERIVE = 'EVAL key_id = COALESCE(attributes.api_key.id, attributes.user.name), ' +
-  'api_key = COALESCE(attributes.api_key.name, "(no name)"), kind = CASE(attributes.api_key.id IS NULL, "Cloud", "Elasticsearch")';
+  'kind = CASE(attributes.api_key.id IS NULL, "Cloud", "Elasticsearch")';
 
 /**
  * "N things" for a KPI's secondary line, in words when N is 0 or 1. A digit zero renders slashed in the
@@ -96,28 +96,34 @@ export function build() {
       { donut: 's', colors: { 'Cloud API key': PALETTE[0], 'Elasticsearch API key': PALETTE[1], 'Service account': PALETTE[2], 'SAML SSO': PALETTE[3], 'Other internal': PALETTE[4] } }),
     // Grouped on the raw key fields and derived afterwards; user.name is a group key because it IS the
     // id of a Cloud API key, and for an Elasticsearch key it is the one creator, so it never splits a key.
+    // The API key column stays a plain alias of api_key.name: Lens refuses click-to-filter on every cell
+    // of a column assigned in ES|QL (a COALESCE to "(no name)" disabled it, rendered), and a STATS BY
+    // alias keeps it. A Cloud key's name cell is therefore "-"; Kind says why. Key ID has to be derived.
     table(24, 17, 24, 11, 'Busiest API keys',
-      `FROM ${IDX} | ${TIME} | ${KEYED} | STATS events = COUNT(*), ips = COUNT_DISTINCT(client.ip) BY attributes.api_key.name, attributes.api_key.id, attributes.user.name | ${KEY_DERIVE} | SORT events DESC | LIMIT 15`,
+      `FROM ${IDX} | ${TIME} | ${KEYED} | STATS events = COUNT(*), ips = COUNT_DISTINCT(client.ip) BY api_key = attributes.api_key.name, attributes.api_key.id, attributes.user.name | ${KEY_DERIVE} | SORT events DESC | LIMIT 15`,
       ['api_key', sized('key_id', 175), sized('kind', 105)], ['events', 'ips'],
-      'The busiest API keys of both kinds, one row per key, with request volume and how many distinct client IPs used it. Kind is Cloud (an Elastic Cloud API key: no name, recorded by its id) or Elasticsearch (an Elasticsearch API key: id and name). A key used from many IPs is worth investigating. A re-issued key keeps its name under a new id, so a name can appear twice. The full list, with owner and first and last use, is API key inventory below.'),
+      'The busiest API keys of both kinds, one row per key, with request volume and how many distinct client IPs used it. Kind is Cloud (an Elastic Cloud API key: no name, so its API key cell is "-", recorded by its id) or Elasticsearch (an Elasticsearch API key: id and name). A key used from many IPs is worth investigating. A re-issued key keeps its name under a new id, so a name can appear twice. The full list, with owner and first and last use, is API key inventory below.'),
     // Grouped on the email alone. user.full_name was a second key, but over 7 days it was empty on all
     // but 2 of ~11,600 events for the one SSO user, and on those 2 it held the email again — so it split
     // one person into two rows and otherwise filled a column with "-". The email is the person, and it
-    // is the click filter. First and last seen are not repeated here: they are on Identity first and last
-    // seen, for the same events. Without them this table fits 16 columns, and the failures beside it get
-    // the 32 their identity and action columns need at a 1440px viewport.
-    table(0, 28, 16, 12, 'Busiest human identities',
-      `FROM ${IDX} | ${TIME} | WHERE attributes.user.email IS NOT NULL | STATS events = COUNT(*), ips = COUNT_DISTINCT(client.ip) BY attributes.user.email | SORT events DESC | LIMIT 15`,
-      [WHO], ['events', 'ips'],
-      'People by email, busiest first: the people the Humans tile counts, over all traffic, with the same event counts as Identity first and last seen, which also has when each was first and last seen. The panel shows the top rows; the rest are in that session. Click an email to pin that person across the suite.'),
+    // is the click filter. First and last seen and IPs are not repeated here: they are on Identity first
+    // and last seen, for the same events. Without them this table fits 12 columns (an email keeps ~215px
+    // at a 1440px viewport), and the failures beside it get the 36 that six columns need there: at 32 the
+    // Result column cut "<unauthenticated-cloud-access-token>" in Identity (rendered at 1440).
+    table(0, 28, 12, 12, 'Busiest human identities',
+      `FROM ${IDX} | ${TIME} | WHERE attributes.user.email IS NOT NULL | STATS events = COUNT(*) BY attributes.user.email | SORT events DESC | LIMIT 15`,
+      [WHO], ['events'],
+      'People by email, busiest first: the people the Humans tile counts, over all traffic, with the same event counts as Identity first and last seen, which also has when each was first and last seen and from how many IPs. The panel shows the top rows; the rest are in that session. Click an email to pin that person across the suite.'),
     // Grouped on the raw identity fields and resolved afterwards (QUERY SHAPE rule 2): the COALESCE then
     // runs once per group instead of once per failed event. An action that is neither a failed sign-in
     // nor access_denied is here only because its outcome was failure, and without saying so a
-    // saved_object_update row read as a normal operation — so it is labelled.
-    table(16, 28, 32, 12, 'Most frequent failed or denied access',
-      `FROM ${IDX} | ${TIME} | ${FAILED_OR_DENIED} | STATS events = COUNT(*), last_seen = MAX(@timestamp) BY attributes.user.email, attributes.api_key.name, attributes.user.name, action = attributes.event.action, ip = client.ip | ${ACTOR_RESOLVE} | STATS events = SUM(events), last_seen = MAX(last_seen) BY actor, action, ip | EVAL action = CASE(action IN (${SIGNIN_FAILED}, "access_denied"), action, CONCAT(COALESCE(action, "(no action)"), " · failed")) | SORT events DESC | LIMIT 15`,
-      ['actor', sized('action', 200), 'ip'], ['events', 'last_seen'],
-      'Failed sign-ins and refused requests grouped by identity, action and source IP, most frequent first; the top rows of what the Failed or denied tile counts. authentication_failed, realm_authentication_failed and anonymous_access_denied are failed sign-ins; access_denied is an authenticated identity refused an action; any other action is marked "· failed" — it is here because its outcome was failure.',
+    // saved_object_update row read as a normal operation — so a Result column names the kind, with the
+    // same words as the Failed sign-ins session. It is a separate column, not a suffix on Action: Lens
+    // refuses click-to-filter on a column assigned in ES|QL, and Action is a STATS BY alias that keeps it.
+    table(12, 28, 36, 12, 'Most frequent failed or denied access',
+      `FROM ${IDX} | ${TIME} | ${FAILED_OR_DENIED} | STATS events = COUNT(*), last_seen = MAX(@timestamp) BY attributes.user.email, attributes.api_key.name, attributes.user.name, action = attributes.event.action, ip = client.ip | ${ACTOR_RESOLVE} | STATS events = SUM(events), last_seen = MAX(last_seen) BY actor, action, ip | EVAL result = CASE(action IN (${SIGNIN_FAILED}), "failed sign-in", action == "access_denied", "denied", "failed") | SORT events DESC | LIMIT 15`,
+      ['actor', sized('action', 175), 'result', 'ip'], ['events', 'last_seen'],
+      'Failed sign-ins and refused requests grouped by identity, action and source IP, most frequent first; the top rows of what the Failed or denied tile counts. Result names the kind, as in the session below: failed sign-in (authentication_failed, realm_authentication_failed, anonymous_access_denied), denied (access_denied: an authenticated identity refused an action), or failed (any other action, here because its outcome was failure).',
       { empty: 'good' }),
     // The sessions run full width. Side by side at 24 columns, seven and eight columns shared ~800px:
     // timestamps wrapped onto three lines and the last column was cut off at the panel edge. These are

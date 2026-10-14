@@ -633,11 +633,11 @@
       },
       "config": {
         "title": "Busiest API keys",
-        "description": "The busiest API keys of both kinds, one row per key, with request volume and how many distinct client IPs used it. Kind is Cloud (an Elastic Cloud API key: no name, recorded by its id) or Elasticsearch (an Elasticsearch API key: id and name). A key used from many IPs is worth investigating. A re-issued key keeps its name under a new id, so a name can appear twice. The full list, with owner and first and last use, is API key inventory below.",
+        "description": "The busiest API keys of both kinds, one row per key, with request volume and how many distinct client IPs used it. Kind is Cloud (an Elastic Cloud API key: no name, so its API key cell is \"-\", recorded by its id) or Elasticsearch (an Elasticsearch API key: id and name). A key used from many IPs is worth investigating. A re-issued key keeps its name under a new id, so a name can appear twice. The full list, with owner and first and last use, is API key inventory below.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.api_key.id IS NOT NULL OR attributes.user.domain == \"_cloud_api_key\" | STATS events = COUNT(*), ips = COUNT_DISTINCT(client.ip) BY attributes.api_key.name, attributes.api_key.id, attributes.user.name | EVAL key_id = COALESCE(attributes.api_key.id, attributes.user.name), api_key = COALESCE(attributes.api_key.name, \"(no name)\"), kind = CASE(attributes.api_key.id IS NULL, \"Cloud\", \"Elasticsearch\") | SORT events DESC | LIMIT 9"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.api_key.id IS NOT NULL OR attributes.user.domain == \"_cloud_api_key\" | STATS events = COUNT(*), ips = COUNT_DISTINCT(client.ip) BY api_key = attributes.api_key.name, attributes.api_key.id, attributes.user.name | EVAL key_id = COALESCE(attributes.api_key.id, attributes.user.name), kind = CASE(attributes.api_key.id IS NULL, \"Cloud\", \"Elasticsearch\") | SORT events DESC | LIMIT 9"
         },
         "styling": {
           "density": {
@@ -686,16 +686,16 @@
       "grid": {
         "x": 0,
         "y": 31,
-        "w": 16,
+        "w": 12,
         "h": 12
       },
       "config": {
         "title": "Busiest human identities",
-        "description": "People by email, busiest first: the people the Humans tile counts, over all traffic, with the same event counts as Identity first and last seen, which also has when each was first and last seen. The panel shows the top rows; the rest are in that session. Click an email to pin that person across the suite.",
+        "description": "People by email, busiest first: the people the Humans tile counts, over all traffic, with the same event counts as Identity first and last seen, which also has when each was first and last seen and from how many IPs. The panel shows the top rows; the rest are in that session. Click an email to pin that person across the suite.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.user.email IS NOT NULL | STATS events = COUNT(*), ips = COUNT_DISTINCT(client.ip) BY attributes.user.email | SORT events DESC | LIMIT 10"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.user.email IS NOT NULL | STATS events = COUNT(*) BY attributes.user.email | SORT events DESC | LIMIT 10"
         },
         "styling": {
           "density": {
@@ -720,11 +720,6 @@
             "label": "Events",
             "width": 90,
             "column": "events"
-          },
-          {
-            "label": "IPs",
-            "width": 90,
-            "column": "ips"
           }
         ]
       }
@@ -733,18 +728,18 @@
       "type": "vis",
       "id": "tbl-13",
       "grid": {
-        "x": 16,
+        "x": 12,
         "y": 31,
-        "w": 32,
+        "w": 36,
         "h": 12
       },
       "config": {
         "title": "Most frequent failed or denied access · none is good",
-        "description": "Failed sign-ins and refused requests grouped by identity, action and source IP, most frequent first; the top rows of what the Failed or denied tile counts. authentication_failed, realm_authentication_failed and anonymous_access_denied are failed sign-ins; access_denied is an authenticated identity refused an action; any other action is marked \"· failed\" — it is here because its outcome was failure. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id. An empty panel means nothing matched in the time range, which is the healthy state.",
+        "description": "Failed sign-ins and refused requests grouped by identity, action and source IP, most frequent first; the top rows of what the Failed or denied tile counts. Result names the kind, as in the session below: failed sign-in (authentication_failed, realm_authentication_failed, anonymous_access_denied), denied (access_denied: an authenticated identity refused an action), or failed (any other action, here because its outcome was failure). An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id. An empty panel means nothing matched in the time range, which is the healthy state.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.event.action IN (\"authentication_failed\",\"realm_authentication_failed\",\"anonymous_access_denied\") OR attributes.event.outcome == \"failure\" | STATS events = COUNT(*), last_seen = MAX(@timestamp) BY attributes.user.email, attributes.api_key.name, attributes.user.name, action = attributes.event.action, ip = client.ip | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | STATS events = SUM(events), last_seen = MAX(last_seen) BY actor, action, ip | EVAL action = CASE(action IN (\"authentication_failed\",\"realm_authentication_failed\",\"anonymous_access_denied\", \"access_denied\"), action, CONCAT(COALESCE(action, \"(no action)\"), \" · failed\")) | SORT events DESC | LIMIT 10"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.event.action IN (\"authentication_failed\",\"realm_authentication_failed\",\"anonymous_access_denied\") OR attributes.event.outcome == \"failure\" | STATS events = COUNT(*), last_seen = MAX(@timestamp) BY attributes.user.email, attributes.api_key.name, attributes.user.name, action = attributes.event.action, ip = client.ip | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | STATS events = SUM(events), last_seen = MAX(last_seen) BY actor, action, ip | EVAL result = CASE(action IN (\"authentication_failed\",\"realm_authentication_failed\",\"anonymous_access_denied\"), \"failed sign-in\", action == \"access_denied\", \"denied\", \"failed\") | SORT events DESC | LIMIT 10"
         },
         "styling": {
           "density": {
@@ -765,7 +760,12 @@
           {
             "label": "Action",
             "column": "action",
-            "width": 200
+            "width": 175
+          },
+          {
+            "label": "Result",
+            "width": 105,
+            "column": "result"
           },
           {
             "label": "IP",

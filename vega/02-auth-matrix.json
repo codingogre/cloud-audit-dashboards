@@ -86,9 +86,10 @@
           "scale": {
             "type": "log",
             "range": [
-              0.35,
+              0.15,
               1
-            ]
+            ],
+            "nice": true
           },
           "legend": {
             "title": "Events",
