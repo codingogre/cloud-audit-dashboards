@@ -109,7 +109,12 @@ export function build() {
       // No Events column: the panel answers "who touched it, and when", and the 72px a count took was
       // what left Object clipped at a 1440px viewport.
       ['last_seen'],
-      'The ten most recent reads and changes of the high-value object types: dashboards, data views, SLOs, alert rules, tags, workflows, agent-builder agents and tools, and ML jobs — who touched which one, and when. A type that nobody touched in range has no rows. Unlike the panel beside it, this one leaves out what the noise gate calls query internals: views of this audit suite\'s own dashboards and data view, space lookups and point-in-time paging, which on a deployed suite would fill every row; a change to a suite object is kept. Both `alert` and `alerting_rule` are included, because Kibana records the same rule under either type depending on which code path audited it.'),
+      'The ten most recent reads and changes of the high-value object types: dashboards, data views, SLOs, alert rules, tags, workflows, agent-builder agents and tools, and ML jobs — who touched which one, and when. A type that nobody touched in range has no rows. Unlike the panel beside it, this one leaves out what the noise gate calls query internals: views of this audit suite\'s own dashboards and data view, space lookups and point-in-time paging, which on a deployed suite would fill every row; a change to a suite object is kept. Both `alert` and `alerting_rule` are included, because Kibana records the same rule under either type depending on which code path audited it. On a narrow screen a long object name wraps onto a second line; scroll the table for the last rows.',
+      // Wrapped: at a 1440px viewport Object gets ~180px, and Lens hard-cuts a clipped cell mid-glyph
+      // ("[Audit] Elasticsearch Data A"), which reads as a different name. No width split of this row
+      // fits both tables' names at 1440 without dropping a column, so the long names take a second line
+      // there instead. At 1920 every name fits on one line and the rows render as before.
+      { wrap: true }),
     bar(0, 44, 12, 11, 'Object types accessed',
       `FROM ${IDX} | ${TIME} | WHERE attributes.kibana.saved_object.type IS NOT NULL | STATS events = COUNT(*) BY type = attributes.kibana.saved_object.type | SORT events DESC | LIMIT 10`,
       'type', 'events', 'The ten saved-object types with the most traffic; hover a bar for its count. Background reads by Kibana features and integrations can outweigh human activity; the heatmap above splits each type by operation.'),
