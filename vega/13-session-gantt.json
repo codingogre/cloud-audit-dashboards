@@ -1,6 +1,6 @@
 {
   "$schema": "https://vega.github.io/schema/vega/v5.json",
-  "description": "One bar per Kibana browser session in the last 24 hours, newest first — its length is how long the session ran and its strength is how much it did, which are independent: a short session can carry far more activity than a long one left open and idle. Click a bar to set the dashboard's time range to that session (plus a minute either side); use the time picker's back arrow to return. Shift-click pins that identity across the suite. Only Kibana audit carries a session id, so an identity that works through the Elasticsearch API has no sessions, and an empty panel for it is the correct answer. Twelve most recent sessions, each labelled with who and when it started. Times are in your browser's timezone, like the rest of Kibana. Fixed 24-hour window: does not follow the time picker.",
+  "description": "One bar per Kibana browser session in the last 24 hours, newest first — its length runs from the first to the last thing they did in it and its strength is how much it did, which are independent: a short session can carry far more activity than a long one left open and idle. Click a bar to set the dashboard's time range to that session (plus a minute either side); use the time picker's back arrow to return. Shift-click pins that identity across the suite. What an open browser tab does on its own — internal page requests, usage counters, point-in-time paging — is left out, exactly as in the Session records below, so a tab left open does not stretch a bar past the person's last action and every bar has records under it. Only Kibana audit carries a session id, so an identity that works through the Elasticsearch API has no sessions, and an empty panel for it is the correct answer. Twelve most recent sessions, each labelled with who and when it started. Times are in your browser's timezone, like the rest of Kibana. Fixed 24-hour window: does not follow the time picker.",
   "autosize": {
     "type": "fit",
     "contains": "padding"
@@ -8,14 +8,14 @@
   "padding": 4,
   "config": {
     "axis": {
-      "labelFontSize": 11,
-      "titleFontSize": 11
+      "labelFontSize": 12,
+      "titleFontSize": 12
     }
   },
   "signals": [
     {
       "name": "lane",
-      "update": "max(12, min(22, height / 12))"
+      "update": "length(data('sessions')) ? max(10, min(30, height / length(data('sessions')))) : 12"
     },
     {
       "name": "zoomTo",
@@ -60,6 +60,55 @@
                 {
                   "exists": {
                     "field": "attributes.kibana.session.id"
+                  }
+                },
+                {
+                  "bool": {
+                    "must_not": [
+                      {
+                        "terms": {
+                          "attributes.event.action": [
+                            "saved_object_open_point_in_time",
+                            "saved_object_close_point_in_time"
+                          ]
+                        }
+                      },
+                      {
+                        "bool": {
+                          "filter": [
+                            {
+                              "term": {
+                                "attributes.event.action": "http_request"
+                              }
+                            }
+                          ],
+                          "should": [
+                            {
+                              "bool": {
+                                "must_not": [
+                                  {
+                                    "wildcard": {
+                                      "attributes.url.original": "*/api/*"
+                                    }
+                                  }
+                                ]
+                              }
+                            },
+                            {
+                              "wildcard": {
+                                "attributes.url.original": "*/api/ui_counters/*"
+                              }
+                            },
+                            {
+                              "wildcard": {
+                                "attributes.url.original": "*/api/content_management/*"
+                              }
+                            }
+                          ],
+                          "minimum_should_match": 1
+                        }
+                      }
+                    ]
                   }
                 }
               ],
@@ -250,7 +299,7 @@
       "ticks": false,
       "domain": false,
       "labelLimit": 240,
-      "labelFontSize": 11
+      "labelFontSize": 12
     }
   ],
   "marks": [

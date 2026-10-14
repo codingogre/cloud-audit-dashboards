@@ -1,6 +1,6 @@
 {
   "$schema": "https://vega.github.io/schema/vega/v5.json",
-  "description": "How the current selection's Kibana activity flows: which credential it arrived with, which space it happened in, what kind of object it touched and what it did to it. Ribbon width is event count in the time picker's range. Kibana audit only, and only events that touched an object — requests, logins and point-in-time internals are left out. Elasticsearch events carry no space and no saved object, so including them would put most of the ink in a branch that says nothing. Credential is authentication type where Elasticsearch records one and the user's realm otherwise, which is what separates a person in a browser (cloud-saml-kibana) from a script calling Kibana with a key. Object types come from the shared OBJ_TYPE fragment, which recovers a type from the event for workflows, ML jobs, agent-builder tools and secrets that carry no saved-object fields. Top 40 flows: a missing ribbon means the flow is outside the top 40, not that it never happened. Each column names its biggest values and folds the rest into \"other (N)\", so a small value is counted there rather than drawn as an unlabelled sliver. Click a named credential or space to pin it across the suite — object type and operation are derived, so a pill on them would match nothing. Double-click anywhere in the panel to clear every pill on the page.",
+  "description": "How the current selection's Kibana activity flows: which credential it arrived with, which space it happened in, what kind of object it touched and what it did to it. Ribbon width is event count in the time picker's range. Kibana audit only, and only events that touched an object — requests, logins and point-in-time internals are left out. Elasticsearch events carry no space and no saved object, so including them would put most of the ink in a branch that says nothing. Credential is authentication type where Elasticsearch records one and the user's realm otherwise, which is what separates a person in a browser (SAML SSO, the cloud-saml-kibana realm) from a script calling Kibana with a key (Elasticsearch or Cloud API key); hover a credential for its raw name. Object types come from the shared OBJ_TYPE fragment, which recovers a type from the event for workflows, ML jobs, agent-builder tools and secrets that carry no saved-object fields. Top 40 flows: a missing ribbon means the flow is outside the top 40, not that it never happened. Each column names its biggest values and folds the rest into \"other (N)\", drawn last, so a small value is counted there rather than drawn as an unlabelled sliver. Click a named credential or space to pin it across the suite — object type and operation are derived, so a pill on them would match nothing. Double-click anywhere in the panel to clear every pill on the page.",
   "autosize": {
     "type": "fit",
     "contains": "padding"
@@ -628,14 +628,30 @@
           "expr": "slice(datum.key, indexof(datum.key, '|') + 1)"
         },
         {
+          "type": "formula",
+          "as": "isOther",
+          "expr": "indexof(datum.label, 'other (') === 0 ? 1 : 0"
+        },
+        {
+          "type": "formula",
+          "as": "display",
+          "expr": "datum.stage !== 0 ? datum.label : datum.label === '_cloud_api_key' ? 'Cloud API key' : datum.label === '_es_api_key' ? 'Elasticsearch API key' : datum.label === 'cloud-saml-kibana' ? 'SAML SSO' : datum.label === 'api_key' ? 'API key' : datum.label === 'token' ? 'Token' : datum.label === 'realm' ? 'Realm' : datum.label === 'saml' ? 'SAML' : datum.label === 'anonymous' ? 'Anonymous' : datum.label === 'internal' ? 'Internal' : indexof(datum.label, '_service_account') === 0 ? 'Service account' : datum.label"
+        },
+        {
           "type": "stack",
           "groupby": [
             "stage"
           ],
           "field": "value",
           "sort": {
-            "field": "value",
-            "order": "descending"
+            "field": [
+              "isOther",
+              "value"
+            ],
+            "order": [
+              "ascending",
+              "descending"
+            ]
           },
           "as": [
             "y0",
@@ -648,8 +664,14 @@
             "stage"
           ],
           "sort": {
-            "field": "value",
-            "order": "descending"
+            "field": [
+              "isOther",
+              "value"
+            ],
+            "order": [
+              "ascending",
+              "descending"
+            ]
           },
           "ops": [
             "row_number"
@@ -1013,7 +1035,7 @@
             "signal": "indexof(datum.label, 'other (') !== 0 && ((datum.stage === 0 && datum.label !== 'unknown') || (datum.stage === 1 && datum.label !== 'no space')) ? 'pointer' : 'default'"
           },
           "tooltip": {
-            "signal": "{'Stage': ['credential', 'space', 'object type', 'operation'][datum.stage], 'Value': datum.label, 'Events': format(datum.value, ','), 'Click': indexof(datum.label, 'other (') === 0 ? 'several smaller values, folded together — hover the ribbons for each' : (datum.stage === 0 && datum.label !== 'unknown') || (datum.stage === 1 && datum.label !== 'no space') ? 'pin across the suite' : 'derived — cannot be pinned'}"
+            "signal": "{'Stage': ['credential', 'space', 'object type', 'operation'][datum.stage], 'Value': datum.display === datum.label ? datum.label : datum.display + ' (' + datum.label + ')', 'Events': format(datum.value, ','), 'Click': indexof(datum.label, 'other (') === 0 ? 'several smaller values, folded together — hover the ribbons for each' : (datum.stage === 0 && datum.label !== 'unknown') || (datum.stage === 1 && datum.label !== 'no space') ? 'pin across the suite' : 'derived — cannot be pinned'}"
           }
         }
       }
@@ -1043,7 +1065,7 @@
             "value": 11
           },
           "text": {
-            "signal": "datum.label + '  ' + format(datum.value, ',')"
+            "signal": "datum.display + '  ' + format(datum.value, ',')"
           },
           "opacity": {
             "signal": "datum.rank === datum.nInStage - 1 || indexof(datum.label, 'other (') === 0 || scale('y', datum.y1) - scale('y', datum.y0) + gap >= 12 ? 1 : 0"

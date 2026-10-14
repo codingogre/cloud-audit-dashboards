@@ -75,7 +75,7 @@
           "legend": {
             "title": "Events / hour", "orient": "right",
             "titleOpacity": { "expr": "extent(pluck(data('hours'), 'doc_count'))[1] > 0 ? 1 : 0" },
-            "values": { "expr": "!(extent(pluck(data('hours'), 'doc_count'))[1] > 0) ? [] : floor(log(domain('opacity')[1]) / LN10 + 1e-9) - ceil(log(domain('opacity')[0]) / LN10 - 1e-9) >= 1 ? slice([1, 10, 100, 1000, 10000, 100000, 1000000, 10000000], ceil(log(domain('opacity')[0]) / LN10 - 1e-9), 1 + floor(log(domain('opacity')[1]) / LN10 + 1e-9)) : domain('opacity')" },
+            "values": { "expr": "!(extent(pluck(data('hours'), 'doc_count'))[1] > 0) ? [] : floor(log(domain('opacity')[1]) / LN10 + 1e-9) - ceil(log(domain('opacity')[0]) / LN10 - 1e-9) >= 1 ? slice([1, 10, 100, 1000, 10000, 100000, 1000000, 10000000], ceil(log(domain('opacity')[0]) / LN10 - 1e-9), 1 + floor(log(domain('opacity')[1]) / LN10 + 1e-9)) : domain('opacity')[1] > domain('opacity')[0] ? [domain('opacity')[0], sqrt(domain('opacity')[0] * domain('opacity')[1]), domain('opacity')[1]] : [domain('opacity')[0]]" },
             "labelExpr": "format(datum.value, '.2~s')"
           }
         }

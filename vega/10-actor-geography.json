@@ -1,6 +1,6 @@
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
-  "description": "Where the current selection connected from, in the time picker's range. Points are resolved client locations sized by event volume; a line joins one location to the next the same identity appeared from, coloured by the speed that move implies between last seen there and first seen here. Places are aggregated per city, so an identity active in two cities at overlapping times is marked as such rather than given an impossible speed. Read the title line first: many events cannot be placed at all — CGNAT and private addresses resolve to nothing, and many events carry no client IP — so the absence of a line is not evidence of absence. This is a movement record, not an impossible-travel detector.",
+  "description": "Where the current selection connected from, in the time picker's range. Points are resolved client locations sized by event volume; a line joins one location to the next the same identity appeared from, colored by the speed that move implies between last seen there and first seen here. Places are aggregated per city, so an identity active in two cities at overlapping times is marked as such rather than given an impossible speed. Read the title line first: many events cannot be placed at all — an address geoip never placed (always the case for CGNAT and private addresses), an event with no client IP, or an event from a placeable address that predates geo enrichment — so the absence of a line is not evidence of absence. An address counts as unplaceable only when none of its events were placed, as in \"Busiest addresses they used\". The line legend appears only when there is a line to read. This is a movement record, not an impossible-travel detector.",
   "autosize": {
     "type": "fit",
     "contains": "padding"
@@ -22,9 +22,11 @@
   },
   "title": {
     "text": {
-      "expr": "length(data('coverage')) && data('coverage')[0].total > 0 ? 'Placed on the map: ' + (data('coverage')[0].located > 0 && round(100 * data('coverage')[0].located / data('coverage')[0].total) < 1 ? '<1' : round(100 * data('coverage')[0].located / data('coverage')[0].total)) + '% of events · IP geoip cannot place: ' + max(0, 100 - max(round(100 * data('coverage')[0].located / data('coverage')[0].total), data('coverage')[0].located > 0 ? 1 : 0) - round(100 * (data('coverage')[0].total - data('coverage')[0].with_ip) / data('coverage')[0].total)) + '% · no client IP: ' + round(100 * (data('coverage')[0].total - data('coverage')[0].with_ip) / data('coverage')[0].total) + '%' : 'No activity for this selection in this time range'"
+      "expr": "length(data('coverage')) && data('coverage')[0].total > 0 ? 'On the map: ' + data('coverage')[0].on_map + '% of events · address cannot be placed: ' + data('coverage')[0].cannot + '% · no client IP: ' + data('coverage')[0].no_client_ip + '%' + (data('coverage')[0].before_enrichment !== '0' ? ' · before geo enrichment: ' + data('coverage')[0].before_enrichment + '%' : '') : 'No activity for this selection in this time range'"
     },
-    "subtitle": "Lines join consecutive locations for one identity; colour is the travel speed that would imply."
+    "subtitle": {
+      "expr": "!length(data('places')) ? '' : extent(pluck(data('places'), 'places'))[1] > 1 ? 'Lines join consecutive locations for one identity; color is the travel speed that would imply.' : 'Each identity was seen from one place in this range, so there is no travel to draw.'"
+    }
   },
   "projection": {
     "type": "naturalEarth1"
@@ -33,7 +35,7 @@
     "name": "places",
     "url": {
       "%type%": "esql",
-      "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE client.geo.location IS NOT NULL | STATS events = COUNT(*), at = ST_CENTROID_AGG(client.geo.location), first_seen = MIN(@timestamp), last_seen = MAX(@timestamp) BY actor = attributes.user.email, city = client.geo.city_name, country = client.geo.country_name | EVAL lon = ST_X(at), lat = ST_Y(at), first_ms = TO_LONG(first_seen), last_ms = TO_LONG(last_seen) | KEEP actor, city, country, lon, lat, events, first_seen, last_seen, first_ms, last_ms | SORT events DESC | LIMIT 150",
+      "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE client.geo.location IS NOT NULL | STATS events = COUNT(*), at = ST_CENTROID_AGG(client.geo.location), first_seen = MIN(@timestamp), last_seen = MAX(@timestamp) BY actor = attributes.user.email, city = client.geo.city_name, country = client.geo.country_name | INLINE STATS places = COUNT(*) BY actor | EVAL lon = ST_X(at), lat = ST_Y(at), first_ms = TO_LONG(first_seen), last_ms = TO_LONG(last_seen) | KEEP actor, city, country, places, lon, lat, events, first_seen, last_seen, first_ms, last_ms | SORT events DESC | LIMIT 150",
       "%timefield%": "@timestamp",
       "%context%": true
     }
@@ -70,7 +72,7 @@
         "name": "coverage",
         "url": {
           "%type%": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS total = COUNT(*), located = COUNT(client.geo.location), with_ip = COUNT(client.ip)",
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS n = COUNT(*), located = COUNT(client.geo.location), placed = COUNT(client.geo.country_iso_code) BY client.ip | STATS total = SUM(n), located = SUM(located), with_ip = SUM(CASE(client.ip IS NOT NULL, n, 0)), unplaceable = SUM(CASE(client.ip IS NOT NULL AND placed == 0, n, 0)) | EVAL no_ip = total - with_ip, older = with_ip - unplaceable - located | EVAL r_map = TO_LONG(ROUND(100.0 * located / total)), r_noip = TO_LONG(ROUND(100.0 * no_ip / total)), r_older = TO_LONG(ROUND(100.0 * older / total)) | EVAL r_cannot = 100 - r_map - r_noip - r_older | EVAL on_map = CASE(located == 0, \"0\", r_map < 1, \"<1\", TO_STRING(r_map)), no_client_ip = CASE(no_ip == 0, \"0\", r_noip < 1, \"<1\", TO_STRING(r_noip)), before_enrichment = CASE(older == 0, \"0\", r_older < 1, \"<1\", TO_STRING(r_older)), cannot = CASE(unplaceable == 0, \"0\", r_cannot < 1, \"<1\", TO_STRING(r_cannot)) | KEEP total, on_map, cannot, no_client_ip, before_enrichment",
           "%timefield%": "@timestamp",
           "%context%": true
         }
@@ -187,10 +189,10 @@
             "symbolType": "stroke",
             "labelLimit": 220,
             "labelOpacity": {
-              "expr": "length(data('places')) ? 1 : 0"
+              "expr": "extent(pluck(data('places'), 'places'))[1] > 1 ? 1 : 0"
             },
             "symbolOpacity": {
-              "expr": "length(data('places')) ? 1 : 0"
+              "expr": "extent(pluck(data('places'), 'places'))[1] > 1 ? 1 : 0"
             }
           }
         },
