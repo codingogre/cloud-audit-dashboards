@@ -65,7 +65,7 @@
             "gridOpacity": { "expr": "length(data('rows')) ? 1 : 0" },
             "tickOpacity": { "expr": "length(data('rows')) ? 1 : 0" },
             "domainOpacity": { "expr": "length(data('rows')) ? 1 : 0" },
-            "labelExpr": "datum.index == 0 || (hours(datum.value) == 0 && minutes(datum.value) == 0) ? [timeFormat(datum.value, '%H:%M'), timeFormat(datum.value, '%B %d, %Y')] : timeFormat(datum.value, '%H:%M')"
+            "labelExpr": "length(data('rows')) && datum.index > 0 && datum.value > toDate(data('rows')[0].t1) - 0.06 * (toDate(data('rows')[0].t1) - toDate(data('rows')[0].t0)) ? '' : datum.index == 0 || (hours(datum.value) == 0 && minutes(datum.value) == 0) ? [timeFormat(datum.value, '%H:%M'), timeFormat(datum.value, '%B %d, %Y')] : timeFormat(datum.value, '%H:%M')"
           }
         },
         "x2": { "field": "ts_end" },

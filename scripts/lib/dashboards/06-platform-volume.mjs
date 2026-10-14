@@ -35,17 +35,22 @@ const BAND_COLORS = { 'Signal': PALETTE[0], 'Auth success': PALETTE[1], 'Query i
 /**
  * Band share shows each bucket as 100%, so a bucket of six events stood exactly as tall as one of 7,000
  * (rendered: six minutes of solid "Query internals" during a lull). QUIET_BUCKETS drops a bucket whose
- * total is under a tenth of the window's median bucket. That needs a window-wide figure beside per-bucket
+ * total is under a tenth of the window's median bucket AND under QUIET_MAX events. The ratio alone
+ * moved with the window: a 1h window that was quiet for 25 minutes then busy had a median of ~8,000, so
+ * the quiet stretch's alternating ~500 / ~1,000-event minutes rendered as a picket fence of bars and
+ * gaps (rendered at 1440px). 50 events is enough for a share to mean something; the ratio keeps a
+ * low-volume project, whose every bucket is small, from blanking entirely. That needs a window-wide figure beside per-bucket
  * rows, and INLINE STATS re-runs the scan (measured 0.5s → 2.2s at 7d), so it is done by hand over the
  * already-aggregated rows: one row per bucket (total + its band counts packed into a multi-value), one
  * row for the window (the median + every bucket packed), then expanded back. It runs over at most
  * 75 × 4 rows, so the 7-day cost is unchanged (~0.58s either way, alternating runs on the perf replica).
  * The bucket comes back under the column name xy() plots, as a datetime.
  */
+const QUIET_MAX = 50;
 const QUIET_BUCKETS =
   'STATS total = SUM(events), parts = VALUES(CONCAT(band, "=", TO_STRING(events))) BY ts ' +
   '| STATS typical = MEDIAN(total), b = VALUES(CONCAT(TO_STRING(ts), "#", TO_STRING(total), "#", MV_CONCAT(parts, ";"))) ' +
-  '| MV_EXPAND b | DISSECT b "%{ts}#%{total}#%{parts}" | WHERE TO_LONG(total) * 10 >= typical ' +
+  `| MV_EXPAND b | DISSECT b "%{ts}#%{total}#%{parts}" | WHERE TO_LONG(total) * 10 >= typical OR TO_LONG(total) >= ${QUIET_MAX} ` +
   '| EVAL part = SPLIT(parts, ";") | MV_EXPAND part | DISSECT part "%{band}=%{events}" ' +
   `| EVAL \`${BUCKET}\` = TO_DATETIME(ts), events = TO_LONG(events) | KEEP \`${BUCKET}\`, band, events`;
 
@@ -103,7 +108,9 @@ export function build() {
     // it once a filter made the data sparse. The x domain is the whole time window, so the chart
     // lines up with the Lens charts below: t0/t1 are ?_tstart/?_tend echoed after the STATS and
     // drawn as an invisible rule. `"domain": {"%timefilter%": true}` was tried — on an ES|QL spec
-    // it renders the bare Vega "Error".
+    // it renders the bare Vega "Error". Axis labels sit left-aligned beside their tick, as Lens draws
+    // them, so a tick in the last 6% of the window has its label blanked: it hung past the plot's right
+    // edge on 00 at 1440px ("labelBound" did nothing with labelOverlap off).
     vega(0, 12, 30, 13, '07-noise-ratio-stream', 'Signal vs noise over time',
       'Audit events per time bucket, stacked by band, so the top edge is the whole firehose and Signal sits on the baseline. Hover a segment for its band and the bucket total.'),
     // Named keys only, which is why it can be empty while the stream is busy: an organisation-level Cloud
@@ -121,7 +128,7 @@ export function build() {
     // whether a spike was more noise or more signal.
     xy(0, 25, 24, 12, 'Band share over time',
       `FROM ${IDX} | ${TIME} | STATS n = COUNT(*) BY ts = ${BUCKET}, ${BAND_KEYS} | ${BAND} | STATS events = SUM(n) BY ts, band | ${QUIET_BUCKETS} | ${BAND_ORDER} | ${BAND_LABEL}`,
-      'events', 'Each bucket’s events as 100%, split by band. A rising Signal share means activity, not housekeeping, is driving the volume. A bucket with under a tenth of the window’s typical (median) volume is left blank: a percentage of a handful of events would stand as tall as a busy minute. Signal vs noise over time shows every bucket’s volume.',
+      'events', 'Each bucket’s events as 100%, split by band. A rising Signal share means activity, not housekeeping, is driving the volume. A bucket with fewer than 50 events and under a tenth of the window’s typical (median) volume is left blank: a percentage of a handful of events would stand as tall as a busy minute. Signal vs noise over time shows every bucket’s volume.',
       { kind: 'bar_percentage', breakdown: 'band', colors: BAND_COLORS }),
     // Grouped on the raw keyword, relabelled after: the two-condition CASE runs on the grouped rows,
     // not on every event (panels.mjs QUERY SHAPE rules 1–2). Same labels, colours and order as 00's.
