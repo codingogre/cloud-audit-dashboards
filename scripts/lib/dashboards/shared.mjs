@@ -1,7 +1,8 @@
 /** Constants shared by more than one dashboard module. */
 import { cfg } from '../env.mjs';
 import {
-  RISK, VERB, CSS_NAV, RISK_PREFILTER, CHANGE, OBJ, OUTCOME, filterable
+  RISK, VERB, CSS_NAV, RISK_PREFILTER, RISK_KEYS, RISK_RESTORE, CHANGE, OBJ_GROK, OBJ_NAME, OBJ_TYPE, OUTCOME,
+  filterable
 } from '../panels.mjs';
 
 /**
@@ -53,12 +54,30 @@ Elasticsearch stamps an API key's **creator's** email on every event the key emi
 key's traffic resolves to a person's name on the identity panels — check the \`api_key\` column
 before reading a name as a human.`;
 
-export const RISK_SCORED = `${RISK_PREFILTER} | ${RISK} | WHERE risk > 0`;
+/** The raw identity fields ACTOR_RESOLVE reads, for a STATS that has to resolve the actor afterwards. */
+export const ACTOR_KEYS = 'attributes.user.email, attributes.api_key.name, attributes.user.name';
 
 /**
- * "What changed", as one pipeline. CHANGE selects state changes by ECS type, OBJ recovers the
- * object's identity from body.text where Kibana records no saved_object fields, and OUTCOME
- * relabels Kibana's `unknown` attempt records.
+ * The scoring events, counted before they are scored. RISK is a seven-branch CASE, and a CASE with
+ * two or more conditions costs ~4µs per row however few branches match (panels.mjs, QUERY SHAPE),
+ * so it runs on the rows of `STATS n = COUNT(*) BY <by>, RISK_KEYS` instead of on every event.
+ *
+ *   by    the extra group keys the panel needs downstream (ACTOR_KEYS, a BUCKET, …)
+ *   aggs  extra per-group aggregates (`last_ts = MAX(@timestamp)`), re-aggregated downstream
+ *
+ * Every row it leaves carries `n`, so downstream a count is SUM(n), a severity is SUM(risk * n), and
+ * a timestamp is MIN/MAX of the carried aggregate. A STATS with no BY returns null rather than 0 for
+ * SUM over no rows, so a KPI that has to read 0 COALESCEs after it.
+ */
+export const riskScored = ({ by = '', aggs = '' } = {}) =>
+  `${RISK_PREFILTER} | STATS n = COUNT(*)${aggs ? `, ${aggs}` : ''} BY ${by ? `${by}, ` : ''}${RISK_KEYS} ` +
+  `| ${RISK_RESTORE} | ${RISK} | WHERE risk > 0`;
+
+/**
+ * "What changed", up to its first STATS. CHANGE selects state changes by ECS type, OBJ_GROK and
+ * OBJ_NAME recover the object's name from body.text where Kibana records no saved_object fields, and
+ * OUTCOME relabels Kibana's `unknown` attempt records (a one-condition CASE, which is cheap per event).
+ * The object's type and the verb come after the STATS — see CHANGED_DERIVE.
  *
  * `execution` is COALESCEd rather than left null so the column reads "—" on the rows that are not
  * executions instead of "(null)". It is truncated to 8 characters because Kibana sizes a column to
@@ -67,4 +86,12 @@ export const RISK_SCORED = `${RISK_PREFILTER} | ${RISK} | WHERE risk > 0`;
  * the run it cancelled by eye, which is the only thing this column is for — the full id is in the
  * session feed at the bottom of the page.
  */
-export const CHANGED = `${CHANGE} | ${VERB} | ${OBJ} | ${OUTCOME} | EVAL execution = COALESCE(LEFT(g_exec, 8), "—")`;
+export const CHANGED = `${CHANGE} | ${OBJ_GROK} | ${OBJ_NAME} | ${OUTCOME} | EVAL execution = COALESCE(LEFT(g_exec, 8), "—")`;
+
+/**
+ * VERB and OBJ_TYPE are 16- and 10-branch CASEs over two raw fields, so they are not in CHANGED:
+ * a change panel groups by CHANGED_KEYS first and applies CHANGED_DERIVE to the grouped rows, then
+ * re-aggregates by verb/obj_type (SUM the counts, MAX the timestamps).
+ */
+export const CHANGED_KEYS = 'attributes.event.action, attributes.kibana.saved_object.type';
+export const CHANGED_DERIVE = `${VERB} | ${OBJ_TYPE}`;

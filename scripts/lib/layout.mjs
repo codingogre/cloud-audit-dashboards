@@ -17,7 +17,7 @@
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { ROOT, cfg } from './env.mjs';
-import { NAV_H, NOISE, BAND, RISK, VERB, ACTOR_RESOLVE, OBJ, OBJ_ID, OBJ_TYPE, CHANGE_PRED, CRED, OBJ_PRESENT } from './panels.mjs';
+import { NAV_H, NOISE, BAND, RISK, RISK_KEYS, RISK_RESTORE, VERB, ACTOR_RESOLVE, OBJ, OBJ_ID, OBJ_TYPE, CHANGE_PRED, CRED, OBJ_PRESENT } from './panels.mjs';
 
 export const GRID_W = 48;
 
@@ -32,11 +32,11 @@ export const GRID_W = 48;
  * this check was written.
  */
 const FRAGMENT_USES = {
-  'vega/01-actor-risk-treemap.json': { NOISE, RISK },
+  'vega/01-actor-risk-treemap.json': { NOISE, RISK, RISK_KEYS, RISK_RESTORE },
   'vega/03-object-verb-heatmap.json': { VERB, OBJ_ID, OBJ_TYPE },
   'vega/02-auth-matrix.json': { ACTOR_RESOLVE },
   'vega/04-actor-index-matrix.json': { ACTOR_RESOLVE },
-  'vega/05-rare-event-scatter.json': { RISK },
+  'vega/05-rare-event-scatter.json': { RISK, RISK_KEYS, RISK_RESTORE },
   'vega/06-geo-origin.json': { ACTOR_RESOLVE },
   'vega/07-noise-ratio-stream.json': { BAND },
   // Groups on the real attributes.user.email (never the actor COALESCE), so there is no fragment to pin.

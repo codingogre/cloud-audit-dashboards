@@ -5,7 +5,7 @@ import { ROOT } from '../env.mjs';
 import {
   IDX, TIME, CRED, dash, kpi, table, vega, search, md, section, row, stack, resetIds, sized, filterable,
 } from '../panels.mjs';
-import { RISK_SCORED, CHANGED } from './shared.mjs';
+import { riskScored, CHANGED, CHANGED_KEYS, CHANGED_DERIVE } from './shared.mjs';
 
 /**
  * One identity's whole footprint on one page — pick a person in the control bar and every panel
@@ -72,7 +72,7 @@ export function build() {
         'Events', 'Every audited event for the selection, how many different things that was, and how recently they were last seen. Unfiltered by the noise gate, so it includes connection housekeeping.',
         { secondary: 'detail' })],
       [8, (x, y, w, h) => kpi(x, y, w, h,
-        `FROM ${IDX} | ${TIME} | ${RISK_SCORED} | STATS Risk = SUM(risk), worst = MAX(risk) | EVAL detail = CASE(worst IS NULL, "nothing scored", CONCAT("worst: ", CASE(worst == 50, "config change", worst == 45, "keys invalidated", worst == 40, "failure", worst == 35, "anonymous denied", worst == 30, "destructive change", worst == 25, "Kibana change", "execution"))), Risk = COALESCE(Risk, 0) | KEEP Risk, detail`,
+        `FROM ${IDX} | ${TIME} | ${riskScored()} | STATS Risk = SUM(risk * n), worst = MAX(risk) | EVAL detail = CASE(worst IS NULL, "nothing scored", CONCAT("worst: ", CASE(worst == 50, "config change", worst == 45, "keys invalidated", worst == 40, "failure", worst == 35, "anonymous denied", worst == 30, "destructive change", worst == 25, "Kibana change", "execution"))), Risk = COALESCE(Risk, 0) | KEEP Risk, detail`,
         'Risk', 'Summed severity of everything that scored, and what the single worst-weighted event was. Routine activity scores zero, so this is not an event count in disguise; the receipts are in "Everything that scored" below.',
         { secondary: 'detail' })],
       // Families, not raw names, so the tile counts the same thing as "What they read, by index family"
@@ -100,7 +100,7 @@ export function build() {
     row(2, [[48, (x, y, w, h) => section(x, y, w, h, '② What they did', 'follows the time picker · times in your time zone')]]),
     row(11, [[48, vegaPanel('11-actor-object-flow', 'How they reached what they touched in Kibana — credential → space → object → operation')]]),
     row(12, [[48, (x, y, w, h) => table(x, y, w, h, '⚠️ What they changed',
-      `FROM ${IDX} | ${TIME} | ${CHANGED} | STATS events = COUNT(*), last_seen = MAX(@timestamp) BY verb, type = obj_type, name = obj_name, execution, space = attributes.kibana.space.id, result | SORT last_seen DESC | LIMIT 25`,
+      `FROM ${IDX} | ${TIME} | ${CHANGED} | STATS n = COUNT(*), last_ts = MAX(@timestamp) BY ${CHANGED_KEYS}, obj_name, execution, space = attributes.kibana.space.id, result | ${CHANGED_DERIVE} | STATS events = SUM(n), last_seen = MAX(last_ts) BY verb, type = obj_type, name = obj_name, execution, space, result | SORT last_seen DESC | LIMIT 25`,
       // Space is a free-form id, so it gets room for one ('syn-marketing' filled 110px edge to edge).
       ['verb', sized('type', 200), sized('name', 430), sized('execution', 110), sized('space', 170), sized('result', 120)],
       ['events', 'last_seen'],
@@ -130,7 +130,7 @@ export function build() {
         'Every real client address, including the ones the map cannot show: "unplaced" means geoip could not place it, which is always the case for a private or CGNAT address, and "—" is a country with no city. Click an address to pin it, then "Open in Geo & Network".'))],
     ]),
     row(10, [[48, (x, y, w, h) => drillTo('cloud-audit-04-security-anomalies', table(x, y, w, h, 'Everything that scored, with its weight',
-      `FROM ${IDX} | ${TIME} | ${RISK_SCORED} | STATS events = COUNT(*), severity = SUM(risk), last_seen = MAX(@timestamp) BY attributes.event.action, weight = risk | SORT severity DESC | LIMIT 25`,
+      `FROM ${IDX} | ${TIME} | ${riskScored({ aggs: 'last_ts = MAX(@timestamp)' })} | STATS events = SUM(n), severity = SUM(risk * n), last_seen = MAX(last_ts) BY attributes.event.action, weight = risk | SORT severity DESC | LIMIT 25`,
       // weight is a number, so it reads as one (right-aligned, beside the other numbers); it stays in the
       // BY clause, so the grouping is unchanged.
       [filterable('attributes.event.action')], ['weight', 'events', 'severity', 'last_seen'],

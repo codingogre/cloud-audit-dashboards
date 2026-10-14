@@ -4,7 +4,7 @@ import {
   vega, search, sized, resetIds
 } from '../panels.mjs';
 import {
-  WHO, RISK_SCORED
+  WHO, ACTOR_KEYS, riskScored
 } from './shared.mjs';
 
 /**
@@ -36,13 +36,13 @@ export function build() {
     // The scale lives in the column name because it is the one ratio among five counts: a bare
     // "34.2" beside "377" reads as another count. A `secondary` line would say it too, but would
     // push this tile's number off the baseline its five siblings share.
-    kpi(0, 0, 8, 5, `FROM ${IDX} | ${TIME} | ${RISK_SCORED} | STATS ${RISK_INDEX_STATS} | ${RISK_INDEX_EVAL} | EVAL \`Mean severity (of 50)\` = mean_severity | KEEP \`Mean severity (of 50)\``, 'Mean severity (of 50)',
+    kpi(0, 0, 8, 5, `FROM ${IDX} | ${TIME} | ${riskScored()} | STATS ${RISK_INDEX_STATS} | ${RISK_INDEX_EVAL} | EVAL \`Mean severity (of 50)\` = mean_severity | KEEP \`Mean severity (of 50)\``, 'Mean severity (of 50)',
       'Average severity weight across scoring events, on the same 0–50 scale as the weights: config change 50, key invalidation 45, failure 40, anonymous denial 35, destructive change 30, other Kibana change 25, workflow execution 10. Executions weigh least on purpose — they are the one class with unbounded cadence, and a scheduled workflow firing every minute would otherwise turn total risk back into an event count. Routine activity scores 0 and is excluded, so this is not a disguised event count — read it with Scoring events beside it.', { dec: 1 }),
     kpi(8, 0, 8, 5, `FROM ${IDX} | ${TIME} | STATS \`Config changes\` = COUNT(attributes.elasticsearch.audit.security_config_change)`, 'Config changes', 'Security configuration changes recorded by Elasticsearch.'),
     kpi(16, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE attributes.event.action == "invalidate_apikeys" | STATS \`Key invalidations\` = COUNT(*)`, 'Key invalidations', 'API keys invalidated in range — legitimate rotation, or a credential being revoked in a hurry.'),
     kpi(24, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE attributes.event.outcome == "failure" | STATS \`Failures\` = COUNT(*)`, 'Failures', 'Events with a failure outcome.'),
     kpi(32, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE attributes.event.action == "anonymous_access_denied" | STATS \`Anonymous denials\` = COUNT(*)`, 'Anonymous denials', 'Unauthenticated requests that were rejected.'),
-    kpi(40, 0, 8, 5, `FROM ${IDX} | ${TIME} | ${RISK_SCORED} | STATS \`Scoring events\` = COUNT(*)`, 'Scoring events', 'Number of events that carried any risk weight at all — the denominator of Mean severity, and the volume that severity is averaged over.'),
+    kpi(40, 0, 8, 5, `FROM ${IDX} | ${TIME} | ${riskScored()} | STATS scoring = SUM(n) | EVAL \`Scoring events\` = COALESCE(scoring, 0) | KEEP \`Scoring events\``, 'Scoring events', 'Number of events that carried any risk weight at all — the denominator of Mean severity, and the volume that severity is averaged over.'),
     // Identity and action are short and bounded (update_user_profile_data, the longest config-change action, is 24 characters); the payload is what the panel is for, so it
     // takes everything they leave (~400px, enough for a create_apikey id in full).
     table(0, 5, 28, 13, '🚨 Security configuration changes',
@@ -56,7 +56,7 @@ export function build() {
     // has to open the leaderboard. The scope EVALs run on the scored subset only (measured: 0.2s vs
     // 0.15s unsplit over 1h).
     xy(0, 18, 24, 12, 'Risk over time',
-      `FROM ${IDX} | ${TIME} | ${RISK_SCORED} | ${ACTOR_RESOLVE} | ${SCOPE} | STATS \`Summed severity\` = SUM(risk) BY ${BUCKET}, actor_scope`,
+      `FROM ${IDX} | ${TIME} | ${riskScored({ by: `${BUCKET}, ${ACTOR_KEYS}` })} | ${ACTOR_RESOLVE} | ${SCOPE} | STATS \`Summed severity\` = SUM(risk * n) BY \`${BUCKET}\`, actor_scope`,
       'Summed severity', 'Summed severity weight per interval, routine activity excluded, split by who it came from: tenant identities, Elastic platform automation, or unauthenticated requests. Spikes are clusters of privileged, failed or denied activity.',
       { breakdown: 'actor_scope', colors: SCOPE_COLORS }),
     // first_seen is window-censored (see NEW_IN_RANGE). Grouped on actor alone and scoped AFTER
@@ -72,12 +72,12 @@ export function build() {
     // identity (<unauthenticated-cloud-access-token>, a long persona name) was cut. One decimal on
     // the mean throughout, since "40" beside "26.4" reads as two kinds of number.
     table(0, 30, 48, 12, 'Risk leaderboard',
-      `FROM ${IDX} | ${TIME} | ${RISK_SCORED} | ${ACTOR_RESOLVE} | ${SCOPE} | STATS ${RISK_INDEX_STATS}, privileged = COUNT(attributes.elasticsearch.audit.security_config_change) BY actor, actor_scope, attributes.user.email | ${RISK_INDEX_EVAL} | SORT risk_total DESC | LIMIT 15`,
+      `FROM ${IDX} | ${TIME} | ${riskScored({ by: ACTOR_KEYS })} | ${ACTOR_RESOLVE} | ${SCOPE} | STATS ${RISK_INDEX_STATS}, privileged = SUM(CASE(scc, n, 0)) BY actor, actor_scope, attributes.user.email | ${RISK_INDEX_EVAL} | SORT risk_total DESC | LIMIT 15`,
       ['actor', SCOPE_COL, WHO],
       ['risk_total', 'scoring_events', { column: 'mean_severity', format: { type: 'number', decimals: 1 } }, 'privileged'],
       'Identities ranked by total accumulated severity, so sustained behaviour outranks a single high-severity event. Scope separates tenant identities from Elastic platform automation and unauthenticated requests — without it elastic.maintenance can top this table, because Elastic platform automation performs routine security config changes itself. API keys and native users carry no email; click an email, where there is one, to pin that identity across the whole suite.'),
     table(0, 42, 48, 12, 'Why these identities scored — every risky action, with its weight',
-      `FROM ${IDX} | ${TIME} | ${RISK_SCORED} | ${ACTOR_RESOLVE} | ${SCOPE} | STATS events = COUNT(*), risk_total = SUM(risk), last_seen = MAX(@timestamp) BY actor, actor_scope, attributes.user.email, action = attributes.event.action, weight = risk | SORT risk_total DESC | LIMIT 30`,
+      `FROM ${IDX} | ${TIME} | ${riskScored({ by: ACTOR_KEYS, aggs: 'last_ts = MAX(@timestamp)' })} | ${ACTOR_RESOLVE} | ${SCOPE} | STATS events = SUM(n), risk_total = SUM(risk * n), last_seen = MAX(last_ts) BY actor, actor_scope, attributes.user.email, action = attributes.event.action, weight = risk | SORT risk_total DESC | LIMIT 30`,
       // weight is a group key, but listed as a metric so it right-aligns with the numbers it multiplies.
       ['actor', SCOPE_COL, WHO, 'action'], ['weight', 'events', 'risk_total', 'last_seen'],
       'The receipts behind the leaderboard: for each identity, exactly which actions scored, what each one weighed, how many times, and when it last happened. Risk total is weight × events, the same quantity the leaderboard sums. This is what turns a score into evidence. Click an email to pin that identity across the suite.'),

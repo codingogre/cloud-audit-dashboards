@@ -19,17 +19,34 @@
  * That last row is the only way a panel on a now-1h dashboard can show a 7-day baseline. It was read
  * from the 9.6 source (es_query_parser.ts / esql_query_parser.ts).
  *
- * QUERY SHAPE decides cost far more than window size on the audit stream. Three rules, each measured:
+ * QUERY SHAPE decides cost far more than window size on the audit stream. Measured on the 2.6M-event
+ * perf replica (`./audit --perf`), alternating runs on a quiet cluster:
  *
- *   1. Lead with a positive, pushable term; never lead with a negation. NOISE is all negation, and a
- *      negation cannot push down to the index, so it is evaluated per document: on one day,
- *      `== "access_granted"` ran in 3.9s and `NOT (... IN ...)` over a same-sized result took >60s.
- *   2. Group on real keyword fields, derive afterwards. STATS BY attributes.user.email is ~4.3x faster
- *      than STATS BY the actor COALESCE (42ms vs 180ms over 24h; 468ms vs 2,074ms over a much
- *      larger document set), because a computed value gives up global ordinals.
- *   3. A panel that measures presence does not take the noise gate. access_granted is emitted
+ *   1. A CASE with two or more conditions never runs per document. It costs ~4µs per row it is
+ *      evaluated on — whether or not it feeds a group-by, and nesting it as one-condition CASEs does
+ *      not help — while each of its conditions alone, a one-condition CASE, COALESCE, boolean
+ *      expressions, GROK and the whole NOISE negation cost next to nothing. Over 7 days,
+ *      CASE(client.ip IS NULL, …, client.geo.country_iso_code IS NOT NULL, …, …) took 11.2s; either
+ *      condition alone took 90ms. Every multi-branch fragment — RISK, BAND, VERB, OBJ_TYPE, ORG,
+ *      SCOPE — is that shape.
+ *   2. So count first, by the raw keyword fields the fragment reads, and derive afterwards:
+ *      `STATS n = COUNT(*) BY <raw fields> | <fragment, unchanged> | STATS SUM(n) BY <derived>`
+ *      (MIN/MAX a carried timestamp, COUNT_DISTINCT a carried key). The fragment text stays verbatim,
+ *      so the drift check still pins it, and the output is identical: the CASE above went 11.2s →
+ *      0.14s; the Command Center treemap 31s → 0.8s and the band charts 13s → 0.3s over 7 days.
+ *      The CASE still costs per GROUPED row, so group on what it reads and nothing wider: RISK_KEYS
+ *      groups a near-unique payload as a presence boolean. A multi-valued key (event.type on
+ *      Elasticsearch events) is grouped as MV_CONCAT and restored with SPLIT, or a document would
+ *      be counted once per value. A computed group key (the actor COALESCE) is cheap enough —
+ *      183–195ms against 51–53ms for the raw email over 7 days — but only a raw field takes a pill.
+ *   3. A row feed sorts straight after its filter. A Discover session that classifies rows (VERB,
+ *      OBJ_TYPE) puts `SORT @timestamp DESC` (and any LIMIT) before the EVALs, so they run on the
+ *      rows returned rather than on every row matched: searches/04 went 10.6s → 0.18s over 7 days.
+ *   4. A panel that measures presence does not take the noise gate. access_granted is emitted
  *      for every authorised action — often several per request — and it IS a person's activity;
- *      gating it removes the thing the panel exists to show.
+ *      gating it removes the thing the panel exists to show. (Not for speed: the null-guarded gate
+ *      itself costs 45–56ms over 7 days. An earlier note blamed the negation for this file's slow
+ *      queries; that was the multi-condition CASE of rule 1.)
  */
 
 import { cfg, nsId } from './env.mjs';
@@ -190,7 +207,7 @@ export const OBJ = `${OBJ_GROK} | ${OBJ_TYPE} | ${OBJ_NAME}`;
 /**
  * Light version for the KPIs, which need a distinct-object count over the FULL read volume
  * (every Kibana event in the window) rather than the few a change filter leaves. One GROK instead
- * of five; measured at 0.41s over 24h.
+ * of five; measured at 68–85ms over 24h on the perf replica.
  */
 export const OBJ_ID =
   `${G(String.raw`\[(?:id|workflowId)=%{DATA:g_id}(?:,|\])`)} ` +
@@ -256,8 +273,11 @@ export const RISK =
  * A scale whose floor is half its span does not survive an analyst reading it. Mean severity is
  * the same information, stated on a scale the weights table explains directly.
  */
-/** STATS cannot divide two of its own aggregates, so the ratio is an EVAL afterwards. */
-export const RISK_INDEX_STATS = `risk_total = SUM(risk), scoring_events = COUNT(*)`;
+/**
+ * STATS cannot divide two of its own aggregates, so the ratio is an EVAL afterwards. Weighted by `n`
+ * because it runs over the grouped rows riskScored() leaves, not over documents (see RISK_KEYS).
+ */
+export const RISK_INDEX_STATS = `risk_total = SUM(risk * n), scoring_events = SUM(n)`;
 export const RISK_INDEX_EVAL  =
   `EVAL mean_severity = ROUND(1.0 * risk_total / scoring_events, 1)`;
 
@@ -278,7 +298,8 @@ export const SCOPE =
 /**
  * Pushed ahead of the ACTOR/RISK EVALs so scoring runs over the few events that can score
  * instead of the whole window. Without it the leaderboard took 16s because COALESCE/CASE were
- * evaluated on every event before `WHERE risk > 0` pruned anything.
+ * evaluated on every event before `WHERE risk > 0` pruned anything (re-measured on the perf replica:
+ * 7.7–13.6s at 24h without it, 0.4s with it — it works by cutting the rows that reach RISK's CASE).
  *
  * This is the disjunction of the CASE conditions in RISK and must stay in sync with it. The
  * three change branches collapse to one clause here because they share CHANGE_PRED — the same
@@ -294,6 +315,32 @@ export const RISK_PREFILTER =
   'OR attributes.event.outcome == "failure" ' +
   'OR attributes.event.action IN ("invalidate_apikeys","anonymous_access_denied") ' +
   `OR ${CHANGE_PRED}`;
+
+/**
+ * Every raw field RISK reads, as STATS keys, so a scoring panel counts first and scores the grouped
+ * rows (QUERY SHAPE rules 1–2): `RISK_PREFILTER | STATS n = COUNT(*) BY …, RISK_KEYS | RISK_RESTORE |
+ * RISK | WHERE risk > 0`, then every count downstream is SUM(n) and every severity SUM(risk * n).
+ * Add a field here whenever RISK (or CHANGE_PRED inside it) starts reading one.
+ *
+ * Two fields are not grouped as they are, and RISK_RESTORE puts them back for RISK to read:
+ *
+ *   attributes.event.type is MULTI-valued on Elasticsearch events, and STATS BY a multi-valued field
+ *   would count such a document once per value. It is grouped as one joined string and restored as
+ *   the same multi-value, which keeps CHANGE_PRED's `IN` and `==` returning null on those rows exactly
+ *   as on the raw field (no ECS event.type value contains a comma).
+ *
+ *   attributes.elasticsearch.audit.security_config_change is a JSON payload that is close to unique per
+ *   event, and RISK only asks whether it is present. Grouping on the payload multiplied the rows that
+ *   reach RISK sixfold (18,001 against 2,936 for the hourly risk chart over 7d on the perf replica), and
+ *   a CASE costs per ROW after a STATS as well as before it. So it is grouped as the boolean `scc`, and
+ *   restored as the placeholder "present" or null: after RISK_RESTORE that field answers IS NOT NULL
+ *   correctly and nothing else — a panel that shows the payload must not read it from these rows.
+ */
+export const RISK_KEYS =
+  'attributes.event.action, scc = attributes.elasticsearch.audit.security_config_change IS NOT NULL, ' +
+  'attributes.event.outcome, resource.attributes.service.name, et = MV_CONCAT(attributes.event.type, ",")';
+export const RISK_RESTORE =
+  'EVAL attributes.event.type = SPLIT(et, ","), attributes.elasticsearch.audit.security_config_change = CASE(scc, "present")';
 
 /**
  * The noise vocabulary, shared by NOISE and BAND so the gate and the bands can never disagree.
@@ -769,9 +816,9 @@ export const NAV_H = 3;
  * 24h exceeds 110s" — and those numbers were real but misattributed. They were taken back to back:
  * a synchronous ES|QL query outlives the client that gave up on it and cannot be cancelled on
  * serverless, so a measurement taken after a timeout may have been sharing the cluster with it.
- * Re-measured on a quiet cluster, the busiest-identities panel returns in 221ms over a
- * high-volume window. 1h stays the default because it is the readable view of "right now", and
- * because wide *unfiltered* group-bys are still the expensive case — see QUERY SHAPE above.
+ * Re-measured on the perf replica, the busiest-identities panel returns in 84–106ms over 24h and
+ * ~0.3s over 7 days. 1h stays the default because it is the readable view of "right now"; what makes
+ * a wide window expensive is query shape, not width — see QUERY SHAPE above.
  * `./audit --lint` times every query, so this claim is checked rather than asserted.
  */
 export const dash = (id, title, description, panels, timeFrom = 'now-1h') => ({

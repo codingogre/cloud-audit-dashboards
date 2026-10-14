@@ -30,6 +30,13 @@ const BAND_ORDER =
  * noise bands take the warm, low-salience hues so the eye goes to Signal first; no grey, because a
  * grey that reads on white sits on the gridlines in dark theme.
  */
+/**
+ * The two raw fields BAND reads. BAND is a five-way CASE, and a CASE with two or more conditions costs
+ * ~4µs per event (panels.mjs, QUERY SHAPE), so every band panel counts BY these first and classifies
+ * the few hundred grouped rows: the share tile went from 2.8s to 0.05s over 24h on the perf replica.
+ */
+const BAND_KEYS = 'attributes.elasticsearch.audit.action, attributes.event.action';
+
 const BAND_COLORS = { 'Signal': PALETTE[0], 'Auth success': PALETTE[1], 'Query internals': PALETTE[6], 'Infra health': PALETTE[7] };
 
 /**
@@ -59,14 +66,14 @@ export function build() {
     kpi(16, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE attributes.event.action == "authentication_success" | STATS \`Auth success\` = COUNT(*)`, 'Auth success',
       'Successful authentication events. Elasticsearch logs one per authenticated request, so credentials making many calls generate most of them.'),
     // The positive LIKE/== term is a superset of the query-internals band and pushes down to the
-    // index; BAND then decides membership exactly, so this tile cannot drift from the charts. BAND
-    // alone over the whole window measured 1.7s; with the prefilter, 0.6s. If NOISE_ES_QUERY_INTERNALS
-    // ever gains an action outside indices:data/read/*, widen the prefilter with it.
-    kpi(24, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE attributes.elasticsearch.audit.action LIKE "indices:data/read/*" OR attributes.event.action == "connection_granted" | ${BAND} | WHERE band == "query-noise" | STATS \`Query internals\` = COUNT(*)`, 'Query internals',
+    // index; BAND then decides membership exactly, over the grouped rows, so this tile cannot drift
+    // from the charts. If NOISE_ES_QUERY_INTERNALS ever gains an action outside indices:data/read/*,
+    // widen the prefilter with it. COALESCE because SUM over no rows is null, where COUNT was 0.
+    kpi(24, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE attributes.elasticsearch.audit.action LIKE "indices:data/read/*" OR attributes.event.action == "connection_granted" | STATS n = COUNT(*) BY ${BAND_KEYS} | ${BAND} | WHERE band == "query-noise" | STATS q = SUM(n) | EVAL \`Query internals\` = COALESCE(q, 0) | KEEP \`Query internals\``, 'Query internals',
       'Search phases, reader contexts, point-in-time and transport connection_granted: the machinery behind a query, not a decision anyone made.'),
     kpi(32, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE attributes.elasticsearch.audit.action IN ("cluster:monitor/main","elastic.maintenance") | STATS \`Infra health\` = COUNT(*)`, 'Infra health',
       'Health-check and platform maintenance traffic.'),
-    kpi(40, 0, 8, 5, `FROM ${IDX} | ${TIME} | ${BAND} | STATS total = COUNT(*), sig = COUNT(CASE(band == "signal", 1, null)) | EVAL \`Signal share\` = ROUND(sig * 1.0 / total, 4) | KEEP \`Signal share\``, 'Signal share',
+    kpi(40, 0, 8, 5, `FROM ${IDX} | ${TIME} | STATS n = COUNT(*) BY ${BAND_KEYS} | ${BAND} | STATS total = SUM(n), sig = SUM(CASE(band == "signal", n, 0)) | EVAL \`Signal share\` = ROUND(sig * 1.0 / total, 4) | KEEP \`Signal share\``, 'Signal share',
       'Percentage of the firehose that survives the noise gate. The lower this is, the more the other dashboards are earning their keep.', { fmt: 'percent', dec: 2 }),
     md(0, 5, 48, 7, VOL_NOTE),
     // vega/07 draws one rect per band per bucket, and JSON has nowhere to say why it looks as it
@@ -87,11 +94,11 @@ export function build() {
     // so the stacked-volume reading appeared twice. Percentages show what the volume chart cannot —
     // whether a spike was more noise or more signal.
     xy(0, 25, 24, 12, 'Band share over time',
-      `FROM ${IDX} | ${TIME} | ${BAND} | STATS events = COUNT(*) BY ${BUCKET}, band | ${BAND_ORDER} | ${BAND_LABEL}`,
+      `FROM ${IDX} | ${TIME} | STATS n = COUNT(*) BY ${BUCKET}, ${BAND_KEYS} | ${BAND} | STATS events = SUM(n) BY \`${BUCKET}\`, band | ${BAND_ORDER} | ${BAND_LABEL}`,
       'events', 'Each bucket’s events as 100%, split by band. A rising Signal share means activity, not housekeeping, is driving the volume.',
       { kind: 'bar_percentage', breakdown: 'band', colors: BAND_COLORS }),
-    // Grouped on the raw keyword, relabelled after: a CASE before the STATS would group on a computed
-    // value and give up global ordinals (panels.mjs rule 2).
+    // Grouped on the raw keyword, relabelled after: the two-condition CASE runs on the grouped rows,
+    // not on every event (panels.mjs QUERY SHAPE rules 1–2).
     xy(24, 25, 24, 12, 'Audit volume by source service',
       `FROM ${IDX} | ${TIME} | STATS events = COUNT(*) BY ${BUCKET}, source = resource.attributes.service.name | EVAL source = CASE(source == "serverless-elasticsearch", "Elasticsearch", source == "serverless-kibana", "Kibana", source)`,
       'events', 'Elasticsearch versus Kibana audit volume over time. Elasticsearch audits every transport action, so it usually dwarfs Kibana.',

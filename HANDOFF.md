@@ -67,12 +67,13 @@ before believing any timing.
 
 **The old `now-1h` "cliff" was measured under the wrong conditions.** The block further down that
 said 2h/3h/4h exceed 60s and 24h exceeds 110s was taken back to back, when an earlier timed-out
-query could still have been sharing the cluster. On a quiet cluster the busiest-identities panel
-returns in 221ms over a larger document set than any of the 2h–4h windows that had exceeded 60s.
-What actually costs is query **shape** — see `esql/fragments.md` → *Query shape
-decides cost*. The biggest single win measured: aggregate on raw fields first, apply
-`CRED`/`VERB`/`OBJ_TYPE` to the grouped rows — the Actor 360 flow went 2,839ms → 145ms with identical
-output, group for group.
+query could still have been sharing the cluster. On the 2.6M-event perf replica the busiest-identities
+panel returns in ~0.1s over 24h and ~0.3s over 7 days. What actually costs is query **shape** — see
+`esql/fragments.md` → *Query shape decides cost*: a `CASE` with two or more conditions costs ~4µs per
+row it runs on (the noise gate's negation, once blamed, is cheap). So every multi-branch fragment
+(`RISK`, `BAND`, `VERB`, `OBJ_TYPE`, …) runs on rows already counted by the raw fields it reads, and
+the output is identical: the Command Center treemap went 31s → 0.8s over 7 days, the Actor 360 flow
+2,839ms → 145ms over 24h.
 
 **An ES|QL Vega spec always follows the time picker; a DSL spec only does if you ask.** In
 `esql_query_parser.ts` omitting `%timefield%` does not opt out — Kibana looks the time field up and

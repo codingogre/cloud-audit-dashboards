@@ -84,7 +84,7 @@ export function build() {
     // A bare 0 here meant either "nobody travelled" or "only one country is visible at all", and those
     // need opposite readings — so the secondary says which. Grouped on the raw email rather than the
     // actor COALESCE: the WHERE already requires an email, so they are the same identity, and the raw
-    // keyword keeps global ordinals. STATS over zero rows still returns one row (maxc null), which is
+    // keyword groups faster (QUERY SHAPE rule 2). STATS over zero rows still returns one row (maxc null), which is
     // what lets the first CASE branch fire on an empty window. The phrases stay ~16 characters: at a
     // 1440px viewport the tile is ~210px wide and "everyone from one country" was cut mid-word.
     kpi(40, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE attributes.user.email IS NOT NULL AND client.geo.country_iso_code IS NOT NULL | STATS c = COUNT_DISTINCT(client.geo.country_iso_code) BY attributes.user.email | STATS \`Multi-country people\` = COUNT(*) WHERE c > 1, maxc = MAX(c) | EVAL detail = CASE(maxc IS NULL, "no person placed", maxc < 2, "one country each", "in 2+ countries") | KEEP \`Multi-country people\`, detail`, 'Multi-country people',

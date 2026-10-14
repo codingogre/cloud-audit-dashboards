@@ -134,6 +134,26 @@ half cannot drift. `saved_object_create/update/delete` dropped out of the explic
 `CHANGE_PRED` subsumes them; net selectivity improves, because this also stops evaluating the
 point-in-time events that used to reach the CASE only to score 0.
 
+### Counted, then scored
+
+`RISK` is a seven-branch `CASE`, so a scoring panel never evaluates it per event (see *Query shape
+decides cost*). It counts by the raw fields `RISK` reads, restores them, and scores the grouped rows;
+every count downstream is then `SUM(n)` and every severity `SUM(risk * n)`:
+
+```esql
+| <RISK_PREFILTER>
+| STATS n = COUNT(*) BY <panel keys>,
+    attributes.event.action, scc = attributes.elasticsearch.audit.security_config_change IS NOT NULL,
+    attributes.event.outcome, resource.attributes.service.name, et = MV_CONCAT(attributes.event.type, ",")
+| EVAL attributes.event.type = SPLIT(et, ","),
+       attributes.elasticsearch.audit.security_config_change = CASE(scc, "present")
+| <RISK>
+| WHERE risk > 0
+```
+
+After the restore, `security_config_change` answers `IS NOT NULL` correctly and nothing else — a
+panel that shows the payload reads it from the events, not from these rows.
+
 ### Mean severity
 
 On the same 0–50 scale as the weights. This replaced a "normalised 0–100 index" whose floor was
@@ -141,7 +161,7 @@ On the same 0–50 scale as the weights. This replaced a "normalised 0–100 ind
 advertised range was unreachable.
 
 ```esql
-| STATS risk_total = SUM(risk), scoring_events = COUNT(*) BY actor
+| STATS risk_total = SUM(risk * n), scoring_events = SUM(n) BY actor   // over the counted rows above
 | EVAL mean_severity = ROUND(1.0 * risk_total / scoring_events, 1)
 ```
 
@@ -273,16 +293,22 @@ It references only raw fields, so it works on rows already grouped by those fiel
 
 ## Query shape decides cost
 
-Each pair measured side by side on the same window:
+Measured on the 2.6M-event perf replica (`./audit --perf`), alternating runs on a quiet cluster.
 
 | Rule | Measurement |
 | --- | --- |
-| **Aggregate on raw fields first, derive afterwards.** `STATS … BY` the raw fields, then apply `CRED`/`VERB`/`OBJ_TYPE` to the grouped rows, then `STATS SUM` by the derived columns. The fragments still appear verbatim, so the drift check still pins them. | Actor 360's flow query over a fixed 24h: **2,839ms → 145ms**, identical output |
-| **Group on real keyword fields, not a computed identity.** A computed value gives up global ordinals. | `BY attributes.user.email` vs `BY` the actor COALESCE: 42ms vs 180ms (24h); 468ms vs 2,074ms (a much larger document set) |
-| **Lead with a positive, pushable term.** A negation cannot push down to the index, so the null-guarded noise gate is evaluated per document. | on one day, `== "access_granted"` 3.9s; `NOT (... IN ...)` over a same-sized result >60s |
-| **A panel that measures presence takes no noise gate.** `access_granted` *is* activity, so gating it removes the thing being measured. | a 7-day unfiltered punchcard: 11.6s without the gate, >120s with it |
-| **Sub-aggregations over a wide window cost the scan.** A bare `terms` reads ordinals; any sub-aggregation visits every document. | 7-day `terms` by email: 270ms bare, ~4s with two `cardinality` sub-aggs, ~6s with `terms` sub-aggs |
+| **A `CASE` with two or more conditions never runs per document.** It costs ~4µs per row it is evaluated on, whether or not it feeds a group-by; nesting it as one-condition `CASE`s does not help. Each condition alone, a one-condition `CASE`, `COALESCE`, boolean expressions, `GROK` and the whole noise gate are cheap. `RISK`, `BAND`, `VERB`, `OBJ_TYPE`, `ORG` and `SCOPE` are all this shape. | 7 days: `CASE(client.ip IS NULL, …, client.geo.country_iso_code IS NOT NULL, …, …)` 11.2s; either condition alone 90ms |
+| **Count first by the raw fields a fragment reads, derive afterwards.** `STATS n = COUNT(*) BY` the raw keyword fields, apply the fragment unchanged to the grouped rows, then `STATS SUM(n) BY` what it derived (`MIN`/`MAX` a carried timestamp, `COUNT_DISTINCT` a carried key). The fragments still appear verbatim, so the drift check still pins them, and the output is identical. | the `CASE` above: 11.2s → 0.14s. Command Center treemap 31s → 0.8s, band charts 13s → 0.3s, object/verb heatmap 8.9s → 0.4s (7 days); Actor 360 flow 2,839ms → 145ms (24h) |
+| **Keep the grouped rows few.** The `CASE` still costs per grouped row, so group on what it reads and nothing wider. `RISK_KEYS` groups `security_config_change` — a near-unique JSON payload — as a presence boolean, because `RISK` only asks `IS NOT NULL`. | hourly risk chart, 7 days: 18,001 grouped rows 1.7s, 2,936 rows 0.27s |
+| **A multi-valued key is grouped joined.** `attributes.event.type` is multi-valued on Elasticsearch events; `STATS BY` it would count a document once per value. Group `et = MV_CONCAT(attributes.event.type, ",")` and restore it with `EVAL attributes.event.type = SPLIT(et, ",")`, which keeps `IN`/`==` returning null on those rows exactly as on the raw field. | identical rows on every risk panel, 24h and 7d |
+| **A row feed sorts straight after its filter.** A Discover session that classifies rows puts `SORT @timestamp DESC` (and any `LIMIT`) before the `EVAL`s, so they run on the rows returned. | `searches/04` 10.6s → 0.18s, `searches/01` 3.2s → 0.3s (7 days) |
+| **Group on raw keyword fields where you can.** A computed key such as the actor `COALESCE` is cheap enough, but only a raw field can take a filter pill. | 7 days: `BY attributes.user.email` 51–53ms, `BY` the actor COALESCE 183–195ms |
+| **A panel that measures presence takes no noise gate.** `access_granted` *is* activity, so gating it removes the thing being measured. This is about meaning, not speed: the null-guarded gate itself is cheap. | 7 days: the full noise gate 42–56ms; `== "access_granted"` 25–38ms |
+| **Sub-aggregations over a wide window cost the scan.** A bare `terms` reads ordinals; any sub-aggregation visits every document. | earlier measurement on the live stream: 7-day `terms` by email 270ms bare, ~4s with two `cardinality` sub-aggs, ~6s with `terms` sub-aggs. On the replica (one email) all three ran in 25–143ms, so re-check on a tenant with many users |
 | **Low-cardinality `COUNT_DISTINCT` takes a precision threshold.** The default sizes the sketch for thousands of values. | `COUNT_DISTINCT(field, 100)` is exact for `event.action` (tens of values) |
+
+A `STATS` with no `BY` returns null, not 0, for `SUM` over no rows, where `COUNT(*)` returned 0. A KPI
+rewritten to `SUM(n)` `COALESCE`s after the `STATS` so an empty window still reads 0.
 
 ## Geo (populated by the audit-scoped final_pipeline)
 

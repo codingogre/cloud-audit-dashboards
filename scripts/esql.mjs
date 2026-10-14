@@ -35,13 +35,12 @@ const TIME_BOUND = 'WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart';
  * linting them verbatim runs an unbounded scan over the whole data stream, which is the one thing
  * Kibana never does. Bounding them here validates the query as it is actually executed.
  *
- * This is not cosmetic. The raw-feed sessions ran in ~700ms while their noise gate was the broken
- * `NOT (field IN (...))` form, because that dropped every Kibana row through a cheap term filter.
- * The correct, null-guarded gate is unbounded far slower — >75s — while the same query at a 1h
- * bound returns in ~630ms. The cost is the NEGATION, not the LIKE: a negation does not push down
- * to the index, so it is evaluated per document (`attributes.elasticsearch.audit.action` is a real
- * keyword, not flattened, and removing the LIKE clauses does not help). Measured side by side on
- * one day: `== "access_granted"` 3.9s, `NOT (... IN ...)` over a same-sized result >60s.
+ * This is not cosmetic: an unbounded scan is not what any viewer runs, so its timing would mislead.
+ * An earlier note here blamed the null-guarded noise gate — "a negation cannot push down, so it is
+ * evaluated per document" — for a >75s unbounded raw feed. Re-measured on the 2.6M-event perf
+ * replica, the raw signal feed returns in 30–57ms over 1h and 37–63ms over 7 days, and the full NOISE
+ * gate costs 45–56ms over 7 days: the negation is cheap. What is expensive is a CASE with two or
+ * more conditions evaluated per row (QUERY SHAPE in panels.mjs).
  */
 export function bounded(q) {
   if (/\?_tstart|\?_tend|@timestamp\s*[<>]/.test(q)) return q;
