@@ -26,17 +26,15 @@ const LOCATION =
 
 /**
  * The note beside the map. Kept short on purpose: at 1920px a longer draft already filled the panel,
- * at 1440px it is ~350px wide, and a code span (the full pipeline name used to be one) cannot wrap,
- * so a longer note scrolls or clips. The NAT sentence is about `client.ip`, because the tables beside
+ * at 1440px it is ~320px wide (rendered: a three-paragraph draft's last line sat on the border), and a
+ * code span (the full pipeline name used to be one) cannot wrap, so a longer note scrolls or clips. The NAT sentence is about `client.ip`, because the tables beside
  * it show real client IPs in 100.64/10 — the old "100.64 is the proxy" wording read as contradicting them.
  */
 const GEO_NOTE = `**Location is \`client.ip\`**, the real client from \`network.forwarded_ip\`,
-geo-resolved at ingest. \`source.ip\` is a proxy hop, never a location.
+geo-resolved at ingest, so older events have none. \`source.ip\` is only a proxy hop.
 
-**Unplaceable IPs are expected:** a client behind carrier or private NAT forwards a
-\`100.64.x.x\` or \`10.x.x.x\` address no geoip database can locate.
-
-**Forward-only:** older events have no geo.`;
+**Unplaceable IPs are expected:** clients behind carrier or private NAT forward
+\`100.64.x.x\` or \`10.x.x.x\` addresses no geoip database can place.`;
 
 /**
  * Pie slice colours, set on the panel here because pie() takes no colour option. The default
@@ -48,7 +46,12 @@ const UNPLACEABLE = 'IP not geolocatable';
 const NO_IP = 'No client IP';
 const geoPie = (p) => {
   Object.assign(p.config, {
-    legend: { visibility: 'hidden' },
+    // A legend as well as slice labels: "No client IP" is a ~2% sliver that lands at the bottom of
+    // the ring, and at h=9 Lens drops its outside label for want of room below — with the legend
+    // hidden that category vanished from the panel. The API's pie legend takes no values option
+    // (`values` is rejected), so the legend names it and its share is on hover. Size 'l' because
+    // the default width cut "IP not geolocatable" to "IP not geolo…" (the API takes s/m/l/xl/auto).
+    legend: { visibility: 'visible', position: 'right', size: 'l' },
     styling: {
       ...p.config.styling,
       // Lens defaulted to 2 decimals on some slices and 1 on others (39.3% beside 58.29%).
@@ -82,8 +85,9 @@ export function build() {
     // need opposite readings — so the secondary says which. Grouped on the raw email rather than the
     // actor COALESCE: the WHERE already requires an email, so they are the same identity, and the raw
     // keyword keeps global ordinals. STATS over zero rows still returns one row (maxc null), which is
-    // what lets the first CASE branch fire on an empty window.
-    kpi(40, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE attributes.user.email IS NOT NULL AND client.geo.country_iso_code IS NOT NULL | STATS c = COUNT_DISTINCT(client.geo.country_iso_code) BY attributes.user.email | STATS \`Multi-country people\` = COUNT(*) WHERE c > 1, maxc = MAX(c) | EVAL detail = CASE(maxc IS NULL, "no person geo-resolved", maxc < 2, "everyone from one country", "seen from 2+ countries") | KEEP \`Multi-country people\`, detail`, 'Multi-country people',
+    // what lets the first CASE branch fire on an empty window. The phrases stay ~16 characters: at a
+    // 1440px viewport the tile is ~210px wide and "everyone from one country" was cut mid-word.
+    kpi(40, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE attributes.user.email IS NOT NULL AND client.geo.country_iso_code IS NOT NULL | STATS c = COUNT_DISTINCT(client.geo.country_iso_code) BY attributes.user.email | STATS \`Multi-country people\` = COUNT(*) WHERE c > 1, maxc = MAX(c) | EVAL detail = CASE(maxc IS NULL, "no person placed", maxc < 2, "one country each", "in 2+ countries") | KEEP \`Multi-country people\`, detail`, 'Multi-country people',
       'Human identities seen from more than one country in range — the impossible-travel signal. Service credentials are excluded: for machine credentials, multi-region is the normal case, not an anomaly. The line beneath says whether a 0 is a clean reading or just one country in view.',
       { secondary: 'detail' }),
     // The map is a Vega choropleth, not Lens region_map: region_map takes no palette, legend or extent

@@ -270,7 +270,7 @@
         "type": "metric",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.user.email IS NOT NULL AND client.geo.country_iso_code IS NOT NULL | STATS c = COUNT_DISTINCT(client.geo.country_iso_code) BY attributes.user.email | STATS `Multi-country people` = COUNT(*) WHERE c > 1, maxc = MAX(c) | EVAL detail = CASE(maxc IS NULL, \"no person geo-resolved\", maxc < 2, \"everyone from one country\", \"seen from 2+ countries\") | KEEP `Multi-country people`, detail"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.user.email IS NOT NULL AND client.geo.country_iso_code IS NOT NULL | STATS c = COUNT_DISTINCT(client.geo.country_iso_code) BY attributes.user.email | STATS `Multi-country people` = COUNT(*) WHERE c > 1, maxc = MAX(c) | EVAL detail = CASE(maxc IS NULL, \"no person placed\", maxc < 2, \"one country each\", \"in 2+ countries\") | KEEP `Multi-country people`, detail"
         },
         "metrics": [
           {
@@ -366,7 +366,7 @@
         "h": 13
       },
       "config": {
-        "content": "**Location is `client.ip`**, the real client from `network.forwarded_ip`,\ngeo-resolved at ingest. `source.ip` is a proxy hop, never a location.\n\n**Unplaceable IPs are expected:** a client behind carrier or private NAT forwards a\n`100.64.x.x` or `10.x.x.x` address no geoip database can locate.\n\n**Forward-only:** older events have no geo.",
+        "content": "**Location is `client.ip`**, the real client from `network.forwarded_ip`,\ngeo-resolved at ingest, so older events have none. `source.ip` is only a proxy hop.\n\n**Unplaceable IPs are expected:** clients behind carrier or private NAT forward\n`100.64.x.x` or `10.x.x.x` addresses no geoip database can place.",
         "title": "About this data"
       }
     },
@@ -570,7 +570,9 @@
           }
         },
         "legend": {
-          "visibility": "hidden"
+          "visibility": "visible",
+          "position": "right",
+          "size": "l"
         }
       }
     },
