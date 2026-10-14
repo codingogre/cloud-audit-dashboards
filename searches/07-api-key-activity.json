@@ -1,16 +1,41 @@
 {
-  "title": "[Audit] API key activity and ownership",
-  "description": "Named API keys, the human they are attributed to, and their request volume, busiest first.",
-  "esql": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE attributes.api_key.name IS NOT NULL | STATS events = COUNT(*), first_seen = MIN(@timestamp), last_seen = MAX(@timestamp), ips = COUNT_DISTINCT(client.ip), indices = COUNT_DISTINCT(attributes.elasticsearch.audit.indices) BY api_key = attributes.api_key.name, key_id = attributes.api_key.id, owner = attributes.user.email | SORT events DESC",
+  "title": "[Audit] API key inventory",
+  "description": "One row per API key id seen in range, busiest first: its name, owner, first and last use, volume, client IP spread and indices touched. A re-issued key keeps its name under a new id, so a name can appear more than once. Owner is the creator's email, which Elasticsearch stamps on events from Elasticsearch API keys; Cloud API keys record no owner.",
+  "esql": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE attributes.api_key.name IS NOT NULL | STATS events = COUNT(*), first_seen = MIN(@timestamp), last_seen = MAX(@timestamp), ips = COUNT_DISTINCT(client.ip), indices = COUNT_DISTINCT(attributes.elasticsearch.audit.indices) BY api_key = attributes.api_key.name, key_id = attributes.api_key.id, owner = attributes.user.email | EVAL owner = COALESCE(owner, \"none recorded\") | KEEP api_key, key_id, owner, first_seen, last_seen, events, ips, indices | SORT events DESC | RENAME api_key AS `API key`, key_id AS `Key ID`, owner AS Owner, first_seen AS `First seen`, last_seen AS `Last seen`, events AS Events, ips AS IPs, indices AS Indices",
   "columns": [
-    "api_key",
-    "key_id",
-    "owner",
-    "events",
-    "first_seen",
-    "last_seen",
-    "ips",
-    "indices"
+    "API key",
+    "Key ID",
+    "Owner",
+    "First seen",
+    "Last seen",
+    "Events",
+    "IPs",
+    "Indices"
   ],
+  "sort": [
+    [
+      "Events",
+      "desc"
+    ]
+  ],
+  "grid": {
+    "columns": {
+      "API key": {
+        "width": 340
+      },
+      "Key ID": {
+        "width": 230
+      },
+      "Events": {
+        "width": 110
+      },
+      "IPs": {
+        "width": 90
+      },
+      "Indices": {
+        "width": 110
+      }
+    }
+  },
   "hide_chart": true
 }
