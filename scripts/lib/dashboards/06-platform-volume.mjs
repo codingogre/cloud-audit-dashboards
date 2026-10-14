@@ -33,6 +33,33 @@ const BAND_ORDER =
 const BAND_COLORS = { 'Signal': PALETTE[0], 'Auth success': PALETTE[1], 'Query internals': PALETTE[6], 'Infra health': PALETTE[7] };
 
 /**
+ * Band share shows each bucket as 100%, so a bucket of six events stood exactly as tall as one of 7,000
+ * (rendered: six minutes of solid "Query internals" during a lull). QUIET_BUCKETS drops a bucket whose
+ * total is under a tenth of the window's median bucket. That needs a window-wide figure beside per-bucket
+ * rows, and INLINE STATS re-runs the scan (measured 0.5s → 2.2s at 7d), so it is done by hand over the
+ * already-aggregated rows: one row per bucket (total + its band counts packed into a multi-value), one
+ * row for the window (the median + every bucket packed), then expanded back. It runs over at most
+ * 75 × 4 rows, so the 7-day cost is unchanged (~0.58s either way, alternating runs on the perf replica).
+ * The bucket comes back under the column name xy() plots, as a datetime.
+ */
+const QUIET_BUCKETS =
+  'STATS total = SUM(events), parts = VALUES(CONCAT(band, "=", TO_STRING(events))) BY ts ' +
+  '| STATS typical = MEDIAN(total), b = VALUES(CONCAT(TO_STRING(ts), "#", TO_STRING(total), "#", MV_CONCAT(parts, ";"))) ' +
+  '| MV_EXPAND b | DISSECT b "%{ts}#%{total}#%{parts}" | WHERE TO_LONG(total) * 10 >= typical ' +
+  '| EVAL part = SPLIT(parts, ";") | MV_EXPAND part | DISSECT part "%{band}=%{events}" ' +
+  `| EVAL \`${BUCKET}\` = TO_DATETIME(ts), events = TO_LONG(events) | KEEP \`${BUCKET}\`, band, events`;
+
+/**
+ * The top identity is usually an organisation-level Cloud API key, which the stream records by id alone:
+ * 93% of all events under a bare "_4KEOq…", with nothing saying what it is. vega/02 marks the same
+ * principal the same way. realm = MIN(user.domain) rather than a per-event boolean: "_cloud_api_key"
+ * sorts first among the realms, and the MIN measured 0.36 → 0.49s at 7d where the boolean took 0.78s.
+ * Only a row with no email and no named-key traffic is marked; the CASE runs on the grouped rows.
+ */
+const CLOUD_KEY_MARK =
+  'EVAL actor = CASE(realm == "_cloud_api_key" AND actor_kind == "service" AND via_key == 0, CONCAT(actor, " · Cloud API key"), actor)';
+
+/**
  * The note is a full-width strip rather than a side column: at 10 columns every inline code chip
  * wrapped onto its own line and the API-key caveat — the sentence that matters most — was clipped
  * off the bottom. Bands are bold run-ins named exactly as the legends and KPI tiles name them.
@@ -79,16 +106,22 @@ export function build() {
     // it renders the bare Vega "Error".
     vega(0, 12, 30, 13, '07-noise-ratio-stream', 'Signal vs noise over time',
       'Audit events per time bucket, stacked by band, so the top edge is the whole firehose and Signal sits on the baseline. Hover a segment for its band and the bucket total.'),
-    table(30, 12, 18, 13, 'API key throughput',
-      `FROM ${IDX} | ${TIME} | WHERE attributes.api_key.name IS NOT NULL | STATS events = COUNT(*) BY attributes.api_key.name | SORT events DESC | LIMIT 12`,
+    // Named keys only, which is why it can be empty while the stream is busy: an organisation-level Cloud
+    // API key — very often the one running this suite — carries no name, and the stream records it by id
+    // alone, so it is on Highest-volume identities, marked, and never here. LIMIT 10, not fitRows(13) = 12:
+    // a twelfth row sat on the panel's bottom edge with no sign whether more followed, and "busiest" with
+    // the count in the description is the honest promise.
+    table(30, 12, 18, 13, 'Busiest named API keys',
+      `FROM ${IDX} | ${TIME} | WHERE attributes.api_key.name IS NOT NULL | STATS events = COUNT(*) BY attributes.api_key.name | SORT events DESC | LIMIT 10`,
       [filterable('attributes.api_key.name')], ['events'],
-      'Events per named API key, busiest first. Click a key to pin it across the suite.'),
+      'The 10 busiest API keys that have a name, by events. Click a key to pin it across the suite. A Cloud API key has no name in the audit stream, so it is not listed here; it appears by id, marked "· Cloud API key", in Highest-volume identities. These counts are the same events as that table\'s Via API key column.',
+      { empty: 'empty without named-key traffic' }),
     // The share view, not a second copy of the stream above: both ran the same BAND × BUCKET query,
     // so the stacked-volume reading appeared twice. Percentages show what the volume chart cannot —
     // whether a spike was more noise or more signal.
     xy(0, 25, 24, 12, 'Band share over time',
-      `FROM ${IDX} | ${TIME} | STATS n = COUNT(*) BY ${BUCKET}, ${BAND_KEYS} | ${BAND} | STATS events = SUM(n) BY \`${BUCKET}\`, band | ${BAND_ORDER} | ${BAND_LABEL}`,
-      'events', 'Each bucket’s events as 100%, split by band. A rising Signal share means activity, not housekeeping, is driving the volume.',
+      `FROM ${IDX} | ${TIME} | STATS n = COUNT(*) BY ts = ${BUCKET}, ${BAND_KEYS} | ${BAND} | STATS events = SUM(n) BY ts, band | ${QUIET_BUCKETS} | ${BAND_ORDER} | ${BAND_LABEL}`,
+      'events', 'Each bucket’s events as 100%, split by band. A rising Signal share means activity, not housekeeping, is driving the volume. A bucket with under a tenth of the window’s typical (median) volume is left blank: a percentage of a handful of events would stand as tall as a busy minute. Signal vs noise over time shows every bucket’s volume.',
       { kind: 'bar_percentage', breakdown: 'band', colors: BAND_COLORS }),
     // Grouped on the raw keyword, relabelled after: the two-condition CASE runs on the grouped rows,
     // not on every event (panels.mjs QUERY SHAPE rules 1–2). Same labels, colours and order as 00's.
@@ -106,9 +139,11 @@ export function build() {
     // came through a named key, which is what the note's creator-stamping caveat asks the reader to
     // check, without splitting a person's row by key (measured: same cost as without it).
     table(24, 37, 24, 12, 'Highest-volume identities',
-      `FROM ${IDX} | ${TIME} | ${ACTOR} | STATS events = COUNT(*), via_key = COUNT(attributes.api_key.name), actions = COUNT_DISTINCT(attributes.event.action) BY actor, actor_kind | ${KIND_REFINE} | SORT events DESC | LIMIT 15`,
-      ['actor', 'actor_kind'], ['events', { column: 'via_key', label: 'Via API key', width: 105 }, 'actions'],
-      'Unfiltered volume leaderboard — this is where the machine traffic shows up. An opaque id is a principal with no email or key name, usually an organisation-level Elastic Cloud API key, which the stream records only by id (often the credential running this suite). Via API key: how many of the row’s events came through a named API key.'),
+      `FROM ${IDX} | ${TIME} | ${ACTOR} | STATS events = COUNT(*), via_key = COUNT(attributes.api_key.name), actions = COUNT_DISTINCT(attributes.event.action), realm = MIN(attributes.user.domain) BY actor, actor_kind | ${KIND_REFINE} | ${CLOUD_KEY_MARK} | SORT events DESC | LIMIT 15`,
+      // Via API key and Actions are narrowed (90 / 72px still hold their headers) so that at a 1440px
+      // viewport the Identity column keeps ~280px: "_4KEOq… · Cloud API key" ran into Kind at 248px.
+      ['actor', 'actor_kind'], ['events', { column: 'via_key', label: 'Via API key', width: 90 }, { column: 'actions', width: 72 }],
+      'Unfiltered volume leaderboard, top identities by events — this is where the machine traffic shows up. An id marked "· Cloud API key" is an organisation-level Elastic Cloud API key, which the stream records only by id (often the credential running this suite); any other opaque id is a principal with no email or key name. Via API key: how many of the row’s events came through a named API key, the same events Busiest named API keys counts.'),
   ];
   return dash('cloud-audit-06-platform-volume', '[Audit] 📊 Platform Volume & API Keys',
     'The unfiltered firehose, quarantined so the forensic dashboards stay readable.', P);

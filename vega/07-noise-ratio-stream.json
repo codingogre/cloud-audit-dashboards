@@ -9,7 +9,8 @@
   "config": {
     "axis": {
       "labelFontSize": 11,
-      "titleFontSize": 11
+      "titleFontSize": 11,
+      "labelFont": "\"Elastic UI Numeric\", Inter, \"system-ui\", Helvetica, Arial, sans-serif"
     },
     "view": {
       "stroke": null
@@ -52,10 +53,19 @@
           "axis": {
             "title": null,
             "labelAngle": 0,
-            "tickCount": 8,
-            "grid": false,
+            "labelAlign": "left",
+            "labelOffset": 4,
+            "labelBaseline": "top",
+            "labelPadding": -12,
+            "labelOverlap": false,
+            "ticks": true,
+            "tickSize": 14,
+            "tickCount": { "expr": "length(data('rows')) && toDate(data('rows')[0].t1) - toDate(data('rows')[0].t0) > 432e5 ? 5 : 15" },
+            "grid": true,
+            "gridOpacity": { "expr": "length(data('rows')) ? 1 : 0" },
+            "tickOpacity": { "expr": "length(data('rows')) ? 1 : 0" },
             "domainOpacity": { "expr": "length(data('rows')) ? 1 : 0" },
-            "labelExpr": "timeFormat(datum.value, hours(datum.value) == 0 && minutes(datum.value) == 0 ? '%b %d' : '%H:%M')"
+            "labelExpr": "datum.index == 0 || (hours(datum.value) == 0 && minutes(datum.value) == 0) ? [timeFormat(datum.value, '%H:%M'), timeFormat(datum.value, '%B %d, %Y')] : timeFormat(datum.value, '%H:%M')"
           }
         },
         "x2": { "field": "ts_end" },
@@ -77,6 +87,7 @@
             "orient": "bottom",
             "direction": "horizontal",
             "symbolType": "circle",
+            "values": { "expr": "split(slice((indexof(pluck(data('rows'), 'band'), 'Signal') >= 0 ? '|Signal' : '') + (indexof(pluck(data('rows'), 'band'), 'Auth success') >= 0 ? '|Auth success' : '') + (indexof(pluck(data('rows'), 'band'), 'Query internals') >= 0 ? '|Query internals' : '') + (indexof(pluck(data('rows'), 'band'), 'Infra health') >= 0 ? '|Infra health' : ''), 1), '|')" },
             "symbolOpacity": { "expr": "length(data('rows')) ? 1 : 0" },
             "labelOpacity": { "expr": "length(data('rows')) ? 1 : 0" },
             "symbolStrokeWidth": 0,

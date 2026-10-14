@@ -323,12 +323,12 @@
         "h": 13
       },
       "config": {
-        "title": "API key throughput",
-        "description": "Events per named API key, busiest first. Click a key to pin it across the suite.",
+        "title": "Busiest named API keys · empty without named-key traffic",
+        "description": "The 10 busiest API keys that have a name, by events. Click a key to pin it across the suite. A Cloud API key has no name in the audit stream, so it is not listed here; it appears by id, marked \"· Cloud API key\", in Highest-volume identities. These counts are the same events as that table's Via API key column. When this panel is empty: empty without named-key traffic.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.api_key.name IS NOT NULL | STATS events = COUNT(*) BY attributes.api_key.name | SORT events DESC | LIMIT 12"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.api_key.name IS NOT NULL | STATS events = COUNT(*) BY attributes.api_key.name | SORT events DESC | LIMIT 10"
         },
         "styling": {
           "density": {
@@ -368,7 +368,7 @@
       },
       "config": {
         "title": "Band share over time",
-        "description": "Each bucket’s events as 100%, split by band. A rising Signal share means activity, not housekeeping, is driving the volume.",
+        "description": "Each bucket’s events as 100%, split by band. A rising Signal share means activity, not housekeeping, is driving the volume. A bucket with under a tenth of the window’s typical (median) volume is left blank: a percentage of a handful of events would stand as tall as a busy minute. Signal vs noise over time shows every bucket’s volume.",
         "type": "xy",
         "axis": {
           "x": {
@@ -392,7 +392,7 @@
             "type": "bar_percentage",
             "data_source": {
               "type": "esql",
-              "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS n = COUNT(*) BY BUCKET(@timestamp, 75, ?_tstart, ?_tend), attributes.elasticsearch.audit.action, attributes.event.action, kib_internal = (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\",\"space_get\",\"space_find\") OR (attributes.event.action == \"http_request\" AND attributes.url.original IS NOT NULL AND attributes.url.original RLIKE \"https?://[^/]+(/s/[^/]+)?/(internal/|api/content_management/rpc/(get|search|mget|bulkGet)).*\") OR (attributes.event.action IN (\"saved_object_get\",\"saved_object_resolve\",\"saved_object_find\") AND attributes.kibana.saved_object.id IS NOT NULL AND attributes.kibana.saved_object.id LIKE \"cloud-audit-*\")) | EVAL band = CASE(attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\"), \"infra-noise\", attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/msearch*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/scroll*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/esql*\" OR attributes.elasticsearch.audit.action LIKE \"indices:admin/esql/*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/field_caps*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/async_search/*\" OR attributes.elasticsearch.audit.action LIKE \"indices:admin/resolve/*\" OR attributes.elasticsearch.audit.action == \"indices:admin/shards/search_shards\", \"query-noise\", kib_internal, \"query-noise\", attributes.event.action == \"connection_granted\", \"query-noise\", attributes.event.action == \"authentication_success\", \"authn-volume\", \"signal\") | STATS events = SUM(n) BY `BUCKET(@timestamp, 75, ?_tstart, ?_tend)`, band | EVAL ord = CASE(band == \"signal\", 0, band == \"authn-volume\", 1, band == \"query-noise\", 2, 3) | SORT ord | DROP ord | EVAL band = CASE(band == \"signal\", \"Signal\", band == \"authn-volume\", \"Auth success\", band == \"query-noise\", \"Query internals\", \"Infra health\")"
+              "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS n = COUNT(*) BY ts = BUCKET(@timestamp, 75, ?_tstart, ?_tend), attributes.elasticsearch.audit.action, attributes.event.action, kib_internal = (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\",\"space_get\",\"space_find\") OR (attributes.event.action == \"http_request\" AND attributes.url.original IS NOT NULL AND attributes.url.original RLIKE \"https?://[^/]+(/s/[^/]+)?/(internal/|api/content_management/rpc/(get|search|mget|bulkGet)).*\") OR (attributes.event.action IN (\"saved_object_get\",\"saved_object_resolve\",\"saved_object_find\") AND attributes.kibana.saved_object.id IS NOT NULL AND attributes.kibana.saved_object.id LIKE \"cloud-audit-*\")) | EVAL band = CASE(attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\"), \"infra-noise\", attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/msearch*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/scroll*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/esql*\" OR attributes.elasticsearch.audit.action LIKE \"indices:admin/esql/*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/field_caps*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/async_search/*\" OR attributes.elasticsearch.audit.action LIKE \"indices:admin/resolve/*\" OR attributes.elasticsearch.audit.action == \"indices:admin/shards/search_shards\", \"query-noise\", kib_internal, \"query-noise\", attributes.event.action == \"connection_granted\", \"query-noise\", attributes.event.action == \"authentication_success\", \"authn-volume\", \"signal\") | STATS events = SUM(n) BY ts, band | STATS total = SUM(events), parts = VALUES(CONCAT(band, \"=\", TO_STRING(events))) BY ts | STATS typical = MEDIAN(total), b = VALUES(CONCAT(TO_STRING(ts), \"#\", TO_STRING(total), \"#\", MV_CONCAT(parts, \";\"))) | MV_EXPAND b | DISSECT b \"%{ts}#%{total}#%{parts}\" | WHERE TO_LONG(total) * 10 >= typical | EVAL part = SPLIT(parts, \";\") | MV_EXPAND part | DISSECT part \"%{band}=%{events}\" | EVAL `BUCKET(@timestamp, 75, ?_tstart, ?_tend)` = TO_DATETIME(ts), events = TO_LONG(events) | KEEP `BUCKET(@timestamp, 75, ?_tstart, ?_tend)`, band, events | EVAL ord = CASE(band == \"signal\", 0, band == \"authn-volume\", 1, band == \"query-noise\", 2, 3) | SORT ord | DROP ord | EVAL band = CASE(band == \"signal\", \"Signal\", band == \"authn-volume\", \"Auth success\", band == \"query-noise\", \"Query internals\", \"Infra health\")"
             },
             "x": {
               "column": "BUCKET(@timestamp, 75, ?_tstart, ?_tend)",
@@ -602,11 +602,11 @@
       },
       "config": {
         "title": "Highest-volume identities",
-        "description": "Unfiltered volume leaderboard — this is where the machine traffic shows up. An opaque id is a principal with no email or key name, usually an organisation-level Elastic Cloud API key, which the stream records only by id (often the credential running this suite). Via API key: how many of the row’s events came through a named API key.",
+        "description": "Unfiltered volume leaderboard, top identities by events — this is where the machine traffic shows up. An id marked \"· Cloud API key\" is an organisation-level Elastic Cloud API key, which the stream records only by id (often the credential running this suite); any other opaque id is a principal with no email or key name. Via API key: how many of the row’s events came through a named API key, the same events Busiest named API keys counts.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS events = COUNT(*), via_key = COUNT(attributes.api_key.name), actions = COUNT_DISTINCT(attributes.event.action) BY actor, actor_kind | EVAL actor_kind = CASE(actor IN (\"<anonymous>\",\"<unauthenticated-cloud-access-token>\",\"<unauthenticated-saml-user>\",\"<unauthenticated-cloud-api-key>\"), \"unauthenticated\", actor IN (\"elastic.maintenance\",\"autoscaling\",\"elasticsearch-controller\",\"elastic/fleet-server\",\"elastic/kibana\"), \"platform\", actor_kind) | SORT events DESC | LIMIT 10"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS events = COUNT(*), via_key = COUNT(attributes.api_key.name), actions = COUNT_DISTINCT(attributes.event.action), realm = MIN(attributes.user.domain) BY actor, actor_kind | EVAL actor_kind = CASE(actor IN (\"<anonymous>\",\"<unauthenticated-cloud-access-token>\",\"<unauthenticated-saml-user>\",\"<unauthenticated-cloud-api-key>\"), \"unauthenticated\", actor IN (\"elastic.maintenance\",\"autoscaling\",\"elasticsearch-controller\",\"elastic/fleet-server\",\"elastic/kibana\"), \"platform\", actor_kind) | EVAL actor = CASE(realm == \"_cloud_api_key\" AND actor_kind == \"service\" AND via_key == 0, CONCAT(actor, \" · Cloud API key\"), actor) | SORT events DESC | LIMIT 10"
         },
         "styling": {
           "density": {
@@ -639,11 +639,11 @@
           {
             "label": "Via API key",
             "column": "via_key",
-            "width": 105
+            "width": 90
           },
           {
             "label": "Actions",
-            "width": 90,
+            "width": 72,
             "column": "actions"
           }
         ]
