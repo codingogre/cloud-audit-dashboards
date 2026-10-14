@@ -1,7 +1,7 @@
 {
   "title": "[Audit] API key inventory",
-  "description": "One row per API key id seen in range, busiest first: its name, owner, first and last use, volume, client IP spread and indices touched. A re-issued key keeps its name under a new id, so a name can appear more than once. Owner is the creator's email, which Elasticsearch stamps on events from Elasticsearch API keys; Cloud API keys record no owner.",
-  "esql": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE attributes.api_key.name IS NOT NULL | STATS events = COUNT(*), first_seen = MIN(@timestamp), last_seen = MAX(@timestamp), ips = COUNT_DISTINCT(client.ip), indices = COUNT_DISTINCT(attributes.elasticsearch.audit.indices) BY api_key = attributes.api_key.name, key_id = attributes.api_key.id, owner = attributes.user.email | EVAL owner = COALESCE(owner, \"none recorded\") | KEEP api_key, key_id, owner, first_seen, last_seen, events, ips, indices | SORT events DESC | RENAME api_key AS `API key`, key_id AS `Key ID`, owner AS Owner, first_seen AS `First seen`, last_seen AS `Last seen`, events AS Events, ips AS IPs, indices AS Indices",
+  "description": "One row per API key seen in range, busiest first (up to 1,000): Elastic Cloud API keys and Elasticsearch API keys. A Cloud API key has no name and is recorded by its id; its Owner is the Cloud organisation, because the audit stream does not record who created it. An Elasticsearch API key is recorded by id and name, and its Owner is the principal that created it: a person's email, or the id of the Cloud API key that minted it. A re-issued key keeps its name under a new id, so a name can appear more than once. Kibana records a call made with an Elasticsearch API key without the key id, so those calls are counted under the creating identity elsewhere, not here.",
+  "esql": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE attributes.api_key.id IS NOT NULL OR attributes.user.domain == \"_cloud_api_key\" | STATS events = COUNT(*), first_seen = MIN(@timestamp), last_seen = MAX(@timestamp), ips = COUNT_DISTINCT(client.ip), indices = COUNT_DISTINCT(attributes.elasticsearch.audit.indices) BY attributes.api_key.name, attributes.api_key.id, attributes.user.email, attributes.user.name | EVAL key_id = COALESCE(attributes.api_key.id, attributes.user.name), api_key = COALESCE(attributes.api_key.name, \"(no name)\"), owner = CASE(attributes.api_key.id IS NULL, \"Cloud organisation\", COALESCE(attributes.user.email, attributes.user.name, \"not recorded\")) | KEEP api_key, key_id, owner, first_seen, last_seen, events, ips, indices | SORT events DESC | LIMIT 1000 | RENAME api_key AS `API key`, key_id AS `Key ID`, owner AS Owner, first_seen AS `First seen`, last_seen AS `Last seen`, events AS Events, ips AS IPs, indices AS Indices",
   "columns": [
     "API key",
     "Key ID",
@@ -20,20 +20,26 @@
   ],
   "grid": {
     "columns": {
-      "API key": {
-        "width": 340
-      },
       "Key ID": {
-        "width": 230
+        "width": 175
+      },
+      "Owner": {
+        "width": 185
+      },
+      "First seen": {
+        "width": 225
+      },
+      "Last seen": {
+        "width": 225
       },
       "Events": {
-        "width": 110
+        "width": 95
       },
       "IPs": {
-        "width": 90
+        "width": 60
       },
       "Indices": {
-        "width": 110
+        "width": 75
       }
     }
   },

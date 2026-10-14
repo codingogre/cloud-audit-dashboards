@@ -1,7 +1,11 @@
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "description": "Which credential type each identity presents, for the 12 busiest identities. Only Elasticsearch requests record a credential type, so identities seen only in Kibana or only anonymously are not on this chart.",
-  "title": { "text": { "expr": "length(data('rows')) ? '' : 'No activity for this selection in this time range'" } },
+  "title": {
+    "text": {
+      "expr": "length(data('rows')) ? '' : 'No activity for this selection in this time range'"
+    }
+  },
   "autosize": {
     "type": "fit",
     "contains": "padding"
@@ -14,7 +18,11 @@
     "view": {
       "stroke": null
     },
-    "title": { "fontSize": 12, "fontWeight": 500, "anchor": "start" },
+    "title": {
+      "fontSize": 12,
+      "fontWeight": 500,
+      "anchor": "start"
+    },
     "legend": {
       "labelFontSize": 11,
       "titleFontSize": 11
@@ -31,25 +39,85 @@
   },
   "transform": [
     {
-      "joinaggregate": [{ "op": "sum", "field": "events", "as": "actor_total" }],
-      "groupby": ["actor"]
+      "joinaggregate": [
+        {
+          "op": "sum",
+          "field": "events",
+          "as": "actor_total"
+        }
+      ],
+      "groupby": [
+        "actor"
+      ]
     },
     {
-      "window": [{ "op": "dense_rank", "as": "rank" }],
+      "window": [
+        {
+          "op": "dense_rank",
+          "as": "rank"
+        }
+      ],
       "sort": [
-        { "field": "actor_total", "order": "descending" },
-        { "field": "actor", "order": "ascending" }
+        {
+          "field": "actor_total",
+          "order": "descending"
+        },
+        {
+          "field": "actor",
+          "order": "ascending"
+        }
       ]
     },
     {
       "filter": "datum.rank <= 12"
     }
   ],
-  "mark": {
-    "type": "rect",
-    "cornerRadius": 2,
-    "color": "#3987e5"
-  },
+  "layer": [
+    {
+      "mark": {
+        "type": "rect",
+        "cornerRadius": 2,
+        "color": "#3987e5"
+      },
+      "encoding": {
+        "opacity": {
+          "field": "events",
+          "type": "quantitative",
+          "scale": {
+            "type": "log",
+            "range": [
+              0.35,
+              1
+            ]
+          },
+          "legend": {
+            "title": "Events",
+            "orient": "right",
+            "values": {
+              "expr": "!length(data('rows')) ? [] : floor(log(domain('opacity')[1]) / LN10 + 1e-9) - ceil(log(domain('opacity')[0]) / LN10 - 1e-9) >= 1 ? slice([1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000], ceil(log(domain('opacity')[0]) / LN10 - 1e-9), 1 + floor(log(domain('opacity')[1]) / LN10 + 1e-9)) : domain('opacity')"
+            },
+            "titleOpacity": {
+              "expr": "length(data('rows')) ? 1 : 0"
+            },
+            "labelExpr": "format(datum.value, '.2~s')",
+            "symbolType": "square",
+            "symbolFillColor": "#3987e5",
+            "symbolStrokeWidth": 0
+          }
+        }
+      }
+    },
+    {
+      "mark": {
+        "type": "rect",
+        "cornerRadius": 2,
+        "filled": false,
+        "stroke": "#3987e5",
+        "strokeWidth": 1,
+        "strokeOpacity": 0.85
+      }
+    }
+  ],
   "encoding": {
     "y": {
       "field": "actor",
@@ -64,7 +132,9 @@
       },
       "axis": {
         "title": "Identity · busiest 12",
-        "titleOpacity": { "expr": "length(data('rows')) ? 1 : 0" },
+        "titleOpacity": {
+          "expr": "length(data('rows')) ? 1 : 0"
+        },
         "labelLimit": 240,
         "ticks": false,
         "domain": false
@@ -78,29 +148,13 @@
       },
       "axis": {
         "title": "Credential type",
-        "titleOpacity": { "expr": "length(data('rows')) ? 1 : 0" },
+        "titleOpacity": {
+          "expr": "length(data('rows')) ? 1 : 0"
+        },
         "labelAngle": 0,
         "orient": "top",
         "ticks": false,
         "domain": false
-      }
-    },
-    "opacity": {
-      "field": "events",
-      "type": "quantitative",
-      "scale": {
-        "type": "log",
-        "range": [0.35, 1]
-      },
-      "legend": {
-        "title": "Events",
-        "orient": "right",
-        "values": { "expr": "length(data('rows')) ? [1, 10, 100, 1000, 10000, 100000] : []" },
-          "titleOpacity": { "expr": "length(data('rows')) ? 1 : 0" },
-        "labelExpr": "format(datum.value, '~s')",
-        "symbolType": "square",
-        "symbolFillColor": "#3987e5",
-        "symbolStrokeWidth": 0
       }
     },
     "tooltip": [
