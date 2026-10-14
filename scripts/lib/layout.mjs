@@ -16,7 +16,7 @@
  */
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { ROOT } from './env.mjs';
+import { ROOT, cfg } from './env.mjs';
 import { NAV_H, NOISE, BAND, RISK, VERB, ACTOR_RESOLVE, OBJ, OBJ_ID, OBJ_TYPE, CHANGE_PRED, CRED, OBJ_PRESENT } from './panels.mjs';
 
 export const GRID_W = 48;
@@ -120,8 +120,8 @@ function checkRefs(name, panels, problems) {
   for (const p of panels) {
     const ref = p.config?.ref_id;
     if (!ref) continue;
-    const [, file] = ref.match(/^cloud-audit-(?:vega|search)-(.+)$/) || [];
-    const dir = ref.startsWith('cloud-audit-vega-') ? 'vega' : 'searches';
+    const [, kind, file] = ref.match(new RegExp(`^${cfg.ns}-(vega|search)-(.+)$`)) || [];
+    const dir = kind === 'vega' ? 'vega' : 'searches';
     if (!file || !existsSync(join(ROOT, dir, `${file}.json`))) {
       problems.push(`${name}: panel ${p.id} references ${ref}, but ${dir}/${file}.json does not exist`);
     }
@@ -250,6 +250,37 @@ function checkVega(problems) {
   }
 }
 
+/**
+ * md() lifts a leading `#`-`###` heading into the panel title (see panels.mjs MARKDOWN SIZE), so one
+ * that survives into the content is a heading in the middle of a note, rendering at ~20px over 14px
+ * panel titles. `####` and below are fine: they render as bold body text.
+ */
+function checkMarkdown(name, panels, problems) {
+  for (const p of panels) {
+    if (p.type !== 'markdown') continue;
+    const line = (p.config?.content || '').split('\n').find((l) => /^#{1,3}\s/.test(l));
+    if (line) problems.push(`${name}: markdown panel ${p.id} has an oversized heading "${line.slice(0, 40)}" — use the panel title, or ####`);
+  }
+}
+
+/**
+ * A session that RENAMEs a column for display must list it by the NEW name: listed by the old one,
+ * Discover renders an empty column under the raw header, which is exactly what the rename was for.
+ */
+function checkSessions(problems) {
+  const dir = join(ROOT, 'searches');
+  if (!existsSync(dir)) return;
+  for (const f of readdirSync(dir).filter((x) => x.endsWith('.json')).sort()) {
+    const d = JSON.parse(readFileSync(join(dir, f), 'utf8'));
+    const renamed = [...String(d.esql || '').matchAll(/\|\s*RENAME\s+([^|]+)/gi)]
+      .flatMap((m) => m[1].split(',').map((pair) => pair.trim().split(/\s+AS\s+/i)[0]?.replace(/`/g, '')));
+    const used = [...(d.columns || []), ...(d.sort || []).map(([c]) => c), ...Object.keys(d.grid?.columns || {})];
+    for (const c of used.filter((u) => renamed.includes(u))) {
+      problems.push(`searches/${f}: "${c}" is RENAMEd in the query but still listed by its old name in columns/sort/grid`);
+    }
+  }
+}
+
 /** Returns an array of human-readable problems; empty means clean. */
 export function checkLayout(all) {
   const problems = [];
@@ -261,9 +292,11 @@ export function checkLayout(all) {
     checkNav(name, panels, problems);
     const maxY = checkGrid(name, panels, problems);
     checkRefs(name, panels, problems);
+    checkMarkdown(name, panels, problems);
     rows.push(`${name}: panels=${panels.length} rows=${maxY}`);
   }
   checkFragmentDrift(problems);
   checkVega(problems);
+  checkSessions(problems);
   return { problems, panelCount, dashboards: Object.keys(all).length, rows };
 }

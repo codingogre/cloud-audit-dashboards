@@ -17,7 +17,7 @@
         "x": 0,
         "y": 0,
         "w": 48,
-        "h": 4
+        "h": 3
       },
       "config": {
         "title": "Audit suite navigation",
@@ -111,7 +111,7 @@
       "id": "kpi-01",
       "grid": {
         "x": 0,
-        "y": 4,
+        "y": 3,
         "w": 8,
         "h": 5
       },
@@ -140,7 +140,7 @@
       "id": "kpi-02",
       "grid": {
         "x": 8,
-        "y": 4,
+        "y": 3,
         "w": 8,
         "h": 5
       },
@@ -169,7 +169,7 @@
       "id": "kpi-03",
       "grid": {
         "x": 16,
-        "y": 4,
+        "y": 3,
         "w": 8,
         "h": 5
       },
@@ -198,7 +198,7 @@
       "id": "kpi-04",
       "grid": {
         "x": 24,
-        "y": 4,
+        "y": 3,
         "w": 8,
         "h": 5
       },
@@ -227,7 +227,7 @@
       "id": "kpi-05",
       "grid": {
         "x": 32,
-        "y": 4,
+        "y": 3,
         "w": 8,
         "h": 5
       },
@@ -256,7 +256,7 @@
       "id": "kpi-06",
       "grid": {
         "x": 40,
-        "y": 4,
+        "y": 3,
         "w": 8,
         "h": 5
       },
@@ -285,7 +285,7 @@
       "id": "tbl-07",
       "grid": {
         "x": 0,
-        "y": 9,
+        "y": 8,
         "w": 28,
         "h": 13
       },
@@ -295,24 +295,42 @@
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.security_config_change IS NOT NULL | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS events = COUNT(*), last_change = MAX(@timestamp) BY actor, action = attributes.event.action, change = attributes.elasticsearch.audit.security_config_change | SORT last_change DESC | LIMIT 25"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.security_config_change IS NOT NULL | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS events = COUNT(*), last_change = MAX(@timestamp) BY actor, action = attributes.event.action, change = attributes.elasticsearch.audit.security_config_change | SORT last_change DESC | LIMIT 12"
+        },
+        "styling": {
+          "density": {
+            "mode": "compact",
+            "height": {
+              "value": {
+                "type": "custom",
+                "lines": 1
+              }
+            }
+          }
         },
         "rows": [
           {
+            "label": "Identity",
             "column": "actor"
           },
           {
+            "label": "Action",
             "column": "action"
           },
           {
+            "label": "Change",
             "column": "change"
           }
         ],
         "metrics": [
           {
+            "label": "Events",
+            "width": 90,
             "column": "events"
           },
           {
+            "label": "Last change",
+            "width": 190,
             "column": "last_change"
           }
         ]
@@ -323,7 +341,7 @@
       "id": "vega-08",
       "grid": {
         "x": 28,
-        "y": 9,
+        "y": 8,
         "w": 20,
         "h": 13
       },
@@ -338,7 +356,7 @@
       "id": "xy-09",
       "grid": {
         "x": 0,
-        "y": 22,
+        "y": 21,
         "w": 24,
         "h": 12
       },
@@ -380,7 +398,10 @@
               }
             ]
           }
-        ]
+        ],
+        "legend": {
+          "visibility": "hidden"
+        }
       }
     },
     {
@@ -388,7 +409,7 @@
       "id": "tbl-10",
       "grid": {
         "x": 24,
-        "y": 22,
+        "y": 21,
         "w": 24,
         "h": 12
       },
@@ -398,31 +419,54 @@
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.security_config_change IS NOT NULL OR attributes.event.outcome == \"failure\" OR attributes.event.action IN (\"invalidate_apikeys\",\"anonymous_access_denied\") OR (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) | EVAL risk = CASE(attributes.event.action == \"invalidate_apikeys\", 45, attributes.event.action == \"anonymous_access_denied\", 35, attributes.elasticsearch.audit.security_config_change IS NOT NULL, 50, attributes.event.outcome == \"failure\", 40, (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) AND attributes.event.action IN (\"workflow_run\",\"workflow_test\",\"workflow_execution_cancel\"), 10, (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) AND (attributes.event.type == \"deletion\" OR attributes.event.action == \"rule_disable\"), 30, (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))), 25, 0) | WHERE risk > 0 | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | EVAL actor_scope = CASE(actor IN (\"elastic.maintenance\",\"autoscaling\",\"elasticsearch-controller\",\"elastic/fleet-server\"), \"platform\", actor IN (\"<anonymous>\",\"<unauthenticated-cloud-access-token>\",\"<unauthenticated-saml-user>\"), \"unauthenticated\", \"tenant\") | STATS risk_total = SUM(risk), scoring_events = COUNT(*), privileged = COUNT(attributes.elasticsearch.audit.security_config_change) BY actor, actor_scope, attributes.user.email | EVAL mean_severity = ROUND(1.0 * risk_total / scoring_events, 1) | SORT risk_total DESC | LIMIT 15"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.security_config_change IS NOT NULL OR attributes.event.outcome == \"failure\" OR attributes.event.action IN (\"invalidate_apikeys\",\"anonymous_access_denied\") OR (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) | EVAL risk = CASE(attributes.event.action == \"invalidate_apikeys\", 45, attributes.event.action == \"anonymous_access_denied\", 35, attributes.elasticsearch.audit.security_config_change IS NOT NULL, 50, attributes.event.outcome == \"failure\", 40, (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) AND attributes.event.action IN (\"workflow_run\",\"workflow_test\",\"workflow_execution_cancel\"), 10, (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) AND (attributes.event.type == \"deletion\" OR attributes.event.action == \"rule_disable\"), 30, (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))), 25, 0) | WHERE risk > 0 | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | EVAL actor_scope = CASE(actor IN (\"elastic.maintenance\",\"autoscaling\",\"elasticsearch-controller\",\"elastic/fleet-server\"), \"platform\", actor IN (\"<anonymous>\",\"<unauthenticated-cloud-access-token>\",\"<unauthenticated-saml-user>\"), \"unauthenticated\", \"tenant\") | STATS risk_total = SUM(risk), scoring_events = COUNT(*), privileged = COUNT(attributes.elasticsearch.audit.security_config_change) BY actor, actor_scope, attributes.user.email | EVAL mean_severity = ROUND(1.0 * risk_total / scoring_events, 1) | SORT risk_total DESC | LIMIT 10"
+        },
+        "styling": {
+          "density": {
+            "mode": "compact",
+            "height": {
+              "value": {
+                "type": "custom",
+                "lines": 1
+              }
+            }
+          }
         },
         "rows": [
           {
+            "label": "Identity",
             "column": "actor"
           },
           {
+            "label": "Scope",
+            "width": 105,
             "column": "actor_scope"
           },
           {
+            "label": "Email",
             "column": "attributes.user.email",
             "click_filter": true
           }
         ],
         "metrics": [
           {
+            "label": "Risk total",
+            "width": 90,
             "column": "risk_total"
           },
           {
+            "label": "Scoring events",
+            "width": 90,
             "column": "scoring_events"
           },
           {
+            "label": "Mean severity",
+            "width": 90,
             "column": "mean_severity"
           },
           {
+            "label": "Privileged",
+            "width": 90,
             "column": "privileged"
           }
         ]
@@ -433,7 +477,7 @@
       "id": "tbl-11",
       "grid": {
         "x": 0,
-        "y": 34,
+        "y": 33,
         "w": 48,
         "h": 12
       },
@@ -443,34 +487,58 @@
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.security_config_change IS NOT NULL OR attributes.event.outcome == \"failure\" OR attributes.event.action IN (\"invalidate_apikeys\",\"anonymous_access_denied\") OR (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) | EVAL risk = CASE(attributes.event.action == \"invalidate_apikeys\", 45, attributes.event.action == \"anonymous_access_denied\", 35, attributes.elasticsearch.audit.security_config_change IS NOT NULL, 50, attributes.event.outcome == \"failure\", 40, (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) AND attributes.event.action IN (\"workflow_run\",\"workflow_test\",\"workflow_execution_cancel\"), 10, (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) AND (attributes.event.type == \"deletion\" OR attributes.event.action == \"rule_disable\"), 30, (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))), 25, 0) | WHERE risk > 0 | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | EVAL actor_scope = CASE(actor IN (\"elastic.maintenance\",\"autoscaling\",\"elasticsearch-controller\",\"elastic/fleet-server\"), \"platform\", actor IN (\"<anonymous>\",\"<unauthenticated-cloud-access-token>\",\"<unauthenticated-saml-user>\"), \"unauthenticated\", \"tenant\") | STATS events = COUNT(*), severity = SUM(risk), last_seen = MAX(@timestamp) BY actor, actor_scope, attributes.user.email, action = attributes.event.action, weight = risk | SORT severity DESC | LIMIT 30"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.security_config_change IS NOT NULL OR attributes.event.outcome == \"failure\" OR attributes.event.action IN (\"invalidate_apikeys\",\"anonymous_access_denied\") OR (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) | EVAL risk = CASE(attributes.event.action == \"invalidate_apikeys\", 45, attributes.event.action == \"anonymous_access_denied\", 35, attributes.elasticsearch.audit.security_config_change IS NOT NULL, 50, attributes.event.outcome == \"failure\", 40, (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) AND attributes.event.action IN (\"workflow_run\",\"workflow_test\",\"workflow_execution_cancel\"), 10, (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) AND (attributes.event.type == \"deletion\" OR attributes.event.action == \"rule_disable\"), 30, (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))), 25, 0) | WHERE risk > 0 | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | EVAL actor_scope = CASE(actor IN (\"elastic.maintenance\",\"autoscaling\",\"elasticsearch-controller\",\"elastic/fleet-server\"), \"platform\", actor IN (\"<anonymous>\",\"<unauthenticated-cloud-access-token>\",\"<unauthenticated-saml-user>\"), \"unauthenticated\", \"tenant\") | STATS events = COUNT(*), severity = SUM(risk), last_seen = MAX(@timestamp) BY actor, actor_scope, attributes.user.email, action = attributes.event.action, weight = risk | SORT severity DESC | LIMIT 10"
+        },
+        "styling": {
+          "density": {
+            "mode": "compact",
+            "height": {
+              "value": {
+                "type": "custom",
+                "lines": 1
+              }
+            }
+          }
         },
         "rows": [
           {
+            "label": "Identity",
             "column": "actor"
           },
           {
+            "label": "Scope",
+            "width": 105,
             "column": "actor_scope"
           },
           {
+            "label": "Email",
             "column": "attributes.user.email",
             "click_filter": true
           },
           {
+            "label": "Action",
             "column": "action"
           },
           {
+            "label": "Weight",
+            "width": 90,
             "column": "weight"
           }
         ],
         "metrics": [
           {
+            "label": "Events",
+            "width": 90,
             "column": "events"
           },
           {
+            "label": "Severity",
+            "width": 90,
             "column": "severity"
           },
           {
+            "label": "Last seen",
+            "width": 190,
             "column": "last_seen"
           }
         ]
@@ -481,7 +549,7 @@
       "id": "tbl-12",
       "grid": {
         "x": 0,
-        "y": 46,
+        "y": 45,
         "w": 24,
         "h": 12
       },
@@ -491,27 +559,49 @@
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE (attributes.elasticsearch.audit.action IS NULL OR NOT (attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\") OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\")) AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"authentication_success\",\"connection_granted\"))) | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS first_seen = MIN(@timestamp), last_seen = MAX(@timestamp), events = COUNT(*), ips = COUNT_DISTINCT(client.ip) BY actor, actor_kind | SORT first_seen DESC | LIMIT 15"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE (attributes.elasticsearch.audit.action IS NULL OR NOT (attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\") OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\")) AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"authentication_success\",\"connection_granted\"))) | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS first_seen = MIN(@timestamp), last_seen = MAX(@timestamp), events = COUNT(*), ips = COUNT_DISTINCT(client.ip) BY actor, actor_kind | SORT first_seen DESC | LIMIT 10"
+        },
+        "styling": {
+          "density": {
+            "mode": "compact",
+            "height": {
+              "value": {
+                "type": "custom",
+                "lines": 1
+              }
+            }
+          }
         },
         "rows": [
           {
+            "label": "Identity",
             "column": "actor"
           },
           {
+            "label": "Kind",
+            "width": 105,
             "column": "actor_kind"
           }
         ],
         "metrics": [
           {
+            "label": "First seen",
+            "width": 190,
             "column": "first_seen"
           },
           {
+            "label": "Last seen",
+            "width": 190,
             "column": "last_seen"
           },
           {
+            "label": "Events",
+            "width": 90,
             "column": "events"
           },
           {
+            "label": "IPs",
+            "width": 90,
             "column": "ips"
           }
         ]
@@ -522,7 +612,7 @@
       "id": "tbl-13",
       "grid": {
         "x": 24,
-        "y": 46,
+        "y": 45,
         "w": 24,
         "h": 12
       },
@@ -532,28 +622,48 @@
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.event.outcome == \"failure\" OR attributes.event.action IN (\"authentication_failed\",\"realm_authentication_failed\",\"anonymous_access_denied\") | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS events = COUNT(*), last_seen = MAX(@timestamp) BY actor, attributes.user.email, action = attributes.event.action, ip = client.ip | SORT events DESC | LIMIT 15"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.event.outcome == \"failure\" OR attributes.event.action IN (\"authentication_failed\",\"realm_authentication_failed\",\"anonymous_access_denied\") | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS events = COUNT(*), last_seen = MAX(@timestamp) BY actor, attributes.user.email, action = attributes.event.action, ip = client.ip | SORT events DESC | LIMIT 10"
+        },
+        "styling": {
+          "density": {
+            "mode": "compact",
+            "height": {
+              "value": {
+                "type": "custom",
+                "lines": 1
+              }
+            }
+          }
         },
         "rows": [
           {
+            "label": "Identity",
             "column": "actor"
           },
           {
+            "label": "Email",
             "column": "attributes.user.email",
             "click_filter": true
           },
           {
+            "label": "Action",
             "column": "action"
           },
           {
+            "label": "IP",
+            "width": 125,
             "column": "ip"
           }
         ],
         "metrics": [
           {
+            "label": "Events",
+            "width": 90,
             "column": "events"
           },
           {
+            "label": "Last seen",
+            "width": 190,
             "column": "last_seen"
           }
         ]
@@ -564,7 +674,7 @@
       "id": "ds-14",
       "grid": {
         "x": 0,
-        "y": 58,
+        "y": 57,
         "w": 24,
         "h": 14
       },
@@ -579,7 +689,7 @@
       "id": "ds-15",
       "grid": {
         "x": 24,
-        "y": 58,
+        "y": 57,
         "w": 24,
         "h": 14
       },

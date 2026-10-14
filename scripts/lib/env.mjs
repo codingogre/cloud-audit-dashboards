@@ -38,5 +38,17 @@ export const cfg = {
   get dataset()  { return parseStream(this.dataStream).dataset; },
   get pipeline() { return `logs-${this.dataset}@custom`; },
   get indexTemplate() { return `logs-${this.dataset}@template`; },
+  /**
+   * Saved-object id namespace. Dashboards, visualizations, searches and data views are
+   * multiple-isolated types, so an id is unique across ALL spaces: with the suite deployed in one
+   * space, `PUT /api/dashboards/cloud-audit-…` in a second space answers 409, and `_import` quietly
+   * writes the Vega and Discover objects under fresh ids, so every panel's ref dangles. A private
+   * render of a work in progress (`AUDIT_SPACE=x AUDIT_ID_NS=x`) therefore needs its own ids. Unset,
+   * nothing changes: the deployed ids stay `cloud-audit-*`.
+   */
+  get ns() { return process.env.AUDIT_ID_NS ? `cloud-audit-${process.env.AUDIT_ID_NS}` : 'cloud-audit'; },
   ROOT,
 };
+
+/** A `cloud-audit-…` id in the active namespace (identity when AUDIT_ID_NS is unset). */
+export const nsId = (id) => id.replace(/^cloud-audit(?=-)/, cfg.ns);

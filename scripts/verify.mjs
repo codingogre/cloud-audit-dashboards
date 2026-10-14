@@ -13,7 +13,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
-import { cfg, ROOT } from './lib/env.mjs';
+import { cfg, ROOT, nsId } from './lib/env.mjs';
 import { success, fail, detail, info, warn } from './lib/log.mjs';
 import { buildAll } from './lib/definitions.mjs';
 import { CONTROLS } from './lib/controls.mjs';
@@ -59,7 +59,7 @@ export async function run(argv = []) {
   mkdirSync(out, { recursive: true });
   info(`rendering to ${out}`);
 
-  const ids = Object.keys(buildAll()).map((n) => `cloud-audit-${n}`);
+  const ids = Object.keys(buildAll()).map((n) => nsId(`cloud-audit-${n}`));
   const browser = await chromium.launch({ args: ['--no-sandbox', '--disable-dev-shm-usage'] });
   const ctx = await browser.newContext({ viewport: { width: 1920, height: 1400 }, colorScheme: theme });
   info(`colour scheme: ${theme}`);

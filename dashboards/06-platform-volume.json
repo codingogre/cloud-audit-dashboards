@@ -17,7 +17,7 @@
         "x": 0,
         "y": 0,
         "w": 48,
-        "h": 4
+        "h": 3
       },
       "config": {
         "title": "Audit suite navigation",
@@ -111,7 +111,7 @@
       "id": "kpi-01",
       "grid": {
         "x": 0,
-        "y": 4,
+        "y": 3,
         "w": 8,
         "h": 5
       },
@@ -140,7 +140,7 @@
       "id": "kpi-02",
       "grid": {
         "x": 8,
-        "y": 4,
+        "y": 3,
         "w": 8,
         "h": 5
       },
@@ -169,7 +169,7 @@
       "id": "kpi-03",
       "grid": {
         "x": 16,
-        "y": 4,
+        "y": 3,
         "w": 8,
         "h": 5
       },
@@ -198,7 +198,7 @@
       "id": "kpi-04",
       "grid": {
         "x": 24,
-        "y": 4,
+        "y": 3,
         "w": 8,
         "h": 5
       },
@@ -227,7 +227,7 @@
       "id": "kpi-05",
       "grid": {
         "x": 32,
-        "y": 4,
+        "y": 3,
         "w": 8,
         "h": 5
       },
@@ -256,7 +256,7 @@
       "id": "kpi-06",
       "grid": {
         "x": 40,
-        "y": 4,
+        "y": 3,
         "w": 8,
         "h": 5
       },
@@ -285,7 +285,7 @@
       "id": "vega-07",
       "grid": {
         "x": 0,
-        "y": 9,
+        "y": 8,
         "w": 24,
         "h": 13
       },
@@ -300,12 +300,13 @@
       "id": "md-08",
       "grid": {
         "x": 24,
-        "y": 9,
+        "y": 8,
         "w": 10,
         "h": 13
       },
       "config": {
-        "content": "### 📊 The quarantine dashboard\n\nEvery other dashboard applies a **noise gate**. This one deliberately does not, so the\nfirehose stays measurable without drowning the forensic views.\n\n- **`infra-noise`** — `cluster:monitor/main` + `elastic.maintenance` health traffic\n- **`query-noise`** — search-phase internals, reader contexts, PITs, `connection_granted`\n- **`authn-volume`** — bulk `authentication_success`, one per request\n- **`signal`** — everything else: what the other dashboards read\n\nElasticsearch stamps an API key's **creator's** email on every event the key emits, so a busy\nkey's traffic resolves to a person's name on the identity panels — check the `api_key` column\nbefore reading a name as a human."
+        "content": "Every other dashboard applies a **noise gate**. This one deliberately does not, so the\nfirehose stays measurable without drowning the forensic views.\n\n- **`infra-noise`** — `cluster:monitor/main` + `elastic.maintenance` health traffic\n- **`query-noise`** — search-phase internals, reader contexts, PITs, `connection_granted`\n- **`authn-volume`** — bulk `authentication_success`, one per request\n- **`signal`** — everything else: what the other dashboards read\n\nElasticsearch stamps an API key's **creator's** email on every event the key emits, so a busy\nkey's traffic resolves to a person's name on the identity panels — check the `api_key` column\nbefore reading a name as a human.",
+        "title": "📊 The quarantine dashboard"
       }
     },
     {
@@ -313,7 +314,7 @@
       "id": "tbl-09",
       "grid": {
         "x": 34,
-        "y": 9,
+        "y": 8,
         "w": 14,
         "h": 13
       },
@@ -325,13 +326,27 @@
           "type": "esql",
           "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.api_key.name IS NOT NULL | STATS events = COUNT(*) BY api_key = attributes.api_key.name | SORT events DESC | LIMIT 12"
         },
+        "styling": {
+          "density": {
+            "mode": "compact",
+            "height": {
+              "value": {
+                "type": "custom",
+                "lines": 1
+              }
+            }
+          }
+        },
         "rows": [
           {
+            "label": "API key",
             "column": "api_key"
           }
         ],
         "metrics": [
           {
+            "label": "Events",
+            "width": 90,
             "column": "events"
           }
         ]
@@ -342,7 +357,7 @@
       "id": "xy-10",
       "grid": {
         "x": 0,
-        "y": 22,
+        "y": 21,
         "w": 24,
         "h": 12
       },
@@ -384,10 +399,22 @@
               }
             ],
             "breakdown_by": {
-              "column": "band"
+              "column": "band",
+              "color": {
+                "mode": "categorical",
+                "palette": "eui_amsterdam",
+                "mapping": []
+              }
             }
           }
-        ]
+        ],
+        "legend": {
+          "visibility": "visible",
+          "position": "bottom",
+          "layout": {
+            "type": "list"
+          }
+        }
       }
     },
     {
@@ -395,7 +422,7 @@
       "id": "xy-11",
       "grid": {
         "x": 24,
-        "y": 22,
+        "y": 21,
         "w": 24,
         "h": 12
       },
@@ -437,10 +464,22 @@
               }
             ],
             "breakdown_by": {
-              "column": "source"
+              "column": "source",
+              "color": {
+                "mode": "categorical",
+                "palette": "eui_amsterdam",
+                "mapping": []
+              }
             }
           }
-        ]
+        ],
+        "legend": {
+          "visibility": "visible",
+          "position": "bottom",
+          "layout": {
+            "type": "list"
+          }
+        }
       }
     },
     {
@@ -448,7 +487,7 @@
       "id": "tbl-12",
       "grid": {
         "x": 0,
-        "y": 34,
+        "y": 33,
         "w": 24,
         "h": 12
       },
@@ -458,18 +497,34 @@
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.action IS NOT NULL | STATS events = COUNT(*), actors = COUNT_DISTINCT(COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name)) BY action = attributes.elasticsearch.audit.action | SORT events DESC | LIMIT 15"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.action IS NOT NULL | STATS events = COUNT(*), actors = COUNT_DISTINCT(COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name)) BY action = attributes.elasticsearch.audit.action | SORT events DESC | LIMIT 10"
+        },
+        "styling": {
+          "density": {
+            "mode": "compact",
+            "height": {
+              "value": {
+                "type": "custom",
+                "lines": 1
+              }
+            }
+          }
         },
         "rows": [
           {
+            "label": "Action",
             "column": "action"
           }
         ],
         "metrics": [
           {
+            "label": "Events",
+            "width": 90,
             "column": "events"
           },
           {
+            "label": "Identities",
+            "width": 90,
             "column": "actors"
           }
         ]
@@ -480,7 +535,7 @@
       "id": "tbl-13",
       "grid": {
         "x": 24,
-        "y": 34,
+        "y": 33,
         "w": 24,
         "h": 12
       },
@@ -490,21 +545,39 @@
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS events = COUNT(*), actions = COUNT_DISTINCT(attributes.event.action) BY actor, actor_kind | SORT events DESC | LIMIT 15"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS events = COUNT(*), actions = COUNT_DISTINCT(attributes.event.action) BY actor, actor_kind | SORT events DESC | LIMIT 10"
+        },
+        "styling": {
+          "density": {
+            "mode": "compact",
+            "height": {
+              "value": {
+                "type": "custom",
+                "lines": 1
+              }
+            }
+          }
         },
         "rows": [
           {
+            "label": "Identity",
             "column": "actor"
           },
           {
+            "label": "Kind",
+            "width": 105,
             "column": "actor_kind"
           }
         ],
         "metrics": [
           {
+            "label": "Events",
+            "width": 90,
             "column": "events"
           },
           {
+            "label": "Actions",
+            "width": 90,
             "column": "actions"
           }
         ]

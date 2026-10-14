@@ -3,6 +3,27 @@
 `CLAUDE.md`-style durable context lives in `README.md` and `esql/fragments.md` and wins on
 conflict. This file is "where we are right now" and should be assumed stale.
 
+## UI polish — shared helpers, 2026-10-14
+
+A rendered review of every panel found the same few causes behind most findings, all in shared code.
+They are fixed centrally; the rules are in `README.md` → *Presentation conventions*. Facts behind
+them, each verified on the live 9.6 project:
+
+- **`data_table` takes `label` and `width` on rows and metrics natively** (export shows `customLabel`
+  and the column width). The width post-pass in `dashboards.mjs` is gone. A label does not change the
+  filtered field: clicking a labelled email cell pinned `attributes.user.email: …`.
+- **Lens never ellipsises a clipped cell**, at any density or row height. Width by role is the remedy.
+- **`config.legend` on `xy` defaults to hidden even with a breakdown.** `{visibility, position,
+  layout: {type: list|grid}}`; `size` is only legal with left/right. A bottom list clips past ~6 series.
+- **Discover in ES|QL mode ignores `fieldAttrs.customLabel`.** Headers come from `RENAME`. On the
+  embedded grid a renamed column has no filter-for; in Discover itself filter-for appends a WHERE on
+  the alias. `rowHeight`, `headerRowHeight` and `grid.columns.<name>.width` survive import verbatim.
+- **Markdown has no font-size setting** (`settings` takes only `open_links_in_new_tab`); a markdown
+  panel does take `title`/`description`.
+- **Saved-object ids are global across spaces** for every type this suite deploys, so a second
+  space needs `AUDIT_ID_NS`. Renders for this work: `AUDIT_SPACE=uifix-shared AUDIT_ID_NS=uifix-shared`.
+  `scripts/perf.mjs` maps refs to files by the default `cloud-audit-` prefix and assumes it.
+
 ## State — 2026-09-15
 
 **Actor 360 was rebuilt** from a stack of tables into a page organised around three time regimes,
@@ -303,7 +324,8 @@ ramp starts at `#4A6B85`. The near-black `#1D2A3A` anchor that note described no
 `vega/05-rare-event-scatter.json`, and `vega/02`/`03`/`04`/`06` share a six-stop ramp that is not
 monotone in lightness, spans 133° of hue and starts at `#0B1628` (1.25:1 at its light end on white).
 Not changed here — it is outside Actor 360 — but the Actor 360 specs show the alternative: opacity on
-one mid-tone hue.
+one mid-tone hue. The exact convention (hue, opacity floor, scale, legend) is now in `README.md` →
+*Presentation conventions*; note the punchcard's own 0.07 floor is below it.
 
 **Vega chrome must not be hardcoded.** All 7 specs used to set axis/title/legend colours for dark
 mode, which rendered grey-on-white in Kibana light mode. Kibana supplies theme-aware defaults for

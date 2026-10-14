@@ -17,7 +17,7 @@
         "x": 0,
         "y": 0,
         "w": 48,
-        "h": 4
+        "h": 3
       },
       "config": {
         "title": "Audit suite navigation",
@@ -111,7 +111,7 @@
       "id": "kpi-01",
       "grid": {
         "x": 0,
-        "y": 4,
+        "y": 3,
         "w": 8,
         "h": 5
       },
@@ -140,7 +140,7 @@
       "id": "kpi-02",
       "grid": {
         "x": 8,
-        "y": 4,
+        "y": 3,
         "w": 8,
         "h": 5
       },
@@ -169,7 +169,7 @@
       "id": "kpi-03",
       "grid": {
         "x": 16,
-        "y": 4,
+        "y": 3,
         "w": 8,
         "h": 5
       },
@@ -198,7 +198,7 @@
       "id": "kpi-04",
       "grid": {
         "x": 24,
-        "y": 4,
+        "y": 3,
         "w": 8,
         "h": 5
       },
@@ -227,7 +227,7 @@
       "id": "kpi-05",
       "grid": {
         "x": 32,
-        "y": 4,
+        "y": 3,
         "w": 8,
         "h": 5
       },
@@ -256,7 +256,7 @@
       "id": "kpi-06",
       "grid": {
         "x": 40,
-        "y": 4,
+        "y": 3,
         "w": 8,
         "h": 5
       },
@@ -285,7 +285,7 @@
       "id": "xy-07",
       "grid": {
         "x": 0,
-        "y": 9,
+        "y": 8,
         "w": 32,
         "h": 13
       },
@@ -327,10 +327,22 @@
               }
             ],
             "breakdown_by": {
-              "column": "source"
+              "column": "source",
+              "color": {
+                "mode": "categorical",
+                "palette": "eui_amsterdam",
+                "mapping": []
+              }
             }
           }
-        ]
+        ],
+        "legend": {
+          "visibility": "visible",
+          "position": "bottom",
+          "layout": {
+            "type": "list"
+          }
+        }
       }
     },
     {
@@ -338,12 +350,13 @@
       "id": "md-08",
       "grid": {
         "x": 32,
-        "y": 9,
+        "y": 8,
         "w": 16,
         "h": 13
       },
       "config": {
-        "content": "<style>\nul, li { margin: 0; padding: 0; list-style: none; position: relative; }\na {\n  display: block; padding: 8px 14px;\n  color: #1ba9f5 !important; text-decoration: none !important;\n  transition: all 0.3s ease !important; border-radius: 4px;\n}\na:hover {\n  background-color: rgba(27, 169, 245, 0.1) !important;\n  color: #0079b8 !important; padding-left: 20px !important; cursor: pointer;\n}\n</style>\n\n### How to read this suite\n\n**Noise gate is ON** — health pings, query internals and bulk `authentication_success`\nare excluded; how much that removes varies by workload. Unfiltered totals live on **📊 Platform Volume**.\n\n**Identity is resolved** — `user.name` is a numeric id, so panels fall back\n`user.email` → `api_key.name`.\n\n**Client IPs are real** — `source.ip` is the proxy; geography comes from\n`network.forwarded_ip`.\n\n*Hover any panel title for detail.*"
+        "content": "<style>\nul, li { margin: 0; padding: 0; list-style: none; position: relative; }\na {\n  display: block; padding: 8px 14px;\n  color: #1ba9f5 !important; text-decoration: none !important;\n  transition: all 0.3s ease !important; border-radius: 4px;\n}\na:hover {\n  background-color: rgba(27, 169, 245, 0.1) !important;\n  color: #0079b8 !important; padding-left: 20px !important; cursor: pointer;\n}\n</style>\n\n**Noise gate is ON** — health pings, query internals and bulk `authentication_success`\nare excluded; how much that removes varies by workload. Unfiltered totals live on **📊 Platform Volume**.\n\n**Identity is resolved** — `user.name` is a numeric id, so panels fall back\n`user.email` → `api_key.name`.\n\n**Client IPs are real** — `source.ip` is the proxy; geography comes from\n`network.forwarded_ip`.\n\n*Hover any panel title for detail.*",
+        "title": "How to read this suite"
       }
     },
     {
@@ -351,7 +364,7 @@
       "id": "vega-09",
       "grid": {
         "x": 0,
-        "y": 22,
+        "y": 21,
         "w": 24,
         "h": 13
       },
@@ -366,7 +379,7 @@
       "id": "vega-10",
       "grid": {
         "x": 24,
-        "y": 22,
+        "y": 21,
         "w": 24,
         "h": 13
       },
@@ -381,7 +394,7 @@
       "id": "tbl-11",
       "grid": {
         "x": 0,
-        "y": 35,
+        "y": 34,
         "w": 16,
         "h": 12
       },
@@ -391,18 +404,33 @@
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE (attributes.elasticsearch.audit.action IS NULL OR NOT (attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\") OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\")) AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"authentication_success\",\"connection_granted\"))) | STATS events = COUNT(*) BY action = attributes.event.action, source = resource.attributes.service.name | SORT events DESC | LIMIT 12"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE (attributes.elasticsearch.audit.action IS NULL OR NOT (attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\") OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\")) AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"authentication_success\",\"connection_granted\"))) | STATS events = COUNT(*) BY action = attributes.event.action, source = resource.attributes.service.name | SORT events DESC | LIMIT 10"
+        },
+        "styling": {
+          "density": {
+            "mode": "compact",
+            "height": {
+              "value": {
+                "type": "custom",
+                "lines": 1
+              }
+            }
+          }
         },
         "rows": [
           {
+            "label": "Action",
             "column": "action"
           },
           {
+            "label": "Source",
             "column": "source"
           }
         ],
         "metrics": [
           {
+            "label": "Events",
+            "width": 90,
             "column": "events"
           }
         ]
@@ -413,7 +441,7 @@
       "id": "tbl-12",
       "grid": {
         "x": 16,
-        "y": 35,
+        "y": 34,
         "w": 16,
         "h": 12
       },
@@ -423,25 +451,43 @@
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE (attributes.elasticsearch.audit.action IS NULL OR NOT (attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\") OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\")) AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"authentication_success\",\"connection_granted\"))) | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS events = COUNT(*), actions = COUNT_DISTINCT(attributes.event.action) BY actor, attributes.api_key.name, attributes.user.email | SORT events DESC | LIMIT 12"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE (attributes.elasticsearch.audit.action IS NULL OR NOT (attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\") OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\")) AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"authentication_success\",\"connection_granted\"))) | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS events = COUNT(*), actions = COUNT_DISTINCT(attributes.event.action) BY actor, attributes.api_key.name, attributes.user.email | SORT events DESC | LIMIT 10"
+        },
+        "styling": {
+          "density": {
+            "mode": "compact",
+            "height": {
+              "value": {
+                "type": "custom",
+                "lines": 1
+              }
+            }
+          }
         },
         "rows": [
           {
+            "label": "Identity",
             "column": "actor"
           },
           {
+            "label": "API key",
             "column": "attributes.api_key.name"
           },
           {
+            "label": "Email",
             "column": "attributes.user.email",
             "click_filter": true
           }
         ],
         "metrics": [
           {
+            "label": "Events",
+            "width": 90,
             "column": "events"
           },
           {
+            "label": "Actions",
+            "width": 90,
             "column": "actions"
           }
         ]
@@ -452,7 +498,7 @@
       "id": "pie-13",
       "grid": {
         "x": 32,
-        "y": 35,
+        "y": 34,
         "w": 16,
         "h": 12
       },
@@ -484,7 +530,7 @@
       "id": "ds-14",
       "grid": {
         "x": 0,
-        "y": 47,
+        "y": 46,
         "w": 48,
         "h": 15
       },

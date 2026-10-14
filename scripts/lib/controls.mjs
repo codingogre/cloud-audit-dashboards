@@ -23,12 +23,12 @@
  * `attributes.user.name` is deliberately NOT offered: it is a numeric id (e.g. 1234567890), not
  * a name. See esql/fragments.md.
  */
-import { cfg } from './env.mjs';
+import { cfg, nsId } from './env.mjs';
 import { stableUuid } from './ids.mjs';
 
 /** The data view the controls aggregate against. Real saved object, not the ad-hoc one
  *  the Discover sessions carry inline — a control resolves its field list by reference. */
-export const DATA_VIEW_ID = 'cloud-audit-dv';
+export const DATA_VIEW_ID = nsId('cloud-audit-dv');
 
 export const dataViewObject = () => ({
   id: DATA_VIEW_ID, type: 'index-pattern',

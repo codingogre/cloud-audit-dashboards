@@ -20,7 +20,7 @@
  */
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { cfg, ROOT } from './lib/env.mjs';
+import { cfg, ROOT, nsId } from './lib/env.mjs';
 import { kb } from './lib/http.mjs';
 import { success, detail, info } from './lib/log.mjs';
 import { buildAll } from './lib/definitions.mjs';
@@ -43,6 +43,9 @@ export function emit() {
   // PUTs the definitions. Belt and braces.
   const { problems } = checkLayout(all);
   if (problems.length) throw new Error(`refusing to deploy:\n  ${problems.join('\n  ')}`);
+  // dashboards/*.json is committed and reviewed as the deployed payload, so a private render under
+  // AUDIT_ID_NS (whose ids and links carry the namespace) must not overwrite it.
+  if (process.env.AUDIT_ID_NS) return all;
   mkdirSync(join(ROOT, 'dashboards'), { recursive: true });
   for (const [name, def] of Object.entries(all)) {
     writeFileSync(join(ROOT, 'dashboards', `${name}.json`), JSON.stringify(payload(def), null, 2) + '\n');
@@ -62,7 +65,7 @@ async function applyImportOnlyState(all) {
   let vegaTotal = 0;
   let drillTotal = 0;
   for (const [name, def] of Object.entries(all)) {
-    const id = `cloud-audit-${name}`;
+    const id = nsId(`cloud-audit-${name}`);
     const vegaPanels = Object.fromEntries(
       def.panels.filter((p) => p.type === 'vis' && p.config?.ref_id).map((p) => [p.id, p.config.ref_id]));
     // Drilldowns fire on FILTER_TRIGGER, so they belong only on panels that already carry a
@@ -70,11 +73,6 @@ async function applyImportOnlyState(all) {
     // only where a panel names its destination — drilling from it to itself would be a no-op.
     const drillPanels = new Map(def.panels.filter(hasFilterableColumn)
       .map((p) => [p.id, id === ACTOR_360 ? p.drill : ACTOR_360]).filter(([, dest]) => dest));
-    // panelId -> { rowIndex: width } for any table that asked for fixed column widths.
-    const colWidths = Object.fromEntries(def.panels
-      .filter((p) => Array.isArray(p.config?.rows) && p.config.rows.some((r) => r?.width))
-      .map((p) => [p.id, Object.fromEntries(
-        p.config.rows.map((r, i) => [i, r?.width]).filter(([, w]) => w))]));
 
     const [obj] = await kb.exportObjects([{ type: 'dashboard', id }]);
     const panels = JSON.parse(obj.attributes.panelsJSON);
@@ -93,22 +91,9 @@ async function applyImportOnlyState(all) {
       refs.push({ name: refName, type: 'visualization', id: vid });
       changed++;
     }
-    /**
-     * Column widths. Lens stores these on the visualization column state, and the Dashboards API
-     * does not carry them — same category as the control bar and the drilldowns, so same post-pass.
-     * Verified by export -> set width -> import -> export: the value survives verbatim.
-     */
-    let sizedCols = 0;
-    for (const p of panels) {
-      const widths = colWidths[p.panelIndex];
-      if (!widths) continue;
-      const cfg = p.embeddableConfig?.attributes?.state?.visualization;
-      if (!Array.isArray(cfg?.columns)) continue;
-      for (const c of cfg.columns) {
-        const m = /^datatable_accessor_row_(\d+)$/.exec(c.columnId);
-        if (m && widths[Number(m[1])]) { c.width = widths[Number(m[1])]; sizedCols++; }
-      }
-    }
+    // Column widths used to be patched in here. The 9.6 Dashboards API now carries `width` (and
+    // `label`) on data_table rows AND metrics itself — verified by PUT then _export — so they ride
+    // the PUT like any other panel option and this post-pass no longer touches them.
 
     let drilled = 0;
     for (const p of panels) {
@@ -121,8 +106,7 @@ async function applyImportOnlyState(all) {
     obj.attributes.controlGroupInput = controlGroupInput;
     obj.references = [...refs, ...controlRefs];
     await kb.importObjects([obj]);
-    detail(`${id}: ${changed} vega re-pointed, ${CONTROLS.length} controls, ${drilled} drilldown(s)`
-      + (sizedCols ? `, ${sizedCols} sized column(s)` : ''));
+    detail(`${id}: ${changed} vega re-pointed, ${CONTROLS.length} controls, ${drilled} drilldown(s)`);
     vegaTotal += changed;
     drillTotal += drilled;
   }
@@ -135,14 +119,14 @@ export async function run() {
 
   for (const pass of [1, 2]) {
     for (const [name, def] of Object.entries(all)) {
-      await kb.sPut(`/api/dashboards/cloud-audit-${name}`, payload(def));
+      await kb.sPut(`/api/dashboards/${nsId(`cloud-audit-${name}`)}`, payload(def));
     }
     if (pass === 1) info('pass 1 complete — creating dashboards');
   }
-  for (const name of Object.keys(all)) detail(`cloud-audit-${name}`);
+  for (const name of Object.keys(all)) detail(nsId(`cloud-audit-${name}`));
 
   const { vegaTotal, drillTotal } = await applyImportOnlyState(all);
   success(`${Object.keys(all).length} dashboards deployed to space "${cfg.space}"`
     + ` (${vegaTotal} Vega re-pointed, ${CONTROLS.length} controls each, ${drillTotal} drilldowns)`);
-  info(`Open: ${cfg.kbs}/app/dashboards#/view/cloud-audit-00-command-center`);
+  info(`Open: ${cfg.kbs}/app/dashboards#/view/${nsId('cloud-audit-00-command-center')}`);
 }

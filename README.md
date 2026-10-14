@@ -222,6 +222,69 @@ Probed against Kibana 9.6 serverless. Several are undocumented and cost real tim
 | `kibanaAddFilter(query, index)` resolves `index` by data view **title** | Pass `logs-elastic_cloud.serverless_audit.otel-default`; the id `cloud-audit-dv` renders *Index "cloud-audit-dv" not found* |
 | External URLs are blocked in Vega on serverless | The basemap is Elastic Maps Service: `{"%type%": "emsfile", "name": "World Countries"}` with `format: {type: "topojson", feature: "data"}` — not `property: "features"`, which yields one useless row |
 | Vega errors render inside the panel as `li.vgaVis__message--err`, often as a bare "Error" | `--verify` counts those elements in addition to reading text |
+| Dashboards, visualizations, searches and data views are **multiple-isolated**: an id is unique across all spaces | With the suite deployed in one space, a second space's `PUT /api/dashboards/cloud-audit-…` is a 409 and `_import` silently re-ids the Vega and Discover objects. For a private render set `AUDIT_ID_NS` alongside `AUDIT_SPACE` (`AUDIT_SPACE=x AUDIT_ID_NS=x ./audit --objects`, then `--dashboards`, `--verify`) and every id becomes `cloud-audit-x-…` |
+| `data_table` rows and metrics take `label` and `width` natively (stored as the Lens `customLabel` and column width) | `table()` titles every column and sizes it by role; see *Presentation conventions*. A label never changes the filtered field |
+| An `xy` chart's legend defaults to `hidden`, even with a `breakdown_by` | `xy()` emits `config.legend` (`bottom` list by default when there is a split) and the `eui_amsterdam` palette; Kibana's `default` palette pairs each hue with a pale tint that vanishes on white |
+| Markdown panels have no font-size setting, and `###` renders at ~20px | `md()` lifts a leading heading into the panel title; `layout.mjs` rejects `#`–`###` anywhere else |
+| Discover in ES\|QL mode ignores the ad-hoc data view's `fieldAttrs.customLabel` | Session headers come from a trailing `RENAME` — see *Presentation conventions* for the filter trade-off |
+
+---
+
+## Presentation conventions
+
+These dashboards are read by people who did not build them, in both themes, at several times
+today's volume. Each rule below came out of a rendered review of every panel, and each is enforced
+in shared code rather than at call sites.
+
+**Lens tables — `table()` in `scripts/lib/panels.mjs`.**
+- *Headers.* Name ES\|QL columns for the query (snake_case aliases, raw fields) and let `table()`
+  title them: `COLUMNS` maps the suite vocabulary (`actor` → Identity, `last_seen` → Last seen,
+  `attributes.user.email` → Email …) and anything unlisted is humanised. `sized(col, w, { label })` or
+  `filterable(col, { label })` overrides. A label is a Lens custom label, so a click-to-filter column
+  labelled "Email" still pins `attributes.user.email` — never alias a filter column in ES\|QL.
+- *Widths are roles.* Dates, counts, IPs and short enums have fixed widths from `COLUMNS`, on metrics as
+  well as rows; text columns flex and share the rest. Lens hard-clips a cell without an ellipsis, so
+  width is the only defence. Give a text column `sized()` only to stop a sibling taking all the slack.
+- *Visible rows.* Tables are compact density with one-line rows, and a trailing `| LIMIT n` is lowered
+  to `fitRows(h)` (h=8 → 6, h=12 → 10, h=14 → 13) because a Lens table gives no cue that rows
+  continue. `{ scroll: true }` keeps the LIMIT when the title promises a count; `{ wrap: true }`
+  gives auto-height rows for a column whose whole value matters.
+
+**Charts — `xy()` / `bar()`.** A breakdown gets a legend (`legend: 'bottom' | 'right' | 'hidden'`).
+`bottom` is one line and clips past ~6 series: use `'right'`, or fold the tail into "other" in the
+query. `colors: { value: '#hex' }` pins a category to a colour so it matches across panels;
+`values: true` prints bar values.
+
+**Markdown — `md()`.** A note's heading is its panel title. A leading `#`–`###` line is lifted into
+it; `####` is a bold run-in label (and what `section()` draws).
+
+**Discover sessions — `searches/*.json`.** End the ES\|QL with `| RENAME field AS Header, …` after
+every drift-checked fragment, list the new names in `columns` and `sort`, and put `@timestamp` first
+(renamed `Time`). `grid.columns` sets widths; dates and IPs get one by default, and rows are one line
+(`row_height` overrides). The trade-off, measured: on the embedded dashboard grid a renamed column
+loses its filter-for/out cell actions, because no index field stands behind the new name; in the
+Discover app filter-for still works — it appends `| WHERE \`Header\` == …`. The suite's pivots are
+the control bar and the Lens click-to-filter columns, so sessions rename everything they show.
+`layout.mjs` fails a session that lists a renamed column by its old name. Pattern:
+`searches/10-raw-signal-feed.json`.
+
+**Vega colour.** A spec cannot tell which theme it is in, so no colour may sit near either
+background (dark panels are ~`#111C2C`, light are white).
+- *Magnitude* (heatmap cells, matrix cells, bars whose colour repeats their length): one mid-tone
+  hue on the mark, `"color": "#3987e5"`, and encode volume as **opacity**:
+  `"opacity": {"field": …, "type": "quantitative", "scale": {"type": "log", "range": [0.35, 1]}}`
+  (`symlog` only if zeros reach the chart, and never with `nice`). The 0.35 floor is what keeps the
+  rarest cell ≥1.5:1 against both backgrounds — at the old 0.07 it was 1.1:1, invisible, and on the
+  forensic panels the rare cell is the point. Legend: `"values"` at decades
+  (`[1, 10, 100, 1000, 10000]`) with `"labelExpr": "format(datum.value, '~s')"`; symlog places
+  default ticks linearly. Never a light-to-dark ramp, never a stop like `#0B1628` or `#1D2A3A`.
+- *Severity* (a second quantity on the same mark, as on the treemap and the rare-event scatter):
+  `"range": ["#54B399", "#D6BF57", "#E7664C"]` over `[0, RISK_MAX]` — mid-tones only, monotone in
+  meaning. Text drawn over a severity fill uses `#1D1E24` on the yellow and orange stops.
+- *Categories*: `PALETTE` in `panels.mjs` (`#54B399, #6092C0, #D36086, #9170B8, #CA8EAE, #D6BF57,
+  #B9A888, #DA8B45, #AA6556, #E7664C`) — the same ten Lens draws breakdowns with, so a category
+  pinned with `xy({ colors })` and the same category in Vega can match.
+- Legends sit outside the plot (`"orient": "bottom"` or `"right"`), never `bottom-right` inside it.
 
 ---
 

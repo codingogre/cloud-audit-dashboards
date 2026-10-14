@@ -32,7 +32,7 @@
  *      gating it removes the thing the panel exists to show.
  */
 
-import { cfg } from './env.mjs';
+import { cfg, nsId } from './env.mjs';
 
 /** The audit stream, from config — one definition, so a rename is an .env change, not a code change. */
 export const IDX = cfg.dataStream;
@@ -402,21 +402,67 @@ export const kpi = (x, y, w, h, q, col, desc, { fmt = 'number', dec = 0, seconda
   },
 });
 
-export const xy = (x, y, w, h, title, q, ycol, desc, { kind = 'bar_stacked', breakdown, xcol, label = '@timestamp', temporal = true } = {}) => {
+/**
+ * The categorical palette for every Lens breakdown, and the order a Vega spec should draw categories
+ * in so the two agree. Kibana's `default` palette pairs each hue with a pale tint (#16C5C0 then
+ * #A6EDEA), so a two-series chart reads as one teal and its tint is about 1.4:1 on white — the
+ * second series all but disappears in light theme. `eui_amsterdam` is ten distinct mid-tone hues,
+ * each readable on both backgrounds; it was compared side by side against default,
+ * eui_amsterdam_color_blind, kibana_v7_legacy, elastic_brand_2023 and neutral in both themes.
+ */
+export const PALETTE_ID = 'eui_amsterdam';
+export const PALETTE = ['#54B399', '#6092C0', '#D36086', '#9170B8', '#CA8EAE', '#D6BF57', '#B9A888', '#DA8B45', '#AA6556', '#E7664C'];
+
+/**
+ * Legend placement, verified against the 9.6 Dashboards API (`config.legend`) and rendered:
+ *
+ *   bottom  one row under the plot (`layout: list`). Costs ~25px of height and none of the width,
+ *           so it is the default — but a list does not wrap, so past ~6 series the tail is
+ *           CLIPPED at the panel edge. A breakdown with more values than that wants 'right', or a
+ *           query that folds the tail into "other" (which also keeps colours from repeating: the
+ *           palette has ten).
+ *   right   one entry per line beside the plot. Takes ~140px of width and truncates long names.
+ *   hidden  the API default, and what a chart with no breakdown gets: one series needs no key.
+ *
+ * Without this every breakdown chart in the suite rendered as unlabelled colour, because the API
+ * default is `hidden` whether or not there is a split.
+ */
+const LEGEND = {
+  bottom: { visibility: 'visible', position: 'bottom', layout: { type: 'list' } },
+  right:  { visibility: 'visible', position: 'right' },
+  hidden: { visibility: 'hidden' },
+};
+
+/**
+ * `legend`  'bottom' | 'right' | 'hidden'; defaults to 'bottom' when there is a breakdown.
+ * `colors`  { value: '#hex' } pins a breakdown value to a colour, so the same category is the same
+ *           colour on every chart that shows it (e.g. the four BAND values on Lens and on Vega).
+ *           Unpinned values take PALETTE in order.
+ * `values`  true prints each bar's value on it — for a ranked bar() whose tail would otherwise be
+ *           a 1px sliver next to a dominant first bar.
+ */
+export const xy = (x, y, w, h, title, q, ycol, desc,
+  { kind = 'bar_stacked', breakdown, xcol, label = '@timestamp', temporal = true, legend, colors, values = false } = {}) => {
   const layer = {
     type: kind, data_source: { type: 'esql', query: q },
     x: { column: xcol || BUCKET, label }, y: [{ column: ycol }],
   };
-  if (breakdown) layer.breakdown_by = { column: breakdown };
+  if (breakdown) {
+    layer.breakdown_by = { column: breakdown, color: { mode: 'categorical', palette: PALETTE_ID,
+      mapping: Object.entries(colors || {}).map(([v, hex]) => ({ values: [v], color: { type: 'color_code', value: hex } })) } };
+  }
   const axis = { x: { title: { visible: false } }, y: { title: { visible: false } } };
   if (temporal) Object.assign(axis.x, { scale: 'temporal', domain: { type: 'fit', rounding: false } });
-  return { type: 'vis', id: nid('xy'), grid: { x, y, w, h },
-           config: { title, description: desc, type: 'xy', axis, layers: [layer] } };
+  const config = { title, description: desc, type: 'xy', axis, layers: [layer],
+    legend: LEGEND[legend || (breakdown ? 'bottom' : 'hidden')] };
+  if (!config.legend) throw new Error(`xy "${title}": legend must be one of ${Object.keys(LEGEND).join(', ')}`);
+  if (values) config.styling = { bars: { data_labels: { visible: true } } };
+  return { type: 'vis', id: nid('xy'), grid: { x, y, w, h }, config };
 };
 
 /** A categorical horizontal bar chart: `cat` down the side, `val` along. The non-temporal xy path. */
-export const bar = (x, y, w, h, title, q, cat, val, desc) =>
-  xy(x, y, w, h, title, q, val, desc, { kind: 'bar_horizontal', xcol: cat, label: cat, temporal: false });
+export const bar = (x, y, w, h, title, q, cat, val, desc, opts = {}) =>
+  xy(x, y, w, h, title, q, val, desc, { kind: 'bar_horizontal', xcol: cat, label: cat, temporal: false, ...opts });
 
 /**
  * Rows accept either a column name or an object, so a column can opt into `click_filter` or a
@@ -433,26 +479,159 @@ export const bar = (x, y, w, h, title, q, cat, val, desc) =>
  * attributes.user.email, which is `flattened` and answers term/match_phrase correctly
  * (verified: filter and native WHERE return the same count for the same identity).
  */
-export const table = (x, y, w, h, title, q, rows, metrics, desc) => ({
-  type: 'vis', id: nid('tbl'), grid: { x, y, w, h },
-  config: {
-    title, description: desc, type: 'data_table',
-    data_source: { type: 'esql', query: q },
-    rows: rows.map((c) => (typeof c === 'string' ? { column: c } : c)),
-    metrics: metrics.map((m) => (typeof m === 'string' ? { column: m } : m)),
-  },
-});
+/**
+ * HEADERS AND WIDTHS. A column's header is its `label`, which the 9.6 Dashboards API accepts on
+ * every row and metric and stores as the Lens column's customLabel. It changes the header ONLY:
+ * the column still reads `fieldName`, so a click_filter column labelled "Email" still pins
+ * `attributes.user.email: …` — verified by clicking a labelled cell on a live dashboard. That is
+ * why labels are applied here rather than by aliasing in ES|QL: an alias would cost the filter.
+ *
+ * So the convention is: name ES|QL columns for the query (snake_case, raw fields), and let table()
+ * title them. COLUMNS holds the suite's vocabulary — one place, so "Identity" means the same
+ * thing on every dashboard — and anything it does not list is humanised by label() below, so a
+ * raw dotted name or a snake_case alias can no longer reach a header. An explicit `label` on a
+ * column wins.
+ *
+ * `width` is a ROLE, not a per-panel number. Lens splits the panel evenly between unsized
+ * columns, so on a six-column table a 3-digit count got the same ~150px as the identity it
+ * belonged to, and a timestamp got too little to finish its minutes ("Oct 14, 2026 @ 10:2").
+ * Fixing the width of every column whose content has a known length (dates, counts, IPs, short
+ * enums) leaves the text columns to share whatever is left — which is the only way the column a
+ * reader came for stops clipping. Lens does not ellipsise a clipped cell (it hard-cuts the
+ * glyphs, at every density and row-height setting — checked), so a clipped value is
+ * indistinguishable from a short one; width is the only remedy short of wrapping.
+ *
+ * Widths are for the compact density table() sets below. DATE fits Kibana's full default date
+ * format, "Oct 14, 2026 @ 11:28:36.286", with nothing cut. Deliberately not DATE_FORMAT in ES|QL to
+ * save width: that renders UTC as a string, while every Lens and Discover timestamp beside it is
+ * in the browser's zone, and the column stops sorting as a date.
+ */
+const W = { DATE: 190, COUNT: 90, IP: 125, ENUM: 105 };
+const C = (label, width) => (width ? { label, width } : { label });
 
-/** A row column whose cells are click-to-filter. See table(). */
-export const filterable = (column) => ({ column, click_filter: true });
+export const COLUMNS = {
+  // who
+  actor: C('Identity'), actor_kind: C('Kind', W.ENUM), actor_scope: C('Scope', W.ENUM), actor_org: C('Origin', W.ENUM),
+  'attributes.user.email': C('Email'), 'attributes.user.name': C('User'), user: C('User'), owner: C('Owner'),
+  api_key: C('API key'), 'attributes.api_key.name': C('API key'), key_id: C('Key ID'), 'attributes.api_key.id': C('Key ID'),
+  credential: C('Credential', W.ENUM),
+  // what
+  action: C('Action'), 'attributes.event.action': C('Action'), 'attributes.elasticsearch.audit.action': C('Transport action'),
+  verb: C('Operation', W.ENUM), result: C('Result', W.ENUM), 'attributes.event.outcome': C('Outcome', W.ENUM),
+  change: C('Change'), request: C('Request'), execution: C('Execution', W.ENUM), weight: C('Weight', W.COUNT),
+  // on what
+  name: C('Name'), type: C('Type'), obj_name: C('Object'), obj_type: C('Object type'), kind: C('Kind'),
+  index: C('Index'), 'attributes.elasticsearch.audit.indices': C('Index'),
+  space: C('Space', W.ENUM), 'attributes.kibana.space.id': C('Space', W.ENUM),
+  'attributes.kibana.saved_object.name': C('Object'), 'attributes.kibana.saved_object.type': C('Object type'),
+  source: C('Source'), 'resource.attributes.service.name': C('Source'),
+  // from where
+  ip: C('IP', W.IP), client_ip: C('Client IP', W.IP), 'client.ip': C('Client IP', W.IP), proxy: C('Proxy IP', W.IP),
+  city: C('City'), country: C('Country', W.ENUM),
+  // when
+  first_seen: C('First seen', W.DATE), last_seen: C('Last seen', W.DATE), last_change: C('Last change', W.DATE),
+  '@timestamp': C('Time', W.DATE),
+  // how much
+  events: C('Events', W.COUNT), actions: C('Actions', W.COUNT), actors: C('Identities', W.COUNT),
+  addresses: C('Addresses', W.COUNT), cities: C('Cities', W.COUNT), countries: C('Countries', W.COUNT),
+  ips: C('IPs', W.COUNT), indices: C('Indices', W.COUNT), keys: C('API keys', W.COUNT),
+  privileged: C('Privileged', W.COUNT), severity: C('Severity', W.COUNT), risk_total: C('Risk total', W.COUNT),
+  mean_severity: C('Mean severity', W.COUNT), scoring_events: C('Scoring events', W.COUNT),
+};
+
+/** Words humanise() must not sentence-case. */
+const ACRONYMS = { ip: 'IP', ips: 'IPs', id: 'ID', api: 'API', url: 'URL', os: 'OS', ecs: 'ECS', iso: 'ISO', esql: 'ES|QL' };
 
 /**
- * A row column with a fixed pixel width. See table().
+ * The header for a column COLUMNS does not list. A dotted field keeps only its last segment
+ * (`attributes.kibana.saved_object.type` → "Type"); snake_case becomes words; the first word is
+ * capitalised. A name that already looks like a header (`Last seen`, an ES|QL backtick alias) is
+ * returned as written.
+ */
+export const humanise = (column) => {
+  if (/[A-Z ]/.test(column) && !column.includes('.')) return column;
+  const words = column.split('.').pop().split(/[_\s]+/).filter(Boolean)
+    .map((w) => ACRONYMS[w.toLowerCase()] || w.toLowerCase());
+  const s = words.join(' ');
+  return s.charAt(0).toUpperCase() + s.slice(1);
+};
+
+/** Header text for a column: COLUMNS first, then humanise(). */
+export const label = (column) => COLUMNS[column]?.label || humanise(column);
+
+/**
+ * ROWS THAT FIT. A Lens table gives no cue that rows continue below the panel edge — no scrollbar
+ * until hovered, no "N more" — so a LIMIT larger than the visible rows hides rows from anyone
+ * reading the dashboard rather than using it, and the last visible row is usually sliced in half.
  *
- * Kibana's data table divides the panel evenly between columns, so on a wide panel with many
- * columns every column gets the same width regardless of what it holds — which truncates the one
- * column that matters (an object name) to make room for one that holds "—". Widths are applied by
- * the _import post-pass in dashboards.mjs, because `PUT /api/dashboards/{id}` does not carry them.
+ * Measured on rendered panels at the compact density table() sets: a grid unit is 20px plus an 8px
+ * gutter, the panel title takes ~33px, the header ~26px, and a single-line row is 24px. The 76 is
+ * those fixed costs plus a margin that keeps the last row whole when a horizontal scrollbar
+ * appears. h=12 → 10 rows, h=14 → 13, h=8 → 6.
+ */
+export const fitRows = (h) => Math.max(1, Math.floor((28 * h - 76) / 24));
+
+/**
+ * The table's density and row height. Compact (12px, 24px rows) rather than Lens' default (14px,
+ * 36px rows): it fits ~50% more rows and ~15% more characters per pixel of width, which is what
+ * every crowded and truncated table finding came down to, and it matches Discover's grid beside it.
+ * One line per row so a row's height is fixed and fitRows() is exact; `wrap` trades that for
+ * auto-height rows, for a column whose whole value is the point (a security_config_change payload).
+ */
+const DENSITY = { mode: 'compact', height: { value: { type: 'custom', lines: 1 } } };
+const DENSITY_WRAP = { mode: 'compact', height: { value: { type: 'auto' } } };
+
+/**
+ * The finished column: suite label and role width, overridden by anything the call site set.
+ * Applied to metrics as well as rows — the API carries `width` on both (verified by export) — which
+ * is what lets a date that is an aggregate (`last_seen = MAX(@timestamp)`) stop clipping.
+ */
+const column = (c) => {
+  const spec = typeof c === 'string' ? { column: c } : c;
+  const { label: lbl, width } = COLUMNS[spec.column] || {};
+  return { label: lbl || humanise(spec.column), ...(width ? { width } : {}), ...spec };
+};
+
+/**
+ * `scroll` keeps the authored LIMIT even when it exceeds the visible rows — for a feed whose title
+ * promises a count ("the 30 most recent"), where scrolling is the point. Otherwise a trailing
+ * `| LIMIT n` is lowered to fitRows(h), so the query never fetches rows nobody can see. Only ever
+ * lowered: a LIMIT already within the panel is left alone. `wrap` implies scroll, since auto-height
+ * rows make the count unknowable.
+ */
+export const table = (x, y, w, h, title, q, rows, metrics, desc, { scroll = false, wrap = false } = {}) => {
+  let query = q;
+  if (!scroll && !wrap) {
+    query = q.replace(/\|\s*LIMIT\s+(\d+)\s*$/i, (m, n) => `| LIMIT ${Math.min(Number(n), fitRows(h))}`);
+  }
+  const r = rows.map(column);
+  const m = metrics.map(column);
+  // Every column fixed leaves the rest of a wide panel as an empty band on the right (rendered: a
+  // 260px band on a full-width table). So when nothing flexes, the widest row column does — it is
+  // the one the widths were protecting, so it is the one that should take the slack.
+  if (r.length && [...r, ...m].every((c) => c.width)) {
+    delete r.reduce((a, b) => (b.width > a.width ? b : a)).width;
+  }
+  return {
+    type: 'vis', id: nid('tbl'), grid: { x, y, w, h },
+    config: {
+      title, description: desc, type: 'data_table',
+      data_source: { type: 'esql', query },
+      styling: { density: wrap ? DENSITY_WRAP : DENSITY },
+      rows: r, metrics: m,
+    },
+  };
+};
+
+/** A row column whose cells are click-to-filter. See table(). The label does not affect the filter. */
+export const filterable = (column, extra = {}) => ({ column, click_filter: true, ...extra });
+
+/**
+ * A column with a fixed pixel width, and optionally its own `label` — `sized('name', 430,
+ * { label: 'Object' })`. Works on rows and metrics. See table() for why widths are roles and for the
+ * defaults COLUMNS already supplies; reach for this when a text column needs a floor so a sibling
+ * text column does not take all the slack. `PUT /api/dashboards/{id}` carries `width` natively in
+ * 9.6, so there is no post-pass for it any more.
  */
 export const sized = (column, width, extra = {}) => ({ column, width, ...extra });
 
@@ -478,17 +657,33 @@ export const regionMap = (x, y, w, h, title, q, regionCol, metricCol, desc) => (
 /** Vega panels are legacy `visualization` saved objects; see dashboards.mjs repointVega(). */
 export const vega = (x, y, w, h, ref, title, desc) => ({
   type: 'vis', id: nid('vega'), grid: { x, y, w, h },
-  config: { ref_id: `cloud-audit-vega-${ref}`, title, description: desc },
+  config: { ref_id: nsId(`cloud-audit-vega-${ref}`), title, description: desc },
 });
 
 export const search = (x, y, w, h, ref, title, desc) => ({
   type: 'discover_session', id: nid('ds'), grid: { x, y, w, h },
-  config: { ref_id: `cloud-audit-search-${ref}`, title, description: desc },
+  config: { ref_id: nsId(`cloud-audit-search-${ref}`), title, description: desc },
 });
 
-export const md = (x, y, w, h, content) => ({
-  type: 'markdown', id: nid('md'), grid: { x, y, w, h }, config: { content },
-});
+/**
+ * MARKDOWN SIZE. A markdown panel renders its body at 16px and `###` at ~20px, against 14px panel
+ * titles and 12px tables, so a side note with an in-content heading was the loudest thing in its
+ * row; and `####` renders as bold body text, no bigger than the paragraph under it. The 9.6 API has
+ * no font-size setting for markdown (checked: `settings` takes only open_links_in_new_tab).
+ *
+ * So the rule is: a note's heading is its PANEL TITLE, exactly like every other panel, and the
+ * content is body text. md() enforces it: a leading `#`/`##`/`###` line (after an optional <style>
+ * block) is lifted out of the content into `title`, and layout.mjs rejects one anywhere else. `####`
+ * stays legal — it is how section() draws a band, and inside a long note it is a bold run-in label.
+ */
+export const md = (x, y, w, h, content, { title, description } = {}) => {
+  const m = /^((?:<style>[\s\S]*?<\/style>\s*)?)#{1,3}[ \t]+([^\n]+)\n+/.exec(content);
+  const config = { content: m ? m[1] + content.slice(m[0].length) : content };
+  const t = title ?? m?.[2].trim();
+  if (t) config.title = t;
+  if (description) config.description = description;
+  return { type: 'markdown', id: nid('md'), grid: { x, y, w, h }, config };
+};
 
 /**
  * A section header. `window` is required, not decorative: a dashboard can mix panels that follow
@@ -540,7 +735,7 @@ export const links = (x, y, w, h, current, layout = 'horizontal') => ({
      * link to the dashboard you are on as the current item, which doubles as "you are here".
      */
     links: DASH.map(([d, label]) => ({
-      type: 'dashboardLink', destination: d, label,
+      type: 'dashboardLink', destination: nsId(d), label,
       options: { use_filters: true, use_time_range: true, open_in_new_tab: false },
     })),
   },
@@ -560,7 +755,12 @@ a:hover {
 </style>
 `;
 
-export const NAV_H = 4;
+/**
+ * Three grid rows (76px): the panel title plus one row of links, with nothing spare. At four the bar
+ * carried ~40px of dead space on every dashboard. dash() adds this to every authored y, so it can
+ * change without touching any dashboard module.
+ */
+export const NAV_H = 3;
 
 /**
  * Navigation always goes on top: pin the links bar at y=0 and shift authored panels down.

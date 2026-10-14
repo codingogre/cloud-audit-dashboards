@@ -14,7 +14,7 @@
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { cfg, ROOT } from './lib/env.mjs';
+import { cfg, ROOT, nsId } from './lib/env.mjs';
 import { es } from './lib/http.mjs';
 import { success, info, detail, warn } from './lib/log.mjs';
 import { IDX, NOISE, BAND, ACTOR, RISK, RISK_PREFILTER, CHANGE } from './lib/panels.mjs';
@@ -46,7 +46,7 @@ const DASHBOARDS = [
   ['07-actor-360', 'Actor 360'],
 ];
 
-const link = (id) => `${cfg.kbs}/app/dashboards#/view/cloud-audit-${id}?_g=(time:(from:${WINDOW},to:now))`;
+const link = (id) => `${cfg.kbs}/app/dashboards#/view/${nsId(`cloud-audit-${id}`)}?_g=(time:(from:${WINDOW},to:now))`;
 
 /** Discover, with an ES|QL query already applied — the "show me this identity's hour" path. */
 const discover = (query) =>

@@ -17,7 +17,7 @@
         "x": 0,
         "y": 0,
         "w": 48,
-        "h": 4
+        "h": 3
       },
       "config": {
         "title": "Audit suite navigation",
@@ -111,7 +111,7 @@
       "id": "kpi-01",
       "grid": {
         "x": 0,
-        "y": 4,
+        "y": 3,
         "w": 8,
         "h": 5
       },
@@ -140,7 +140,7 @@
       "id": "kpi-02",
       "grid": {
         "x": 8,
-        "y": 4,
+        "y": 3,
         "w": 8,
         "h": 5
       },
@@ -169,7 +169,7 @@
       "id": "kpi-03",
       "grid": {
         "x": 16,
-        "y": 4,
+        "y": 3,
         "w": 8,
         "h": 5
       },
@@ -198,7 +198,7 @@
       "id": "kpi-04",
       "grid": {
         "x": 24,
-        "y": 4,
+        "y": 3,
         "w": 8,
         "h": 5
       },
@@ -227,7 +227,7 @@
       "id": "kpi-05",
       "grid": {
         "x": 32,
-        "y": 4,
+        "y": 3,
         "w": 8,
         "h": 5
       },
@@ -256,7 +256,7 @@
       "id": "kpi-06",
       "grid": {
         "x": 40,
-        "y": 4,
+        "y": 3,
         "w": 8,
         "h": 5
       },
@@ -285,7 +285,7 @@
       "id": "map-07",
       "grid": {
         "x": 0,
-        "y": 9,
+        "y": 8,
         "w": 24,
         "h": 13
       },
@@ -310,7 +310,7 @@
       "id": "vega-08",
       "grid": {
         "x": 24,
-        "y": 9,
+        "y": 8,
         "w": 12,
         "h": 13
       },
@@ -325,12 +325,13 @@
       "id": "md-09",
       "grid": {
         "x": 36,
-        "y": 9,
+        "y": 8,
         "w": 12,
         "h": 13
       },
       "config": {
-        "content": "### 🌍 About this data\n\nGeo is resolved **at ingest** by `logs-elastic_cloud.serverless_audit.otel@custom`, which lifts\n`attributes.network.forwarded_ip` to `client.ip` and resolves `client.geo.*`.\n\n**Not `source.ip`** — that is the *internal proxy* (`100.64.x.x` CGNAT, `10.x.x.x` mesh),\nnever the real client.\n\n**Forward-only** — events from before the pipeline was installed have no geo."
+        "content": "Geo is resolved **at ingest** by `logs-elastic_cloud.serverless_audit.otel@custom`, which lifts\n`attributes.network.forwarded_ip` to `client.ip` and resolves `client.geo.*`.\n\n**Not `source.ip`** — that is the *internal proxy* (`100.64.x.x` CGNAT, `10.x.x.x` mesh),\nnever the real client.\n\n**Forward-only** — events from before the pipeline was installed have no geo.",
+        "title": "🌍 About this data"
       }
     },
     {
@@ -338,7 +339,7 @@
       "id": "tbl-10",
       "grid": {
         "x": 0,
-        "y": 22,
+        "y": 21,
         "w": 24,
         "h": 12
       },
@@ -348,24 +349,44 @@
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE client.geo.country_iso_code IS NOT NULL AND attributes.user.email IS NOT NULL | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS countries = COUNT_DISTINCT(client.geo.country_iso_code), cities = COUNT_DISTINCT(client.geo.city_name), ips = COUNT_DISTINCT(client.ip), events = COUNT(*) BY actor | WHERE countries > 1 | SORT countries DESC, events DESC | LIMIT 15"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE client.geo.country_iso_code IS NOT NULL AND attributes.user.email IS NOT NULL | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS countries = COUNT_DISTINCT(client.geo.country_iso_code), cities = COUNT_DISTINCT(client.geo.city_name), ips = COUNT_DISTINCT(client.ip), events = COUNT(*) BY actor | WHERE countries > 1 | SORT countries DESC, events DESC | LIMIT 10"
+        },
+        "styling": {
+          "density": {
+            "mode": "compact",
+            "height": {
+              "value": {
+                "type": "custom",
+                "lines": 1
+              }
+            }
+          }
         },
         "rows": [
           {
+            "label": "Identity",
             "column": "actor"
           }
         ],
         "metrics": [
           {
+            "label": "Countries",
+            "width": 90,
             "column": "countries"
           },
           {
+            "label": "Cities",
+            "width": 90,
             "column": "cities"
           },
           {
+            "label": "IPs",
+            "width": 90,
             "column": "ips"
           },
           {
+            "label": "Events",
+            "width": 90,
             "column": "events"
           }
         ]
@@ -376,7 +397,7 @@
       "id": "tbl-11",
       "grid": {
         "x": 24,
-        "y": 22,
+        "y": 21,
         "w": 24,
         "h": 12
       },
@@ -386,27 +407,49 @@
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE client.ip IS NOT NULL | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS events = COUNT(*), actors = COUNT_DISTINCT(actor), first_seen = MIN(@timestamp) BY ip = client.ip, city = client.geo.city_name, country = client.geo.country_iso_code | SORT events DESC | LIMIT 15"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE client.ip IS NOT NULL | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS events = COUNT(*), actors = COUNT_DISTINCT(actor), first_seen = MIN(@timestamp) BY ip = client.ip, city = client.geo.city_name, country = client.geo.country_iso_code | SORT events DESC | LIMIT 10"
+        },
+        "styling": {
+          "density": {
+            "mode": "compact",
+            "height": {
+              "value": {
+                "type": "custom",
+                "lines": 1
+              }
+            }
+          }
         },
         "rows": [
           {
+            "label": "IP",
+            "width": 125,
             "column": "ip"
           },
           {
+            "label": "City",
             "column": "city"
           },
           {
+            "label": "Country",
+            "width": 105,
             "column": "country"
           }
         ],
         "metrics": [
           {
+            "label": "Events",
+            "width": 90,
             "column": "events"
           },
           {
+            "label": "Identities",
+            "width": 90,
             "column": "actors"
           },
           {
+            "label": "First seen",
+            "width": 190,
             "column": "first_seen"
           }
         ]
@@ -417,7 +460,7 @@
       "id": "pie-12",
       "grid": {
         "x": 0,
-        "y": 34,
+        "y": 33,
         "w": 24,
         "h": 12
       },
@@ -449,7 +492,7 @@
       "id": "tbl-13",
       "grid": {
         "x": 24,
-        "y": 34,
+        "y": 33,
         "w": 24,
         "h": 12
       },
@@ -461,16 +504,32 @@
           "type": "esql",
           "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE client.ip IS NOT NULL AND client.geo.country_iso_code IS NULL | EVAL kind = CASE(CIDR_MATCH(client.ip, \"100.64.0.0/10\"), \"CGNAT 100.64/10 (carrier NAT)\", CIDR_MATCH(client.ip, \"10.0.0.0/8\", \"172.16.0.0/12\", \"192.168.0.0/16\"), \"RFC1918 private\", CIDR_MATCH(client.ip, \"127.0.0.0/8\"), \"loopback\", CIDR_MATCH(client.ip, \"169.254.0.0/16\"), \"link-local\", \"public, unresolved\") | STATS events = COUNT(*), addresses = COUNT_DISTINCT(client.ip) BY kind | SORT events DESC"
         },
+        "styling": {
+          "density": {
+            "mode": "compact",
+            "height": {
+              "value": {
+                "type": "custom",
+                "lines": 1
+              }
+            }
+          }
+        },
         "rows": [
           {
+            "label": "Kind",
             "column": "kind"
           }
         ],
         "metrics": [
           {
+            "label": "Events",
+            "width": 90,
             "column": "events"
           },
           {
+            "label": "Addresses",
+            "width": 90,
             "column": "addresses"
           }
         ]
@@ -481,7 +540,7 @@
       "id": "xy-14",
       "grid": {
         "x": 0,
-        "y": 46,
+        "y": 45,
         "w": 24,
         "h": 12
       },
@@ -523,10 +582,22 @@
               }
             ],
             "breakdown_by": {
-              "column": "country"
+              "column": "country",
+              "color": {
+                "mode": "categorical",
+                "palette": "eui_amsterdam",
+                "mapping": []
+              }
             }
           }
-        ]
+        ],
+        "legend": {
+          "visibility": "visible",
+          "position": "bottom",
+          "layout": {
+            "type": "list"
+          }
+        }
       }
     },
     {
@@ -534,7 +605,7 @@
       "id": "tbl-15",
       "grid": {
         "x": 24,
-        "y": 46,
+        "y": 45,
         "w": 24,
         "h": 12
       },
@@ -544,21 +615,39 @@
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE client.ip IS NOT NULL | STATS events = COUNT(*) BY proxy = attributes.source.ip, client_ip = client.ip, city = client.geo.city_name | SORT events DESC | LIMIT 15"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE client.ip IS NOT NULL | STATS events = COUNT(*) BY proxy = attributes.source.ip, client_ip = client.ip, city = client.geo.city_name | SORT events DESC | LIMIT 10"
+        },
+        "styling": {
+          "density": {
+            "mode": "compact",
+            "height": {
+              "value": {
+                "type": "custom",
+                "lines": 1
+              }
+            }
+          }
         },
         "rows": [
           {
+            "label": "Proxy IP",
+            "width": 125,
             "column": "proxy"
           },
           {
+            "label": "Client IP",
+            "width": 125,
             "column": "client_ip"
           },
           {
+            "label": "City",
             "column": "city"
           }
         ],
         "metrics": [
           {
+            "label": "Events",
+            "width": 90,
             "column": "events"
           }
         ]

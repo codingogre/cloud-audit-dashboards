@@ -17,7 +17,7 @@
         "x": 0,
         "y": 0,
         "w": 48,
-        "h": 4
+        "h": 3
       },
       "config": {
         "title": "Audit suite navigation",
@@ -111,7 +111,7 @@
       "id": "kpi-01",
       "grid": {
         "x": 0,
-        "y": 4,
+        "y": 3,
         "w": 8,
         "h": 5
       },
@@ -140,7 +140,7 @@
       "id": "kpi-02",
       "grid": {
         "x": 8,
-        "y": 4,
+        "y": 3,
         "w": 8,
         "h": 5
       },
@@ -169,7 +169,7 @@
       "id": "kpi-03",
       "grid": {
         "x": 16,
-        "y": 4,
+        "y": 3,
         "w": 8,
         "h": 5
       },
@@ -198,7 +198,7 @@
       "id": "kpi-04",
       "grid": {
         "x": 24,
-        "y": 4,
+        "y": 3,
         "w": 8,
         "h": 5
       },
@@ -227,7 +227,7 @@
       "id": "kpi-05",
       "grid": {
         "x": 32,
-        "y": 4,
+        "y": 3,
         "w": 8,
         "h": 5
       },
@@ -256,7 +256,7 @@
       "id": "kpi-06",
       "grid": {
         "x": 40,
-        "y": 4,
+        "y": 3,
         "w": 8,
         "h": 5
       },
@@ -285,7 +285,7 @@
       "id": "tbl-07",
       "grid": {
         "x": 0,
-        "y": 9,
+        "y": 8,
         "w": 48,
         "h": 14
       },
@@ -295,38 +295,59 @@
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) | EVAL verb = CASE(attributes.event.action LIKE \"*_execution_cancel\", \"cancel\", attributes.event.action LIKE \"*_run_soon\", \"run\", attributes.event.action LIKE \"*_run\", \"run\", attributes.event.action LIKE \"*_test\", \"test\", attributes.event.action LIKE \"*_enable\", \"enable\", attributes.event.action LIKE \"*_disable\", \"disable\", attributes.event.action LIKE \"ml_put_*\", \"create\", attributes.event.action LIKE \"ml_open_*\", \"open\", attributes.event.action LIKE \"ml_start_*\", \"start\", attributes.event.action LIKE \"*point_in_time\", \"pit\", attributes.event.action LIKE \"*_create*\", \"create\", attributes.event.action LIKE \"*_update*\", \"update\", attributes.event.action LIKE \"*_delete\", \"delete\", attributes.event.action LIKE \"*_find\", \"find\", attributes.event.action LIKE \"*_get\", \"get\", attributes.event.action LIKE \"*_resolve\", \"resolve\", \"other\") | GROK body.text \"\"\"\\[(?:id|workflowId)=%{DATA:g_id}(?:,|\\])\"\"\" | GROK body.text \"\"\"\\[name=%{GREEDYDATA:g_name}\\]\"\"\" | GROK body.text \"\"\"\\[executionId=%{DATA:g_exec}\\]\"\"\" | GROK body.text \"\"\"case id: %{NOTSPACE:g_case}\"\"\" | GROK body.text \"\"\"(?:job|datafeed) %{NOTSPACE:g_ml}\"\"\" | EVAL obj_type = CASE(attributes.kibana.saved_object.type IS NOT NULL, attributes.kibana.saved_object.type, attributes.event.action LIKE \"ml_*ad_job\", \"ml-job\", attributes.event.action LIKE \"ml_*ad_datafeed\", \"ml-datafeed\", attributes.event.action LIKE \"workflow_execution_*\", \"workflow-execution\", attributes.event.action LIKE \"workflow_*\", \"workflow\", attributes.event.action LIKE \"agent_builder_agent_*\", \"agent-builder-agent\", attributes.event.action LIKE \"agent_builder_tool_*\", \"agent-builder-tool\", attributes.event.action LIKE \"product_documentation_*\", \"product-documentation\", attributes.event.action == \"secret_create\", \"secret\", attributes.event.action IS NULL, \"unclassified\", REPLACE(attributes.event.action, \"_(create|update|delete|enable|disable|run|run_soon|test|cancel)$\", \"\")) | EVAL obj_name = COALESCE(attributes.kibana.saved_object.name, g_name, g_id, attributes.kibana.saved_object.id, g_case, g_ml, g_exec, body.text) | EVAL result = CASE(attributes.event.outcome == \"unknown\", \"attempted\", attributes.event.outcome) | EVAL execution = COALESCE(LEFT(g_exec, 8), \"—\") | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS events = COUNT(*), last_change = MAX(@timestamp) BY actor, verb, type = obj_type, name = obj_name, space = attributes.kibana.space.id, result | SORT last_change DESC | LIMIT 30"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) | EVAL verb = CASE(attributes.event.action LIKE \"*_execution_cancel\", \"cancel\", attributes.event.action LIKE \"*_run_soon\", \"run\", attributes.event.action LIKE \"*_run\", \"run\", attributes.event.action LIKE \"*_test\", \"test\", attributes.event.action LIKE \"*_enable\", \"enable\", attributes.event.action LIKE \"*_disable\", \"disable\", attributes.event.action LIKE \"ml_put_*\", \"create\", attributes.event.action LIKE \"ml_open_*\", \"open\", attributes.event.action LIKE \"ml_start_*\", \"start\", attributes.event.action LIKE \"*point_in_time\", \"pit\", attributes.event.action LIKE \"*_create*\", \"create\", attributes.event.action LIKE \"*_update*\", \"update\", attributes.event.action LIKE \"*_delete\", \"delete\", attributes.event.action LIKE \"*_find\", \"find\", attributes.event.action LIKE \"*_get\", \"get\", attributes.event.action LIKE \"*_resolve\", \"resolve\", \"other\") | GROK body.text \"\"\"\\[(?:id|workflowId)=%{DATA:g_id}(?:,|\\])\"\"\" | GROK body.text \"\"\"\\[name=%{GREEDYDATA:g_name}\\]\"\"\" | GROK body.text \"\"\"\\[executionId=%{DATA:g_exec}\\]\"\"\" | GROK body.text \"\"\"case id: %{NOTSPACE:g_case}\"\"\" | GROK body.text \"\"\"(?:job|datafeed) %{NOTSPACE:g_ml}\"\"\" | EVAL obj_type = CASE(attributes.kibana.saved_object.type IS NOT NULL, attributes.kibana.saved_object.type, attributes.event.action LIKE \"ml_*ad_job\", \"ml-job\", attributes.event.action LIKE \"ml_*ad_datafeed\", \"ml-datafeed\", attributes.event.action LIKE \"workflow_execution_*\", \"workflow-execution\", attributes.event.action LIKE \"workflow_*\", \"workflow\", attributes.event.action LIKE \"agent_builder_agent_*\", \"agent-builder-agent\", attributes.event.action LIKE \"agent_builder_tool_*\", \"agent-builder-tool\", attributes.event.action LIKE \"product_documentation_*\", \"product-documentation\", attributes.event.action == \"secret_create\", \"secret\", attributes.event.action IS NULL, \"unclassified\", REPLACE(attributes.event.action, \"_(create|update|delete|enable|disable|run|run_soon|test|cancel)$\", \"\")) | EVAL obj_name = COALESCE(attributes.kibana.saved_object.name, g_name, g_id, attributes.kibana.saved_object.id, g_case, g_ml, g_exec, body.text) | EVAL result = CASE(attributes.event.outcome == \"unknown\", \"attempted\", attributes.event.outcome) | EVAL execution = COALESCE(LEFT(g_exec, 8), \"—\") | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS events = COUNT(*), last_change = MAX(@timestamp) BY actor, verb, type = obj_type, name = obj_name, space = attributes.kibana.space.id, result | SORT last_change DESC | LIMIT 13"
+        },
+        "styling": {
+          "density": {
+            "mode": "compact",
+            "height": {
+              "value": {
+                "type": "custom",
+                "lines": 1
+              }
+            }
+          }
         },
         "rows": [
           {
+            "label": "Identity",
             "column": "actor",
             "width": 260
           },
           {
+            "label": "Operation",
+            "width": 105,
             "column": "verb"
           },
           {
+            "label": "Type",
             "column": "type",
             "width": 200
           },
           {
-            "column": "name",
-            "width": 430
+            "label": "Name",
+            "column": "name"
           },
           {
-            "column": "space",
-            "width": 110
+            "label": "Space",
+            "width": 110,
+            "column": "space"
           },
           {
-            "column": "result",
-            "width": 120
+            "label": "Result",
+            "width": 120,
+            "column": "result"
           }
         ],
         "metrics": [
           {
+            "label": "Events",
+            "width": 90,
             "column": "events"
           },
           {
+            "label": "Last change",
+            "width": 190,
             "column": "last_change"
           }
         ]
@@ -337,7 +358,7 @@
       "id": "vega-08",
       "grid": {
         "x": 0,
-        "y": 23,
+        "y": 22,
         "w": 24,
         "h": 13
       },
@@ -352,7 +373,7 @@
       "id": "xy-09",
       "grid": {
         "x": 24,
-        "y": 23,
+        "y": 22,
         "w": 24,
         "h": 13
       },
@@ -394,10 +415,22 @@
               }
             ],
             "breakdown_by": {
-              "column": "verb"
+              "column": "verb",
+              "color": {
+                "mode": "categorical",
+                "palette": "eui_amsterdam",
+                "mapping": []
+              }
             }
           }
-        ]
+        ],
+        "legend": {
+          "visibility": "visible",
+          "position": "bottom",
+          "layout": {
+            "type": "list"
+          }
+        }
       }
     },
     {
@@ -405,7 +438,7 @@
       "id": "tbl-10",
       "grid": {
         "x": 0,
-        "y": 36,
+        "y": 35,
         "w": 24,
         "h": 12
       },
@@ -415,21 +448,38 @@
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.kibana.saved_object.name IS NOT NULL | STATS events = COUNT(*), actors = COUNT_DISTINCT(attributes.user.email) BY name = attributes.kibana.saved_object.name, type = attributes.kibana.saved_object.type | SORT events DESC | LIMIT 15"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.kibana.saved_object.name IS NOT NULL | STATS events = COUNT(*), actors = COUNT_DISTINCT(attributes.user.email) BY name = attributes.kibana.saved_object.name, type = attributes.kibana.saved_object.type | SORT events DESC | LIMIT 10"
+        },
+        "styling": {
+          "density": {
+            "mode": "compact",
+            "height": {
+              "value": {
+                "type": "custom",
+                "lines": 1
+              }
+            }
+          }
         },
         "rows": [
           {
+            "label": "Name",
             "column": "name"
           },
           {
+            "label": "Type",
             "column": "type"
           }
         ],
         "metrics": [
           {
+            "label": "Events",
+            "width": 90,
             "column": "events"
           },
           {
+            "label": "Identities",
+            "width": 90,
             "column": "actors"
           }
         ]
@@ -440,7 +490,7 @@
       "id": "pie-11",
       "grid": {
         "x": 0,
-        "y": 48,
+        "y": 47,
         "w": 24,
         "h": 11
       },
@@ -472,7 +522,7 @@
       "id": "pie-12",
       "grid": {
         "x": 24,
-        "y": 48,
+        "y": 47,
         "w": 24,
         "h": 11
       },
@@ -504,7 +554,7 @@
       "id": "tbl-13",
       "grid": {
         "x": 24,
-        "y": 36,
+        "y": 35,
         "w": 24,
         "h": 12
       },
@@ -514,27 +564,47 @@
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE resource.attributes.service.name == \"serverless-kibana\" | EVAL verb = CASE(attributes.event.action LIKE \"*_execution_cancel\", \"cancel\", attributes.event.action LIKE \"*_run_soon\", \"run\", attributes.event.action LIKE \"*_run\", \"run\", attributes.event.action LIKE \"*_test\", \"test\", attributes.event.action LIKE \"*_enable\", \"enable\", attributes.event.action LIKE \"*_disable\", \"disable\", attributes.event.action LIKE \"ml_put_*\", \"create\", attributes.event.action LIKE \"ml_open_*\", \"open\", attributes.event.action LIKE \"ml_start_*\", \"start\", attributes.event.action LIKE \"*point_in_time\", \"pit\", attributes.event.action LIKE \"*_create*\", \"create\", attributes.event.action LIKE \"*_update*\", \"update\", attributes.event.action LIKE \"*_delete\", \"delete\", attributes.event.action LIKE \"*_find\", \"find\", attributes.event.action LIKE \"*_get\", \"get\", attributes.event.action LIKE \"*_resolve\", \"resolve\", \"other\") | GROK body.text \"\"\"\\[(?:id|workflowId)=%{DATA:g_id}(?:,|\\])\"\"\" | GROK body.text \"\"\"\\[name=%{GREEDYDATA:g_name}\\]\"\"\" | GROK body.text \"\"\"\\[executionId=%{DATA:g_exec}\\]\"\"\" | GROK body.text \"\"\"case id: %{NOTSPACE:g_case}\"\"\" | GROK body.text \"\"\"(?:job|datafeed) %{NOTSPACE:g_ml}\"\"\" | EVAL obj_type = CASE(attributes.kibana.saved_object.type IS NOT NULL, attributes.kibana.saved_object.type, attributes.event.action LIKE \"ml_*ad_job\", \"ml-job\", attributes.event.action LIKE \"ml_*ad_datafeed\", \"ml-datafeed\", attributes.event.action LIKE \"workflow_execution_*\", \"workflow-execution\", attributes.event.action LIKE \"workflow_*\", \"workflow\", attributes.event.action LIKE \"agent_builder_agent_*\", \"agent-builder-agent\", attributes.event.action LIKE \"agent_builder_tool_*\", \"agent-builder-tool\", attributes.event.action LIKE \"product_documentation_*\", \"product-documentation\", attributes.event.action == \"secret_create\", \"secret\", attributes.event.action IS NULL, \"unclassified\", REPLACE(attributes.event.action, \"_(create|update|delete|enable|disable|run|run_soon|test|cancel)$\", \"\")) | EVAL obj_name = COALESCE(attributes.kibana.saved_object.name, g_name, g_id, attributes.kibana.saved_object.id, g_case, g_ml, g_exec, body.text) | WHERE obj_type IN (\"dashboard\",\"slo\",\"alert\",\"alerting_rule\",\"tag\",\"index-pattern\",\"workflow\",\"agent-builder-agent\",\"agent-builder-tool\",\"ml-job\") | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS events = COUNT(*), last_seen = MAX(@timestamp) BY actor, verb, type = obj_type, name = obj_name | SORT last_seen DESC | LIMIT 15"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE resource.attributes.service.name == \"serverless-kibana\" | EVAL verb = CASE(attributes.event.action LIKE \"*_execution_cancel\", \"cancel\", attributes.event.action LIKE \"*_run_soon\", \"run\", attributes.event.action LIKE \"*_run\", \"run\", attributes.event.action LIKE \"*_test\", \"test\", attributes.event.action LIKE \"*_enable\", \"enable\", attributes.event.action LIKE \"*_disable\", \"disable\", attributes.event.action LIKE \"ml_put_*\", \"create\", attributes.event.action LIKE \"ml_open_*\", \"open\", attributes.event.action LIKE \"ml_start_*\", \"start\", attributes.event.action LIKE \"*point_in_time\", \"pit\", attributes.event.action LIKE \"*_create*\", \"create\", attributes.event.action LIKE \"*_update*\", \"update\", attributes.event.action LIKE \"*_delete\", \"delete\", attributes.event.action LIKE \"*_find\", \"find\", attributes.event.action LIKE \"*_get\", \"get\", attributes.event.action LIKE \"*_resolve\", \"resolve\", \"other\") | GROK body.text \"\"\"\\[(?:id|workflowId)=%{DATA:g_id}(?:,|\\])\"\"\" | GROK body.text \"\"\"\\[name=%{GREEDYDATA:g_name}\\]\"\"\" | GROK body.text \"\"\"\\[executionId=%{DATA:g_exec}\\]\"\"\" | GROK body.text \"\"\"case id: %{NOTSPACE:g_case}\"\"\" | GROK body.text \"\"\"(?:job|datafeed) %{NOTSPACE:g_ml}\"\"\" | EVAL obj_type = CASE(attributes.kibana.saved_object.type IS NOT NULL, attributes.kibana.saved_object.type, attributes.event.action LIKE \"ml_*ad_job\", \"ml-job\", attributes.event.action LIKE \"ml_*ad_datafeed\", \"ml-datafeed\", attributes.event.action LIKE \"workflow_execution_*\", \"workflow-execution\", attributes.event.action LIKE \"workflow_*\", \"workflow\", attributes.event.action LIKE \"agent_builder_agent_*\", \"agent-builder-agent\", attributes.event.action LIKE \"agent_builder_tool_*\", \"agent-builder-tool\", attributes.event.action LIKE \"product_documentation_*\", \"product-documentation\", attributes.event.action == \"secret_create\", \"secret\", attributes.event.action IS NULL, \"unclassified\", REPLACE(attributes.event.action, \"_(create|update|delete|enable|disable|run|run_soon|test|cancel)$\", \"\")) | EVAL obj_name = COALESCE(attributes.kibana.saved_object.name, g_name, g_id, attributes.kibana.saved_object.id, g_case, g_ml, g_exec, body.text) | WHERE obj_type IN (\"dashboard\",\"slo\",\"alert\",\"alerting_rule\",\"tag\",\"index-pattern\",\"workflow\",\"agent-builder-agent\",\"agent-builder-tool\",\"ml-job\") | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS events = COUNT(*), last_seen = MAX(@timestamp) BY actor, verb, type = obj_type, name = obj_name | SORT last_seen DESC | LIMIT 10"
+        },
+        "styling": {
+          "density": {
+            "mode": "compact",
+            "height": {
+              "value": {
+                "type": "custom",
+                "lines": 1
+              }
+            }
+          }
         },
         "rows": [
           {
+            "label": "Identity",
             "column": "actor"
           },
           {
+            "label": "Operation",
+            "width": 105,
             "column": "verb"
           },
           {
+            "label": "Type",
             "column": "type"
           },
           {
+            "label": "Name",
             "column": "name"
           }
         ],
         "metrics": [
           {
+            "label": "Events",
+            "width": 90,
             "column": "events"
           },
           {
+            "label": "Last seen",
+            "width": 190,
             "column": "last_seen"
           }
         ]
@@ -545,7 +615,7 @@
       "id": "ds-14",
       "grid": {
         "x": 0,
-        "y": 74,
+        "y": 73,
         "w": 24,
         "h": 14
       },
@@ -560,7 +630,7 @@
       "id": "ds-15",
       "grid": {
         "x": 24,
-        "y": 74,
+        "y": 73,
         "w": 24,
         "h": 14
       },
@@ -575,7 +645,7 @@
       "id": "ds-16",
       "grid": {
         "x": 0,
-        "y": 59,
+        "y": 58,
         "w": 48,
         "h": 15
       },

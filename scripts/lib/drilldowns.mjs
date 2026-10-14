@@ -15,9 +15,10 @@
  * dead weight.
  */
 import { stableUuid } from './ids.mjs';
+import { nsId } from './env.mjs';
 import { DASH } from './panels.mjs';
 
-export const ACTOR_360 = 'cloud-audit-07-actor-360';
+export const ACTOR_360 = nsId('cloud-audit-07-actor-360');
 
 /** Panels with at least one click-to-filter column are the ones a FILTER_TRIGGER can fire on. */
 export const hasFilterableColumn = (panel) =>
@@ -33,8 +34,10 @@ export const hasFilterableColumn = (panel) =>
  * investigated. The Actor 360 seed carries no destination suffix, so adding outbound drilldowns did
  * not change the ids of the inbound ones.
  */
-export function panelDrilldown(dashboardId, panelId, destination = ACTOR_360) {
-  const label = DASH.find(([id]) => id === destination)?.[1].replace(/^\S+\s+/, '') || 'Actor 360';
+export function panelDrilldown(dashboardId, panelId, dest = ACTOR_360) {
+  // Destinations are authored as the deployed `cloud-audit-…` ids; see cfg.ns.
+  const destination = nsId(dest);
+  const label = DASH.find(([id]) => nsId(id) === destination)?.[1].replace(/^\S+\s+/, '') || 'Actor 360';
   const seed = destination === ACTOR_360
     ? `cloud-audit-drilldown:${dashboardId}:${panelId}`
     : `cloud-audit-drilldown:${dashboardId}:${panelId}:${destination}`;

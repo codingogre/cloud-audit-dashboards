@@ -6,7 +6,7 @@
  *                        removing a field mapping requires a reindex)
  *   --clean all          both, plus the space
  */
-import { cfg } from './lib/env.mjs';
+import { cfg, nsId } from './lib/env.mjs';
 import { kb, es } from './lib/http.mjs';
 import { success, info, warn, detail } from './lib/log.mjs';
 import { buildAll } from './lib/definitions.mjs';
@@ -17,14 +17,15 @@ import { DATA_VIEW_ID } from './lib/controls.mjs';
 
 async function cleanDashboards() {
   for (const name of Object.keys(buildAll())) {
-    const r = await kb.sRaw(`/api/dashboards/cloud-audit-${name}`, { method: 'DELETE' });
-    detail(`dashboard cloud-audit-${name}: ${r.status}`);
+    const id = nsId(`cloud-audit-${name}`);
+    const r = await kb.sRaw(`/api/dashboards/${id}`, { method: 'DELETE' });
+    detail(`dashboard ${id}: ${r.status}`);
   }
   const objs = [
     ...readdirSync(join(ROOT, 'vega')).filter((f) => f.endsWith('.json'))
-      .map((f) => ({ type: 'visualization', id: `cloud-audit-vega-${f.replace('.json', '')}` })),
+      .map((f) => ({ type: 'visualization', id: nsId(`cloud-audit-vega-${f.replace('.json', '')}`) })),
     ...readdirSync(join(ROOT, 'searches')).filter((f) => f.endsWith('.json'))
-      .map((f) => ({ type: 'search', id: `cloud-audit-search-${f.replace('.json', '')}` })),
+      .map((f) => ({ type: 'search', id: nsId(`cloud-audit-search-${f.replace('.json', '')}`) })),
     // The controls' data view lives in neither vega/ nor searches/, so it has to be named
     // explicitly or `--clean dashboards` silently orphans it.
     { type: 'index-pattern', id: DATA_VIEW_ID },
