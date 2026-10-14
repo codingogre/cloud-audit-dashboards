@@ -146,7 +146,7 @@
       },
       "config": {
         "title": "",
-        "description": "Security configuration changes recorded by Elasticsearch.",
+        "description": "Security configuration changes recorded by Elasticsearch — the total that the configuration-change table and feed below draw from.",
         "type": "metric",
         "data_source": {
           "type": "esql",
@@ -286,16 +286,16 @@
       "grid": {
         "x": 0,
         "y": 8,
-        "w": 28,
-        "h": 13
+        "w": 48,
+        "h": 11
       },
       "config": {
-        "title": "🚨 Security configuration changes",
-        "description": "Raw security_config_change payloads, grouped by identity and action. The field is a JSON string, shown verbatim — it names the exact API key ids or profile uids affected. A long payload (an invalidation listing many keys) is cut at the column edge; the Config-change event feed below shows each one in full. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id.",
+        "title": "🚨 Security configuration changes, most recent first",
+        "description": "Security configuration changes grouped by identity and action, the most recently active first; in a busy range the quieter pairs are beyond the rows shown, so Events here add up to Config changes above only when every pair fits. Latest target is what the newest of those changes named (the API key, the key ids of an invalidation, the role, or the user profile), and Targets counts the different ones named across all of them: hundreds of invalidations over hundreds of keys is rotation, hundreds over one key is a loop. A profile activation names no target, because it is the signed-in user's own. The full JSON payload of every change is in the Config-change event feed at the foot of the page. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.security_config_change IS NOT NULL | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | STATS events = COUNT(*), last_change = MAX(@timestamp) BY actor, action = attributes.event.action, change = attributes.elasticsearch.audit.security_config_change | SORT last_change DESC | LIMIT 12"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.security_config_change IS NOT NULL | GROK attributes.elasticsearch.audit.security_config_change \"\"\"\"name\":\"%{DATA:t_name}\"\"\"\" | GROK attributes.elasticsearch.audit.security_config_change \"\"\"\"ids\":\\[%{DATA:t_ids}\\]\"\"\" | GROK attributes.elasticsearch.audit.security_config_change \"\"\"\"id\":\"%{DATA:t_id}\"\"\"\" | GROK attributes.elasticsearch.audit.security_config_change \"\"\"\"uid\":\"%{DATA:t_uid}\"\"\"\" | EVAL target = COALESCE(t_name, REPLACE(t_ids, \"\\\"\", \"\"), t_id, t_uid) | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | STATS events = COUNT(*), targets = COUNT_DISTINCT(SPLIT(target, \",\")), latest = LAST(target, @timestamp), last_change = MAX(@timestamp) BY actor, action = attributes.event.action | SORT last_change DESC | EVAL actor_scope = CASE(actor IN (\"elastic.maintenance\",\"autoscaling\",\"elasticsearch-controller\",\"elastic/fleet-server\",\"elastic/kibana\"), \"platform\", actor IN (\"<anonymous>\",\"<unauthenticated-cloud-access-token>\",\"<unauthenticated-saml-user>\",\"<unauthenticated-cloud-api-key>\"), \"unauthenticated\", \"tenant\") | EVAL latest = REPLACE(latest, \",\", \", \") | EVAL latest = CASE(LENGTH(latest) > 72, CONCAT(LEFT(latest, 71), \"…\"), latest) | EVAL latest = COALESCE(latest, \" \") | LIMIT 9"
         },
         "styling": {
           "density": {
@@ -312,22 +312,32 @@
           {
             "label": "Identity",
             "column": "actor",
-            "width": 177
+            "width": 220
+          },
+          {
+            "label": "Scope",
+            "width": 120,
+            "column": "actor_scope"
           },
           {
             "label": "Action",
             "column": "action",
-            "width": 146
+            "width": 190
           },
           {
-            "label": "Change",
-            "column": "change"
+            "label": "Latest target",
+            "column": "latest"
           }
         ],
         "metrics": [
           {
+            "label": "Targets",
+            "column": "targets",
+            "width": 90
+          },
+          {
             "label": "Events",
-            "width": 83,
+            "width": 90,
             "column": "events"
           },
           {
@@ -342,25 +352,25 @@
       "type": "vis",
       "id": "vega-08",
       "grid": {
-        "x": 28,
-        "y": 8,
-        "w": 20,
+        "x": 0,
+        "y": 19,
+        "w": 24,
         "h": 13
       },
       "config": {
         "ref_id": "cloud-audit-vega-05-rare-event-scatter",
         "title": "Rare and privileged operations",
-        "description": "The highest-severity scoring actions in range, one row per action and weight, placed by how often each happened: rarer is further left, so the top-left is rare and high-severity — look there first. Colour is the severity weight. A failed change scores 40 whatever it changed, so it gets its own row, marked (failed). Hover a point for how many identities did it and when. Routine activity scores 0 and is not shown."
+        "description": "The highest-severity scoring actions in range, one row per action and weight, placed by how often each happened: rarer is further left, so the top-left is rare and high-severity — look there first. Shows the top 12 by severity, rarest first within a weight; the subtitle says how many actions scored in all. Colour is the severity weight. A failed change scores 40 whatever it changed, so it gets its own row, marked (failed). Hover a point for how many identities did it and when. Routine activity scores 0 and is not shown."
       }
     },
     {
       "type": "vis",
       "id": "xy-09",
       "grid": {
-        "x": 0,
-        "y": 21,
+        "x": 24,
+        "y": 19,
         "w": 24,
-        "h": 12
+        "h": 13
       },
       "config": {
         "title": "Risk over time",
@@ -451,18 +461,18 @@
       "type": "vis",
       "id": "tbl-10",
       "grid": {
-        "x": 24,
-        "y": 21,
-        "w": 24,
-        "h": 12
+        "x": 0,
+        "y": 32,
+        "w": 48,
+        "h": 10
       },
       "config": {
-        "title": "Identities by first appearance in range",
-        "description": "Identities ordered by their first event inside the selected range, latest first. First seen is within the range, not ever: an identity that was already active when the range opened also shows a first-seen near its start. New in range reads \"no\" for those (first seen in the opening twelfth of the range). A \"yes\" near the top is an identity worth a question; widen the range to tell a new identity from a returning one. Client IPs is 0 for identities whose events record no client address (the Kibana service account, platform automation). An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id.",
+        "title": "Identities by first appearance in range, latest first",
+        "description": "Identities ordered by their first event inside the selected range, latest first, from signal events only (query internals are left out, as on every gated panel). First seen is within the range, not ever: an identity that was already active when the range opened also shows a first-seen near its start. New reads \"no\" for those (first seen in the opening twelfth of the range) and \"yes\" otherwise; on a project whose audit history is shorter than the range, every identity reads \"yes\". A \"yes\" near the top is an identity worth a question; widen the range to tell a new identity from a returning one. Client IPs is 0 for identities whose events record no client address (the Kibana service account, platform automation). An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE (attributes.elasticsearch.audit.action IS NULL OR NOT (attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\") OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/msearch*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/scroll*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/esql*\" OR attributes.elasticsearch.audit.action LIKE \"indices:admin/esql/*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/field_caps*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/async_search/*\" OR attributes.elasticsearch.audit.action LIKE \"indices:admin/resolve/*\" OR attributes.elasticsearch.audit.action == \"indices:admin/shards/search_shards\")) AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"authentication_success\",\"connection_granted\") OR attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\",\"space_get\",\"space_find\") OR (attributes.event.action == \"http_request\" AND attributes.url.original IS NOT NULL AND attributes.url.original RLIKE \"https?://[^/]+(/s/[^/]+)?/(internal/|api/content_management/rpc/(get|search|mget|bulkGet)).*\") OR (attributes.event.action IN (\"saved_object_get\",\"saved_object_resolve\",\"saved_object_find\") AND attributes.kibana.saved_object.id IS NOT NULL AND attributes.kibana.saved_object.id LIKE \"cloud-audit-*\"))) | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | STATS first_seen = MIN(@timestamp), events = COUNT(*), ips = COUNT_DISTINCT(client.ip) BY actor | SORT first_seen DESC | EVAL actor_scope = CASE(actor IN (\"elastic.maintenance\",\"autoscaling\",\"elasticsearch-controller\",\"elastic/fleet-server\",\"elastic/kibana\"), \"platform\", actor IN (\"<anonymous>\",\"<unauthenticated-cloud-access-token>\",\"<unauthenticated-saml-user>\",\"<unauthenticated-cloud-api-key>\"), \"unauthenticated\", \"tenant\") | EVAL new_in_range = CASE(TO_LONG(first_seen) - TO_LONG(TO_DATETIME(?_tstart)) > (TO_LONG(TO_DATETIME(?_tend)) - TO_LONG(TO_DATETIME(?_tstart))) / 12, \"yes\", \"no\") | LIMIT 10"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE (attributes.elasticsearch.audit.action IS NULL OR NOT (attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\") OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/msearch*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/scroll*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/esql*\" OR attributes.elasticsearch.audit.action LIKE \"indices:admin/esql/*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/field_caps*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/async_search/*\" OR attributes.elasticsearch.audit.action LIKE \"indices:admin/resolve/*\" OR attributes.elasticsearch.audit.action == \"indices:admin/shards/search_shards\")) AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"authentication_success\",\"connection_granted\") OR attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\",\"space_get\",\"space_find\") OR (attributes.event.action == \"http_request\" AND attributes.url.original IS NOT NULL AND attributes.url.original RLIKE \"https?://[^/]+(/s/[^/]+)?/(internal/|api/content_management/rpc/(get|search|mget|bulkGet)).*\") OR (attributes.event.action IN (\"saved_object_get\",\"saved_object_resolve\",\"saved_object_find\") AND attributes.kibana.saved_object.id IS NOT NULL AND attributes.kibana.saved_object.id LIKE \"cloud-audit-*\"))) | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | STATS first_seen = MIN(@timestamp), last_seen = MAX(@timestamp), events = COUNT(*), ips = COUNT_DISTINCT(client.ip) BY actor | SORT first_seen DESC | EVAL actor_scope = CASE(actor IN (\"elastic.maintenance\",\"autoscaling\",\"elasticsearch-controller\",\"elastic/fleet-server\",\"elastic/kibana\"), \"platform\", actor IN (\"<anonymous>\",\"<unauthenticated-cloud-access-token>\",\"<unauthenticated-saml-user>\",\"<unauthenticated-cloud-api-key>\"), \"unauthenticated\", \"tenant\") | EVAL new_in_range = CASE(TO_LONG(first_seen) - TO_LONG(TO_DATETIME(?_tstart)) > (TO_LONG(TO_DATETIME(?_tend)) - TO_LONG(TO_DATETIME(?_tstart))) / 12, \"yes\", \"no\") | LIMIT 8"
         },
         "styling": {
           "density": {
@@ -486,9 +496,9 @@
             "column": "actor_scope"
           },
           {
-            "label": "New in range",
+            "label": "New",
             "column": "new_in_range",
-            "width": 80
+            "width": 70
           }
         ],
         "metrics": [
@@ -498,13 +508,18 @@
             "column": "first_seen"
           },
           {
+            "label": "Last seen",
+            "width": 190,
+            "column": "last_seen"
+          },
+          {
             "label": "Events",
-            "width": 72,
+            "width": 90,
             "column": "events"
           },
           {
             "label": "Client IPs",
-            "width": 72,
+            "width": 90,
             "column": "ips"
           }
         ]
@@ -515,17 +530,17 @@
       "id": "tbl-11",
       "grid": {
         "x": 0,
-        "y": 33,
+        "y": 42,
         "w": 48,
         "h": 12
       },
       "config": {
-        "title": "Risk leaderboard",
-        "description": "Identities ranked by total accumulated severity, so sustained behaviour outranks a single high-severity event. Scope separates tenant identities from Elastic platform automation and unauthenticated requests — without it elastic.maintenance can top this table, because Elastic platform automation performs routine security config changes itself. API keys and native users carry no email; click an email, where there is one, to pin that identity across the whole suite. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id.",
+        "title": "Risk leaderboard — top identities by total severity",
+        "description": "Identities ranked by total accumulated severity, so sustained behaviour outranks a single high-severity event; only the top of the ranking fits the panel. Scope separates tenant identities from Elastic platform automation and unauthenticated requests — without it elastic.maintenance can top this table, because Elastic platform automation performs routine security config changes itself. Identity is the email for a person and the key name for an API key. To follow one person, pick them in the Person (email) control; the pin carries to Actor 360. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.security_config_change IS NOT NULL OR attributes.event.outcome == \"failure\" OR attributes.event.action IN (\"invalidate_apikeys\",\"anonymous_access_denied\") OR (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) | STATS n = COUNT(*) BY attributes.user.email, attributes.api_key.name, attributes.user.name, attributes.event.action, scc = attributes.elasticsearch.audit.security_config_change IS NOT NULL, attributes.event.outcome, resource.attributes.service.name, et = MV_CONCAT(attributes.event.type, \",\") | EVAL attributes.event.type = SPLIT(et, \",\"), attributes.elasticsearch.audit.security_config_change = CASE(scc, \"present\") | EVAL risk = CASE(attributes.event.action == \"invalidate_apikeys\", 45, attributes.event.action == \"anonymous_access_denied\", 35, attributes.elasticsearch.audit.security_config_change IS NOT NULL, 50, attributes.event.outcome == \"failure\", 40, (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) AND attributes.event.action IN (\"workflow_run\",\"workflow_test\",\"workflow_execution_cancel\"), 10, (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) AND (attributes.event.type == \"deletion\" OR attributes.event.action == \"rule_disable\"), 30, (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))), 25, 0) | WHERE risk > 0 | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | EVAL actor_scope = CASE(actor IN (\"elastic.maintenance\",\"autoscaling\",\"elasticsearch-controller\",\"elastic/fleet-server\",\"elastic/kibana\"), \"platform\", actor IN (\"<anonymous>\",\"<unauthenticated-cloud-access-token>\",\"<unauthenticated-saml-user>\",\"<unauthenticated-cloud-api-key>\"), \"unauthenticated\", \"tenant\") | STATS risk_total = SUM(risk * n), scoring_events = SUM(n), privileged = SUM(CASE(scc, n, 0)) BY actor, actor_scope, attributes.user.email | EVAL mean_severity = ROUND(1.0 * risk_total / scoring_events, 1) | SORT risk_total DESC | LIMIT 10"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.security_config_change IS NOT NULL OR attributes.event.outcome == \"failure\" OR attributes.event.action IN (\"invalidate_apikeys\",\"anonymous_access_denied\") OR (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) | STATS n = COUNT(*) BY attributes.user.email, attributes.api_key.name, attributes.user.name, attributes.event.action, scc = attributes.elasticsearch.audit.security_config_change IS NOT NULL, attributes.event.outcome, resource.attributes.service.name, et = MV_CONCAT(attributes.event.type, \",\") | EVAL attributes.event.type = SPLIT(et, \",\"), attributes.elasticsearch.audit.security_config_change = CASE(scc, \"present\") | EVAL risk = CASE(attributes.event.action == \"invalidate_apikeys\", 45, attributes.event.action == \"anonymous_access_denied\", 35, attributes.elasticsearch.audit.security_config_change IS NOT NULL, 50, attributes.event.outcome == \"failure\", 40, (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) AND attributes.event.action IN (\"workflow_run\",\"workflow_test\",\"workflow_execution_cancel\"), 10, (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) AND (attributes.event.type == \"deletion\" OR attributes.event.action == \"rule_disable\"), 30, (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))), 25, 0) | WHERE risk > 0 | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | EVAL actor_scope = CASE(actor IN (\"elastic.maintenance\",\"autoscaling\",\"elasticsearch-controller\",\"elastic/fleet-server\",\"elastic/kibana\"), \"platform\", actor IN (\"<anonymous>\",\"<unauthenticated-cloud-access-token>\",\"<unauthenticated-saml-user>\",\"<unauthenticated-cloud-api-key>\"), \"unauthenticated\", \"tenant\") | STATS risk_total = SUM(risk * n), scoring_events = SUM(n), privileged = SUM(CASE(scc, n, 0)) BY actor, actor_scope | EVAL mean_severity = ROUND(1.0 * risk_total / scoring_events, 1) | SORT risk_total DESC | LIMIT 10"
         },
         "styling": {
           "density": {
@@ -547,11 +562,6 @@
             "label": "Scope",
             "width": 120,
             "column": "actor_scope"
-          },
-          {
-            "label": "Email",
-            "column": "attributes.user.email",
-            "click_filter": true
           }
         ],
         "metrics": [
@@ -587,17 +597,17 @@
       "id": "tbl-12",
       "grid": {
         "x": 0,
-        "y": 45,
+        "y": 54,
         "w": 48,
         "h": 12
       },
       "config": {
         "title": "Why these identities scored — top risky actions, with their weight",
-        "description": "The receipts behind the leaderboard: for each identity, exactly which actions scored, what each one weighed, how many times, and when it last happened. Risk total is weight × events, the same quantity the leaderboard sums. This is what turns a score into evidence. Click an email to pin that identity across the suite. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id.",
+        "description": "The receipts behind the leaderboard: the identity and action pairs that contributed the most risk, with what each action weighed, how many times it happened, and when it last did. Risk total is weight × events, the same quantity the leaderboard sums. Only the largest contributions fit the panel, so a rare action can be missing here: Rare and privileged operations lists the actions by severity instead. To follow one person, pick them in the Person (email) control; the pin carries to Actor 360. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.security_config_change IS NOT NULL OR attributes.event.outcome == \"failure\" OR attributes.event.action IN (\"invalidate_apikeys\",\"anonymous_access_denied\") OR (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) | STATS n = COUNT(*), last_ts = MAX(@timestamp) BY attributes.user.email, attributes.api_key.name, attributes.user.name, attributes.event.action, scc = attributes.elasticsearch.audit.security_config_change IS NOT NULL, attributes.event.outcome, resource.attributes.service.name, et = MV_CONCAT(attributes.event.type, \",\") | EVAL attributes.event.type = SPLIT(et, \",\"), attributes.elasticsearch.audit.security_config_change = CASE(scc, \"present\") | EVAL risk = CASE(attributes.event.action == \"invalidate_apikeys\", 45, attributes.event.action == \"anonymous_access_denied\", 35, attributes.elasticsearch.audit.security_config_change IS NOT NULL, 50, attributes.event.outcome == \"failure\", 40, (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) AND attributes.event.action IN (\"workflow_run\",\"workflow_test\",\"workflow_execution_cancel\"), 10, (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) AND (attributes.event.type == \"deletion\" OR attributes.event.action == \"rule_disable\"), 30, (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))), 25, 0) | WHERE risk > 0 | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | EVAL actor_scope = CASE(actor IN (\"elastic.maintenance\",\"autoscaling\",\"elasticsearch-controller\",\"elastic/fleet-server\",\"elastic/kibana\"), \"platform\", actor IN (\"<anonymous>\",\"<unauthenticated-cloud-access-token>\",\"<unauthenticated-saml-user>\",\"<unauthenticated-cloud-api-key>\"), \"unauthenticated\", \"tenant\") | STATS events = SUM(n), risk_total = SUM(risk * n), last_seen = MAX(last_ts) BY actor, actor_scope, attributes.user.email, action = attributes.event.action, weight = risk | SORT risk_total DESC | LIMIT 10"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.security_config_change IS NOT NULL OR attributes.event.outcome == \"failure\" OR attributes.event.action IN (\"invalidate_apikeys\",\"anonymous_access_denied\") OR (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) | STATS n = COUNT(*), last_ts = MAX(@timestamp) BY attributes.user.email, attributes.api_key.name, attributes.user.name, attributes.event.action, scc = attributes.elasticsearch.audit.security_config_change IS NOT NULL, attributes.event.outcome, resource.attributes.service.name, et = MV_CONCAT(attributes.event.type, \",\") | EVAL attributes.event.type = SPLIT(et, \",\"), attributes.elasticsearch.audit.security_config_change = CASE(scc, \"present\") | EVAL risk = CASE(attributes.event.action == \"invalidate_apikeys\", 45, attributes.event.action == \"anonymous_access_denied\", 35, attributes.elasticsearch.audit.security_config_change IS NOT NULL, 50, attributes.event.outcome == \"failure\", 40, (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) AND attributes.event.action IN (\"workflow_run\",\"workflow_test\",\"workflow_execution_cancel\"), 10, (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) AND (attributes.event.type == \"deletion\" OR attributes.event.action == \"rule_disable\"), 30, (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))), 25, 0) | WHERE risk > 0 | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | EVAL actor_scope = CASE(actor IN (\"elastic.maintenance\",\"autoscaling\",\"elasticsearch-controller\",\"elastic/fleet-server\",\"elastic/kibana\"), \"platform\", actor IN (\"<anonymous>\",\"<unauthenticated-cloud-access-token>\",\"<unauthenticated-saml-user>\",\"<unauthenticated-cloud-api-key>\"), \"unauthenticated\", \"tenant\") | STATS events = SUM(n), risk_total = SUM(risk * n), last_seen = MAX(last_ts) BY actor, actor_scope, action = attributes.event.action, weight = risk | SORT risk_total DESC | LIMIT 10"
         },
         "styling": {
           "density": {
@@ -619,11 +629,6 @@
             "label": "Scope",
             "width": 120,
             "column": "actor_scope"
-          },
-          {
-            "label": "Email",
-            "column": "attributes.user.email",
-            "click_filter": true
           },
           {
             "label": "Action",
@@ -659,17 +664,17 @@
       "id": "tbl-13",
       "grid": {
         "x": 0,
-        "y": 57,
+        "y": 66,
         "w": 48,
         "h": 10
       },
       "config": {
-        "title": "Failures and denials by identity",
-        "description": "Failed and denied operations grouped by identity, action and source IP. Scope separates unauthenticated probes from tenant identities and Elastic platform automation. API keys and native users (elastic, admin) carry no email, so an empty email does not mean an external probe — read Scope. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id.",
+        "title": "Failures and denials by identity, most frequent first · none is good",
+        "description": "Failed and denied operations grouped by identity, action and source IP, the most frequent first; only the top rows fit the panel. These are the events the Failures tile counts (every denial and failed sign-in carries a failure outcome), and the Anonymous denials tile is their anonymous_access_denied rows. Scope separates unauthenticated probes from tenant identities and Elastic platform automation. API keys and native users (elastic, admin) carry no email, so an Identity that is not an email does not mean an external probe — read Scope. To follow one person, pick them in the Person (email) control; the pin carries to Actor 360. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id. An empty panel means nothing matched in the time range, which is the healthy state.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.event.outcome == \"failure\" OR attributes.event.action IN (\"authentication_failed\",\"realm_authentication_failed\",\"anonymous_access_denied\") | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | STATS events = COUNT(*), last_seen = MAX(@timestamp) BY actor, attributes.user.email, action = attributes.event.action, ip = client.ip | SORT events DESC | EVAL actor_scope = CASE(actor IN (\"elastic.maintenance\",\"autoscaling\",\"elasticsearch-controller\",\"elastic/fleet-server\",\"elastic/kibana\"), \"platform\", actor IN (\"<anonymous>\",\"<unauthenticated-cloud-access-token>\",\"<unauthenticated-saml-user>\",\"<unauthenticated-cloud-api-key>\"), \"unauthenticated\", \"tenant\") | LIMIT 8"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.event.outcome == \"failure\" OR attributes.event.action IN (\"authentication_failed\",\"realm_authentication_failed\",\"anonymous_access_denied\") | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | STATS events = COUNT(*), last_seen = MAX(@timestamp) BY actor, action = attributes.event.action, ip = client.ip | SORT events DESC | EVAL actor_scope = CASE(actor IN (\"elastic.maintenance\",\"autoscaling\",\"elasticsearch-controller\",\"elastic/fleet-server\",\"elastic/kibana\"), \"platform\", actor IN (\"<anonymous>\",\"<unauthenticated-cloud-access-token>\",\"<unauthenticated-saml-user>\",\"<unauthenticated-cloud-api-key>\"), \"unauthenticated\", \"tenant\") | LIMIT 8"
         },
         "styling": {
           "density": {
@@ -691,11 +696,6 @@
             "label": "Scope",
             "width": 120,
             "column": "actor_scope"
-          },
-          {
-            "label": "Email",
-            "column": "attributes.user.email",
-            "click_filter": true
           },
           {
             "label": "Action",
@@ -726,14 +726,14 @@
       "id": "ds-14",
       "grid": {
         "x": 0,
-        "y": 67,
+        "y": 76,
         "w": 48,
         "h": 12
       },
       "config": {
         "ref_id": "cloud-audit-search-03-security-config-changes",
-        "title": "Config-change event feed",
-        "description": "Every security configuration change as its own event, newest first, with the payload in full. Expand a row to read a long payload. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id."
+        "title": "Config-change event feed · newest 1,000 at most",
+        "description": "Every security configuration change as its own event, newest first, with the payload in full; expand a row to read a long one. Discover returns at most the newest 1,000 events, and its result count is that cap rather than the total: when it reads 1,000, the Config changes tile at the top has the total. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id."
       }
     },
     {
@@ -741,14 +741,14 @@
       "id": "ds-15",
       "grid": {
         "x": 0,
-        "y": 79,
+        "y": 88,
         "w": 48,
         "h": 14
       },
       "config": {
         "ref_id": "cloud-audit-search-01-all-mutations",
-        "title": "All mutations",
-        "description": "Every create, update and delete across Kibana and Elasticsearch security config, newest first. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id."
+        "title": "Mutation feed · newest 1,000 at most",
+        "description": "Creates, updates and deletes across Kibana and Elasticsearch security config, newest first. Discover returns at most the newest 1,000 events, and its result count is that cap rather than the total. To reach older events, narrow the time range. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id."
       }
     }
   ]
