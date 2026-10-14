@@ -260,13 +260,23 @@
         },
         {
           "type": "formula",
+          "as": "h_hard",
+          "expr": "(datum.h_r1 !== '' && indexof('-._@/', substring(datum.h_l1, length(datum.h_l1) - 1)) < 0) || (datum.h_r2 !== '' && indexof('-._@/', substring(datum.h_l2, length(datum.h_l2) - 1)) < 0)"
+        },
+        {
+          "type": "formula",
+          "as": "v_hard",
+          "expr": "(datum.v_r1 !== '' && indexof('-._@/', substring(datum.v_l1, length(datum.v_l1) - 1)) < 0) || (datum.v_r2 !== '' && indexof('-._@/', substring(datum.v_l2, length(datum.v_l2) - 1)) < 0)"
+        },
+        {
+          "type": "formula",
           "as": "vert",
-          "expr": "!datum.h_ok && datum.v_ok"
+          "expr": "datum.v_ok && (!datum.h_ok || (datum.h_hard && !datum.v_hard))"
         },
         {
           "type": "formula",
           "as": "lines",
-          "expr": "datum.h_ok ? datum.h_lines : datum.v_ok ? datum.v_lines : []"
+          "expr": "datum.vert ? datum.v_lines : datum.h_ok ? datum.h_lines : []"
         }
       ]
     }
