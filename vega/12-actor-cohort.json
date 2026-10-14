@@ -21,7 +21,7 @@
   },
   "title": {
     "text": {
-      "expr": "'Rank among ' + length(data('people')) + ' identities · last 7 days'"
+      "expr": "length(data('people')) === 0 ? 'No identities with an email in the last 7 days' : length(data('people')) === 1 ? 'Only one identity in 7 days — a rank needs two or more' : 'Rank among ' + length(data('people')) + ' identities · last 7 days'"
     }
   },
   "data": {
@@ -178,6 +178,10 @@
       ]
     },
     {
+      "calculate": "isValid(datum.pct) && isFinite(datum.pct) ? datum.pct : 0.5",
+      "as": "pct"
+    },
+    {
       "window": [
         {
           "op": "row_number",
@@ -204,6 +208,19 @@
     {
       "calculate": "datum.tieIdx - (datum.tieN + 1) / 2",
       "as": "jitter"
+    },
+    {
+      "joinaggregate": [
+        {
+          "op": "max",
+          "field": "tieN",
+          "as": "maxTie"
+        }
+      ]
+    },
+    {
+      "calculate": "datum.jitter / max(datum.maxTie, 8)",
+      "as": "jitterN"
     }
   ],
   "layer": [
@@ -215,7 +232,6 @@
       ],
       "mark": {
         "type": "circle",
-        "size": 34,
         "color": "#5082B1",
         "opacity": 0.55
       },
@@ -237,12 +253,12 @@
           }
         },
         "xOffset": {
-          "field": "jitter",
+          "field": "jitterN",
           "type": "quantitative",
           "scale": {
             "domain": [
-              -7,
-              7
+              -0.6,
+              0.6
             ]
           }
         },
@@ -283,7 +299,14 @@
             "title": "Percentile",
             "format": ".0%"
           }
-        ]
+        ],
+        "size": {
+          "condition": {
+            "test": "datum.maxTie > 20",
+            "value": 18
+          },
+          "value": 34
+        }
       }
     },
     {

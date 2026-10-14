@@ -116,7 +116,7 @@
         "h": 3
       },
       "config": {
-        "content": "#### 👤 Pick a person in the control bar\n**① Is this normal?** reads a fixed 7 days whatever the time picker says · **② What they did** follows the picker · **③ Evidence** ends in the raw records. With nobody selected, every panel describes the whole estate."
+        "content": "👤 **Pick a person in the control bar** and every panel becomes their story; with nobody selected it describes the whole estate. **① Is this normal?** reads a fixed 7 days in UTC, whatever the time picker says · **② What they did** follows the picker · **③ Evidence** ends in the raw records. Table times and the session timeline are in your time zone."
       }
     },
     {
@@ -130,7 +130,7 @@
       },
       "config": {
         "title": "Who this is",
-        "description": "The people in range, busiest first — click an email to pin that identity across the suite. `keys` counts the API keys acting under that email: Elasticsearch stamps a key's CREATOR on every event the key emits, so a person with keys may be carrying a machine's traffic.",
+        "description": "The people in range, busiest first — click an email to pin that identity across the suite. Counts only events that carry a user email, so with nobody selected the total here is less than the Events tile: API-key and service traffic with no email behind it has nothing to group on. `API keys` counts the API keys acting under that email: Elasticsearch stamps a key's CREATOR on every event the key emits, so a person with keys may be carrying a machine's traffic.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
@@ -183,7 +183,7 @@
         "type": "metric",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS Events = COUNT(*), actions = COUNT_DISTINCT(attributes.event.action, 100), last_ts = MAX(@timestamp) | EVAL detail = CASE(Events == 0, \"no activity\", CONCAT(TO_STRING(actions), \" actions · seen \", TO_STRING(DATE_DIFF(\"minutes\", last_ts, NOW())), \"m ago\")) | KEEP Events, detail"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS Events = COUNT(*), actions = COUNT_DISTINCT(attributes.event.action, 100), last_ts = MAX(@timestamp) | EVAL mins = DATE_DIFF(\"minutes\", last_ts, NOW()) | EVAL detail = CASE(Events == 0, \"no activity\", CONCAT(TO_STRING(actions), CASE(actions == 1, \" action\", \" actions\"), \" · \", CASE(mins < 1, \"seen just now\", mins < 60, CONCAT(\"seen \", TO_STRING(mins), \"m ago\"), CONCAT(\"seen \", TO_STRING(mins / 60), \"h ago\")))) | KEEP Events, detail"
         },
         "metrics": [
           {
@@ -245,16 +245,16 @@
       },
       "config": {
         "title": "",
-        "description": "The width of their reach: distinct indices named in their requests, Kibana spaces worked in, and browser sessions. Dated daily indices and data-stream backing indices each count once, so a large number can be one dashboard reading many days.",
+        "description": "The width of their reach: index families named in their requests, the Kibana spaces worked in, and browser sessions. A family folds dated daily indices and data-stream backing indices together, as \"What they read, by index family\" does, so one dashboard reading thirty days of a daily index is one family. Request patterns such as * are not counted.",
         "type": "metric",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS `Indices touched` = COUNT_DISTINCT(attributes.elasticsearch.audit.indices), spaces = COUNT_DISTINCT(attributes.kibana.space.id, 100), sessions = COUNT_DISTINCT(attributes.kibana.session.id, 100) | EVAL detail = CONCAT(TO_STRING(spaces), \" Kibana spaces · \", TO_STRING(sessions), \" sessions\") | KEEP `Indices touched`, detail"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS idx = VALUES(attributes.elasticsearch.audit.indices), spaces = COUNT_DISTINCT(attributes.kibana.space.id, 100), sessions = COUNT_DISTINCT(attributes.kibana.session.id, 100) | MV_EXPAND idx | EVAL family = CASE(LOCATE(idx, \"*\") > 0, null, REPLACE(REPLACE(idx, \"\"\"^\\.ds-\"\"\", \"\"), \"\"\"[-.]?\\d{4}[.-]\\d{2}[.-]\\d{2}(-\\d+)?$\"\"\", \"\")) | STATS `Index families` = COUNT_DISTINCT(family), spaces = MAX(spaces), sessions = MAX(sessions) | EVAL detail = CONCAT(TO_STRING(spaces), CASE(spaces == 1, \" Kibana space · \", \" Kibana spaces · \"), TO_STRING(sessions), CASE(sessions == 1, \" session\", \" sessions\")) | KEEP `Index families`, detail"
         },
         "metrics": [
           {
             "type": "primary",
-            "column": "Indices touched",
+            "column": "Index families",
             "format": {
               "type": "number",
               "decimals": 0
@@ -282,7 +282,7 @@
         "type": "metric",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | EVAL credential = COALESCE(attributes.authentication.type, attributes.user.domain, \"unknown\") | STATS `Client IPs` = COUNT_DISTINCT(client.ip), countries = COUNT_DISTINCT(client.geo.country_iso_code, 100), creds = VALUES(credential) | EVAL detail = CONCAT(TO_STRING(countries), \" countries · \", CASE(MV_COUNT(creds) == 1, creds, CONCAT(TO_STRING(MV_COUNT(creds)), \" credential kinds\"))) | KEEP `Client IPs`, detail"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | EVAL credential = COALESCE(attributes.authentication.type, attributes.user.domain, \"unknown\") | STATS `Client IPs` = COUNT_DISTINCT(client.ip), countries = COUNT_DISTINCT(client.geo.country_iso_code, 100), creds = VALUES(credential) | EVAL detail = CONCAT(TO_STRING(countries), CASE(countries == 1, \" country · \", \" countries · \"), CASE(MV_COUNT(creds) == 1, creds, CONCAT(TO_STRING(MV_COUNT(creds)), \" credential kinds\"))) | KEEP `Client IPs`, detail"
         },
         "metrics": [
           {
@@ -310,7 +310,7 @@
         "h": 2
       },
       "config": {
-        "content": "#### ① Is this normal? · _fixed 7-day window — ignores the time picker_"
+        "content": "#### ① Is this normal? · _fixed 7-day window in UTC — ignores the time picker_"
       }
     },
     {
@@ -355,7 +355,7 @@
       "config": {
         "ref_id": "cloud-audit-vega-09-activity-punchcard",
         "title": "Working rhythm — last 7 days (UTC)",
-        "description": "Every audited event for the current selection by hour of day and day of week, over the last 7 days in UTC — one cell is one specific hour, not an average, because a seven-day window holds each hour of the week exactly once. Fixed window: this panel does not follow the time picker. No noise gate: it measures presence, so it will not reconcile with Signal events. UTC is stated rather than localised so the chart reads the same for every viewer, whatever their timezone — read the rhythm, not the clock."
+        "description": "Every audited event for the current selection by hour of day and day of week, over the last 7 days in UTC — one cell is one specific hour, not an average, because a seven-day window holds each hour of the week exactly once. Strength is volume on a log scale, so a quiet hour stays visible beside a busy one; a bare grey slot is an hour with no events at all. Fixed window: this panel does not follow the time picker. No noise gate: it measures presence, so it will not reconcile with Signal events. UTC is stated rather than localised so the chart reads the same for every viewer, whatever their timezone — read the rhythm, not the clock."
       }
     },
     {
@@ -368,7 +368,7 @@
         "h": 2
       },
       "config": {
-        "content": "#### ② What they did · _follows the time picker_"
+        "content": "#### ② What they did · _follows the time picker · times in your time zone_"
       }
     },
     {
@@ -382,8 +382,8 @@
       },
       "config": {
         "ref_id": "cloud-audit-vega-11-actor-object-flow",
-        "title": "How they reached what they touched — credential → space → object → operation",
-        "description": "How the current selection's Kibana activity flows: which credential it arrived with, which space it happened in, what kind of object it touched and what it did to it. Ribbon width is event count in the time picker's range. Kibana audit only, and only events that touched an object — requests, logins and point-in-time internals are left out. Elasticsearch events carry no space and no saved object, so including them would put most of the ink in a branch that says nothing. Credential is authentication type where Elasticsearch records one and the user's realm otherwise, which is what separates a person in a browser (cloud-saml-kibana) from a script calling Kibana with a key. Object types come from the shared OBJ_TYPE fragment, which recovers a type from the event for workflows, ML jobs, agent-builder tools and secrets that carry no saved-object fields. Top 40 flows: a missing ribbon means the flow is outside the top 40, not that it never happened. Click a credential or a space to pin it across the suite — object type and operation are derived, so a pill on them would match nothing. Double-click anywhere in the panel to clear every pill on the page."
+        "title": "How they reached what they touched in Kibana — credential → space → object → operation",
+        "description": "How the current selection's Kibana activity flows: which credential it arrived with, which space it happened in, what kind of object it touched and what it did to it. Ribbon width is event count in the time picker's range. Kibana audit only, and only events that touched an object — requests, logins and point-in-time internals are left out. Elasticsearch events carry no space and no saved object, so including them would put most of the ink in a branch that says nothing. Credential is authentication type where Elasticsearch records one and the user's realm otherwise, which is what separates a person in a browser (cloud-saml-kibana) from a script calling Kibana with a key. Object types come from the shared OBJ_TYPE fragment, which recovers a type from the event for workflows, ML jobs, agent-builder tools and secrets that carry no saved-object fields. Top 40 flows: a missing ribbon means the flow is outside the top 40, not that it never happened. Each column names its biggest values and folds the rest into \"other (N)\", so a small value is counted there rather than drawn as an unlabelled sliver. Click a named credential or space to pin it across the suite — object type and operation are derived, so a pill on them would match nothing. Double-click anywhere in the panel to clear every pill on the page."
       }
     },
     {
@@ -436,7 +436,7 @@
           },
           {
             "label": "Space",
-            "width": 110,
+            "width": 170,
             "column": "space"
           },
           {
@@ -461,7 +461,7 @@
     },
     {
       "type": "vis",
-      "id": "xy-14",
+      "id": "tbl-14",
       "grid": {
         "x": 0,
         "y": 54,
@@ -470,41 +470,41 @@
       },
       "config": {
         "title": "What they read, by index family",
-        "description": "Where their reads concentrate. Dated daily indices and data-stream backing indices are folded into the family they belong to, so a date-suffixed series counts as one family rather than one row per day. A request naming several indices counts once per index.",
-        "type": "xy",
-        "axis": {
-          "x": {
-            "title": {
-              "visible": false
-            }
-          },
-          "y": {
-            "title": {
-              "visible": false
+        "description": "Where their reads concentrate, busiest first. Dated daily indices and data-stream backing indices are folded into the family they belong to, so a date-suffixed series is one row and `Indices` says how many of its members were read. A request naming several indices counts once per index; request patterns such as * are left out. The audit stream itself usually tops the list, because every dashboard on this page reads it.",
+        "type": "data_table",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.indices IS NOT NULL | MV_EXPAND attributes.elasticsearch.audit.indices | STATS n = COUNT(*) BY attributes.elasticsearch.audit.indices | WHERE LOCATE(attributes.elasticsearch.audit.indices, \"*\") == 0 | EVAL family = REPLACE(REPLACE(attributes.elasticsearch.audit.indices, \"\"\"^\\.ds-\"\"\", \"\"), \"\"\"[-.]?\\d{4}[.-]\\d{2}[.-]\\d{2}(-\\d+)?$\"\"\", \"\") | STATS events = SUM(n), indices = COUNT(*) BY family | SORT events DESC | LIMIT 9"
+        },
+        "styling": {
+          "density": {
+            "mode": "compact",
+            "height": {
+              "value": {
+                "type": "custom",
+                "lines": 1
+              }
             }
           }
         },
-        "layers": [
+        "rows": [
           {
-            "type": "bar_horizontal",
-            "data_source": {
-              "type": "esql",
-              "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.indices IS NOT NULL | MV_EXPAND attributes.elasticsearch.audit.indices | STATS n = COUNT(*) BY attributes.elasticsearch.audit.indices | EVAL family = REPLACE(REPLACE(attributes.elasticsearch.audit.indices, \"\"\"^\\.ds-\"\"\", \"\"), \"\"\"[-.]?\\d{4}[.-]\\d{2}[.-]\\d{2}(-\\d+)?$\"\"\", \"\") | STATS events = SUM(n) BY family | SORT events DESC | LIMIT 12"
-            },
-            "x": {
-              "column": "family",
-              "label": "family"
-            },
-            "y": [
-              {
-                "column": "events"
-              }
-            ]
+            "label": "Index family",
+            "column": "family"
           }
         ],
-        "legend": {
-          "visibility": "hidden"
-        }
+        "metrics": [
+          {
+            "label": "Indices",
+            "width": 90,
+            "column": "indices"
+          },
+          {
+            "label": "Events",
+            "width": 90,
+            "column": "events"
+          }
+        ]
       }
     },
     {
@@ -592,11 +592,11 @@
       },
       "config": {
         "title": "Every address they used",
-        "description": "Every real client address, including the ones the map cannot show: an empty city and country means geoip could not place it, which is always the case for a private or CGNAT address. Click an address to pin it, then \"Open in Geo & Network\".",
+        "description": "Every real client address, including the ones the map cannot show: \"unplaced\" means geoip could not place it, which is always the case for a private or CGNAT address, and \"—\" is a country with no city. Click an address to pin it, then \"Open in Geo & Network\".",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE client.ip IS NOT NULL | STATS events = COUNT(*), last_seen = MAX(@timestamp) BY client.ip, city = client.geo.city_name, country = client.geo.country_name | SORT events DESC | LIMIT 10"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE client.ip IS NOT NULL | STATS events = COUNT(*), last_seen = MAX(@timestamp) BY client.ip, city = client.geo.city_name, country = client.geo.country_name | EVAL city = COALESCE(city, CASE(country IS NULL, \"unplaced\", \"—\")), country = COALESCE(country, \"unplaced\") | SORT events DESC | LIMIT 10"
         },
         "styling": {
           "density": {
@@ -673,14 +673,14 @@
             "label": "Action",
             "column": "attributes.event.action",
             "click_filter": true
-          },
+          }
+        ],
+        "metrics": [
           {
             "label": "Weight",
             "width": 90,
             "column": "weight"
-          }
-        ],
-        "metrics": [
+          },
           {
             "label": "Events",
             "width": 90,
@@ -709,7 +709,7 @@
         "h": 2
       },
       "config": {
-        "content": "#### ③ Evidence · _session timeline is fixed at 24 hours · the records follow the time picker_"
+        "content": "#### ③ Evidence · _session timeline is fixed at 24 hours · the records follow the time picker · your time zone_"
       }
     },
     {
@@ -723,8 +723,8 @@
       },
       "config": {
         "ref_id": "cloud-audit-vega-13-session-gantt",
-        "title": "Kibana sessions — last 24 hours",
-        "description": "One bar per Kibana browser session in the last 24 hours, newest first — its length is how long the session ran and its strength is how much it did, which are independent: a short session can carry far more activity than a long one left open and idle. Click a bar to set the dashboard's time range to that session (plus a minute either side); use the time picker's back arrow to return. Shift-click pins that identity across the suite. Only Kibana audit carries a session id, so an identity that works through the Elasticsearch API has no sessions, and an empty panel for it is the correct answer. Twelve most recent sessions. Times are in your browser's timezone, like the rest of Kibana. Fixed 24-hour window: does not follow the time picker."
+        "title": "Kibana sessions — last 24 hours, your time zone",
+        "description": "One bar per Kibana browser session in the last 24 hours, newest first — its length is how long the session ran and its strength is how much it did, which are independent: a short session can carry far more activity than a long one left open and idle. Click a bar to set the dashboard's time range to that session (plus a minute either side); use the time picker's back arrow to return. Shift-click pins that identity across the suite. Only Kibana audit carries a session id, so an identity that works through the Elasticsearch API has no sessions, and an empty panel for it is the correct answer. Twelve most recent sessions, each labelled with who and when it started. Times are in your browser's timezone, like the rest of Kibana. Fixed 24-hour window: does not follow the time picker."
       }
     },
     {
