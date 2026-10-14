@@ -1,102 +1,188 @@
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
-  "title": {
-    "text": "",
-    "subtitle": "Where audited traffic actually originates, from the real client IP resolved at ingest. Top 25 locations."
-  },
+  "description": "Audited events by real client country. Countries are shaded by event volume on a log scale (one hue, opacity carries volume, so it reads the same in both themes); hover for events, identities, client IPs and share of placed traffic. The title line states how much of the stream could be placed at all: CGNAT and private addresses resolve to nothing and many events carry no client IP, so a blank country is not evidence of no traffic.",
   "autosize": {
     "type": "fit",
     "contains": "padding"
   },
   "config": {
-    "axis": {
-      "labelFontSize": 11,
-      "titleFontSize": 11
-    },
     "view": {
       "stroke": null
-    },
-    "title": {
-      "fontSize": 14,
-      "subtitleFontSize": 11,
-      "anchor": "start"
     },
     "legend": {
       "labelFontSize": 11,
       "titleFontSize": 11
+    },
+    "title": {
+      "fontSize": 12,
+      "fontWeight": 500,
+      "anchor": "start",
+      "subtitleFontSize": 11
     }
   },
-  "data": {
-    "url": {
-      "%type%": "esql",
-      "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE client.geo.country_iso_code IS NOT NULL | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS events = COUNT(*), actors = COUNT_DISTINCT(actor), ips = COUNT_DISTINCT(client.ip) BY country = client.geo.country_name, city = client.geo.city_name | EVAL place = CONCAT(COALESCE(city, \"(no city)\"), \", \", COALESCE(country, \"(unknown)\")) | SORT events DESC | LIMIT 25",
-      "%timefield%": "@timestamp",
-      "%context%": true
-    }
+  "title": {
+    "text": {
+      "expr": "length(data('coverage')) && data('coverage')[0].total > 0 ? length(data('countries')) + (length(data('countries')) == 1 ? ' country' : ' countries') + ' · placed on the map: ' + format(data('coverage')[0].located / data('coverage')[0].total, '.1%') + ' of events · could not be placed: ' + format(1 - data('coverage')[0].located / data('coverage')[0].total, '.1%') : 'No events in range'"
+    },
+    "subtitle": "Shade is event volume, log scale. Unplaced events are explained below the map."
   },
-  "mark": {
-    "type": "bar",
-    "cornerRadiusEnd": 3
+  "projection": {
+    "type": "naturalEarth1"
   },
-  "encoding": {
-    "y": {
-      "field": "place",
-      "type": "nominal",
-      "sort": {
-        "op": "sum",
-        "field": "events",
-        "order": "descending"
+  "layer": [
+    {
+      "data": {
+        "name": "world",
+        "url": {
+          "%type%": "emsfile",
+          "name": "World Countries"
+        },
+        "format": {
+          "type": "topojson",
+          "feature": "data"
+        }
       },
-      "axis": {
-        "title": "Client location",
-        "labelLimit": 200
+      "transform": [
+        {
+          "filter": "datum.properties.iso2 !== 'AQ'"
+        }
+      ],
+      "mark": {
+        "type": "geoshape",
+        "fill": "#64A3DE",
+        "fillOpacity": 0.12,
+        "stroke": "#5082B1",
+        "strokeWidth": 0.4,
+        "strokeOpacity": 0.5
       }
     },
-    "x": {
-      "field": "events",
-      "type": "quantitative",
-      "axis": {
-        "title": "Audited events",
-        "format": "~s"
+    {
+      "data": {
+        "name": "coverage",
+        "url": {
+          "%type%": "esql",
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS total = COUNT(*), located = COUNT(client.geo.country_iso_code)",
+          "%timefield%": "@timestamp",
+          "%context%": true
+        }
+      },
+      "mark": {
+        "type": "point",
+        "opacity": 0
+      },
+      "encoding": {
+        "longitude": {
+          "datum": 0
+        },
+        "latitude": {
+          "datum": 0
+        }
       }
     },
-    "color": {
-      "field": "events",
-      "type": "quantitative",
-      "scale": {
-        "type": "sqrt",
-        "range": [
-          "#0B1628",
-          "#155C7A",
-          "#1BA9F5",
-          "#7DD3FC",
-          "#FDE68A",
-          "#E7664C"
+    {
+      "data": {
+        "name": "countries",
+        "url": {
+          "%type%": "esql",
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE client.geo.country_iso_code IS NOT NULL | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | STATS events = COUNT(*), actors = COUNT_DISTINCT(actor), ips = COUNT_DISTINCT(client.ip) BY iso = client.geo.country_iso_code, country = client.geo.country_name | SORT events DESC | LIMIT 300",
+          "%timefield%": "@timestamp",
+          "%context%": true
+        }
+      },
+      "transform": [
+        {
+          "joinaggregate": [
+            {
+              "op": "sum",
+              "field": "events",
+              "as": "placed"
+            }
+          ]
+        },
+        {
+          "calculate": "datum.events / datum.placed",
+          "as": "share"
+        },
+        {
+          "lookup": "iso",
+          "from": {
+            "data": {
+              "url": {
+                "%type%": "emsfile",
+                "name": "World Countries"
+              },
+              "format": {
+                "type": "topojson",
+                "feature": "data"
+              }
+            },
+            "key": "properties.iso2"
+          },
+          "as": "geo"
+        },
+        {
+          "filter": "datum.geo != null"
+        }
+      ],
+      "mark": {
+        "type": "geoshape",
+        "color": "#3987e5",
+        "stroke": "#3987e5",
+        "strokeWidth": 0.6
+      },
+      "encoding": {
+        "shape": {
+          "field": "geo",
+          "type": "geojson"
+        },
+        "opacity": {
+          "field": "events",
+          "type": "quantitative",
+          "scale": {
+            "type": "log",
+            "domainMin": 1,
+            "range": [
+              0.35,
+              1
+            ]
+          },
+          "legend": {
+            "title": "Events",
+            "orient": "right",
+            "direction": "vertical",
+            "symbolType": "square",
+            "symbolFillColor": "#3987e5",
+            "symbolStrokeWidth": 0,
+            "labelExpr": "format(datum.value, '~s')"
+          }
+        },
+        "tooltip": [
+          {
+            "field": "country",
+            "title": "Country"
+          },
+          {
+            "field": "events",
+            "title": "Events",
+            "format": ","
+          },
+          {
+            "field": "share",
+            "title": "Share of placed events",
+            "format": ".1%"
+          },
+          {
+            "field": "actors",
+            "title": "Identities",
+            "format": ","
+          },
+          {
+            "field": "ips",
+            "title": "Client IPs",
+            "format": ","
+          }
         ]
-      },
-      "legend": {
-        "title": "Events",
-        "format": "~s"
       }
-    },
-    "tooltip": [
-      {
-        "field": "place",
-        "title": "Location"
-      },
-      {
-        "field": "events",
-        "title": "Events",
-        "format": ","
-      },
-      {
-        "field": "actors",
-        "title": "Distinct actors"
-      },
-      {
-        "field": "ips",
-        "title": "Distinct IPs"
-      }
-    ]
-  }
+    }
+  ]
 }
