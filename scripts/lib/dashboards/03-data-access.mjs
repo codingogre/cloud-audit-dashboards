@@ -15,6 +15,16 @@ import {
 const FANOUT = '(attributes.elasticsearch.audit.action LIKE "*[*" OR attributes.elasticsearch.audit.action LIKE "indices:data/read/esql/*")';
 
 /**
+ * The search an async search runs for itself: `indices:data/read/search` with an EMPTY request class
+ * (not null). On both the live stream and the 7-day replica its count and last-seen equal
+ * `async_search/submit` exactly, so left in it showed every async search twice — as a second
+ * "indices:data/read/search · —" row in Top transport actions and a second read in the volume chart.
+ * Needs the request name in the first STATS; COALESCE keeps a null request (none seen) from turning
+ * the whole test null, which WHERE NOT would drop.
+ */
+const ASYNC_INNER = '(attributes.elasticsearch.audit.action == "indices:data/read/search" AND COALESCE(request, "-") == "")';
+
+/**
  * Action family for the volume chart. ECS `event.category` was the old split, and on Elasticsearch
  * audit it is all but one value, so the stack read as one colour with unexplained slivers. Derived
  * from the grouped action, never per document (QUERY SHAPE rule 2 in panels.mjs). Security admin is
@@ -54,7 +64,7 @@ const FAMILY_COLORS = {
  * the volume chart lost its whole "read" family (36k of 37k requests in an hour) and Transport actions
  * kept five admin rows. So every panel here counts all traffic, which is also what makes the KPIs,
  * the tables and the matrix reconcile (README: same gate). The duplication the gate used to hide is
- * removed instead by folding FANOUT and by counting only events that name a transport action.
+ * removed instead by folding FANOUT and ASYNC_INNER and by counting only events that name a transport action.
  */
 
 /** The tooltip for a Vega panel is its spec's own description — one source, so they cannot disagree. */
@@ -77,8 +87,8 @@ export function build() {
       'Requests touching dot-prefixed system and hidden indices (.kibana*, .security*, .slo-*, .alerts-*), counted once per index named. Backing indices of ordinary data streams (.ds-logs-…) are not system data and are left out, as are shard-level copies of a request.'),
     kpi(40, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE attributes.event.action == "access_denied" OR attributes.event.action == "anonymous_access_denied" | STATS \`Access denied\` = COUNT(*)`, 'Access denied', 'Authorization denials. Sustained non-zero values mean a misconfigured client or a probe.'),
     xy(0, 5, 24, 15, 'Data access over time by action family',
-      `FROM ${IDX} | ${TIME} | WHERE attributes.elasticsearch.audit.action IS NOT NULL | STATS n = COUNT(*) BY time = ${BUCKET}, attributes.elasticsearch.audit.action | WHERE NOT ${FANOUT} | ${FAMILY} | STATS events = SUM(n) BY time, family | SORT family`,
-      'events', 'Every Elasticsearch request that names a transport action, by kind of action — all traffic, the searches and ES|QL these dashboards run among the reads. Shard-level copies and ES|QL sub-steps are folded away so a request counts once, and authentication and connection events (which name no action) are left out, so it sums to less than the Elasticsearch events tile.',
+      `FROM ${IDX} | ${TIME} | WHERE attributes.elasticsearch.audit.action IS NOT NULL | STATS n = COUNT(*) BY time = ${BUCKET}, attributes.elasticsearch.audit.action, request = attributes.elasticsearch.audit.request.name | WHERE NOT ${FANOUT} AND NOT ${ASYNC_INNER} | ${FAMILY} | STATS events = SUM(n) BY time, family | SORT family`,
+      'events', 'Every Elasticsearch request that names a transport action, by kind of action — all traffic, the searches and ES|QL these dashboards run among the reads. Shard-level copies, ES|QL sub-steps and the search an async search runs for itself are folded away so a request counts once, and authentication and connection events (which name no action) are left out, so it sums to less than the Elasticsearch events tile.',
       { breakdown: 'family', xcol: 'time', colors: FAMILY_COLORS }),
     vega(24, 5, 24, 30, '04-actor-index-matrix', 'Who reads which index family', specDescription('04-actor-index-matrix')),
     table(0, 20, 24, 15, 'Top index families by events',
@@ -86,9 +96,9 @@ export function build() {
       [{ column: 'index', label: 'Index family' }], ['indices', 'events', 'actors'],
       'The busiest index families, all traffic; the Index families tile counts every one, so the rest are beyond this list. How many distinct identities touch each is beside it. A data stream and its backing indices are one row, as is a run of dated daily indices; `Indices` says how many real indices the row folds together. Wildcard and date-math expressions are left out. A request naming several indices counts once per index.'),
     table(0, 35, 48, 11, 'Top transport actions',
-      `FROM ${IDX} | ${TIME} | WHERE attributes.elasticsearch.audit.action IS NOT NULL | STATS n = COUNT(*), seen = MAX(@timestamp) BY attributes.user.email, attributes.api_key.name, attributes.user.name, attributes.elasticsearch.audit.action, request = attributes.elasticsearch.audit.request.name | WHERE NOT ${FANOUT} | ${ACTOR_RESOLVE}, request = CASE(request IS NULL OR request == "", "—", request) | STATS events = SUM(n), actors = COUNT_DISTINCT(actor), last_seen = MAX(seen) BY attributes.elasticsearch.audit.action, request | SORT events DESC | LIMIT 15`,
+      `FROM ${IDX} | ${TIME} | WHERE attributes.elasticsearch.audit.action IS NOT NULL | STATS n = COUNT(*), seen = MAX(@timestamp) BY attributes.user.email, attributes.api_key.name, attributes.user.name, attributes.elasticsearch.audit.action, request = attributes.elasticsearch.audit.request.name | WHERE NOT ${FANOUT} AND NOT ${ASYNC_INNER} | ${ACTOR_RESOLVE}, request = CASE(request IS NULL OR request == "", "—", request) | STATS events = SUM(n), actors = COUNT_DISTINCT(actor), last_seen = MAX(seen) BY attributes.elasticsearch.audit.action, request | SORT events DESC | LIMIT 15`,
       [sized('attributes.elasticsearch.audit.action', 420), 'request'], ['actors', 'events', 'last_seen'],
-      'The busiest Elasticsearch transport actions with their request class, all traffic — the searches and ES|QL reads these dashboards run included, since reads are what this page is about. The Distinct actions tile counts every one; the rest are beyond this list. Shard-level copies and ES|QL sub-steps are folded away, so a request counts once. Identities is how many distinct identities sent the action; Request "—" means the event named no request class.'),
+      'The busiest Elasticsearch transport actions with their request class, all traffic — the searches and ES|QL reads these dashboards run included, since reads are what this page is about. The Distinct actions tile counts every one; the rest are beyond this list. Shard-level copies, ES|QL sub-steps and the search an async search runs for itself are folded away, so a request counts once. Identities is how many distinct identities sent the action; Request "—" means the event named no request class.'),
     table(0, 46, 48, 9, 'Denied requests',
       `FROM ${IDX} | ${TIME} | WHERE attributes.event.action == "access_denied" OR attributes.event.action == "anonymous_access_denied" | STATS events = COUNT(*), last_seen = MAX(@timestamp) BY attributes.user.email, attributes.api_key.name, attributes.user.name, attributes.elasticsearch.audit.action, index = attributes.elasticsearch.audit.indices | ${ACTOR_RESOLVE}, index = COALESCE(index, "—"), attributes.elasticsearch.audit.action = COALESCE(attributes.elasticsearch.audit.action, "—") | KEEP actor, index, attributes.elasticsearch.audit.action, events, last_seen | SORT last_seen DESC | LIMIT 15`,
       ['actor', 'index', sized('attributes.elasticsearch.audit.action', 420)], ['events', 'last_seen'],
