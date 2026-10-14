@@ -1,6 +1,6 @@
 {
   "$schema": "https://vega.github.io/schema/vega/v5.json",
-  "description": "How the current selection's Kibana activity flows: which credential it arrived with, which space it happened in, what kind of object it touched and what it did to it. Ribbon width is event count in the time picker's range. Kibana audit only, and only events that touched an object — requests, logins and point-in-time internals are left out. Elasticsearch events carry no space and no saved object, so including them would put most of the ink in a branch that says nothing. Credential is authentication type where Elasticsearch records one and the user's realm otherwise, which is what separates a person in a browser (cloud-saml-kibana) from a script calling Kibana with a key. Object types come from the shared OBJ_TYPE fragment, which recovers a type from the event for workflows, ML jobs, agent-builder tools and secrets that carry no saved-object fields. Top 40 flows: a missing ribbon means the flow is outside the top 40, not that it never happened. Click a credential or a space to pin it across the suite — object type and operation are derived, so a pill on them would match nothing. Double-click anywhere in the panel to clear every pill on the page.",
+  "description": "How the current selection's Kibana activity flows: which credential it arrived with, which space it happened in, what kind of object it touched and what it did to it. Ribbon width is event count in the time picker's range. Kibana audit only, and only events that touched an object — requests, logins and point-in-time internals are left out. Elasticsearch events carry no space and no saved object, so including them would put most of the ink in a branch that says nothing. Credential is authentication type where Elasticsearch records one and the user's realm otherwise, which is what separates a person in a browser (cloud-saml-kibana) from a script calling Kibana with a key. Object types come from the shared OBJ_TYPE fragment, which recovers a type from the event for workflows, ML jobs, agent-builder tools and secrets that carry no saved-object fields. Top 40 flows: a missing ribbon means the flow is outside the top 40, not that it never happened. Each column names its biggest values and folds the rest into \"other (N)\", so a small value is counted there rather than drawn as an unlabelled sliver. Click a named credential or space to pin it across the suite — object type and operation are derived, so a pill on them would match nothing. Double-click anywhere in the panel to clear every pill on the page.",
   "autosize": {
     "type": "fit",
     "contains": "padding"
@@ -39,7 +39,7 @@
       "on": [
         {
           "events": "@node:click",
-          "update": "datum.stage === 0 && datum.label !== 'unknown' ? kibanaAddFilter({bool: {should: [{match_phrase: {'attributes.authentication.type': datum.label}}, {match_phrase: {'attributes.user.domain': datum.label}}], minimum_should_match: 1}}, 'logs-elastic_cloud.serverless_audit.otel-default', 'credential: ' + datum.label) : datum.stage === 1 && datum.label !== 'no space' ? kibanaAddFilter({match_phrase: {'attributes.kibana.space.id': datum.label}}, 'logs-elastic_cloud.serverless_audit.otel-default', 'space: ' + datum.label) : null"
+          "update": "indexof(datum.label, 'other (') === 0 ? null : datum.stage === 0 && datum.label !== 'unknown' ? kibanaAddFilter({bool: {should: [{match_phrase: {'attributes.authentication.type': datum.label}}, {match_phrase: {'attributes.user.domain': datum.label}}], minimum_should_match: 1}}, 'logs-elastic_cloud.serverless_audit.otel-default', 'credential: ' + datum.label) : datum.stage === 1 && datum.label !== 'no space' ? kibanaAddFilter({match_phrase: {'attributes.kibana.space.id': datum.label}}, 'logs-elastic_cloud.serverless_audit.otel-default', 'space: ' + datum.label) : null"
         }
       ]
     },
@@ -52,6 +52,18 @@
           "update": "kibanaRemoveAllFilters()"
         }
       ]
+    },
+    {
+      "name": "foldK",
+      "value": 8
+    },
+    {
+      "name": "rawTotal",
+      "update": "data('rawTotal').length ? max(1, data('rawTotal')[0].t) : 1"
+    },
+    {
+      "name": "minShare",
+      "update": "13 / max(1, height - head - gap * (foldK - 1))"
     },
     {
       "name": "maxPerStage",
@@ -73,14 +85,354 @@
       }
     },
     {
-      "name": "l0",
+      "name": "rawTotal",
+      "source": "raw",
+      "transform": [
+        {
+          "type": "aggregate",
+          "fields": [
+            "events"
+          ],
+          "ops": [
+            "sum"
+          ],
+          "as": [
+            "t"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "fold_credential",
       "source": "raw",
       "transform": [
         {
           "type": "aggregate",
           "groupby": [
-            "credential",
+            "credential"
+          ],
+          "fields": [
+            "events"
+          ],
+          "ops": [
+            "sum"
+          ],
+          "as": [
+            "v"
+          ]
+        },
+        {
+          "type": "window",
+          "sort": {
+            "field": "v",
+            "order": "descending"
+          },
+          "ops": [
+            "row_number"
+          ],
+          "as": [
+            "r"
+          ]
+        },
+        {
+          "type": "formula",
+          "as": "keep",
+          "expr": "datum.r < foldK && datum.v / rawTotal >= minShare ? 1 : 0"
+        },
+        {
+          "type": "joinaggregate",
+          "fields": [
+            "keep"
+          ],
+          "ops": [
+            "sum"
+          ],
+          "as": [
+            "nKeep"
+          ]
+        },
+        {
+          "type": "joinaggregate",
+          "ops": [
+            "count"
+          ],
+          "as": [
+            "n"
+          ]
+        },
+        {
+          "type": "formula",
+          "as": "name",
+          "expr": "datum.keep === 1 || datum.n - datum.nKeep === 1 ? datum['credential'] : 'other (' + (datum.n - datum.nKeep) + ')'"
+        }
+      ]
+    },
+    {
+      "name": "fold_space",
+      "source": "raw",
+      "transform": [
+        {
+          "type": "aggregate",
+          "groupby": [
             "space"
+          ],
+          "fields": [
+            "events"
+          ],
+          "ops": [
+            "sum"
+          ],
+          "as": [
+            "v"
+          ]
+        },
+        {
+          "type": "window",
+          "sort": {
+            "field": "v",
+            "order": "descending"
+          },
+          "ops": [
+            "row_number"
+          ],
+          "as": [
+            "r"
+          ]
+        },
+        {
+          "type": "formula",
+          "as": "keep",
+          "expr": "datum.r < foldK && datum.v / rawTotal >= minShare ? 1 : 0"
+        },
+        {
+          "type": "joinaggregate",
+          "fields": [
+            "keep"
+          ],
+          "ops": [
+            "sum"
+          ],
+          "as": [
+            "nKeep"
+          ]
+        },
+        {
+          "type": "joinaggregate",
+          "ops": [
+            "count"
+          ],
+          "as": [
+            "n"
+          ]
+        },
+        {
+          "type": "formula",
+          "as": "name",
+          "expr": "datum.keep === 1 || datum.n - datum.nKeep === 1 ? datum['space'] : 'other (' + (datum.n - datum.nKeep) + ')'"
+        }
+      ]
+    },
+    {
+      "name": "fold_obj_type",
+      "source": "raw",
+      "transform": [
+        {
+          "type": "aggregate",
+          "groupby": [
+            "obj_type"
+          ],
+          "fields": [
+            "events"
+          ],
+          "ops": [
+            "sum"
+          ],
+          "as": [
+            "v"
+          ]
+        },
+        {
+          "type": "window",
+          "sort": {
+            "field": "v",
+            "order": "descending"
+          },
+          "ops": [
+            "row_number"
+          ],
+          "as": [
+            "r"
+          ]
+        },
+        {
+          "type": "formula",
+          "as": "keep",
+          "expr": "datum.r < foldK && datum.v / rawTotal >= minShare ? 1 : 0"
+        },
+        {
+          "type": "joinaggregate",
+          "fields": [
+            "keep"
+          ],
+          "ops": [
+            "sum"
+          ],
+          "as": [
+            "nKeep"
+          ]
+        },
+        {
+          "type": "joinaggregate",
+          "ops": [
+            "count"
+          ],
+          "as": [
+            "n"
+          ]
+        },
+        {
+          "type": "formula",
+          "as": "name",
+          "expr": "datum.keep === 1 || datum.n - datum.nKeep === 1 ? datum['obj_type'] : 'other (' + (datum.n - datum.nKeep) + ')'"
+        }
+      ]
+    },
+    {
+      "name": "fold_verb",
+      "source": "raw",
+      "transform": [
+        {
+          "type": "aggregate",
+          "groupby": [
+            "verb"
+          ],
+          "fields": [
+            "events"
+          ],
+          "ops": [
+            "sum"
+          ],
+          "as": [
+            "v"
+          ]
+        },
+        {
+          "type": "window",
+          "sort": {
+            "field": "v",
+            "order": "descending"
+          },
+          "ops": [
+            "row_number"
+          ],
+          "as": [
+            "r"
+          ]
+        },
+        {
+          "type": "formula",
+          "as": "keep",
+          "expr": "datum.r < foldK && datum.v / rawTotal >= minShare ? 1 : 0"
+        },
+        {
+          "type": "joinaggregate",
+          "fields": [
+            "keep"
+          ],
+          "ops": [
+            "sum"
+          ],
+          "as": [
+            "nKeep"
+          ]
+        },
+        {
+          "type": "joinaggregate",
+          "ops": [
+            "count"
+          ],
+          "as": [
+            "n"
+          ]
+        },
+        {
+          "type": "formula",
+          "as": "name",
+          "expr": "datum.keep === 1 || datum.n - datum.nKeep === 1 ? datum['verb'] : 'other (' + (datum.n - datum.nKeep) + ')'"
+        }
+      ]
+    },
+    {
+      "name": "folded",
+      "source": "raw",
+      "transform": [
+        {
+          "type": "lookup",
+          "from": "fold_credential",
+          "key": "credential",
+          "fields": [
+            "credential"
+          ],
+          "values": [
+            "name"
+          ],
+          "as": [
+            "credF"
+          ]
+        },
+        {
+          "type": "lookup",
+          "from": "fold_space",
+          "key": "space",
+          "fields": [
+            "space"
+          ],
+          "values": [
+            "name"
+          ],
+          "as": [
+            "spaceF"
+          ]
+        },
+        {
+          "type": "lookup",
+          "from": "fold_obj_type",
+          "key": "obj_type",
+          "fields": [
+            "obj_type"
+          ],
+          "values": [
+            "name"
+          ],
+          "as": [
+            "typeF"
+          ]
+        },
+        {
+          "type": "lookup",
+          "from": "fold_verb",
+          "key": "verb",
+          "fields": [
+            "verb"
+          ],
+          "values": [
+            "name"
+          ],
+          "as": [
+            "verbF"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "l0",
+      "source": "folded",
+      "transform": [
+        {
+          "type": "aggregate",
+          "groupby": [
+            "credF",
+            "spaceF"
           ],
           "fields": [
             "events"
@@ -100,24 +452,24 @@
         {
           "type": "formula",
           "as": "src",
-          "expr": "'0|' + datum.credential"
+          "expr": "'0|' + datum.credF"
         },
         {
           "type": "formula",
           "as": "dst",
-          "expr": "'1|' + datum.space"
+          "expr": "'1|' + datum.spaceF"
         }
       ]
     },
     {
       "name": "l1",
-      "source": "raw",
+      "source": "folded",
       "transform": [
         {
           "type": "aggregate",
           "groupby": [
-            "space",
-            "obj_type"
+            "spaceF",
+            "typeF"
           ],
           "fields": [
             "events"
@@ -137,24 +489,24 @@
         {
           "type": "formula",
           "as": "src",
-          "expr": "'1|' + datum.space"
+          "expr": "'1|' + datum.spaceF"
         },
         {
           "type": "formula",
           "as": "dst",
-          "expr": "'2|' + datum.obj_type"
+          "expr": "'2|' + datum.typeF"
         }
       ]
     },
     {
       "name": "l2",
-      "source": "raw",
+      "source": "folded",
       "transform": [
         {
           "type": "aggregate",
           "groupby": [
-            "obj_type",
-            "verb"
+            "typeF",
+            "verbF"
           ],
           "fields": [
             "events"
@@ -174,12 +526,12 @@
         {
           "type": "formula",
           "as": "src",
-          "expr": "'2|' + datum.obj_type"
+          "expr": "'2|' + datum.typeF"
         },
         {
           "type": "formula",
           "as": "dst",
-          "expr": "'3|' + datum.verb"
+          "expr": "'3|' + datum.verbF"
         }
       ]
     },
@@ -310,6 +662,18 @@
           "type": "formula",
           "as": "rank",
           "expr": "datum.rank - 1"
+        },
+        {
+          "type": "joinaggregate",
+          "groupby": [
+            "stage"
+          ],
+          "ops": [
+            "count"
+          ],
+          "as": [
+            "nInStage"
+          ]
         }
       ]
     },
@@ -546,6 +910,22 @@
         "#c98500",
         "#d55181"
       ]
+    },
+    {
+      "name": "stageFaint",
+      "type": "ordinal",
+      "domain": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "range": [
+        "rgba(57,135,229,0.4)",
+        "rgba(25,158,112,0.4)",
+        "rgba(201,133,0,0.4)",
+        "rgba(213,81,129,0.4)"
+      ]
     }
   ],
   "marks": [
@@ -593,8 +973,7 @@
             "field": "shape"
           },
           "fill": {
-            "scale": "stageColor",
-            "field": "stage"
+            "signal": "{gradient: 'linear', x1: 0, y1: 0, x2: 1, y2: 0, stops: datum.stage === 2 ? [{offset: 0, color: scale('stageFaint', datum.stage)}, {offset: min(0.4, 125 / max(1, datum.x2 - datum.x1)), color: scale('stageFaint', datum.stage)}, {offset: min(0.5, 185 / max(1, datum.x2 - datum.x1)), color: scale('stageColor', datum.stage)}, {offset: 1 - min(0.5, 185 / max(1, datum.x2 - datum.x1)), color: scale('stageColor', datum.stage)}, {offset: 1 - min(0.4, 125 / max(1, datum.x2 - datum.x1)), color: scale('stageFaint', datum.stage)}, {offset: 1, color: scale('stageFaint', datum.stage)}] : [{offset: 0, color: scale('stageFaint', datum.stage)}, {offset: min(0.4, 125 / max(1, datum.x2 - datum.x1)), color: scale('stageFaint', datum.stage)}, {offset: min(0.5, 185 / max(1, datum.x2 - datum.x1)), color: scale('stageColor', datum.stage)}, {offset: 1, color: scale('stageColor', datum.stage)}]}"
           },
           "fillOpacity": {
             "signal": "hoverKey == null ? 0.3 : (datum.src === hoverKey || datum.dst === hoverKey ? 0.7 : 0.06)"
@@ -631,10 +1010,10 @@
             "field": "stage"
           },
           "cursor": {
-            "signal": "(datum.stage === 0 && datum.label !== 'unknown') || (datum.stage === 1 && datum.label !== 'no space') ? 'pointer' : 'default'"
+            "signal": "indexof(datum.label, 'other (') !== 0 && ((datum.stage === 0 && datum.label !== 'unknown') || (datum.stage === 1 && datum.label !== 'no space')) ? 'pointer' : 'default'"
           },
           "tooltip": {
-            "signal": "{'Stage': ['credential', 'space', 'object type', 'operation'][datum.stage], 'Value': datum.label, 'Events': format(datum.value, ','), 'Click': (datum.stage === 0 && datum.label !== 'unknown') || (datum.stage === 1 && datum.label !== 'no space') ? 'pin across the suite' : 'derived — cannot be pinned'}"
+            "signal": "{'Stage': ['credential', 'space', 'object type', 'operation'][datum.stage], 'Value': datum.label, 'Events': format(datum.value, ','), 'Click': indexof(datum.label, 'other (') === 0 ? 'several smaller values, folded together — hover the ribbons for each' : (datum.stage === 0 && datum.label !== 'unknown') || (datum.stage === 1 && datum.label !== 'no space') ? 'pin across the suite' : 'derived — cannot be pinned'}"
           }
         }
       }
@@ -661,13 +1040,13 @@
             "value": "middle"
           },
           "fontSize": {
-            "value": 10
+            "value": 11
           },
           "text": {
-            "signal": "datum.label + '  ' + format(datum.value, '~s')"
+            "signal": "datum.label + '  ' + format(datum.value, ',')"
           },
           "opacity": {
-            "signal": "scale('y', datum.y1) - scale('y', datum.y0) + gap >= 11 ? 1 : 0"
+            "signal": "datum.rank === datum.nInStage - 1 || indexof(datum.label, 'other (') === 0 || scale('y', datum.y1) - scale('y', datum.y0) + gap >= 12 ? 1 : 0"
           },
           "limit": {
             "signal": "width / 3 - 24"

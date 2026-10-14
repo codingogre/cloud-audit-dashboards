@@ -1,9 +1,7 @@
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
-  "title": {
-    "text": "",
-    "subtitle": "Which credential type each identity presents. Top 40 identities by volume."
-  },
+  "description": "Which credential type each identity presents, for the 12 busiest identities. Only Elasticsearch requests record a credential type, so identities seen only in Kibana or only anonymously are not on this chart.",
+  "title": "",
   "autosize": {
     "type": "fit",
     "contains": "padding"
@@ -16,11 +14,6 @@
     "view": {
       "stroke": null
     },
-    "title": {
-      "fontSize": 14,
-      "subtitleFontSize": 11,
-      "anchor": "start"
-    },
     "legend": {
       "labelFontSize": 11,
       "titleFontSize": 11
@@ -29,69 +22,99 @@
   "data": {
     "url": {
       "%type%": "esql",
-      "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.authentication.type IS NOT NULL | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS events = COUNT(*) BY actor, auth = attributes.authentication.type | SORT events DESC | LIMIT 40",
+      "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.authentication.type IS NOT NULL | STATS events = COUNT(*) BY attributes.user.email, attributes.api_key.name, attributes.user.name, attributes.user.domain, attributes.authentication.type | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | EVAL actor = CASE(attributes.api_key.name IS NULL AND attributes.user.domain == \"_cloud_api_key\", CONCAT(actor, \" · Cloud API key\"), actor), auth = CASE(attributes.authentication.type == \"api_key\", \"API key\", attributes.authentication.type == \"token\", \"Token\", attributes.authentication.type == \"realm\", \"Realm\", attributes.authentication.type == \"saml\", \"SAML\", attributes.authentication.type == \"anonymous\", \"Anonymous\", attributes.authentication.type == \"internal\", \"Internal\", attributes.authentication.type) | STATS events = SUM(events) BY actor, auth | SORT events DESC | LIMIT 2000",
       "%timefield%": "@timestamp",
       "%context%": true
     }
   },
+  "transform": [
+    {
+      "joinaggregate": [{ "op": "sum", "field": "events", "as": "actor_total" }],
+      "groupby": ["actor"]
+    },
+    {
+      "window": [{ "op": "dense_rank", "as": "rank" }],
+      "sort": [
+        { "field": "actor_total", "order": "descending" },
+        { "field": "actor", "order": "ascending" }
+      ]
+    },
+    {
+      "filter": "datum.rank <= 12"
+    }
+  ],
   "mark": {
     "type": "rect",
-    "cornerRadius": 2
+    "cornerRadius": 2,
+    "color": "#3987e5"
   },
   "encoding": {
     "y": {
       "field": "actor",
       "type": "nominal",
       "sort": {
-        "op": "sum",
-        "field": "events",
-        "order": "descending"
+        "op": "min",
+        "field": "rank",
+        "order": "ascending"
+      },
+      "scale": {
+        "paddingInner": 0.12
       },
       "axis": {
-        "title": "Identity",
-        "labelLimit": 230
+        "title": "Identity · busiest 12",
+        "labelLimit": 240,
+        "ticks": false,
+        "domain": false
       }
     },
     "x": {
       "field": "auth",
       "type": "nominal",
+      "scale": {
+        "paddingInner": 0.04
+      },
       "axis": {
         "title": "Credential type",
         "labelAngle": 0,
-        "orient": "top"
+        "orient": "top",
+        "ticks": false,
+        "domain": false
       }
     },
-    "color": {
+    "opacity": {
       "field": "events",
       "type": "quantitative",
       "scale": {
         "type": "log",
-        "range": [
-          "#0B1628",
-          "#155C7A",
-          "#1BA9F5",
-          "#7DD3FC",
-          "#FDE68A",
-          "#E7664C"
-        ]
+        "range": [0.35, 1]
       },
       "legend": {
-        "title": "Events (log)",
-        "format": "~s"
+        "title": "Events",
+        "orient": "right",
+        "values": [1, 10, 100, 1000, 10000, 100000],
+        "labelExpr": "format(datum.value, '~s')",
+        "symbolType": "square",
+        "symbolFillColor": "#3987e5",
+        "symbolStrokeWidth": 0
       }
     },
     "tooltip": [
       {
         "field": "actor",
-        "title": "Actor"
+        "title": "Identity"
       },
       {
         "field": "auth",
-        "title": "Auth type"
+        "title": "Credential type"
       },
       {
         "field": "events",
         "title": "Events",
+        "format": ","
+      },
+      {
+        "field": "actor_total",
+        "title": "All credentials",
         "format": ","
       }
     ]

@@ -1,8 +1,10 @@
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+  "description": "The highest-severity scoring actions in range, one row per action and weight, placed by how often each happened. Rarest is on the left, so the top-left corner is rare and high-severity: where to look first. A failed change scores 40 whatever it changed, so it gets its own row, marked (failed). Hover a point for how many identities did it and when.",
   "title": {
-    "text": "",
-    "subtitle": "The 40 rarest identity/action pairs in range, by when each was first seen. Rare and high-severity together is where to look first."
+    "text": {
+      "expr": "length(data('actions')) > 12 ? 'Top 12 of ' + length(data('actions')) + ' scoring actions, by severity then rarity · the rest are in Why these identities scored' : length(data('actions')) ? length(data('actions')) + ' scoring actions, by severity, rarest first within a weight' : 'No scoring actions in range'"
+    }
   },
   "autosize": {
     "type": "fit",
@@ -17,9 +19,10 @@
       "stroke": null
     },
     "title": {
-      "fontSize": 14,
-      "subtitleFontSize": 11,
-      "anchor": "start"
+      "fontSize": 11,
+      "fontWeight": "normal",
+      "anchor": "start",
+      "offset": 8
     },
     "legend": {
       "labelFontSize": 11,
@@ -27,54 +30,87 @@
     }
   },
   "data": {
+    "name": "actions",
     "url": {
       "%type%": "esql",
-      "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | EVAL risk = CASE(attributes.event.action == \"invalidate_apikeys\", 45, attributes.event.action == \"anonymous_access_denied\", 35, attributes.elasticsearch.audit.security_config_change IS NOT NULL, 50, attributes.event.outcome == \"failure\", 40, (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) AND attributes.event.action IN (\"workflow_run\",\"workflow_test\",\"workflow_execution_cancel\"), 10, (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) AND (attributes.event.type == \"deletion\" OR attributes.event.action == \"rule_disable\"), 30, (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))), 25, 0) | STATS events = COUNT(*), risk = MAX(risk), ts = MIN(@timestamp) BY actor, action = attributes.event.action | SORT events ASC | LIMIT 40",
+      "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.security_config_change IS NOT NULL OR attributes.event.outcome == \"failure\" OR attributes.event.action IN (\"invalidate_apikeys\",\"anonymous_access_denied\") OR (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) | EVAL risk = CASE(attributes.event.action == \"invalidate_apikeys\", 45, attributes.event.action == \"anonymous_access_denied\", 35, attributes.elasticsearch.audit.security_config_change IS NOT NULL, 50, attributes.event.outcome == \"failure\", 40, (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) AND attributes.event.action IN (\"workflow_run\",\"workflow_test\",\"workflow_execution_cancel\"), 10, (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) AND (attributes.event.type == \"deletion\" OR attributes.event.action == \"rule_disable\"), 30, (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))), 25, 0) | WHERE risk > 0 | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | STATS events = COUNT(*), identities = COUNT_DISTINCT(actor), first_ts = MIN(@timestamp), last_ts = MAX(@timestamp) BY action = attributes.event.action, risk | EVAL label = CASE(risk == 40 AND NOT (action LIKE \"*fail*\" OR action LIKE \"*denied*\"), CONCAT(action, \" (failed)\"), action) | SORT risk DESC, events ASC, action ASC | LIMIT 200",
       "%timefield%": "@timestamp",
       "%context%": true
     }
   },
+  "transform": [
+    {
+      "window": [
+        {
+          "op": "row_number",
+          "as": "rank"
+        }
+      ],
+      "sort": [
+        {
+          "field": "risk",
+          "order": "descending"
+        },
+        {
+          "field": "events",
+          "order": "ascending"
+        },
+        {
+          "field": "action",
+          "order": "ascending"
+        }
+      ]
+    },
+    {
+      "filter": "datum.rank <= 12"
+    }
+  ],
   "mark": {
     "type": "point",
     "filled": true,
-    "opacity": 0.85
+    "size": 120,
+    "opacity": 1
   },
   "encoding": {
     "x": {
-      "field": "ts",
-      "type": "temporal",
-      "axis": {
-        "title": "First seen in range",
-        "labelAngle": 0,
-        "tickCount": 5
-      }
-    },
-    "y": {
-      "field": "action",
-      "type": "nominal",
-      "sort": {
-        "op": "sum",
-        "field": "events",
-        "order": "descending"
-      },
-      "axis": {
-        "title": "Action",
-        "labelLimit": 220
-      }
-    },
-    "size": {
       "field": "events",
       "type": "quantitative",
       "scale": {
-        "type": "sqrt",
-        "range": [
-          30,
-          260
-        ]
+        "type": "log",
+        "domainMin": 1,
+        "nice": false,
+        "padding": 14
       },
-      "legend": {
-        "title": "Occurrences",
-        "format": "~s"
+      "axis": {
+        "title": "Occurrences in range (log scale) · rarer to the left",
+        "format": "~s",
+        "values": [
+          1,
+          3,
+          10,
+          30,
+          100,
+          300,
+          1000,
+          3000,
+          10000,
+          30000,
+          100000
+        ]
+      }
+    },
+    "y": {
+      "field": "label",
+      "type": "nominal",
+      "sort": {
+        "field": "rank",
+        "op": "min",
+        "order": "ascending"
+      },
+      "axis": {
+        "title": null,
+        "labelLimit": 220,
+        "grid": true
       }
     },
     "color": {
@@ -86,24 +122,33 @@
           50
         ],
         "range": [
-          "#1D2A3A",
-          "#155C7A",
+          "#54B399",
           "#D6BF57",
           "#E7664C"
         ]
       },
       "legend": {
-        "title": "Severity (0-50)"
+        "title": "Severity weight (0–50)",
+        "orient": "bottom",
+        "direction": "horizontal",
+        "gradientLength": 160,
+        "gradientThickness": 8,
+        "values": [
+          10,
+          25,
+          40,
+          50
+        ]
       }
     },
     "tooltip": [
       {
-        "field": "actor",
-        "title": "Actor"
-      },
-      {
         "field": "action",
         "title": "Action"
+      },
+      {
+        "field": "risk",
+        "title": "Severity weight"
       },
       {
         "field": "events",
@@ -111,21 +156,22 @@
         "format": ","
       },
       {
-        "field": "risk",
-        "title": "Risk"
+        "field": "identities",
+        "title": "Identities",
+        "format": ","
       },
       {
-        "field": "ts",
-        "title": "First seen",
-        "type": "temporal"
+        "field": "first_ts",
+        "title": "First in range",
+        "type": "temporal",
+        "format": "%b %d, %H:%M:%S"
+      },
+      {
+        "field": "last_ts",
+        "title": "Last in range",
+        "type": "temporal",
+        "format": "%b %d, %H:%M:%S"
       }
-    ],
-    "shape": {
-      "field": "actor_kind",
-      "type": "nominal",
-      "legend": {
-        "title": "Identity kind"
-      }
-    }
+    ]
   }
 }

@@ -146,16 +146,16 @@
       },
       "config": {
         "title": "",
-        "description": "Distinct indices named in audited requests.",
+        "description": "Distinct indices named in audited requests, with each data stream's backing indices and each run of dated daily indices counted once. Wildcard and date-math expressions (*, -*, <…{now/d}>) are patterns, not indices, and are left out.",
         "type": "metric",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS `Indices touched` = COUNT_DISTINCT(attributes.elasticsearch.audit.indices)"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.indices IS NOT NULL | STATS BY attributes.elasticsearch.audit.indices | WHERE LOCATE(attributes.elasticsearch.audit.indices, \"*\") == 0 AND NOT attributes.elasticsearch.audit.indices LIKE \"<*\" | EVAL family = REPLACE(REPLACE(attributes.elasticsearch.audit.indices, \"\"\"^\\.ds-\"\"\", \"\"), \"\"\"[-.]?\\d{4}[.-]\\d{2}[.-]\\d{2}(-\\d+)?$\"\"\", \"\") | STATS `Index families` = COUNT_DISTINCT(family)"
         },
         "metrics": [
           {
             "type": "primary",
-            "column": "Indices touched",
+            "column": "Index families",
             "format": {
               "type": "number",
               "decimals": 0
@@ -175,7 +175,7 @@
       },
       "config": {
         "title": "",
-        "description": "Distinct Elasticsearch transport actions (cluster:*, indices:*).",
+        "description": "Distinct Elasticsearch transport actions (cluster:*, indices:*), shard-level variants included.",
         "type": "metric",
         "data_source": {
           "type": "esql",
@@ -204,16 +204,16 @@
       },
       "config": {
         "title": "",
-        "description": "Requests on the ES|QL execution path — someone running queries, including these dashboards.",
+        "description": "ES|QL queries submitted — one per query, not per shard or sub-step. Includes the queries these dashboards run to draw themselves.",
         "type": "metric",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.action LIKE \"*esql*\" | STATS `ES|QL requests` = COUNT(*)"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.action == \"indices:data/read/esql\" | STATS `ES|QL queries` = COUNT(*)"
         },
         "metrics": [
           {
             "type": "primary",
-            "column": "ES|QL requests",
+            "column": "ES|QL queries",
             "format": {
               "type": "number",
               "decimals": 0
@@ -233,11 +233,11 @@
       },
       "config": {
         "title": "",
-        "description": "Requests touching dot-prefixed system indices (.kibana*, .security*, .slo-*, .alerts-*). Privileged by nature.",
+        "description": "Requests touching dot-prefixed system and hidden indices (.kibana*, .security*, .slo-*, .alerts-*), counted once per index named. Backing indices of ordinary data streams (.ds-logs-…) are not system data and are left out, as are shard-level copies of a request.",
         "type": "metric",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.indices IS NOT NULL | MV_EXPAND attributes.elasticsearch.audit.indices | WHERE attributes.elasticsearch.audit.indices LIKE \".*\" | STATS `System index access` = COUNT(*)"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.indices IS NOT NULL | MV_EXPAND attributes.elasticsearch.audit.indices | WHERE ((attributes.elasticsearch.audit.indices LIKE \".*\" AND NOT attributes.elasticsearch.audit.indices LIKE \".ds-*\") OR attributes.elasticsearch.audit.indices LIKE \".ds-.*\") AND (attributes.elasticsearch.audit.action IS NULL OR NOT attributes.elasticsearch.audit.action LIKE \"*[*\") | STATS `System index access` = COUNT(*)"
         },
         "metrics": [
           {
@@ -290,8 +290,8 @@
         "h": 15
       },
       "config": {
-        "title": "Data access over time by category",
-        "description": "Elasticsearch audit volume over time by ECS category, noise gate applied.",
+        "title": "Data access over time by action family",
+        "description": "Elasticsearch audit volume over time by kind of transport action, after the noise gate and with shard-level and ES|QL sub-step fan-out removed, so each request counts once. \"other\" is mostly authentication events that carry no transport action.",
         "type": "xy",
         "axis": {
           "x": {
@@ -315,10 +315,10 @@
             "type": "bar_stacked",
             "data_source": {
               "type": "esql",
-              "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE resource.attributes.service.name == \"serverless-elasticsearch\" | WHERE (attributes.elasticsearch.audit.action IS NULL OR NOT (attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\") OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\")) AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"authentication_success\",\"connection_granted\"))) | MV_EXPAND attributes.event.category | STATS events = COUNT(*) BY BUCKET(@timestamp, 75, ?_tstart, ?_tend), category = attributes.event.category"
+              "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE resource.attributes.service.name == \"serverless-elasticsearch\" | WHERE (attributes.elasticsearch.audit.action IS NULL OR NOT (attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\") OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\")) AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"authentication_success\",\"connection_granted\"))) | STATS n = COUNT(*) BY time = BUCKET(@timestamp, 75, ?_tstart, ?_tend), attributes.elasticsearch.audit.action | WHERE attributes.elasticsearch.audit.action IS NULL OR NOT (attributes.elasticsearch.audit.action LIKE \"*[*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/esql/*\") | EVAL family = CASE(attributes.elasticsearch.audit.action LIKE \"indices:data/read*\", \"read\", attributes.elasticsearch.audit.action LIKE \"indices:data/write*\", \"write\", attributes.elasticsearch.audit.action LIKE \"indices:admin*\", \"index admin\", attributes.elasticsearch.audit.action LIKE \"cluster:admin/xpack/security*\", \"security admin\", attributes.elasticsearch.audit.action LIKE \"cluster:admin*\", \"cluster admin\", attributes.elasticsearch.audit.action LIKE \"*:monitor*\", \"monitor\", \"other\") | STATS events = SUM(n) BY time, family"
             },
             "x": {
-              "column": "BUCKET(@timestamp, 75, ?_tstart, ?_tend)",
+              "column": "time",
               "label": "@timestamp"
             },
             "y": [
@@ -327,11 +327,75 @@
               }
             ],
             "breakdown_by": {
-              "column": "category",
+              "column": "family",
               "color": {
                 "mode": "categorical",
                 "palette": "eui_amsterdam",
-                "mapping": []
+                "mapping": [
+                  {
+                    "values": [
+                      "read"
+                    ],
+                    "color": {
+                      "type": "color_code",
+                      "value": "#54B399"
+                    }
+                  },
+                  {
+                    "values": [
+                      "write"
+                    ],
+                    "color": {
+                      "type": "color_code",
+                      "value": "#6092C0"
+                    }
+                  },
+                  {
+                    "values": [
+                      "index admin"
+                    ],
+                    "color": {
+                      "type": "color_code",
+                      "value": "#D6BF57"
+                    }
+                  },
+                  {
+                    "values": [
+                      "security admin"
+                    ],
+                    "color": {
+                      "type": "color_code",
+                      "value": "#E7664C"
+                    }
+                  },
+                  {
+                    "values": [
+                      "cluster admin"
+                    ],
+                    "color": {
+                      "type": "color_code",
+                      "value": "#9170B8"
+                    }
+                  },
+                  {
+                    "values": [
+                      "monitor"
+                    ],
+                    "color": {
+                      "type": "color_code",
+                      "value": "#B9A888"
+                    }
+                  },
+                  {
+                    "values": [
+                      "other"
+                    ],
+                    "color": {
+                      "type": "color_code",
+                      "value": "#CA8EAE"
+                    }
+                  }
+                ]
               }
             }
           }
@@ -356,8 +420,8 @@
       },
       "config": {
         "ref_id": "cloud-audit-vega-04-actor-index-matrix",
-        "title": "Who reads which index",
-        "description": "Heatmap of the busiest identity/index pairs — index down the side, identity across the top, colour is request volume. Reading down a column shows one identity's data footprint; reading across a row shows who touches an index."
+        "title": "Who reads which index family",
+        "description": "The 10 busiest identities across the top, and the 25 index families they read most down the side; a more solid cell is more requests, on a log scale. A data stream and its backing indices are one family, as is a run of dated daily indices; wildcard and date-math expressions are left out. A blank cell means that identity did not touch that family in range — or touched it too little to be among the 500 busiest identity/family pairs. A request naming several indices counts once per index."
       }
     },
     {
@@ -370,12 +434,12 @@
         "h": 15
       },
       "config": {
-        "title": "Most-accessed indices",
-        "description": "Which indices see the most audited access, and how many distinct identities touch each.",
+        "title": "Most-accessed index families",
+        "description": "Which indices see the most audited access, and how many distinct identities touch each. A data stream and its backing indices are one row, as is a run of dated daily indices; `Indices` says how many real indices the row folds together. Wildcard and date-math expressions are left out. A request naming several indices counts once per index.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.indices IS NOT NULL | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | MV_EXPAND attributes.elasticsearch.audit.indices | STATS events = COUNT(*), actors = COUNT_DISTINCT(actor) BY index = attributes.elasticsearch.audit.indices | SORT events DESC | LIMIT 14"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.indices IS NOT NULL | STATS n = COUNT(*) BY attributes.user.email, attributes.api_key.name, attributes.user.name, attributes.elasticsearch.audit.indices | WHERE LOCATE(attributes.elasticsearch.audit.indices, \"*\") == 0 AND NOT attributes.elasticsearch.audit.indices LIKE \"<*\" | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), index = REPLACE(REPLACE(attributes.elasticsearch.audit.indices, \"\"\"^\\.ds-\"\"\", \"\"), \"\"\"[-.]?\\d{4}[.-]\\d{2}[.-]\\d{2}(-\\d+)?$\"\"\", \"\") | STATS events = SUM(n), indices = COUNT_DISTINCT(attributes.elasticsearch.audit.indices), actors = COUNT_DISTINCT(actor) BY index | SORT events DESC | LIMIT 14"
         },
         "styling": {
           "density": {
@@ -390,11 +454,16 @@
         },
         "rows": [
           {
-            "label": "Index",
+            "label": "Index family",
             "column": "index"
           }
         ],
         "metrics": [
+          {
+            "label": "Indices",
+            "width": 90,
+            "column": "indices"
+          },
           {
             "label": "Events",
             "width": 90,
@@ -414,16 +483,16 @@
       "grid": {
         "x": 0,
         "y": 38,
-        "w": 24,
+        "w": 18,
         "h": 12
       },
       "config": {
         "title": "Transport actions",
-        "description": "Elasticsearch transport actions with their request class, after the noise gate removes health pings, search-phase internals and connection and bulk-authentication events.",
+        "description": "Elasticsearch transport actions with their request class, after the noise gate removes health pings, search-phase internals and connection and bulk-authentication events. Shard-level copies and the ES|QL engine's sub-steps are folded away, so a query counts once as indices:data/read/esql — including the queries these dashboards run.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.action IS NOT NULL | WHERE (attributes.elasticsearch.audit.action IS NULL OR NOT (attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\") OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\")) AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"authentication_success\",\"connection_granted\"))) | STATS events = COUNT(*) BY action = attributes.elasticsearch.audit.action, request = attributes.elasticsearch.audit.request.name | SORT events DESC | LIMIT 10"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.action IS NOT NULL | WHERE (attributes.elasticsearch.audit.action IS NULL OR NOT (attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\") OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\")) AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"authentication_success\",\"connection_granted\"))) | STATS events = COUNT(*) BY attributes.elasticsearch.audit.action, request = attributes.elasticsearch.audit.request.name | WHERE NOT (attributes.elasticsearch.audit.action LIKE \"*[*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/esql/*\") | SORT events DESC | LIMIT 10"
         },
         "styling": {
           "density": {
@@ -438,12 +507,13 @@
         },
         "rows": [
           {
-            "label": "Action",
-            "column": "action"
+            "label": "Transport action",
+            "column": "attributes.elasticsearch.audit.action"
           },
           {
             "label": "Request",
-            "column": "request"
+            "column": "request",
+            "width": 170
           }
         ],
         "metrics": [
@@ -459,18 +529,18 @@
       "type": "vis",
       "id": "tbl-11",
       "grid": {
-        "x": 0,
-        "y": 50,
-        "w": 48,
+        "x": 18,
+        "y": 38,
+        "w": 30,
         "h": 12
       },
       "config": {
-        "title": "⚠️ System and hidden index access",
-        "description": "Access to dot-prefixed system indices — Kibana internals, the security index, alerting and SLO data. Sorted by most recent, not by volume: sorting by volume buries a one-off read under Kibana’s own continuous polling. Expected from elastic/kibana; unexpected from anyone else.",
+        "title": "Denied requests",
+        "description": "Who was refused, what they asked for and on which index — newest first. This is the failure slice the old outcome donut drew as a hairline. Index \"—\" is a cluster-level request; <anonymous> with action \"—\" is an HTTP call that carried no credentials. A request naming several indices shows once per index. Empty means nothing was denied in range.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.indices IS NOT NULL | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | MV_EXPAND attributes.elasticsearch.audit.indices | WHERE attributes.elasticsearch.audit.indices LIKE \".*\" | STATS events = COUNT(*), last_seen = MAX(@timestamp) BY actor, index = attributes.elasticsearch.audit.indices, action = attributes.elasticsearch.audit.action | SORT last_seen DESC | LIMIT 10"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.event.action == \"access_denied\" OR attributes.event.action == \"anonymous_access_denied\" | STATS events = COUNT(*), last_seen = MAX(@timestamp) BY attributes.user.email, attributes.api_key.name, attributes.user.name, attributes.elasticsearch.audit.action, index = attributes.elasticsearch.audit.indices | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), index = COALESCE(index, \"—\"), attributes.elasticsearch.audit.action = COALESCE(attributes.elasticsearch.audit.action, \"—\") | KEEP actor, index, attributes.elasticsearch.audit.action, events, last_seen | SORT last_seen DESC | LIMIT 10"
         },
         "styling": {
           "density": {
@@ -493,8 +563,9 @@
             "column": "index"
           },
           {
-            "label": "Action",
-            "column": "action"
+            "label": "Transport action",
+            "column": "attributes.elasticsearch.audit.action",
+            "width": 290
           }
         ],
         "metrics": [
@@ -513,34 +584,63 @@
     },
     {
       "type": "vis",
-      "id": "pie-12",
+      "id": "tbl-12",
       "grid": {
-        "x": 24,
-        "y": 38,
-        "w": 24,
-        "h": 12
+        "x": 0,
+        "y": 50,
+        "w": 48,
+        "h": 14
       },
       "config": {
-        "title": "Request outcome",
-        "description": "Outcome distribution for Elasticsearch audit events.",
-        "type": "pie",
+        "title": "⚠️ System and hidden index access",
+        "description": "Who touched system and hidden indices — Kibana internals, the security index, alerting and SLO data — one row per identity, index group (.alerts*, .slo*, .kibana*…) and action. `Indices` says how many real indices the row covers; the Discover session below names each one. Sorted by most recent, not by volume: sorting by volume buries a one-off read under routine polling. Backing indices of ordinary data streams (.ds-logs-…) and shard-level copies of a request are left out. Expected from Kibana and platform automation; unexpected from anyone else.",
+        "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE resource.attributes.service.name == \"serverless-elasticsearch\" | STATS events = COUNT(*) BY outcome = attributes.event.outcome"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.indices IS NOT NULL | MV_EXPAND attributes.elasticsearch.audit.indices | WHERE ((attributes.elasticsearch.audit.indices LIKE \".*\" AND NOT attributes.elasticsearch.audit.indices LIKE \".ds-*\") OR attributes.elasticsearch.audit.indices LIKE \".ds-.*\") AND (attributes.elasticsearch.audit.action IS NULL OR NOT attributes.elasticsearch.audit.action LIKE \"*[*\") | STATS n = COUNT(*), seen = MAX(@timestamp) BY attributes.user.email, attributes.api_key.name, attributes.user.name, attributes.elasticsearch.audit.indices, action = attributes.elasticsearch.audit.action | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), area = CONCAT(REPLACE(attributes.elasticsearch.audit.indices, \"\"\"^(?:\\.ds-)?(\\.[^-._]+).*$\"\"\", \"$1\"), \"*\") | STATS events = SUM(n), indices = COUNT_DISTINCT(attributes.elasticsearch.audit.indices), last_seen = MAX(seen) BY actor, area, action | SORT last_seen DESC | LIMIT 13"
         },
+        "styling": {
+          "density": {
+            "mode": "compact",
+            "height": {
+              "value": {
+                "type": "custom",
+                "lines": 1
+              }
+            }
+          }
+        },
+        "rows": [
+          {
+            "label": "Identity",
+            "column": "actor"
+          },
+          {
+            "label": "Index group",
+            "column": "area"
+          },
+          {
+            "label": "Transport action",
+            "column": "action"
+          }
+        ],
         "metrics": [
           {
-            "column": "events"
-          }
-        ],
-        "group_by": [
+            "label": "Indices",
+            "width": 90,
+            "column": "indices"
+          },
           {
-            "column": "outcome"
+            "label": "Events",
+            "width": 90,
+            "column": "events"
+          },
+          {
+            "label": "Last seen",
+            "width": 190,
+            "column": "last_seen"
           }
-        ],
-        "styling": {
-          "donut_hole": "m"
-        }
+        ]
       }
     },
     {
@@ -548,14 +648,14 @@
       "id": "ds-13",
       "grid": {
         "x": 0,
-        "y": 62,
+        "y": 64,
         "w": 48,
         "h": 15
       },
       "config": {
         "ref_id": "cloud-audit-search-05-system-index-access",
         "title": "System index access",
-        "description": "Every request against a dot-prefixed index, newest first."
+        "description": "The newest 1,000 requests against a system or hidden index, one row per index named, newest first. It stops at 1,000, so it can hold fewer rows than the System index access tile counts."
       }
     }
   ]

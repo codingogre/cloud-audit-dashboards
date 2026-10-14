@@ -201,7 +201,7 @@
   "scales": [
     {
       "name": "x",
-      "type": "time",
+      "type": "utc",
       "domain": {
         "data": "series",
         "field": "key"
@@ -250,7 +250,9 @@
       "scale": "x",
       "tickCount": 7,
       "labelOverlap": true,
-      "grid": false
+      "grid": false,
+      "format": "%a %d",
+      "formatType": "utc"
     },
     {
       "orient": "left",

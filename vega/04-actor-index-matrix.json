@@ -1,9 +1,6 @@
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
-  "title": {
-    "text": "",
-    "subtitle": "Top 60 identity/index pairs. A blank cell means the pair is outside the top 60, not that access never happened. Counts are request-index pairs (MV_EXPAND)."
-  },
+  "description": "The 10 busiest identities across the top, and the 25 index families they read most down the side; a more solid cell is more requests, on a log scale. A data stream and its backing indices are one family, as is a run of dated daily indices; wildcard and date-math expressions are left out. A blank cell means that identity did not touch that family in range — or touched it too little to be among the 500 busiest identity/family pairs. A request naming several indices counts once per index.",
   "autosize": {
     "type": "fit",
     "contains": "padding"
@@ -16,11 +13,6 @@
     "view": {
       "stroke": null
     },
-    "title": {
-      "fontSize": 14,
-      "subtitleFontSize": 11,
-      "anchor": "start"
-    },
     "legend": {
       "labelFontSize": 11,
       "titleFontSize": 11
@@ -31,14 +23,33 @@
       "%type%": "esql",
       "%timefield%": "@timestamp",
       "%context%": true,
-      "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.indices IS NOT NULL | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | MV_EXPAND attributes.elasticsearch.audit.indices | RENAME attributes.elasticsearch.audit.indices AS idx | STATS events = COUNT(*) BY actor, idx | SORT events DESC | LIMIT 60"
+      "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.indices IS NOT NULL | STATS n = COUNT(*) BY attributes.user.email, attributes.api_key.name, attributes.user.name, attributes.elasticsearch.audit.indices | WHERE LOCATE(attributes.elasticsearch.audit.indices, \"*\") == 0 AND NOT attributes.elasticsearch.audit.indices LIKE \"<*\" | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | EVAL idx = REPLACE(REPLACE(attributes.elasticsearch.audit.indices, \"\"\"^\\.ds-\"\"\", \"\"), \"\"\"[-.]?\\d{4}[.-]\\d{2}[.-]\\d{2}(-\\d+)?$\"\"\", \"\") | STATS events = SUM(n) BY actor, idx | SORT events DESC | LIMIT 500"
     }
   },
+  "transform": [
+    {
+      "joinaggregate": [{ "op": "sum", "field": "events", "as": "actor_total" }],
+      "groupby": ["actor"]
+    },
+    {
+      "window": [{ "op": "dense_rank", "as": "actor_rank" }],
+      "sort": [{ "field": "actor_total", "order": "descending" }, { "field": "actor", "order": "ascending" }]
+    },
+    { "filter": "datum.actor_rank <= 10" },
+    {
+      "joinaggregate": [{ "op": "sum", "field": "events", "as": "idx_total" }],
+      "groupby": ["idx"]
+    },
+    {
+      "window": [{ "op": "dense_rank", "as": "idx_rank" }],
+      "sort": [{ "field": "idx_total", "order": "descending" }, { "field": "idx", "order": "ascending" }]
+    },
+    { "filter": "datum.idx_rank <= 25" }
+  ],
   "mark": {
     "type": "rect",
     "cornerRadius": 2,
-    "stroke": "#1D1E24",
-    "strokeWidth": 0.5
+    "color": "#3987e5"
   },
   "encoding": {
     "y": {
@@ -49,10 +60,12 @@
         "field": "events",
         "order": "descending"
       },
+      "scale": { "paddingInner": 0.1 },
       "axis": {
-        "title": "Index",
-        "labelLimit": 320,
-        "labelFontSize": 10
+        "title": null,
+        "labelLimit": 280,
+        "ticks": false,
+        "domain": false
       }
     },
     "x": {
@@ -63,47 +76,46 @@
         "field": "events",
         "order": "descending"
       },
+      "scale": { "paddingInner": 0.1 },
       "axis": {
         "title": "Identity",
         "orient": "top",
-        "labelAngle": -35,
-        "labelLimit": 160,
-        "labelFontSize": 10,
-        "labelPadding": 6
+        "labelAngle": 35,
+        "labelAlign": "right",
+        "labelBaseline": "middle",
+        "labelLimit": 200,
+        "labelPadding": 4,
+        "ticks": false,
+        "domain": false
       }
     },
-    "color": {
+    "opacity": {
       "field": "events",
       "type": "quantitative",
       "scale": {
         "type": "log",
-        "range": [
-          "#0B1628",
-          "#155C7A",
-          "#1BA9F5",
-          "#7DD3FC",
-          "#FDE68A",
-          "#E7664C"
-        ]
+        "domainMin": 1,
+        "range": [0.35, 1]
       },
       "legend": {
-        "title": "Requests (log)",
-        "format": "~s",
-        "orient": "right"
+        "title": "Requests",
+        "orient": "bottom",
+        "values": [1, 10, 100, 1000, 10000],
+        "labelExpr": "format(datum.value, '~s')"
       }
     },
     "tooltip": [
       {
         "field": "idx",
-        "title": "Index"
+        "title": "Index family"
       },
       {
         "field": "actor",
-        "title": "Actor"
+        "title": "Identity"
       },
       {
         "field": "events",
-        "title": "Events",
+        "title": "Requests",
         "format": ","
       }
     ]

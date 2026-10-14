@@ -291,11 +291,11 @@
       },
       "config": {
         "title": "⚠️ Mutations — the 30 most recent Kibana state changes",
-        "description": "The single most important panel in the suite: state changes in Kibana, with who did it, what it was called, and which space it lives in. This is the 30 most recent — for a complete export use the Discover session below it. Two columns to read carefully. `type` and `name` are the real saved-object fields where Kibana records them and are otherwise recovered from the event message, because workflows, ML jobs and agent-builder objects carry no saved_object fields and would otherwise render as blank rows. `result` is \"attempted\" where Kibana logged the attempt rather than the outcome — that is how the saved-object path records things, so it is normal, and a \"failure\" here is a change that was denied.",
+        "description": "The single most important panel in the suite: state changes in Kibana, with who did it, what it was called, and which space it lives in. These are the 30 most recent (scroll for the rest); every change in range is in \"All mutations\" on Security & Anomalies, and the \"Kibana saved-object activity\" session further down this page lists reads and changes together. Two columns to read carefully. Object type and Object are the real saved-object fields where Kibana records them and are otherwise recovered from the event message, because workflows, ML jobs and agent-builder objects carry no saved_object fields. A workflow cancel, or a test of an unsaved draft, names only its run, so it reads \"execution\" and the run id's first 8 characters. Result is \"attempted\" where Kibana logged the attempt rather than the outcome — that is how the saved-object path records things, so it is normal, and a \"failure\" here is a change that was denied.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) | EVAL verb = CASE(attributes.event.action LIKE \"*_execution_cancel\", \"cancel\", attributes.event.action LIKE \"*_run_soon\", \"run\", attributes.event.action LIKE \"*_run\", \"run\", attributes.event.action LIKE \"*_test\", \"test\", attributes.event.action LIKE \"*_enable\", \"enable\", attributes.event.action LIKE \"*_disable\", \"disable\", attributes.event.action LIKE \"ml_put_*\", \"create\", attributes.event.action LIKE \"ml_open_*\", \"open\", attributes.event.action LIKE \"ml_start_*\", \"start\", attributes.event.action LIKE \"*point_in_time\", \"pit\", attributes.event.action LIKE \"*_create*\", \"create\", attributes.event.action LIKE \"*_update*\", \"update\", attributes.event.action LIKE \"*_delete\", \"delete\", attributes.event.action LIKE \"*_find\", \"find\", attributes.event.action LIKE \"*_get\", \"get\", attributes.event.action LIKE \"*_resolve\", \"resolve\", \"other\") | GROK body.text \"\"\"\\[(?:id|workflowId)=%{DATA:g_id}(?:,|\\])\"\"\" | GROK body.text \"\"\"\\[name=%{GREEDYDATA:g_name}\\]\"\"\" | GROK body.text \"\"\"\\[executionId=%{DATA:g_exec}\\]\"\"\" | GROK body.text \"\"\"case id: %{NOTSPACE:g_case}\"\"\" | GROK body.text \"\"\"(?:job|datafeed) %{NOTSPACE:g_ml}\"\"\" | EVAL obj_type = CASE(attributes.kibana.saved_object.type IS NOT NULL, attributes.kibana.saved_object.type, attributes.event.action LIKE \"ml_*ad_job\", \"ml-job\", attributes.event.action LIKE \"ml_*ad_datafeed\", \"ml-datafeed\", attributes.event.action LIKE \"workflow_execution_*\", \"workflow-execution\", attributes.event.action LIKE \"workflow_*\", \"workflow\", attributes.event.action LIKE \"agent_builder_agent_*\", \"agent-builder-agent\", attributes.event.action LIKE \"agent_builder_tool_*\", \"agent-builder-tool\", attributes.event.action LIKE \"product_documentation_*\", \"product-documentation\", attributes.event.action == \"secret_create\", \"secret\", attributes.event.action IS NULL, \"unclassified\", REPLACE(attributes.event.action, \"_(create|update|delete|enable|disable|run|run_soon|test|cancel)$\", \"\")) | EVAL obj_name = COALESCE(attributes.kibana.saved_object.name, g_name, g_id, attributes.kibana.saved_object.id, g_case, g_ml, g_exec, body.text) | EVAL result = CASE(attributes.event.outcome == \"unknown\", \"attempted\", attributes.event.outcome) | EVAL execution = COALESCE(LEFT(g_exec, 8), \"—\") | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS events = COUNT(*), last_change = MAX(@timestamp) BY actor, verb, type = obj_type, name = obj_name, space = attributes.kibana.space.id, result | SORT last_change DESC | LIMIT 13"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) | EVAL verb = CASE(attributes.event.action LIKE \"*_execution_cancel\", \"cancel\", attributes.event.action LIKE \"*_run_soon\", \"run\", attributes.event.action LIKE \"*_run\", \"run\", attributes.event.action LIKE \"*_test\", \"test\", attributes.event.action LIKE \"*_enable\", \"enable\", attributes.event.action LIKE \"*_disable\", \"disable\", attributes.event.action LIKE \"ml_put_*\", \"create\", attributes.event.action LIKE \"ml_open_*\", \"open\", attributes.event.action LIKE \"ml_start_*\", \"start\", attributes.event.action LIKE \"*point_in_time\", \"pit\", attributes.event.action LIKE \"*_create*\", \"create\", attributes.event.action LIKE \"*_update*\", \"update\", attributes.event.action LIKE \"*_delete\", \"delete\", attributes.event.action LIKE \"*_find\", \"find\", attributes.event.action LIKE \"*_get\", \"get\", attributes.event.action LIKE \"*_resolve\", \"resolve\", \"other\") | GROK body.text \"\"\"\\[(?:id|workflowId)=%{DATA:g_id}(?:,|\\])\"\"\" | GROK body.text \"\"\"\\[name=%{GREEDYDATA:g_name}\\]\"\"\" | GROK body.text \"\"\"\\[executionId=%{DATA:g_exec}\\]\"\"\" | GROK body.text \"\"\"case id: %{NOTSPACE:g_case}\"\"\" | GROK body.text \"\"\"(?:job|datafeed) %{NOTSPACE:g_ml}\"\"\" | EVAL obj_type = CASE(attributes.kibana.saved_object.type IS NOT NULL, attributes.kibana.saved_object.type, attributes.event.action LIKE \"ml_*ad_job\", \"ml-job\", attributes.event.action LIKE \"ml_*ad_datafeed\", \"ml-datafeed\", attributes.event.action LIKE \"workflow_execution_*\", \"workflow-execution\", attributes.event.action LIKE \"workflow_*\", \"workflow\", attributes.event.action LIKE \"agent_builder_agent_*\", \"agent-builder-agent\", attributes.event.action LIKE \"agent_builder_tool_*\", \"agent-builder-tool\", attributes.event.action LIKE \"product_documentation_*\", \"product-documentation\", attributes.event.action == \"secret_create\", \"secret\", attributes.event.action IS NULL, \"unclassified\", REPLACE(attributes.event.action, \"_(create|update|delete|enable|disable|run|run_soon|test|cancel)$\", \"\")) | EVAL obj_name = COALESCE(attributes.kibana.saved_object.name, g_name, g_id, attributes.kibana.saved_object.id, g_case, g_ml, g_exec, body.text) | EVAL result = CASE(attributes.event.outcome == \"unknown\", \"attempted\", attributes.event.outcome) | EVAL execution = COALESCE(LEFT(g_exec, 8), \"—\") | EVAL is_exec = obj_name == g_exec | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS events = COUNT(*), last_change = MAX(@timestamp) BY actor, verb, type = obj_type, name = obj_name, space = attributes.kibana.space.id, result, is_exec | SORT last_change DESC | LIMIT 30 | EVAL name = CASE(is_exec, CONCAT(\"execution \", LEFT(name, 8)), name)"
         },
         "styling": {
           "density": {
@@ -320,22 +320,22 @@
             "column": "verb"
           },
           {
-            "label": "Type",
+            "label": "Object type",
             "column": "type",
             "width": 200
           },
           {
-            "label": "Name",
+            "label": "Object",
             "column": "name"
           },
           {
             "label": "Space",
-            "width": 110,
+            "width": 105,
             "column": "space"
           },
           {
             "label": "Result",
-            "width": 120,
+            "width": 105,
             "column": "result"
           }
         ],
@@ -365,7 +365,7 @@
       "config": {
         "ref_id": "cloud-audit-vega-03-object-verb-heatmap",
         "title": "Object type × operation",
-        "description": "Heatmap of saved-object type against operation. Reads typically dominate; the create/update/delete columns are the forensic signal."
+        "description": "Saved-object type against operation, writes first. The more solid the cell, the more events it holds, on a log scale, so a single create, update or delete stays visible beside thousands of reads: the write columns are the forensic signal. Hover a cell for its count and how many distinct objects it covers."
       }
     },
     {
@@ -379,7 +379,7 @@
       },
       "config": {
         "title": "Saved-object activity over time",
-        "description": "Saved-object operations over time, split by verb.",
+        "description": "Saved-object operations over time. Get, find, resolve and the other read verbs are folded into one \"read\" series, so each write verb keeps its own colour and the legend stays short enough to read.",
         "type": "xy",
         "axis": {
           "x": {
@@ -403,7 +403,7 @@
             "type": "bar_stacked",
             "data_source": {
               "type": "esql",
-              "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.kibana.saved_object.type IS NOT NULL | EVAL verb = CASE(attributes.event.action LIKE \"*_execution_cancel\", \"cancel\", attributes.event.action LIKE \"*_run_soon\", \"run\", attributes.event.action LIKE \"*_run\", \"run\", attributes.event.action LIKE \"*_test\", \"test\", attributes.event.action LIKE \"*_enable\", \"enable\", attributes.event.action LIKE \"*_disable\", \"disable\", attributes.event.action LIKE \"ml_put_*\", \"create\", attributes.event.action LIKE \"ml_open_*\", \"open\", attributes.event.action LIKE \"ml_start_*\", \"start\", attributes.event.action LIKE \"*point_in_time\", \"pit\", attributes.event.action LIKE \"*_create*\", \"create\", attributes.event.action LIKE \"*_update*\", \"update\", attributes.event.action LIKE \"*_delete\", \"delete\", attributes.event.action LIKE \"*_find\", \"find\", attributes.event.action LIKE \"*_get\", \"get\", attributes.event.action LIKE \"*_resolve\", \"resolve\", \"other\") | STATS events = COUNT(*) BY BUCKET(@timestamp, 75, ?_tstart, ?_tend), verb"
+              "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.kibana.saved_object.type IS NOT NULL | EVAL verb = CASE(attributes.event.action LIKE \"*_execution_cancel\", \"cancel\", attributes.event.action LIKE \"*_run_soon\", \"run\", attributes.event.action LIKE \"*_run\", \"run\", attributes.event.action LIKE \"*_test\", \"test\", attributes.event.action LIKE \"*_enable\", \"enable\", attributes.event.action LIKE \"*_disable\", \"disable\", attributes.event.action LIKE \"ml_put_*\", \"create\", attributes.event.action LIKE \"ml_open_*\", \"open\", attributes.event.action LIKE \"ml_start_*\", \"start\", attributes.event.action LIKE \"*point_in_time\", \"pit\", attributes.event.action LIKE \"*_create*\", \"create\", attributes.event.action LIKE \"*_update*\", \"update\", attributes.event.action LIKE \"*_delete\", \"delete\", attributes.event.action LIKE \"*_find\", \"find\", attributes.event.action LIKE \"*_get\", \"get\", attributes.event.action LIKE \"*_resolve\", \"resolve\", \"other\") | EVAL verb = CASE(verb IN (\"get\",\"find\",\"resolve\",\"pit\",\"other\"), \"read\", verb) | STATS events = COUNT(*) BY BUCKET(@timestamp, 75, ?_tstart, ?_tend), verb | SORT verb != \"read\", verb"
             },
             "x": {
               "column": "BUCKET(@timestamp, 75, ?_tstart, ?_tend)",
@@ -419,7 +419,107 @@
               "color": {
                 "mode": "categorical",
                 "palette": "eui_amsterdam",
-                "mapping": []
+                "mapping": [
+                  {
+                    "values": [
+                      "read"
+                    ],
+                    "color": {
+                      "type": "color_code",
+                      "value": "#6092C0"
+                    }
+                  },
+                  {
+                    "values": [
+                      "create"
+                    ],
+                    "color": {
+                      "type": "color_code",
+                      "value": "#54B399"
+                    }
+                  },
+                  {
+                    "values": [
+                      "update"
+                    ],
+                    "color": {
+                      "type": "color_code",
+                      "value": "#D6BF57"
+                    }
+                  },
+                  {
+                    "values": [
+                      "delete"
+                    ],
+                    "color": {
+                      "type": "color_code",
+                      "value": "#E7664C"
+                    }
+                  },
+                  {
+                    "values": [
+                      "enable"
+                    ],
+                    "color": {
+                      "type": "color_code",
+                      "value": "#9170B8"
+                    }
+                  },
+                  {
+                    "values": [
+                      "disable"
+                    ],
+                    "color": {
+                      "type": "color_code",
+                      "value": "#CA8EAE"
+                    }
+                  },
+                  {
+                    "values": [
+                      "run"
+                    ],
+                    "color": {
+                      "type": "color_code",
+                      "value": "#DA8B45"
+                    }
+                  },
+                  {
+                    "values": [
+                      "test"
+                    ],
+                    "color": {
+                      "type": "color_code",
+                      "value": "#B9A888"
+                    }
+                  },
+                  {
+                    "values": [
+                      "cancel"
+                    ],
+                    "color": {
+                      "type": "color_code",
+                      "value": "#AA6556"
+                    }
+                  },
+                  {
+                    "values": [
+                      "open"
+                    ],
+                    "color": {
+                      "type": "color_code",
+                      "value": "#D36086"
+                    }
+                  },
+                  {
+                    "values": [
+                      "start"
+                    ],
+                    "color": {
+                      "type": "color_code",
+                      "value": "#D36086"
+                    }
+                  }
+                ]
               }
             }
           }
@@ -444,11 +544,11 @@
       },
       "config": {
         "title": "Most-accessed objects by name",
-        "description": "Real object titles from kibana.saved_object.name — the dashboards, rules and other objects people actually opened.",
+        "description": "Real object titles from kibana.saved_object.name: the dashboards, rules and other objects people actually opened. Identities counts people and API keys alike, resolved the way every actor panel resolves them. Opening one of these audit dashboards is itself a read, so the suite's own dashboards and data view rank here in proportion to how much it is used.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.kibana.saved_object.name IS NOT NULL | STATS events = COUNT(*), actors = COUNT_DISTINCT(attributes.user.email) BY name = attributes.kibana.saved_object.name, type = attributes.kibana.saved_object.type | SORT events DESC | LIMIT 10"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.kibana.saved_object.name IS NOT NULL | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS events = COUNT(*), actors = COUNT_DISTINCT(actor) BY name = attributes.kibana.saved_object.name, type = attributes.kibana.saved_object.type | SORT events DESC | LIMIT 10"
         },
         "styling": {
           "density": {
@@ -467,8 +567,9 @@
             "column": "name"
           },
           {
-            "label": "Type",
-            "column": "type"
+            "label": "Object type",
+            "column": "type",
+            "width": 150
           }
         ],
         "metrics": [
@@ -487,71 +588,7 @@
     },
     {
       "type": "vis",
-      "id": "pie-11",
-      "grid": {
-        "x": 0,
-        "y": 47,
-        "w": 24,
-        "h": 11
-      },
-      "config": {
-        "title": "Object types accessed",
-        "description": "Share of saved-object traffic by type. Background reads by Kibana features and integrations can outweigh human activity.",
-        "type": "pie",
-        "data_source": {
-          "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.kibana.saved_object.type IS NOT NULL | STATS events = COUNT(*) BY type = attributes.kibana.saved_object.type"
-        },
-        "metrics": [
-          {
-            "column": "events"
-          }
-        ],
-        "group_by": [
-          {
-            "column": "type"
-          }
-        ],
-        "styling": {
-          "donut_hole": "m"
-        }
-      }
-    },
-    {
-      "type": "vis",
-      "id": "pie-12",
-      "grid": {
-        "x": 24,
-        "y": 47,
-        "w": 24,
-        "h": 11
-      },
-      "config": {
-        "title": "Activity by space",
-        "description": "Kibana activity split across spaces.",
-        "type": "pie",
-        "data_source": {
-          "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.kibana.space.id IS NOT NULL | STATS events = COUNT(*) BY space = attributes.kibana.space.id"
-        },
-        "metrics": [
-          {
-            "column": "events"
-          }
-        ],
-        "group_by": [
-          {
-            "column": "space"
-          }
-        ],
-        "styling": {
-          "donut_hole": "m"
-        }
-      }
-    },
-    {
-      "type": "vis",
-      "id": "tbl-13",
+      "id": "tbl-11",
       "grid": {
         "x": 24,
         "y": 35,
@@ -560,11 +597,11 @@
       },
       "config": {
         "title": "Dashboards, SLOs and alert rules touched",
-        "description": "Audit trail for the high-value object types only — who touched which dashboard, SLO, rule, workflow or ML job, and when. The allow-list carries both `alert` and `alerting_rule`: Kibana records the same rule under either type depending on which code path audited it.",
+        "description": "Audit trail for the high-value object types only: who touched which dashboard, SLO, rule, workflow or ML job, and when. Both `alert` and `alerting_rule` are included, because Kibana records the same rule under either type depending on which code path audited it.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE resource.attributes.service.name == \"serverless-kibana\" | EVAL verb = CASE(attributes.event.action LIKE \"*_execution_cancel\", \"cancel\", attributes.event.action LIKE \"*_run_soon\", \"run\", attributes.event.action LIKE \"*_run\", \"run\", attributes.event.action LIKE \"*_test\", \"test\", attributes.event.action LIKE \"*_enable\", \"enable\", attributes.event.action LIKE \"*_disable\", \"disable\", attributes.event.action LIKE \"ml_put_*\", \"create\", attributes.event.action LIKE \"ml_open_*\", \"open\", attributes.event.action LIKE \"ml_start_*\", \"start\", attributes.event.action LIKE \"*point_in_time\", \"pit\", attributes.event.action LIKE \"*_create*\", \"create\", attributes.event.action LIKE \"*_update*\", \"update\", attributes.event.action LIKE \"*_delete\", \"delete\", attributes.event.action LIKE \"*_find\", \"find\", attributes.event.action LIKE \"*_get\", \"get\", attributes.event.action LIKE \"*_resolve\", \"resolve\", \"other\") | GROK body.text \"\"\"\\[(?:id|workflowId)=%{DATA:g_id}(?:,|\\])\"\"\" | GROK body.text \"\"\"\\[name=%{GREEDYDATA:g_name}\\]\"\"\" | GROK body.text \"\"\"\\[executionId=%{DATA:g_exec}\\]\"\"\" | GROK body.text \"\"\"case id: %{NOTSPACE:g_case}\"\"\" | GROK body.text \"\"\"(?:job|datafeed) %{NOTSPACE:g_ml}\"\"\" | EVAL obj_type = CASE(attributes.kibana.saved_object.type IS NOT NULL, attributes.kibana.saved_object.type, attributes.event.action LIKE \"ml_*ad_job\", \"ml-job\", attributes.event.action LIKE \"ml_*ad_datafeed\", \"ml-datafeed\", attributes.event.action LIKE \"workflow_execution_*\", \"workflow-execution\", attributes.event.action LIKE \"workflow_*\", \"workflow\", attributes.event.action LIKE \"agent_builder_agent_*\", \"agent-builder-agent\", attributes.event.action LIKE \"agent_builder_tool_*\", \"agent-builder-tool\", attributes.event.action LIKE \"product_documentation_*\", \"product-documentation\", attributes.event.action == \"secret_create\", \"secret\", attributes.event.action IS NULL, \"unclassified\", REPLACE(attributes.event.action, \"_(create|update|delete|enable|disable|run|run_soon|test|cancel)$\", \"\")) | EVAL obj_name = COALESCE(attributes.kibana.saved_object.name, g_name, g_id, attributes.kibana.saved_object.id, g_case, g_ml, g_exec, body.text) | WHERE obj_type IN (\"dashboard\",\"slo\",\"alert\",\"alerting_rule\",\"tag\",\"index-pattern\",\"workflow\",\"agent-builder-agent\",\"agent-builder-tool\",\"ml-job\") | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS events = COUNT(*), last_seen = MAX(@timestamp) BY actor, verb, type = obj_type, name = obj_name | SORT last_seen DESC | LIMIT 10"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE resource.attributes.service.name == \"serverless-kibana\" | WHERE attributes.kibana.saved_object.type IS NOT NULL OR attributes.event.action IS NULL OR attributes.event.action != \"http_request\" | EVAL verb = CASE(attributes.event.action LIKE \"*_execution_cancel\", \"cancel\", attributes.event.action LIKE \"*_run_soon\", \"run\", attributes.event.action LIKE \"*_run\", \"run\", attributes.event.action LIKE \"*_test\", \"test\", attributes.event.action LIKE \"*_enable\", \"enable\", attributes.event.action LIKE \"*_disable\", \"disable\", attributes.event.action LIKE \"ml_put_*\", \"create\", attributes.event.action LIKE \"ml_open_*\", \"open\", attributes.event.action LIKE \"ml_start_*\", \"start\", attributes.event.action LIKE \"*point_in_time\", \"pit\", attributes.event.action LIKE \"*_create*\", \"create\", attributes.event.action LIKE \"*_update*\", \"update\", attributes.event.action LIKE \"*_delete\", \"delete\", attributes.event.action LIKE \"*_find\", \"find\", attributes.event.action LIKE \"*_get\", \"get\", attributes.event.action LIKE \"*_resolve\", \"resolve\", \"other\") | GROK body.text \"\"\"\\[(?:id|workflowId)=%{DATA:g_id}(?:,|\\])\"\"\" | GROK body.text \"\"\"\\[name=%{GREEDYDATA:g_name}\\]\"\"\" | GROK body.text \"\"\"\\[executionId=%{DATA:g_exec}\\]\"\"\" | GROK body.text \"\"\"case id: %{NOTSPACE:g_case}\"\"\" | GROK body.text \"\"\"(?:job|datafeed) %{NOTSPACE:g_ml}\"\"\" | EVAL obj_type = CASE(attributes.kibana.saved_object.type IS NOT NULL, attributes.kibana.saved_object.type, attributes.event.action LIKE \"ml_*ad_job\", \"ml-job\", attributes.event.action LIKE \"ml_*ad_datafeed\", \"ml-datafeed\", attributes.event.action LIKE \"workflow_execution_*\", \"workflow-execution\", attributes.event.action LIKE \"workflow_*\", \"workflow\", attributes.event.action LIKE \"agent_builder_agent_*\", \"agent-builder-agent\", attributes.event.action LIKE \"agent_builder_tool_*\", \"agent-builder-tool\", attributes.event.action LIKE \"product_documentation_*\", \"product-documentation\", attributes.event.action == \"secret_create\", \"secret\", attributes.event.action IS NULL, \"unclassified\", REPLACE(attributes.event.action, \"_(create|update|delete|enable|disable|run|run_soon|test|cancel)$\", \"\")) | EVAL obj_name = COALESCE(attributes.kibana.saved_object.name, g_name, g_id, attributes.kibana.saved_object.id, g_case, g_ml, g_exec, body.text) | WHERE obj_type IN (\"dashboard\",\"slo\",\"alert\",\"alerting_rule\",\"tag\",\"index-pattern\",\"workflow\",\"agent-builder-agent\",\"agent-builder-tool\",\"ml-job\") | EVAL is_exec = obj_name == g_exec | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS events = COUNT(*), last_seen = MAX(@timestamp) BY actor, verb, type = obj_type, name = obj_name, is_exec | SORT last_seen DESC | LIMIT 10 | EVAL name = CASE(is_exec, CONCAT(\"execution \", LEFT(name, 8)), name)"
         },
         "styling": {
           "density": {
@@ -580,26 +617,28 @@
         "rows": [
           {
             "label": "Identity",
-            "column": "actor"
+            "column": "actor",
+            "width": 175
           },
           {
             "label": "Operation",
-            "width": 105,
+            "width": 80,
             "column": "verb"
           },
           {
-            "label": "Type",
-            "column": "type"
+            "label": "Object type",
+            "column": "type",
+            "width": 125
           },
           {
-            "label": "Name",
+            "label": "Object",
             "column": "name"
           }
         ],
         "metrics": [
           {
             "label": "Events",
-            "width": 90,
+            "width": 70,
             "column": "events"
           },
           {
@@ -611,28 +650,123 @@
       }
     },
     {
-      "type": "discover_session",
-      "id": "ds-14",
+      "type": "vis",
+      "id": "xy-12",
       "grid": {
         "x": 0,
-        "y": 73,
-        "w": 24,
-        "h": 14
+        "y": 47,
+        "w": 12,
+        "h": 11
       },
       "config": {
-        "ref_id": "cloud-audit-search-09-session-reconstruction",
-        "title": "Session reconstruction",
-        "description": "One human’s Kibana session replayed in order — every object they opened and changed, with body.text rendering each event as a readable sentence. Pin an identity first and this becomes their hour, step by step."
+        "title": "Object types accessed",
+        "description": "The ten saved-object types with the most traffic. Background reads by Kibana features and integrations can outweigh human activity; the heatmap above splits each type by operation.",
+        "type": "xy",
+        "axis": {
+          "x": {
+            "title": {
+              "visible": false
+            }
+          },
+          "y": {
+            "title": {
+              "visible": false
+            }
+          }
+        },
+        "layers": [
+          {
+            "type": "bar_horizontal",
+            "data_source": {
+              "type": "esql",
+              "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.kibana.saved_object.type IS NOT NULL | STATS events = COUNT(*) BY type = attributes.kibana.saved_object.type | SORT events DESC | LIMIT 10"
+            },
+            "x": {
+              "column": "type",
+              "label": "type"
+            },
+            "y": [
+              {
+                "column": "events"
+              }
+            ]
+          }
+        ],
+        "legend": {
+          "visibility": "hidden"
+        },
+        "styling": {
+          "bars": {
+            "data_labels": {
+              "visible": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "vis",
+      "id": "xy-13",
+      "grid": {
+        "x": 12,
+        "y": 47,
+        "w": 12,
+        "h": 11
+      },
+      "config": {
+        "title": "Activity by space",
+        "description": "Kibana activity in the ten busiest spaces. Viewing these audit dashboards counts too, so the space they are installed in carries their own reads.",
+        "type": "xy",
+        "axis": {
+          "x": {
+            "title": {
+              "visible": false
+            }
+          },
+          "y": {
+            "title": {
+              "visible": false
+            }
+          }
+        },
+        "layers": [
+          {
+            "type": "bar_horizontal",
+            "data_source": {
+              "type": "esql",
+              "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.kibana.space.id IS NOT NULL | STATS events = COUNT(*) BY space = attributes.kibana.space.id | SORT events DESC | LIMIT 10"
+            },
+            "x": {
+              "column": "space",
+              "label": "space"
+            },
+            "y": [
+              {
+                "column": "events"
+              }
+            ]
+          }
+        ],
+        "legend": {
+          "visibility": "hidden"
+        },
+        "styling": {
+          "bars": {
+            "data_labels": {
+              "visible": true
+            }
+          }
+        }
       }
     },
     {
       "type": "discover_session",
-      "id": "ds-15",
+      "id": "ds-14",
       "grid": {
         "x": 24,
-        "y": 73,
+        "y": 47,
         "w": 24,
-        "h": 14
+        "h": 11
       },
       "config": {
         "ref_id": "cloud-audit-search-08-cross-space-activity",
@@ -642,7 +776,7 @@
     },
     {
       "type": "discover_session",
-      "id": "ds-16",
+      "id": "ds-15",
       "grid": {
         "x": 0,
         "y": 58,
@@ -652,7 +786,22 @@
       "config": {
         "ref_id": "cloud-audit-search-04-kibana-object-changes",
         "title": "Kibana saved-object activity",
-        "description": "Full Kibana saved-object audit trail. body.text renders each event as a readable sentence."
+        "description": "Every Kibana event that named an object, reads and changes, newest first; the newest 1,000 in range. Kibana's page requests, logins and point-in-time internals name no object and are left out. Message is the sentence Kibana wrote for the event. Open in Discover to filter on a column or page further back."
+      }
+    },
+    {
+      "type": "discover_session",
+      "id": "ds-16",
+      "grid": {
+        "x": 0,
+        "y": 73,
+        "w": 48,
+        "h": 14
+      },
+      "config": {
+        "ref_id": "cloud-audit-search-09-session-reconstruction",
+        "title": "Session reconstruction",
+        "description": "One person's Kibana sessions, event by event, newest first: every object they opened and changed, with the sentence Kibana wrote for each. Pin an identity first, then open in Discover, filter to one Session and sort Time ascending to replay it forward. Kibana's internal UI requests and point-in-time internals are left out; public API calls such as an export are kept. Empty when nobody used Kibana in a browser in range: API-key traffic carries no session."
       }
     }
   ]

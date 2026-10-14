@@ -1,17 +1,15 @@
 {
   "title": "[Audit] Raw signal feed (noise gate applied)",
-  "description": "The newest 200 events of the audit stream with the monitor-ping and bulk-authentication noise removed: the firehose you can actually read. Message (body.text) is emitted only on Kibana events, so it is empty on Elasticsearch rows. Open in Discover to page further back, add columns, or filter on a cell.",
-  "esql": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE (attributes.elasticsearch.audit.action IS NULL OR NOT (attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\") OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\")) AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"authentication_success\",\"connection_granted\"))) | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | KEEP @timestamp, actor, resource.attributes.service.name, attributes.event.action, attributes.event.outcome, attributes.elasticsearch.audit.action, attributes.kibana.saved_object.type, client.ip, client.geo.country_iso_code, body.text | SORT @timestamp DESC | LIMIT 200 | RENAME @timestamp AS Time, actor AS Identity, resource.attributes.service.name AS Source, attributes.event.action AS Action, attributes.event.outcome AS Outcome, attributes.elasticsearch.audit.action AS `Transport action`, attributes.kibana.saved_object.type AS `Object type`, client.ip AS `Client IP`, client.geo.country_iso_code AS Country, body.text AS Message",
+  "description": "The newest 200 events of the audit stream with the monitor-ping and bulk-authentication noise removed: the firehose you can actually read. Detail is the Kibana message (body.text), or the transport action on an Elasticsearch event, which carries no message. Outcome reads attempted where Kibana logged an attempt rather than a result. Open in Discover to page further back, add the object type or country, or filter on a cell.",
+  "esql": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE (attributes.elasticsearch.audit.action IS NULL OR NOT (attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\") OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\")) AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"authentication_success\",\"connection_granted\"))) | SORT @timestamp DESC | LIMIT 200 | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | EVAL result = CASE(attributes.event.outcome == \"unknown\", \"attempted\", attributes.event.outcome), source = REPLACE(resource.attributes.service.name, \"^serverless-\", \"\"), detail = COALESCE(body.text, attributes.elasticsearch.audit.action) | KEEP @timestamp, actor, source, attributes.event.action, result, client.ip, detail, attributes.elasticsearch.audit.action, attributes.kibana.saved_object.type, client.geo.country_iso_code | RENAME @timestamp AS Time, actor AS Identity, source AS Source, attributes.event.action AS Action, result AS Outcome, client.ip AS `Client IP`, detail AS Detail, attributes.elasticsearch.audit.action AS `Transport action`, attributes.kibana.saved_object.type AS `Object type`, client.geo.country_iso_code AS Country",
   "columns": [
     "Time",
     "Identity",
     "Source",
     "Action",
     "Outcome",
-    "Transport action",
-    "Object type",
     "Client IP",
-    "Message"
+    "Detail"
   ],
   "sort": [
     [
@@ -22,13 +20,16 @@
   "grid": {
     "columns": {
       "Identity": {
-        "width": 220
+        "width": 230
       },
       "Source": {
+        "width": 115
+      },
+      "Action": {
         "width": 200
       },
       "Outcome": {
-        "width": 90
+        "width": 95
       }
     }
   }

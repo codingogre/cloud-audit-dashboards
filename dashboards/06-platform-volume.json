@@ -117,11 +117,11 @@
       },
       "config": {
         "title": "",
-        "description": "Total audited events, unfiltered.",
+        "description": "Total audited events, unfiltered. Beneath it, the distinct HTTP requests behind them — one request often emits several audit records.",
         "type": "metric",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS `All events` = COUNT(*)"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS `All events` = COUNT(*), requests = COUNT_DISTINCT(attributes.http.request.id) | EVAL detail = CONCAT(CASE(requests < 1000, TO_STRING(requests), CONCAT(TO_STRING(ROUND(requests / 1000.0, 1)), \"k\")), \" HTTP requests\") | KEEP `All events`, detail"
         },
         "metrics": [
           {
@@ -131,6 +131,10 @@
               "type": "number",
               "decimals": 0
             }
+          },
+          {
+            "type": "secondary",
+            "column": "detail"
           }
         ]
       }
@@ -146,7 +150,7 @@
       },
       "config": {
         "title": "",
-        "description": "Events that survive the noise gate.",
+        "description": "Events that survive the noise gate: what every other dashboard reads.",
         "type": "metric",
         "data_source": {
           "type": "esql",
@@ -175,16 +179,16 @@
       },
       "config": {
         "title": "",
-        "description": "Health-check and maintenance traffic.",
+        "description": "Successful authentication events. Elasticsearch logs one per authenticated request, so credentials making many calls generate most of them.",
         "type": "metric",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\",\"elastic.maintenance\") | STATS `Infra noise` = COUNT(*)"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.event.action == \"authentication_success\" | STATS `Auth success` = COUNT(*)"
         },
         "metrics": [
           {
             "type": "primary",
-            "column": "Infra noise",
+            "column": "Auth success",
             "format": {
               "type": "number",
               "decimals": 0
@@ -204,16 +208,16 @@
       },
       "config": {
         "title": "",
-        "description": "Successful authentication events. Elasticsearch logs one per authenticated request, so credentials making many calls generate most of them.",
+        "description": "Search phases, reader contexts, point-in-time and transport connection_granted: the machinery behind a query, not a decision anyone made.",
         "type": "metric",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.event.action == \"authentication_success\" | STATS `Bulk authn` = COUNT(*)"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.action LIKE \"indices:data/read/*\" OR attributes.event.action == \"connection_granted\" | EVAL band = CASE(attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\"), \"infra-noise\", attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\", \"query-noise\", attributes.event.action == \"connection_granted\", \"query-noise\", attributes.event.action == \"authentication_success\", \"authn-volume\", \"signal\") | WHERE band == \"query-noise\" | STATS `Query internals` = COUNT(*)"
         },
         "metrics": [
           {
             "type": "primary",
-            "column": "Bulk authn",
+            "column": "Query internals",
             "format": {
               "type": "number",
               "decimals": 0
@@ -233,16 +237,16 @@
       },
       "config": {
         "title": "",
-        "description": "Distinct HTTP requests behind the audited events. One request often emits several audit records, so this is lower than the event count.",
+        "description": "Health-check and platform maintenance traffic.",
         "type": "metric",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS `HTTP requests` = COUNT_DISTINCT(attributes.http.request.id)"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\",\"elastic.maintenance\") | STATS `Infra health` = COUNT(*)"
         },
         "metrics": [
           {
             "type": "primary",
-            "column": "HTTP requests",
+            "column": "Infra health",
             "format": {
               "type": "number",
               "decimals": 0
@@ -281,50 +285,50 @@
       }
     },
     {
-      "type": "vis",
-      "id": "vega-07",
+      "type": "markdown",
+      "id": "md-07",
       "grid": {
         "x": 0,
         "y": 8,
-        "w": 24,
+        "w": 48,
+        "h": 7
+      },
+      "config": {
+        "content": "Every other dashboard applies a **noise gate**; this one does not, so the whole firehose stays measurable. Every event lands in exactly one band:\n**Signal** — what the other dashboards read · **Auth success** — Elasticsearch's `authentication_success`, one per authenticated request\n**Query internals** — search phases, reader contexts, point-in-time, `connection_granted` · **Infra health** — `cluster:monitor/main`, `elastic.maintenance`\n\nAn API key's events carry its **creator's** email, so a busy key can read as a person: **Via API key** in *Highest-volume identities* shows how much of a name is a key.",
+        "title": "The quarantine dashboard"
+      }
+    },
+    {
+      "type": "vis",
+      "id": "vega-08",
+      "grid": {
+        "x": 0,
+        "y": 15,
+        "w": 30,
         "h": 13
       },
       "config": {
         "ref_id": "cloud-audit-vega-07-noise-ratio-stream",
         "title": "Signal vs noise over time",
-        "description": "Stream graph of the four volume bands. The signal band is what every other dashboard shows."
-      }
-    },
-    {
-      "type": "markdown",
-      "id": "md-08",
-      "grid": {
-        "x": 24,
-        "y": 8,
-        "w": 10,
-        "h": 13
-      },
-      "config": {
-        "content": "Every other dashboard applies a **noise gate**. This one deliberately does not, so the\nfirehose stays measurable without drowning the forensic views.\n\n- **`infra-noise`** — `cluster:monitor/main` + `elastic.maintenance` health traffic\n- **`query-noise`** — search-phase internals, reader contexts, PITs, `connection_granted`\n- **`authn-volume`** — bulk `authentication_success`, one per request\n- **`signal`** — everything else: what the other dashboards read\n\nElasticsearch stamps an API key's **creator's** email on every event the key emits, so a busy\nkey's traffic resolves to a person's name on the identity panels — check the `api_key` column\nbefore reading a name as a human.",
-        "title": "📊 The quarantine dashboard"
+        "description": "Audit events per time bucket, stacked by band, so the top edge is the whole firehose and Signal sits on the baseline. Hover a segment for its band and the bucket total."
       }
     },
     {
       "type": "vis",
       "id": "tbl-09",
       "grid": {
-        "x": 34,
-        "y": 8,
-        "w": 14,
+        "x": 30,
+        "y": 15,
+        "w": 18,
         "h": 13
       },
       "config": {
         "title": "API key throughput",
-        "description": "Request volume per named API key.",
+        "description": "Events per named API key, busiest first. Click a key to pin it across the suite.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.api_key.name IS NOT NULL | STATS events = COUNT(*) BY api_key = attributes.api_key.name | SORT events DESC | LIMIT 12"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.api_key.name IS NOT NULL | STATS events = COUNT(*) BY attributes.api_key.name | SORT events DESC | LIMIT 12"
         },
         "styling": {
           "density": {
@@ -340,7 +344,8 @@
         "rows": [
           {
             "label": "API key",
-            "column": "api_key"
+            "column": "attributes.api_key.name",
+            "click_filter": true
           }
         ],
         "metrics": [
@@ -357,13 +362,13 @@
       "id": "xy-10",
       "grid": {
         "x": 0,
-        "y": 21,
+        "y": 28,
         "w": 24,
         "h": 12
       },
       "config": {
-        "title": "Volume band over time",
-        "description": "Absolute event volume split into the four bands.",
+        "title": "Band share over time",
+        "description": "Each bucket’s events as 100%, split by band. A rising Signal share means activity, not housekeeping, is driving the volume.",
         "type": "xy",
         "axis": {
           "x": {
@@ -384,10 +389,10 @@
         },
         "layers": [
           {
-            "type": "bar_stacked",
+            "type": "bar_percentage",
             "data_source": {
               "type": "esql",
-              "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | EVAL band = CASE(attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\"), \"infra-noise\", attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\", \"query-noise\", attributes.event.action == \"connection_granted\", \"query-noise\", attributes.event.action == \"authentication_success\", \"authn-volume\", \"signal\") | STATS events = COUNT(*) BY BUCKET(@timestamp, 75, ?_tstart, ?_tend), band"
+              "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | EVAL band = CASE(attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\"), \"infra-noise\", attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\", \"query-noise\", attributes.event.action == \"connection_granted\", \"query-noise\", attributes.event.action == \"authentication_success\", \"authn-volume\", \"signal\") | STATS events = COUNT(*) BY BUCKET(@timestamp, 75, ?_tstart, ?_tend), band | EVAL ord = CASE(band == \"signal\", 0, band == \"authn-volume\", 1, band == \"query-noise\", 2, 3) | SORT ord | DROP ord | EVAL band = CASE(band == \"signal\", \"Signal\", band == \"authn-volume\", \"Auth success\", band == \"query-noise\", \"Query internals\", \"Infra health\")"
             },
             "x": {
               "column": "BUCKET(@timestamp, 75, ?_tstart, ?_tend)",
@@ -403,7 +408,44 @@
               "color": {
                 "mode": "categorical",
                 "palette": "eui_amsterdam",
-                "mapping": []
+                "mapping": [
+                  {
+                    "values": [
+                      "Signal"
+                    ],
+                    "color": {
+                      "type": "color_code",
+                      "value": "#54B399"
+                    }
+                  },
+                  {
+                    "values": [
+                      "Auth success"
+                    ],
+                    "color": {
+                      "type": "color_code",
+                      "value": "#6092C0"
+                    }
+                  },
+                  {
+                    "values": [
+                      "Query internals"
+                    ],
+                    "color": {
+                      "type": "color_code",
+                      "value": "#B9A888"
+                    }
+                  },
+                  {
+                    "values": [
+                      "Infra health"
+                    ],
+                    "color": {
+                      "type": "color_code",
+                      "value": "#DA8B45"
+                    }
+                  }
+                ]
               }
             }
           }
@@ -422,13 +464,13 @@
       "id": "xy-11",
       "grid": {
         "x": 24,
-        "y": 21,
+        "y": 28,
         "w": 24,
         "h": 12
       },
       "config": {
         "title": "Audit volume by source service",
-        "description": "Elasticsearch versus Kibana audit volume over time.",
+        "description": "Elasticsearch versus Kibana audit volume over time. Elasticsearch audits every transport action, so it usually dwarfs Kibana.",
         "type": "xy",
         "axis": {
           "x": {
@@ -452,7 +494,7 @@
             "type": "bar_stacked",
             "data_source": {
               "type": "esql",
-              "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS events = COUNT(*) BY BUCKET(@timestamp, 75, ?_tstart, ?_tend), source = resource.attributes.service.name"
+              "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS events = COUNT(*) BY BUCKET(@timestamp, 75, ?_tstart, ?_tend), source = resource.attributes.service.name | EVAL source = CASE(source == \"serverless-elasticsearch\", \"Elasticsearch\", source == \"serverless-kibana\", \"Kibana\", source)"
             },
             "x": {
               "column": "BUCKET(@timestamp, 75, ?_tstart, ?_tend)",
@@ -468,7 +510,26 @@
               "color": {
                 "mode": "categorical",
                 "palette": "eui_amsterdam",
-                "mapping": []
+                "mapping": [
+                  {
+                    "values": [
+                      "Elasticsearch"
+                    ],
+                    "color": {
+                      "type": "color_code",
+                      "value": "#9170B8"
+                    }
+                  },
+                  {
+                    "values": [
+                      "Kibana"
+                    ],
+                    "color": {
+                      "type": "color_code",
+                      "value": "#D36086"
+                    }
+                  }
+                ]
               }
             }
           }
@@ -487,17 +548,17 @@
       "id": "tbl-12",
       "grid": {
         "x": 0,
-        "y": 33,
+        "y": 40,
         "w": 24,
         "h": 12
       },
       "config": {
         "title": "Noisiest transport actions",
-        "description": "Highest-volume Elasticsearch transport actions, unfiltered.",
+        "description": "Highest-volume Elasticsearch transport actions, unfiltered, with the number of identities behind each. ES|QL’s own fan-out (esql/compute, search_shards, field_caps[n]) is currently classed as Signal, and much of it is dashboards querying this stream.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.action IS NOT NULL | STATS events = COUNT(*), actors = COUNT_DISTINCT(COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name)) BY action = attributes.elasticsearch.audit.action | SORT events DESC | LIMIT 10"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.action IS NOT NULL | STATS events = COUNT(*), actors = COUNT_DISTINCT(COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name)) BY attributes.elasticsearch.audit.action | SORT events DESC | LIMIT 10"
         },
         "styling": {
           "density": {
@@ -512,8 +573,8 @@
         },
         "rows": [
           {
-            "label": "Action",
-            "column": "action"
+            "label": "Transport action",
+            "column": "attributes.elasticsearch.audit.action"
           }
         ],
         "metrics": [
@@ -535,17 +596,17 @@
       "id": "tbl-13",
       "grid": {
         "x": 24,
-        "y": 33,
+        "y": 40,
         "w": 24,
         "h": 12
       },
       "config": {
         "title": "Highest-volume identities",
-        "description": "Unfiltered volume leaderboard — this is where the machine traffic shows up.",
+        "description": "Unfiltered volume leaderboard — this is where the machine traffic shows up. An opaque id is a principal with no email or key name, usually an organisation-level Elastic Cloud API key, which the stream records only by id (often the credential running this suite). Via API key: how many of the row’s events came through a named API key.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS events = COUNT(*), actions = COUNT_DISTINCT(attributes.event.action) BY actor, actor_kind | SORT events DESC | LIMIT 10"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS events = COUNT(*), via_key = COUNT(attributes.api_key.name), actions = COUNT_DISTINCT(attributes.event.action) BY actor, actor_kind | EVAL actor_kind = CASE(actor IN (\"<anonymous>\",\"<unauthenticated-cloud-access-token>\",\"<unauthenticated-saml-user>\"), \"unauthenticated\", actor IN (\"elastic.maintenance\",\"autoscaling\",\"elasticsearch-controller\",\"elastic/fleet-server\"), \"platform\", actor_kind) | SORT events DESC | LIMIT 10"
         },
         "styling": {
           "density": {
@@ -574,6 +635,11 @@
             "label": "Events",
             "width": 90,
             "column": "events"
+          },
+          {
+            "label": "Via API key",
+            "column": "via_key",
+            "width": 105
           },
           {
             "label": "Actions",
