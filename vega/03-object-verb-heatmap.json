@@ -1,6 +1,11 @@
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "description": "Saved-object type against operation. Writes come first and reads after; cell volume is opacity on a log scale, so a single delete stays visible beside thousands of reads.",
+  "title": {
+    "text": {
+      "expr": "length(data('rows')) ? '' : 'No activity for this selection in this time range'"
+    }
+  },
   "autosize": {
     "type": "fit",
     "contains": "padding"
@@ -13,6 +18,11 @@
     "view": {
       "stroke": null
     },
+    "title": {
+      "fontSize": 12,
+      "fontWeight": 500,
+      "anchor": "start"
+    },
     "legend": {
       "labelFontSize": 11,
       "titleFontSize": 11
@@ -22,6 +32,7 @@
     }
   },
   "data": {
+    "name": "rows",
     "url": {
       "%type%": "esql",
       "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE resource.attributes.service.name == \"serverless-kibana\" | GROK body.text \"\"\"\\[(?:id|workflowId)=%{DATA:g_id}(?:,|\\])\"\"\" | EVAL obj_id = COALESCE(attributes.kibana.saved_object.id, g_id) | WHERE obj_id IS NOT NULL | STATS n = COUNT(*) BY attributes.event.action, attributes.kibana.saved_object.type, obj_id | EVAL verb = CASE(attributes.event.action LIKE \"*_execution_cancel\", \"cancel\", attributes.event.action LIKE \"*_run_soon\", \"run\", attributes.event.action LIKE \"*_run\", \"run\", attributes.event.action LIKE \"*_test\", \"test\", attributes.event.action LIKE \"*_enable\", \"enable\", attributes.event.action LIKE \"*_disable\", \"disable\", attributes.event.action LIKE \"ml_put_*\", \"create\", attributes.event.action LIKE \"ml_open_*\", \"open\", attributes.event.action LIKE \"ml_start_*\", \"start\", attributes.event.action LIKE \"*point_in_time\", \"pit\", attributes.event.action LIKE \"*_create*\", \"create\", attributes.event.action LIKE \"*_update*\", \"update\", attributes.event.action LIKE \"*_delete\", \"delete\", attributes.event.action LIKE \"*_find\", \"find\", attributes.event.action LIKE \"*_get\", \"get\", attributes.event.action LIKE \"*_resolve\", \"resolve\", \"other\") | EVAL obj_type = CASE(attributes.kibana.saved_object.type IS NOT NULL, attributes.kibana.saved_object.type, attributes.event.action LIKE \"ml_*ad_job\", \"ml-job\", attributes.event.action LIKE \"ml_*ad_datafeed\", \"ml-datafeed\", attributes.event.action LIKE \"workflow_execution_*\", \"workflow-execution\", attributes.event.action LIKE \"workflow_*\", \"workflow\", attributes.event.action LIKE \"agent_builder_agent_*\", \"agent-builder-agent\", attributes.event.action LIKE \"agent_builder_tool_*\", \"agent-builder-tool\", attributes.event.action LIKE \"product_documentation_*\", \"product-documentation\", attributes.event.action == \"secret_create\", \"secret\", attributes.event.action IS NULL, \"unclassified\", REPLACE(attributes.event.action, \"_(create|update|delete|enable|disable|run|run_soon|test|cancel)$\", \"\")) | STATS events = SUM(n), objects = COUNT_DISTINCT(obj_id) BY so_type = obj_type, verb",
@@ -45,7 +56,13 @@
       },
       "axis": {
         "title": "Object type",
-        "labelLimit": 200
+        "labelLimit": 200,
+        "titleOpacity": {
+          "expr": "length(data('rows')) ? 1 : 0"
+        },
+        "domainOpacity": {
+          "expr": "length(data('rows')) ? 1 : 0"
+        }
       }
     },
     "x": {
@@ -71,7 +88,10 @@
       "axis": {
         "title": null,
         "labelAngle": 0,
-        "orient": "top"
+        "orient": "top",
+        "domainOpacity": {
+          "expr": "length(data('rows')) ? 1 : 0"
+        }
       }
     },
     "tooltip": [
@@ -110,7 +130,16 @@
         "symbolFillColor": "#3987e5",
         "symbolStrokeWidth": 0,
         "labelExpr": "format(datum.value, \"~s\")",
-        "tickCount": 4
+        "tickCount": 4,
+        "titleOpacity": {
+          "expr": "length(data('rows')) ? 1 : 0"
+        },
+        "labelOpacity": {
+          "expr": "length(data('rows')) ? 1 : 0"
+        },
+        "symbolOpacity": {
+          "expr": "length(data('rows')) ? 1 : 0"
+        }
       }
     }
   }

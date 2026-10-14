@@ -22,7 +22,7 @@
   },
   "title": {
     "text": {
-      "expr": "length(data('coverage')) && data('coverage')[0].total > 0 ? 'Placed on the map: ' + (data('coverage')[0].located > 0 && round(100 * data('coverage')[0].located / data('coverage')[0].total) < 1 ? '<1' : round(100 * data('coverage')[0].located / data('coverage')[0].total)) + '% of events · IP geoip cannot place: ' + max(0, 100 - max(round(100 * data('coverage')[0].located / data('coverage')[0].total), data('coverage')[0].located > 0 ? 1 : 0) - round(100 * (data('coverage')[0].total - data('coverage')[0].with_ip) / data('coverage')[0].total)) + '% · no client IP: ' + round(100 * (data('coverage')[0].total - data('coverage')[0].with_ip) / data('coverage')[0].total) + '%' : 'No events in range'"
+      "expr": "length(data('coverage')) && data('coverage')[0].total > 0 ? 'Placed on the map: ' + (data('coverage')[0].located > 0 && round(100 * data('coverage')[0].located / data('coverage')[0].total) < 1 ? '<1' : round(100 * data('coverage')[0].located / data('coverage')[0].total)) + '% of events · IP geoip cannot place: ' + max(0, 100 - max(round(100 * data('coverage')[0].located / data('coverage')[0].total), data('coverage')[0].located > 0 ? 1 : 0) - round(100 * (data('coverage')[0].total - data('coverage')[0].with_ip) / data('coverage')[0].total)) + '% · no client IP: ' + round(100 * (data('coverage')[0].total - data('coverage')[0].with_ip) / data('coverage')[0].total) + '%' : 'No activity for this selection in this time range'"
     },
     "subtitle": "Lines join consecutive locations for one identity; colour is the travel speed that would imply."
   },
@@ -185,7 +185,13 @@
             "orient": "bottom",
             "direction": "horizontal",
             "symbolType": "stroke",
-            "labelLimit": 220
+            "labelLimit": 220,
+            "labelOpacity": {
+              "expr": "length(data('places')) ? 1 : 0"
+            },
+            "symbolOpacity": {
+              "expr": "length(data('places')) ? 1 : 0"
+            }
           }
         },
         "tooltip": [

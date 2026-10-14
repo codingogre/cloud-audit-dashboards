@@ -6,6 +6,12 @@
     "contains": "padding"
   },
   "padding": 4,
+  "signals": [
+    {
+      "name": "empty",
+      "update": "length(data('raw')) === 0"
+    }
+  ],
   "data": [
     {
       "name": "raw",
@@ -411,6 +417,36 @@
           }
         }
       }
+    },
+    {
+      "type": "text",
+      "style": "guide-label",
+      "interactive": false,
+      "encode": {
+        "update": {
+          "x": {
+            "signal": "width / 2"
+          },
+          "y": {
+            "signal": "height / 2"
+          },
+          "align": {
+            "value": "center"
+          },
+          "baseline": {
+            "value": "middle"
+          },
+          "fontSize": {
+            "value": 12
+          },
+          "text": {
+            "signal": "empty ? 'No activity for this selection in this time range' : ''"
+          },
+          "limit": {
+            "signal": "width"
+          }
+        }
+      }
     }
   ],
   "legends": [
@@ -428,13 +464,30 @@
       "titleFontSize": 10,
       "labelFontSize": 10,
       "values": {
-        "signal": "[0, domain('risk')[1] / 4, domain('risk')[1]]"
+        "signal": "empty ? [] : [0, domain('risk')[1] / 4, domain('risk')[1]]"
       },
       "encode": {
         "labels": {
           "update": {
             "text": {
               "signal": "datum.value === 0 ? '0' : format(datum.value, '.2~s')"
+            },
+            "opacity": {
+              "signal": "empty ? 0 : 1"
+            }
+          }
+        },
+        "title": {
+          "update": {
+            "opacity": {
+              "signal": "empty ? 0 : 1"
+            }
+          }
+        },
+        "gradient": {
+          "update": {
+            "opacity": {
+              "signal": "empty ? 0 : 1"
             }
           }
         }

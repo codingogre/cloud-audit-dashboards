@@ -92,7 +92,7 @@ dataset uniquely; `layout.mjs` enforces it.
 `group-title` and `group-subtitle` styles and the axis lines — nothing else. An unstyled text mark
 is `#000`, invisible on dark. Full Vega: `style: "guide-label"` (verified `#98A8C3` dark, `#516381`
 light). Vega-Lite: `style` does not reach text marks (they stay black), but `title.text` accepts an
-expression over a named dataset and *is* themed — that is how the cohort and map carry live readings.
+expression over a named dataset and *is* themed — that is how the maps carry live readings (the cohort is full Vega since 2026-10-14).
 `layout.mjs` rejects an unstyled text mark.
 
 **Magnitude as opacity, not as a light-to-dark ramp.** A spec cannot tell which theme it is in, and a
@@ -338,10 +338,12 @@ exactly those keys when a spec does not override them. Do not reintroduce them.
   **13.3s** and `vega/01-actor-risk-treemap` **6.4s** at 1h. Both evaluate the `RISK` CASE and the actor
   COALESCE on every document before grouping; the aggregate-first rewrite should apply. Outside the
   Actor 360 scope of this change, so left for a follow-up.
-- **The Actor 360 cohort panel costs ~4s when measured**, because it is deliberately unfiltered and
-  needs two per-identity `cardinality` sub-aggregations over the whole week. Counting `terms` buckets
-  instead was slower (~6s). Its cost tracks the number of documents in the 7-day window, so it rises
-  and falls with stream volume rather than with anything in the spec.
+- **The Actor 360 cohort panel's cost tracks the 7-day document count.** Its estate dataset is unfiltered
+  and carries two per-identity `cardinality` sub-aggregations, once estate-wide and once per project.
+  Re-measured 2026-10-14 on the 2.6M-document perf replica at 7 days: under 0.1s cold, and ~0.25s cold
+  with high-cardinality stand-ins for project (52 values) and identity. The replica holds one project
+  and one email identity, so the real per-project fan-out has not been measured at volume. The ~4s
+  recorded here before (live stream, 2026-09-15) did not reproduce.
 - **No drilldown from "What they changed".** Its useful columns (`type`, `name`) are derived and a pill on
   them matches nothing; `space` is the only real field, and a drilldown on space alone was judged too
   weak to be worth it.

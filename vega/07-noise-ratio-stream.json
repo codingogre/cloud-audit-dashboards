@@ -1,6 +1,7 @@
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "description": "The audit firehose, stacked by band. Signal is what the forensic dashboards show.",
+  "title": { "text": { "expr": "length(data('rows')) ? '' : 'No activity for this selection in this time range'" } },
   "autosize": {
     "type": "fit",
     "contains": "padding"
@@ -13,12 +14,14 @@
     "view": {
       "stroke": null
     },
+    "title": { "fontSize": 12, "fontWeight": 500, "anchor": "start" },
     "legend": {
       "labelFontSize": 11,
       "titleFontSize": 11
     }
   },
   "data": {
+    "name": "rows",
     "url": {
       "%type%": "esql",
       "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS n = COUNT(*) BY ts = BUCKET(@timestamp, 75, ?_tstart, ?_tend), attributes.elasticsearch.audit.action, attributes.event.action | EVAL band = CASE(attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\"), \"infra-noise\", attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\", \"query-noise\", attributes.event.action == \"connection_granted\", \"query-noise\", attributes.event.action == \"authentication_success\", \"authn-volume\", \"signal\") | STATS events = SUM(n) BY ts, band | EVAL band = CASE(band == \"signal\", \"Signal\", band == \"authn-volume\", \"Auth success\", band == \"query-noise\", \"Query internals\", \"Infra health\") | EVAL t0 = TO_DATETIME(?_tstart), t1 = TO_DATETIME(?_tend) | SORT ts ASC",
@@ -51,6 +54,7 @@
             "labelAngle": 0,
             "tickCount": 8,
             "grid": false,
+            "domainOpacity": { "expr": "length(data('rows')) ? 1 : 0" },
             "labelExpr": "timeFormat(datum.value, hours(datum.value) == 0 && minutes(datum.value) == 0 ? '%b %d' : '%H:%M')"
           }
         },
@@ -58,7 +62,7 @@
         "y": {
           "field": "y1",
           "type": "quantitative",
-          "axis": { "title": null, "labelExpr": "format(datum.value, ',')", "grid": true }
+          "axis": { "title": null, "labelExpr": "length(data('rows')) ? format(datum.value, ',') : ''", "grid": true, "gridOpacity": { "expr": "length(data('rows')) ? 1 : 0" }, "domainOpacity": { "expr": "length(data('rows')) ? 1 : 0" }, "tickOpacity": { "expr": "length(data('rows')) ? 1 : 0" } }
         },
         "y2": { "field": "y0" },
         "color": {
@@ -73,7 +77,8 @@
             "orient": "bottom",
             "direction": "horizontal",
             "symbolType": "circle",
-            "symbolOpacity": 1,
+            "symbolOpacity": { "expr": "length(data('rows')) ? 1 : 0" },
+            "labelOpacity": { "expr": "length(data('rows')) ? 1 : 0" },
             "symbolStrokeWidth": 0,
             "labelFontSize": 12
           }

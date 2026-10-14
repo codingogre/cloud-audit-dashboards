@@ -129,7 +129,7 @@ range to it. Double-clicking the flow clears every pill on the page.
 
 | Control | Field | Why |
 |---|---|---|
-| Project | `attributes.project.name` | The serverless project that **emitted** the event. An audit project usually collects the audit streams of several projects; this narrows the whole dashboard — and, through hierarchical chaining, every dropdown after it — to one of them. Populated on every Elasticsearch and Kibana event. Names are not unique in Elastic Cloud, so projects that share a name share an option. **Exception:** Actor 360's cohort rank deliberately ignores the control bar (it ranks against the whole estate), so it ranks across all projects. |
+| Project | `attributes.project.name` | The serverless project that **emitted** the event. An audit project usually collects the audit streams of several projects; this narrows the whole dashboard — and, through hierarchical chaining, every dropdown after it — to one of them. Populated on every Elasticsearch and Kibana event. Names are not unique in Elastic Cloud, so projects that share a name share an option. **Actor 360's cohort rank follows Project and nothing else:** it ranks against everyone active in the projects the selection is active in, so a Person or Client IP selection highlights that identity instead of shrinking the cohort to one. Exact across all projects or within one; across several (not all) it sums events and takes each distinct count's per-project maximum, and its title says *approximate*. |
 | Person (name) | `attributes.user.full_name` | Human-readable display names. **Null for some identities**, so it can never be the only identity control. |
 | Person (email) | `attributes.user.email` | The reliable identity key — never null for a human. |
 | Client IP | `client.ip` | Can hold more distinct addresses than anyone could eyeball, which is the point of a searchable dropdown. |
@@ -286,6 +286,19 @@ background (dark panels are ~`#111C2C`, light are white).
   #B9A888, #DA8B45, #AA6556, #E7664C`) — the same ten Lens draws breakdowns with, so a category
   pinned with `xy({ colors })` and the same category in Vega can match.
 - Legends sit outside the plot (`"orient": "bottom"` or `"right"`), never `bottom-right` inside it.
+
+**Vega empty states.** A selection that matches nothing must read as empty, not as a broken chart. Every
+spec says so in words — *No activity for this selection in this time range* (or *in the last 7 days*
+on a fixed-window panel) — and hides whatever would print `NaN`, `undefined` or a key for nothing:
+legends over an empty domain, decade axes, solid placeholder cells, a flat line on a degenerate scale.
+- *Vega-Lite*: name the data source (`"data": {"name": "rows", …}`), put the message in
+  `title.text` as an expression over `length(data('rows'))` (text marks are not themed), and give the
+  legend and axes `titleOpacity` / `labelOpacity` / `symbolOpacity` / `domainOpacity` expressions.
+  A fixed legend `values` list becomes `{"expr": "length(data('rows')) ? [1, 10, …] : []"}`.
+- *Full Vega*: a signal such as `empty`, a centred `style: "guide-label"` text mark or the existing
+  headline, and `opacity` on each legend part (`title`, `labels`, `symbols`, `gradient`) — opacity on
+  the legend *group* does not reach its children.
+- Verify by rendering with the Project control set to **Exclude** the only project: every panel is empty.
 
 ---
 

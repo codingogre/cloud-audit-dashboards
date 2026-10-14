@@ -56,6 +56,10 @@ export const dataViewObject = () => ({
  * 100% of both sources). The name, not the id, because the id is a 32-hex string nobody
  * recognises; Elastic Cloud does not enforce unique project names, so an org that reuses a
  * name across regions gets those projects merged under one option.
+ *
+ * Actor 360's cohort rank (vega/12) follows this control and no other. Kibana applies the control
+ * bar to a DSL dataset as all-or-nothing, so the spec works out the projects in scope itself; see
+ * TWO_DATASET_SPECS in layout.mjs.
  */
 export const CONTROLS = [
   { field: 'attributes.project.name',   title: 'Project',        width: 'medium', search: 'prefix' },

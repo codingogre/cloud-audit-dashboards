@@ -22,7 +22,7 @@
   },
   "title": {
     "text": {
-      "expr": "length(data('coverage')) && data('coverage')[0].total > 0 ? length(data('countries')) + (length(data('countries')) == 1 ? ' country' : ' countries') + ' · placed on the map: ' + format(data('coverage')[0].located / data('coverage')[0].total, '.1%') + ' of events · could not be placed: ' + format(1 - data('coverage')[0].located / data('coverage')[0].total, '.1%') : 'No events in range'"
+      "expr": "length(data('coverage')) && data('coverage')[0].total > 0 ? length(data('countries')) + (length(data('countries')) == 1 ? ' country' : ' countries') + ' · placed on the map: ' + format(data('coverage')[0].located / data('coverage')[0].total, '.1%') + ' of events · could not be placed: ' + format(1 - data('coverage')[0].located / data('coverage')[0].total, '.1%') : 'No activity for this selection in this time range'"
     },
     "subtitle": "Shade is event volume, log scale. Unplaced events are explained below the map."
   },
@@ -153,7 +153,16 @@
             "symbolType": "square",
             "symbolFillColor": "#3987e5",
             "symbolStrokeWidth": 0,
-            "labelExpr": "format(datum.value, '~s')"
+            "labelExpr": "format(datum.value, '~s')",
+            "titleOpacity": {
+              "expr": "length(data('countries')) ? 1 : 0"
+            },
+            "labelOpacity": {
+              "expr": "length(data('countries')) ? 1 : 0"
+            },
+            "symbolOpacity": {
+              "expr": "length(data('countries')) ? 1 : 0"
+            }
           }
         },
         "tooltip": [

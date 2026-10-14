@@ -1073,7 +1073,7 @@
             "value": 12
           },
           "text": {
-            "value": "No Kibana activity in range — this identity works through the Elasticsearch API only."
+            "value": "No Kibana activity for this selection in this time range — Elasticsearch API calls do not appear here."
           },
           "opacity": {
             "signal": "length(data('raw')) === 0 ? 1 : 0"

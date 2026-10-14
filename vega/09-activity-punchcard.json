@@ -1,10 +1,12 @@
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "description": "Every audited event for the current selection by hour of day and day of week, over the last 7 days in UTC — one cell is one specific hour, not an average, because a seven-day window holds each hour of the week exactly once. Strength is volume on a log scale, so a quiet hour stays visible beside a busy one; a bare grey slot is an hour with no events at all. Fixed window: this panel does not follow the time picker. No noise gate: it measures presence, so it will not reconcile with Signal events. UTC is stated rather than localised so the chart reads the same for every viewer, whatever their timezone — read the rhythm, not the clock.",
+  "title": { "text": { "expr": "extent(pluck(data('hours'), 'doc_count'))[1] > 0 ? '' : 'No activity for this selection in the last 7 days'" } },
   "autosize": { "type": "fit", "contains": "padding" },
   "config": {
     "axis": { "labelFontSize": 11, "titleFontSize": 11 },
     "view": { "stroke": null },
+    "title": { "fontSize": 12, "fontWeight": 500, "anchor": "start" },
     "legend": { "labelFontSize": 11, "titleFontSize": 11 }
   },
   "data": {
@@ -47,11 +49,12 @@
     "x": {
       "field": "hour", "type": "ordinal", "scale": { "paddingInner": 0.1 },
       "axis": { "title": "Hour of day (UTC)", "orient": "top", "labelAngle": 0, "ticks": false, "domain": false,
+                "titleOpacity": { "expr": "extent(pluck(data('hours'), 'doc_count'))[1] > 0 ? 1 : 0" }, "labelOpacity": { "expr": "extent(pluck(data('hours'), 'doc_count'))[1] > 0 ? 1 : 0" },
                 "labelExpr": "datum.value % 3 === 0 ? datum.label : ''" }
     },
     "y": {
       "field": "day", "type": "ordinal", "sort": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
-      "scale": { "paddingInner": 0.1 }, "axis": { "title": null, "ticks": false, "domain": false }
+      "scale": { "paddingInner": 0.1 }, "axis": { "title": null, "ticks": false, "domain": false, "labelOpacity": { "expr": "extent(pluck(data('hours'), 'doc_count'))[1] > 0 ? 1 : 0" } }
     },
     "tooltip": [
       { "field": "when", "title": "Hour" },
@@ -60,7 +63,7 @@
   },
   "layer": [
     {
-      "mark": { "type": "rect", "cornerRadius": 2, "color": "#98A8C3", "opacity": 0.15 }
+      "mark": { "type": "rect", "cornerRadius": 2, "color": "#98A8C3", "opacity": { "expr": "extent(pluck(data('hours'), 'doc_count'))[1] > 0 ? 0.15 : 0" } }
     },
     {
       "transform": [{ "filter": "datum.doc_count > 0" }],
@@ -71,7 +74,8 @@
           "scale": { "type": "log", "range": [0.35, 1] },
           "legend": {
             "title": "Events / hour", "orient": "right",
-            "values": { "expr": "floor(log(domain('opacity')[1]) / LN10 + 1e-9) - ceil(log(domain('opacity')[0]) / LN10 - 1e-9) >= 1 ? slice([1, 10, 100, 1000, 10000, 100000, 1000000, 10000000], ceil(log(domain('opacity')[0]) / LN10 - 1e-9), 1 + floor(log(domain('opacity')[1]) / LN10 + 1e-9)) : domain('opacity')" },
+            "titleOpacity": { "expr": "extent(pluck(data('hours'), 'doc_count'))[1] > 0 ? 1 : 0" },
+            "values": { "expr": "!(extent(pluck(data('hours'), 'doc_count'))[1] > 0) ? [] : floor(log(domain('opacity')[1]) / LN10 + 1e-9) - ceil(log(domain('opacity')[0]) / LN10 - 1e-9) >= 1 ? slice([1, 10, 100, 1000, 10000, 100000, 1000000, 10000000], ceil(log(domain('opacity')[0]) / LN10 - 1e-9), 1 + floor(log(domain('opacity')[1]) / LN10 + 1e-9)) : domain('opacity')" },
             "labelExpr": "format(datum.value, '.2~s')"
           }
         }

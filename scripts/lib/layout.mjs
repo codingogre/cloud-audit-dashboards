@@ -17,6 +17,7 @@
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { ROOT, cfg } from './env.mjs';
+import { CONTROLS } from './controls.mjs';
 import { NAV_H, NOISE, BAND, RISK, RISK_KEYS, RISK_RESTORE, VERB, ACTOR_RESOLVE, OBJ, OBJ_ID, OBJ_TYPE, CHANGE_PRED, CRED, OBJ_PRESENT } from './panels.mjs';
 
 export const GRID_W = 48;
@@ -159,11 +160,18 @@ const DSL_SPECS = new Set([
 ]);
 
 /**
- * DSL specs that deliberately hold one dataset scoped by the control bar and one estate-wide
- * dataset, so a person can be drawn against everyone else. The estate-wide half looks like a
+ * DSL specs that deliberately hold one dataset scoped by the control bar and estate-wide datasets
+ * beside it, so a person can be drawn against everyone else. The estate-wide half looks like a
  * forgotten placeholder, which is exactly why its shape is asserted rather than trusted.
+ *
+ * The cohort must still follow the Project control, and Kibana cannot apply one control's filter to
+ * a DSL dataset: it is all three clauses or none. So the scoped dataset reports which projects the
+ * selection is active in, the estate dataset is broken down by project, and the spec picks the rows.
+ * Both halves must aggregate on the Project control's field — without that, the cohort silently goes
+ * back to ranking across every project whatever the control says.
  */
 const TWO_DATASET_SPECS = new Set(['vega/12-actor-cohort.json']);
+const CONTEXT_CLAUSES = ['%dashboard_context-must_clause%', '%dashboard_context-must_not_clause%', '%dashboard_context-filter_clause%'];
 
 function dataEntries(node, out = []) {
   if (Array.isArray(node)) { node.forEach((n) => dataEntries(n, out)); return out; }
@@ -222,8 +230,18 @@ function checkVega(problems) {
       if (q.includes('%dashboard_context-must_clause%')) scoped++;
     }
     if (TWO_DATASET_SPECS.has(file)) {
-      if (dsl.length !== 2 || scoped !== 1) {
-        problems.push(`vega: ${file} must hold exactly two DSL datasets, one scoped by the control bar and one estate-wide (found ${dsl.length}, ${scoped} scoped)`);
+      const body = (d) => JSON.stringify(d.url.body);
+      const full = dsl.filter((d) => CONTEXT_CLAUSES.every((c) => body(d).includes(c)));
+      const none = dsl.filter((d) => CONTEXT_CLAUSES.every((c) => !body(d).includes(c)));
+      if (full.length !== 1 || none.length < 1 || full.length + none.length !== dsl.length) {
+        problems.push(`vega: ${file} must hold exactly one DSL dataset scoped by all three control-bar clauses and at least one estate-wide dataset with none of them `
+          + `(found ${dsl.length}: ${full.length} fully scoped, ${none.length} unscoped, ${dsl.length - full.length - none.length} partly scoped)`);
+      }
+      const projectField = `"field":"${CONTROLS[0].field}"`;
+      for (const d of dsl) {
+        if (!body(d).includes(projectField)) {
+          problems.push(`vega: ${file} dataset ${d.name} does not aggregate on ${CONTROLS[0].field} — the cohort would stop following the ${CONTROLS[0].title} control`);
+        }
       }
     } else if (dsl.length && scoped !== dsl.length) {
       problems.push(`vega: ${file} has a DSL dataset without %dashboard_context-must_clause% — the control bar would not scope it`);

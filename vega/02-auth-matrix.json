@@ -1,7 +1,7 @@
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "description": "Which credential type each identity presents, for the 12 busiest identities. Only Elasticsearch requests record a credential type, so identities seen only in Kibana or only anonymously are not on this chart.",
-  "title": "",
+  "title": { "text": { "expr": "length(data('rows')) ? '' : 'No activity for this selection in this time range'" } },
   "autosize": {
     "type": "fit",
     "contains": "padding"
@@ -14,12 +14,14 @@
     "view": {
       "stroke": null
     },
+    "title": { "fontSize": 12, "fontWeight": 500, "anchor": "start" },
     "legend": {
       "labelFontSize": 11,
       "titleFontSize": 11
     }
   },
   "data": {
+    "name": "rows",
     "url": {
       "%type%": "esql",
       "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.authentication.type IS NOT NULL | STATS events = COUNT(*) BY attributes.user.email, attributes.api_key.name, attributes.user.name, attributes.user.domain, attributes.authentication.type | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | EVAL actor = CASE(attributes.api_key.name IS NULL AND attributes.user.domain == \"_cloud_api_key\", CONCAT(actor, \" · Cloud API key\"), actor), auth = CASE(attributes.authentication.type == \"api_key\", \"API key\", attributes.authentication.type == \"token\", \"Token\", attributes.authentication.type == \"realm\", \"Realm\", attributes.authentication.type == \"saml\", \"SAML\", attributes.authentication.type == \"anonymous\", \"Anonymous\", attributes.authentication.type == \"internal\", \"Internal\", attributes.authentication.type) | STATS events = SUM(events) BY actor, auth | SORT events DESC | LIMIT 2000",
@@ -62,6 +64,7 @@
       },
       "axis": {
         "title": "Identity · busiest 12",
+        "titleOpacity": { "expr": "length(data('rows')) ? 1 : 0" },
         "labelLimit": 240,
         "ticks": false,
         "domain": false
@@ -75,6 +78,7 @@
       },
       "axis": {
         "title": "Credential type",
+        "titleOpacity": { "expr": "length(data('rows')) ? 1 : 0" },
         "labelAngle": 0,
         "orient": "top",
         "ticks": false,
@@ -91,7 +95,8 @@
       "legend": {
         "title": "Events",
         "orient": "right",
-        "values": [1, 10, 100, 1000, 10000, 100000],
+        "values": { "expr": "length(data('rows')) ? [1, 10, 100, 1000, 10000, 100000] : []" },
+          "titleOpacity": { "expr": "length(data('rows')) ? 1 : 0" },
         "labelExpr": "format(datum.value, '~s')",
         "symbolType": "square",
         "symbolFillColor": "#3987e5",

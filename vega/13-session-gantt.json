@@ -320,7 +320,7 @@
             "value": 12
           },
           "text": {
-            "value": "No Kibana browser sessions in the last 24 hours — this identity works through the Elasticsearch API, which carries no session id."
+            "value": "No Kibana browser sessions for this selection in the last 24 hours — Elasticsearch API calls carry no session id."
           },
           "opacity": {
             "signal": "length(data('sessions')) === 0 ? 1 : 0"

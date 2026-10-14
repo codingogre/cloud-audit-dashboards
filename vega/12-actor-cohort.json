@@ -1,17 +1,15 @@
 {
-  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
-  "description": "The 40 busiest identities by user email over the last 7 days, placed by percentile rank on three measures: how much they did, how many different things they did, and how many kinds of Kibana object they touched. The cohort is deliberately NOT filtered by the control bar — that is what makes it a cohort — and the highlighted diamond is the selected identity, drawn only when exactly one is selected. Rank rather than raw value so all three measures share one honest axis: a person can be busier than 90% of the cohort while touching fewer kinds of object than most. Hover any point for its raw numbers. Fixed 7-day window: does not follow the time picker.",
+  "$schema": "https://vega.github.io/schema/vega/v5.json",
+  "description": "The 40 busiest identities by user email over the last 7 days, placed by percentile rank on three measures: how much they did, how many different things they did, and how many kinds of Kibana object they touched. The cohort follows the Project control and nothing else: the people it ranks against are everyone active in the projects in scope, so a Person or Client IP selection highlights that identity (an orange diamond, drawn only when exactly one identity is in scope) instead of shrinking the cohort to one. The projects in scope are the projects the current selection is active in. When that is every project the ranks are exact; when it is one project they are exact for that project; when it is several, events are summed across them and the two distinct counts take the largest per-project value, which can undercount, so the title says approximate. Rank rather than raw value so all three measures share one honest axis: a person can be busier than 90% of the cohort while touching fewer kinds of object than most. Hover any point for its raw numbers. Fixed 7-day window: does not follow the time picker.",
   "autosize": {
     "type": "fit",
     "contains": "padding"
   },
+  "padding": 4,
   "config": {
     "axis": {
       "labelFontSize": 11,
       "titleFontSize": 11
-    },
-    "view": {
-      "stroke": null
     },
     "title": {
       "fontSize": 12,
@@ -21,343 +19,651 @@
   },
   "title": {
     "text": {
-      "expr": "length(data('people')) === 0 ? 'No identities with an email in the last 7 days' : length(data('people')) === 1 ? 'Only one identity in 7 days — a rank needs two or more' : 'Rank among ' + length(data('people')) + ' identities · last 7 days'"
+      "signal": "headline"
+    },
+    "limit": {
+      "signal": "width"
     }
   },
-  "data": {
-    "name": "people",
-    "url": {
-      "index": "logs-elastic_cloud.serverless_audit.otel-default",
-      "body": {
-        "size": 0,
-        "query": {
-          "range": {
-            "@timestamp": {
-              "gte": "now-7d",
-              "lte": "now"
-            }
-          }
-        },
-        "aggs": {
-          "people": {
-            "terms": {
-              "field": "attributes.user.email",
-              "size": 40
-            },
-            "aggs": {
-              "actions": {
-                "cardinality": {
-                  "field": "attributes.event.action",
-                  "precision_threshold": 100
-                }
-              },
-              "objtypes": {
-                "cardinality": {
-                  "field": "attributes.kibana.saved_object.type",
-                  "precision_threshold": 100
-                }
+  "data": [
+    {
+      "name": "estate",
+      "url": {
+        "index": "logs-elastic_cloud.serverless_audit.otel-default",
+        "body": {
+          "size": 0,
+          "query": {
+            "range": {
+              "@timestamp": {
+                "gte": "now-7d",
+                "lte": "now"
               }
             }
-          }
-        }
-      }
-    },
-    "format": {
-      "property": "aggregations.people.buckets"
-    }
-  },
-  "transform": [
-    {
-      "lookup": "key",
-      "from": {
-        "data": {
-          "name": "selected",
-          "url": {
-            "index": "logs-elastic_cloud.serverless_audit.otel-default",
-            "body": {
-              "size": 0,
-              "query": {
-                "bool": {
-                  "must": [
-                    "%dashboard_context-must_clause%",
-                    {
-                      "range": {
-                        "@timestamp": {
-                          "gte": "now-7d",
-                          "lte": "now"
-                        }
-                      }
-                    }
-                  ],
-                  "must_not": [
-                    "%dashboard_context-must_not_clause%"
-                  ],
-                  "filter": [
-                    "%dashboard_context-filter_clause%"
-                  ]
+          },
+          "aggs": {
+            "people": {
+              "terms": {
+                "field": "attributes.user.email",
+                "size": 40
+              },
+              "aggs": {
+                "actions": {
+                  "cardinality": {
+                    "field": "attributes.event.action",
+                    "precision_threshold": 100
+                  }
+                },
+                "objtypes": {
+                  "cardinality": {
+                    "field": "attributes.kibana.saved_object.type",
+                    "precision_threshold": 100
+                  }
                 }
+              }
+            },
+            "projects": {
+              "terms": {
+                "field": "attributes.project.name",
+                "size": 200
               },
               "aggs": {
                 "people": {
                   "terms": {
                     "field": "attributes.user.email",
                     "size": 40
+                  },
+                  "aggs": {
+                    "actions": {
+                      "cardinality": {
+                        "field": "attributes.event.action",
+                        "precision_threshold": 100
+                      }
+                    },
+                    "objtypes": {
+                      "cardinality": {
+                        "field": "attributes.kibana.saved_object.type",
+                        "precision_threshold": 100
+                      }
+                    }
                   }
                 }
               }
             }
-          },
-          "format": {
-            "property": "aggregations.people.buckets"
           }
-        },
-        "key": "key",
-        "fields": [
-          "doc_count"
-        ]
+        }
       },
-      "as": [
-        "selectedEvents"
-      ]
+      "format": {
+        "property": "aggregations"
+      }
     },
     {
-      "calculate": "datum.selectedEvents != null ? 1 : 0",
-      "as": "isSel"
+      "name": "scope",
+      "url": {
+        "index": "logs-elastic_cloud.serverless_audit.otel-default",
+        "body": {
+          "size": 0,
+          "query": {
+            "bool": {
+              "must": [
+                "%dashboard_context-must_clause%",
+                {
+                  "range": {
+                    "@timestamp": {
+                      "gte": "now-7d",
+                      "lte": "now"
+                    }
+                  }
+                }
+              ],
+              "must_not": [
+                "%dashboard_context-must_not_clause%"
+              ],
+              "filter": [
+                "%dashboard_context-filter_clause%"
+              ]
+            }
+          },
+          "aggs": {
+            "people": {
+              "terms": {
+                "field": "attributes.user.email",
+                "size": 40
+              }
+            },
+            "projects": {
+              "terms": {
+                "field": "attributes.project.name",
+                "size": 200
+              }
+            }
+          }
+        }
+      },
+      "format": {
+        "property": "aggregations"
+      }
     },
     {
-      "joinaggregate": [
+      "name": "estateProjects",
+      "source": "estate",
+      "transform": [
         {
-          "op": "sum",
-          "field": "isSel",
-          "as": "nSel"
+          "type": "flatten",
+          "fields": [
+            "projects.buckets"
+          ],
+          "as": [
+            "p"
+          ]
+        },
+        {
+          "type": "formula",
+          "as": "project",
+          "expr": "datum.p.key"
         }
       ]
     },
     {
-      "calculate": "datum.isSel === 1 && datum.nSel === 1",
-      "as": "highlight"
+      "name": "scopeProjects",
+      "source": "scope",
+      "transform": [
+        {
+          "type": "flatten",
+          "fields": [
+            "projects.buckets"
+          ],
+          "as": [
+            "p"
+          ]
+        },
+        {
+          "type": "formula",
+          "as": "project",
+          "expr": "datum.p.key"
+        }
+      ]
     },
     {
-      "calculate": "datum.doc_count",
-      "as": "events"
+      "name": "scopePeople",
+      "source": "scope",
+      "transform": [
+        {
+          "type": "flatten",
+          "fields": [
+            "people.buckets"
+          ],
+          "as": [
+            "b"
+          ]
+        },
+        {
+          "type": "formula",
+          "as": "key",
+          "expr": "datum.b.key"
+        }
+      ]
     },
     {
-      "calculate": "datum.actions.value",
-      "as": "distinct actions"
+      "name": "inScope",
+      "source": "estateProjects",
+      "transform": [
+        {
+          "type": "filter",
+          "expr": "indata('scopeProjects', 'project', datum.project)"
+        }
+      ]
     },
     {
-      "calculate": "datum.objtypes.value",
-      "as": "object kinds"
+      "name": "exactRows",
+      "source": "estate",
+      "transform": [
+        {
+          "type": "filter",
+          "expr": "whole"
+        },
+        {
+          "type": "flatten",
+          "fields": [
+            "people.buckets"
+          ],
+          "as": [
+            "b"
+          ]
+        },
+        {
+          "type": "formula",
+          "as": "key",
+          "expr": "datum.b.key"
+        },
+        {
+          "type": "formula",
+          "as": "events",
+          "expr": "datum.b.doc_count"
+        },
+        {
+          "type": "formula",
+          "as": "actions",
+          "expr": "datum.b.actions.value"
+        },
+        {
+          "type": "formula",
+          "as": "kinds",
+          "expr": "datum.b.objtypes.value"
+        }
+      ]
     },
     {
-      "fold": [
+      "name": "projectRows",
+      "source": "inScope",
+      "transform": [
+        {
+          "type": "filter",
+          "expr": "!whole"
+        },
+        {
+          "type": "flatten",
+          "fields": [
+            "p.people.buckets"
+          ],
+          "as": [
+            "b"
+          ]
+        },
+        {
+          "type": "formula",
+          "as": "key",
+          "expr": "datum.b.key"
+        },
+        {
+          "type": "formula",
+          "as": "ev",
+          "expr": "datum.b.doc_count"
+        },
+        {
+          "type": "formula",
+          "as": "ac",
+          "expr": "datum.b.actions.value"
+        },
+        {
+          "type": "formula",
+          "as": "ok",
+          "expr": "datum.b.objtypes.value"
+        },
+        {
+          "type": "aggregate",
+          "groupby": [
+            "key"
+          ],
+          "fields": [
+            "ev",
+            "ac",
+            "ok"
+          ],
+          "ops": [
+            "sum",
+            "max",
+            "max"
+          ],
+          "as": [
+            "events",
+            "actions",
+            "kinds"
+          ]
+        },
+        {
+          "type": "window",
+          "sort": {
+            "field": [
+              "events",
+              "key"
+            ],
+            "order": [
+              "descending",
+              "ascending"
+            ]
+          },
+          "ops": [
+            "row_number"
+          ],
+          "as": [
+            "busiest"
+          ]
+        },
+        {
+          "type": "filter",
+          "expr": "datum.busiest <= 40"
+        }
+      ]
+    },
+    {
+      "name": "cohort",
+      "source": [
+        "exactRows",
+        "projectRows"
+      ],
+      "transform": [
+        {
+          "type": "formula",
+          "as": "isSel",
+          "expr": "indata('scopePeople', 'key', datum.key) ? 1 : 0"
+        },
+        {
+          "type": "joinaggregate",
+          "ops": [
+            "count"
+          ],
+          "as": [
+            "nRows"
+          ]
+        },
+        {
+          "type": "joinaggregate",
+          "fields": [
+            "isSel"
+          ],
+          "ops": [
+            "sum"
+          ],
+          "as": [
+            "nSel"
+          ]
+        },
+        {
+          "type": "formula",
+          "as": "highlight",
+          "expr": "datum.isSel === 1 && datum.nSel === 1 && datum.nRows > 1"
+        }
+      ]
+    },
+    {
+      "name": "points",
+      "source": "cohort",
+      "transform": [
+        {
+          "type": "fold",
+          "fields": [
+            "events",
+            "actions",
+            "kinds"
+          ],
+          "as": [
+            "mkey",
+            "value"
+          ]
+        },
+        {
+          "type": "formula",
+          "as": "measure",
+          "expr": "datum.mkey === 'events' ? 'events' : datum.mkey === 'actions' ? 'distinct actions' : 'object kinds'"
+        },
+        {
+          "type": "window",
+          "groupby": [
+            "measure"
+          ],
+          "sort": {
+            "field": "value",
+            "order": "ascending"
+          },
+          "ops": [
+            "percent_rank"
+          ],
+          "as": [
+            "pct"
+          ]
+        },
+        {
+          "type": "formula",
+          "as": "pct",
+          "expr": "isValid(datum.pct) && isFinite(datum.pct) ? datum.pct : 0.5"
+        },
+        {
+          "type": "window",
+          "groupby": [
+            "measure",
+            "pct"
+          ],
+          "sort": {
+            "field": "key",
+            "order": "ascending"
+          },
+          "ops": [
+            "row_number"
+          ],
+          "as": [
+            "tieIdx"
+          ]
+        },
+        {
+          "type": "joinaggregate",
+          "groupby": [
+            "measure",
+            "pct"
+          ],
+          "ops": [
+            "count"
+          ],
+          "as": [
+            "tieN"
+          ]
+        },
+        {
+          "type": "formula",
+          "as": "jitter",
+          "expr": "datum.tieIdx - (datum.tieN + 1) / 2"
+        },
+        {
+          "type": "joinaggregate",
+          "fields": [
+            "tieN"
+          ],
+          "ops": [
+            "max"
+          ],
+          "as": [
+            "maxTie"
+          ]
+        },
+        {
+          "type": "formula",
+          "as": "jitterN",
+          "expr": "datum.jitter / max(datum.maxTie, 8)"
+        }
+      ]
+    }
+  ],
+  "signals": [
+    {
+      "name": "nAll",
+      "update": "length(data('estateProjects'))"
+    },
+    {
+      "name": "nIn",
+      "update": "length(data('inScope'))"
+    },
+    {
+      "name": "whole",
+      "update": "nIn === nAll"
+    },
+    {
+      "name": "approx",
+      "update": "!whole && nIn > 1"
+    },
+    {
+      "name": "nPeople",
+      "update": "length(data('cohort'))"
+    },
+    {
+      "name": "empty",
+      "update": "nAll > 0 && nIn === 0"
+    },
+    {
+      "name": "scopeText",
+      "update": "nAll === 0 ? '' : nIn === 1 ? 'in ' + data('inScope')[0].project : whole ? 'across all ' + nAll + ' projects' : 'in ' + nIn + ' projects'"
+    },
+    {
+      "name": "sp",
+      "update": "scopeText ? ' ' + scopeText : ''"
+    },
+    {
+      "name": "headline",
+      "update": "empty ? 'No activity for this selection in the last 7 days' : nPeople === 0 ? 'No identities with an email' + sp + ' in the last 7 days' : nPeople === 1 ? 'Only one identity' + sp + ' in 7 days \u2014 a rank needs two or more' : 'Rank among ' + nPeople + ' identities' + sp + ' \u00b7 last 7 days' + (approx ? ' \u00b7 approximate' : '')"
+    },
+    {
+      "name": "basis",
+      "update": "whole ? (nAll > 1 ? 'all ' + nAll + ' projects (exact)' : nAll === 1 ? data('estateProjects')[0].project + ' (exact)' : 'all events (exact)') : nIn === 1 ? data('inScope')[0].project + ' (exact)' : nIn + ' projects (approximate: events summed, distinct counts are the largest per project)'"
+    }
+  ],
+  "scales": [
+    {
+      "name": "x",
+      "type": "band",
+      "domain": [
         "events",
         "distinct actions",
         "object kinds"
       ],
-      "as": [
-        "measure",
-        "value"
-      ]
+      "range": "width",
+      "paddingInner": 0.2,
+      "paddingOuter": 0.1
     },
     {
-      "window": [
-        {
-          "op": "percent_rank",
-          "as": "pct"
-        }
+      "name": "y",
+      "type": "linear",
+      "domain": [
+        0,
+        1
       ],
-      "groupby": [
-        "measure"
-      ],
-      "sort": [
-        {
-          "field": "value",
-          "order": "ascending"
-        }
-      ]
-    },
-    {
-      "calculate": "isValid(datum.pct) && isFinite(datum.pct) ? datum.pct : 0.5",
-      "as": "pct"
-    },
-    {
-      "window": [
-        {
-          "op": "row_number",
-          "as": "tieIdx"
-        }
-      ],
-      "groupby": [
-        "measure",
-        "pct"
-      ]
-    },
-    {
-      "joinaggregate": [
-        {
-          "op": "count",
-          "as": "tieN"
-        }
-      ],
-      "groupby": [
-        "measure",
-        "pct"
-      ]
-    },
-    {
-      "calculate": "datum.tieIdx - (datum.tieN + 1) / 2",
-      "as": "jitter"
-    },
-    {
-      "joinaggregate": [
-        {
-          "op": "max",
-          "field": "tieN",
-          "as": "maxTie"
-        }
-      ]
-    },
-    {
-      "calculate": "datum.jitter / max(datum.maxTie, 8)",
-      "as": "jitterN"
+      "range": "height",
+      "zero": false,
+      "nice": false,
+      "padding": 10
     }
   ],
-  "layer": [
+  "axes": [
     {
-      "transform": [
-        {
-          "filter": "!datum.highlight"
-        }
-      ],
-      "mark": {
-        "type": "circle",
-        "color": "#5082B1",
-        "opacity": 0.55
-      },
-      "encoding": {
-        "x": {
-          "field": "measure",
-          "type": "nominal",
-          "sort": [
-            "events",
-            "distinct actions",
-            "object kinds"
-          ],
-          "axis": {
-            "title": null,
-            "labelAngle": 0,
-            "orient": "top",
-            "ticks": false,
-            "domain": false
+      "orient": "top",
+      "scale": "x",
+      "ticks": false,
+      "domain": false,
+      "labelPadding": 4,
+      "encode": {
+        "labels": {
+          "update": {
+            "opacity": {
+              "signal": "nPeople > 0 ? 1 : 0"
+            }
           }
-        },
-        "xOffset": {
-          "field": "jitterN",
-          "type": "quantitative",
-          "scale": {
-            "domain": [
-              -0.6,
-              0.6
-            ]
-          }
-        },
-        "y": {
-          "field": "pct",
-          "type": "quantitative",
-          "scale": {
-            "domain": [
-              0,
-              1
-            ],
-            "padding": 10
-          },
-          "axis": {
-            "title": "percentile among identities",
-            "format": ".0%",
-            "tickCount": 5,
-            "grid": true,
-            "gridOpacity": 0.35
-          }
-        },
-        "tooltip": [
-          {
-            "field": "key",
-            "title": "Identity"
-          },
-          {
-            "field": "measure",
-            "title": "Measure"
-          },
-          {
-            "field": "value",
-            "title": "Value",
-            "format": ","
-          },
-          {
-            "field": "pct",
-            "title": "Percentile",
-            "format": ".0%"
-          }
-        ],
-        "size": {
-          "condition": {
-            "test": "datum.maxTie > 20",
-            "value": 18
-          },
-          "value": 34
         }
       }
     },
     {
-      "transform": [
-        {
-          "filter": "datum.highlight"
-        }
-      ],
-      "mark": {
-        "type": "point",
-        "shape": "diamond",
-        "filled": true,
-        "size": 190,
-        "color": "#d95926",
-        "stroke": "#d95926",
-        "strokeWidth": 1
-      },
-      "encoding": {
-        "x": {
-          "field": "measure",
-          "type": "nominal",
-          "sort": [
-            "events",
-            "distinct actions",
-            "object kinds"
-          ]
-        },
-        "y": {
-          "field": "pct",
-          "type": "quantitative"
-        },
-        "tooltip": [
-          {
-            "field": "key",
-            "title": "Selected"
-          },
-          {
-            "field": "measure",
-            "title": "Measure"
-          },
-          {
-            "field": "value",
-            "title": "Value",
-            "format": ","
-          },
-          {
-            "field": "pct",
-            "title": "Percentile",
-            "format": ".0%"
+      "orient": "left",
+      "scale": "y",
+      "title": "percentile among identities",
+      "format": ".0%",
+      "tickCount": 5,
+      "grid": true,
+      "gridOpacity": 0.35,
+      "domain": false,
+      "encode": {
+        "labels": {
+          "update": {
+            "opacity": {
+              "signal": "nPeople > 0 ? 1 : 0"
+            }
           }
-        ]
+        },
+        "grid": {
+          "update": {
+            "opacity": {
+              "signal": "nPeople > 0 ? 1 : 0"
+            }
+          }
+        },
+        "ticks": {
+          "update": {
+            "opacity": {
+              "signal": "nPeople > 0 ? 1 : 0"
+            }
+          }
+        },
+        "title": {
+          "update": {
+            "opacity": {
+              "signal": "nPeople > 0 ? 1 : 0"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "marks": [
+    {
+      "type": "symbol",
+      "from": {
+        "data": "points"
+      },
+      "encode": {
+        "update": {
+          "x": {
+            "signal": "scale('x', datum.measure) + bandwidth('x') * (0.5 + datum.jitterN / 1.2)"
+          },
+          "y": {
+            "scale": "y",
+            "field": "pct"
+          },
+          "shape": {
+            "value": "circle"
+          },
+          "size": {
+            "signal": "datum.highlight ? 0 : datum.maxTie > 20 ? 18 : 34"
+          },
+          "fill": {
+            "value": "#5082B1"
+          },
+          "fillOpacity": {
+            "value": 0.55
+          },
+          "tooltip": {
+            "signal": "datum.highlight ? null : {'Identity': datum.key, 'Measure': datum.measure, 'Value': format(datum.value, ','), 'Percentile': format(datum.pct, '.0%'), 'Ranked within': basis}"
+          }
+        }
+      }
+    },
+    {
+      "type": "symbol",
+      "from": {
+        "data": "points"
+      },
+      "encode": {
+        "update": {
+          "x": {
+            "signal": "scale('x', datum.measure) + bandwidth('x') / 2"
+          },
+          "y": {
+            "scale": "y",
+            "field": "pct"
+          },
+          "shape": {
+            "value": "diamond"
+          },
+          "size": {
+            "signal": "datum.highlight ? 190 : 0"
+          },
+          "fill": {
+            "value": "#d95926"
+          },
+          "stroke": {
+            "value": "#d95926"
+          },
+          "strokeWidth": {
+            "signal": "datum.highlight ? 1 : 0"
+          },
+          "tooltip": {
+            "signal": "datum.highlight ? {'Selected': datum.key, 'Measure': datum.measure, 'Value': format(datum.value, ','), 'Percentile': format(datum.pct, '.0%'), 'Ranked within': basis} : null"
+          }
+        }
       }
     }
   ]

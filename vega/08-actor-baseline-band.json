@@ -19,6 +19,10 @@
     {
       "name": "head",
       "value": 40
+    },
+    {
+      "name": "quiet",
+      "update": "length(data('summary')) === 0 || data('summary')[0].total === 0"
     }
   ],
   "data": [
@@ -267,6 +271,30 @@
           "update": {
             "text": {
               "signal": "format(datum.value, '~s')"
+            },
+            "opacity": {
+              "signal": "quiet ? 0 : 1"
+            }
+          }
+        },
+        "grid": {
+          "update": {
+            "opacity": {
+              "signal": "quiet ? 0 : 1"
+            }
+          }
+        },
+        "domain": {
+          "update": {
+            "opacity": {
+              "signal": "quiet ? 0 : 1"
+            }
+          }
+        },
+        "ticks": {
+          "update": {
+            "opacity": {
+              "signal": "quiet ? 0 : 1"
             }
           }
         }
@@ -284,7 +312,30 @@
       "direction": "horizontal",
       "symbolType": "circle",
       "symbolSize": 50,
-      "labelLimit": 160
+      "labelLimit": 160,
+      "encode": {
+        "title": {
+          "update": {
+            "opacity": {
+              "signal": "quiet ? 0 : 1"
+            }
+          }
+        },
+        "labels": {
+          "update": {
+            "opacity": {
+              "signal": "quiet ? 0 : 1"
+            }
+          }
+        },
+        "symbols": {
+          "update": {
+            "opacity": {
+              "signal": "quiet ? 0 : 1"
+            }
+          }
+        }
+      }
     }
   ],
   "marks": [
@@ -315,7 +366,7 @@
             "value": "#5082B1"
           },
           "fillOpacity": {
-            "value": 0.35
+            "signal": "quiet ? 0 : 0.35"
           }
         }
       }
@@ -341,6 +392,9 @@
           },
           "strokeWidth": {
             "value": 1.5
+          },
+          "strokeOpacity": {
+            "signal": "quiet ? 0 : 1"
           }
         }
       }
