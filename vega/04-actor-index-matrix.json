@@ -80,8 +80,10 @@
       "axis": {
         "title": "Identity",
         "orient": "top",
-        "labelAngle": -35,
-        "labelLimit": 160,
+        "labelAngle": 35,
+        "labelAlign": "right",
+        "labelBaseline": "middle",
+        "labelLimit": 200,
         "labelPadding": 4,
         "ticks": false,
         "domain": false
@@ -92,6 +94,7 @@
       "type": "quantitative",
       "scale": {
         "type": "log",
+        "domainMin": 1,
         "range": [0.35, 1]
       },
       "legend": {
