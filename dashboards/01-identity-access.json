@@ -179,7 +179,7 @@
         "type": "metric",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.api_key.id IS NOT NULL | STATS `API keys` = COUNT_DISTINCT(attributes.api_key.id), names = COUNT_DISTINCT(attributes.api_key.name) | EVAL detail = CONCAT(\"under \", TO_STRING(names), CASE(names == 1, \" name\", \" names\")) | KEEP `API keys`, detail"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.api_key.id IS NOT NULL | STATS `API keys` = COUNT_DISTINCT(attributes.api_key.id), names = COUNT_DISTINCT(attributes.api_key.name) | EVAL detail = CASE(names == 0, \"none in range\", CONCAT(\"under \", TO_STRING(names), CASE(names == 1, \" name\", \" names\"))) | KEEP `API keys`, detail"
         },
         "metrics": [
           {
@@ -241,7 +241,7 @@
         "type": "metric",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.event.action IN (\"authentication_failed\",\"realm_authentication_failed\",\"anonymous_access_denied\") OR attributes.event.outcome == \"failure\" | STATS `Failed or denied` = COUNT(*), signin = COUNT(*) WHERE attributes.event.action IN (\"authentication_failed\",\"realm_authentication_failed\",\"anonymous_access_denied\") | EVAL detail = CONCAT(TO_STRING(signin), \" failed sign-ins · \", TO_STRING(`Failed or denied` - signin), \" denied\") | KEEP `Failed or denied`, detail"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.event.action IN (\"authentication_failed\",\"realm_authentication_failed\",\"anonymous_access_denied\") OR attributes.event.outcome == \"failure\" | STATS `Failed or denied` = COUNT(*), signin = COUNT(*) WHERE attributes.event.action IN (\"authentication_failed\",\"realm_authentication_failed\",\"anonymous_access_denied\") | EVAL detail = CONCAT(TO_STRING(signin), CASE(signin == 1, \" failed sign-in · \", \" failed sign-ins · \"), TO_STRING(`Failed or denied` - signin), \" denied\") | KEEP `Failed or denied`, detail"
         },
         "metrics": [
           {
@@ -324,7 +324,7 @@
             "type": "line",
             "data_source": {
               "type": "esql",
-              "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.authentication.type IS NOT NULL | STATS events = COUNT(*) BY BUCKET(@timestamp, 75, ?_tstart, ?_tend), attributes.authentication.type | EVAL auth = CASE(attributes.authentication.type == \"api_key\", \"API key\", attributes.authentication.type == \"token\", \"Token\", attributes.authentication.type == \"realm\", \"Realm\", attributes.authentication.type == \"anonymous\", \"Anonymous\", attributes.authentication.type == \"internal\", \"Internal\", attributes.authentication.type)"
+              "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.authentication.type IS NOT NULL | STATS events = COUNT(*) BY BUCKET(@timestamp, 75, ?_tstart, ?_tend), attributes.authentication.type | EVAL auth = CASE(attributes.authentication.type == \"api_key\", \"API key\", attributes.authentication.type == \"token\", \"Token\", attributes.authentication.type == \"realm\", \"Realm\", attributes.authentication.type == \"saml\", \"SAML\", attributes.authentication.type == \"anonymous\", \"Anonymous\", attributes.authentication.type == \"internal\", \"Internal\", attributes.authentication.type)"
             },
             "x": {
               "column": "BUCKET(@timestamp, 75, ?_tstart, ?_tend)",
@@ -366,6 +366,33 @@
                     "color": {
                       "type": "color_code",
                       "value": "#D36086"
+                    }
+                  },
+                  {
+                    "values": [
+                      "SAML"
+                    ],
+                    "color": {
+                      "type": "color_code",
+                      "value": "#9170B8"
+                    }
+                  },
+                  {
+                    "values": [
+                      "Anonymous"
+                    ],
+                    "color": {
+                      "type": "color_code",
+                      "value": "#D6BF57"
+                    }
+                  },
+                  {
+                    "values": [
+                      "Internal"
+                    ],
+                    "color": {
+                      "type": "color_code",
+                      "value": "#DA8B45"
                     }
                   }
                 ]
@@ -758,7 +785,7 @@
       "config": {
         "ref_id": "cloud-audit-search-02-failed-authentications",
         "title": "Failed sign-ins and denied access",
-        "description": "Every failed sign-in and refused request, newest first. Kind separates a failed sign-in from a denial after sign-in."
+        "description": "Every failed sign-in and refused request, newest first. Read Action: authentication_failed, realm_authentication_failed and anonymous_access_denied are failed sign-ins; access_denied is an authenticated identity refused an action."
       }
     },
     {

@@ -17,12 +17,23 @@ const FAILED_OR_DENIED = `WHERE attributes.event.action IN (${SIGNIN_FAILED}) OR
  * attributes.authentication.type in words. Applied AFTER the STATS that groups on the raw field, so it
  * runs once per bucket rather than once per event (QUERY SHAPE rule 2 in panels.mjs). vega/02 carries
  * the same CASE as literal text, so the matrix and the chart beside it name credentials identically.
+ * "saml" is real on serverless (a SAML sign-in that has not yet been exchanged for a token): it was
+ * missing here, so it reached the legend lowercase.
  */
 const AUTH_LABEL =
   'EVAL auth = CASE(attributes.authentication.type == "api_key", "API key", ' +
   'attributes.authentication.type == "token", "Token", attributes.authentication.type == "realm", "Realm", ' +
+  'attributes.authentication.type == "saml", "SAML", ' +
   'attributes.authentication.type == "anonymous", "Anonymous", attributes.authentication.type == "internal", "Internal", ' +
   'attributes.authentication.type)';
+
+/**
+ * Every AUTH_LABEL value pinned. An unpinned breakdown value takes PALETTE in order, starting at [0],
+ * which API key already holds: unpinned, "saml" (one event in 30 days) rendered as a second green line
+ * indistinguishable from API key. Pinning every label the CASE can produce leaves only a type
+ * Elasticsearch has not documented able to collide.
+ */
+const AUTH_COLORS = { 'API key': PALETTE[0], Token: PALETTE[1], Realm: PALETTE[2], SAML: PALETTE[3], Anonymous: PALETTE[5], Internal: PALETTE[7] };
 
 /**
  * An API key's owner, applied after the STATS that groups on `owner = attributes.user.email`.
@@ -73,18 +84,18 @@ export function build() {
     kpi(8, 0, 8, 5, `FROM ${IDX} | ${TIME} | STATS \`Humans\` = COUNT_DISTINCT(attributes.user.email)`, 'Humans', 'Distinct human identities by email address.'),
     // Counted by id, not name: the inventory below is one row per key id, and a re-issued key keeps its
     // name under a new id. Counting names made this tile disagree with the table under it (8 vs 10).
-    kpi(16, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE attributes.api_key.id IS NOT NULL | STATS \`API keys\` = COUNT_DISTINCT(attributes.api_key.id), names = COUNT_DISTINCT(attributes.api_key.name) | EVAL detail = CONCAT("under ", TO_STRING(names), CASE(names == 1, " name", " names")) | KEEP \`API keys\`, detail`,
+    kpi(16, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE attributes.api_key.id IS NOT NULL | STATS \`API keys\` = COUNT_DISTINCT(attributes.api_key.id), names = COUNT_DISTINCT(attributes.api_key.name) | EVAL detail = CASE(names == 0, "none in range", CONCAT("under ", TO_STRING(names), CASE(names == 1, " name", " names"))) | KEEP \`API keys\`, detail`,
       'API keys', 'Distinct API key ids seen authenticating in range, and how many names they go by. A re-issued key keeps its name under a new id, so there can be fewer names than keys.',
       { secondary: 'detail' }),
     kpi(24, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE attributes.user.domain == "cloud-saml-kibana" | STATS \`SSO events\` = COUNT(*)`, 'SSO events', 'Events authenticated through the cloud-saml-kibana SAML realm — interactive human sign-in.'),
-    kpi(32, 0, 8, 5, `FROM ${IDX} | ${TIME} | ${FAILED_OR_DENIED} | STATS \`Failed or denied\` = COUNT(*), signin = COUNT(*) WHERE attributes.event.action IN (${SIGNIN_FAILED}) | EVAL detail = CONCAT(TO_STRING(signin), " failed sign-ins · ", TO_STRING(\`Failed or denied\` - signin), " denied") | KEEP \`Failed or denied\`, detail`,
+    kpi(32, 0, 8, 5, `FROM ${IDX} | ${TIME} | ${FAILED_OR_DENIED} | STATS \`Failed or denied\` = COUNT(*), signin = COUNT(*) WHERE attributes.event.action IN (${SIGNIN_FAILED}) | EVAL detail = CONCAT(TO_STRING(signin), CASE(signin == 1, " failed sign-in · ", " failed sign-ins · "), TO_STRING(\`Failed or denied\` - signin), " denied") | KEEP \`Failed or denied\`, detail`,
       'Failed or denied', 'Failed sign-ins (authentication_failed, realm_authentication_failed, anonymous_access_denied) plus requests refused or failed after sign-in (access_denied and any failed outcome). The line under the number splits the two: a denial is an authenticated identity hitting a permission wall, not someone guessing credentials. Same predicate as the Failed or denied access table, so the two always agree.',
       { secondary: 'detail' }),
     kpi(40, 0, 8, 5, `FROM ${IDX} | ${TIME} | STATS \`Kibana sessions\` = COUNT_DISTINCT(attributes.kibana.session.id)`, 'Kibana sessions', 'Distinct Kibana browser sessions observed in range.'),
     logScale(xy(0, 5, 24, 12, 'Authentication method over time',
       `FROM ${IDX} | ${TIME} | WHERE attributes.authentication.type IS NOT NULL | STATS events = COUNT(*) BY ${BUCKET}, attributes.authentication.type | ${AUTH_LABEL}`,
       'events', 'Elasticsearch requests per interval by how they presented credentials: API key, token (SSO browser sessions and service accounts) or realm (username and password). Log scale, one line per credential type, so a type carrying a fraction of a percent of the traffic is as readable as the bulk. A shift in this mix is worth explaining.',
-      { breakdown: 'auth', kind: 'line', colors: { 'API key': PALETTE[0], Token: PALETTE[1], Realm: PALETTE[2] } })),
+      { breakdown: 'auth', kind: 'line', colors: AUTH_COLORS })),
     vega(24, 5, 24, 12, '02-auth-matrix', 'Credential type by identity',
       'Which credential type each of the 12 busiest identities presents; the stronger the colour, the more events. Humans should authenticate by token (SSO); service identities by API key. Only Elasticsearch requests record a credential type, so identities seen only in Kibana or only anonymously are counted in Identities above but are not on this chart. A Cloud API key with no name is shown by its id.'),
     // Grouped on the raw email first, then classified: ORG reads only attributes.user.email, so the
@@ -120,7 +131,7 @@ export function build() {
     // timestamps wrapped onto three lines and the last column was cut off at the panel edge. These are
     // the record-level evidence, so every column has to be readable without opening Discover.
     search(0, 40, 48, 12, '02-failed-authentications', 'Failed sign-ins and denied access',
-      'Every failed sign-in and refused request, newest first. Kind separates a failed sign-in from a denial after sign-in.'),
+      'Every failed sign-in and refused request, newest first. Read Action: authentication_failed, realm_authentication_failed and anonymous_access_denied are failed sign-ins; access_denied is an authenticated identity refused an action.'),
     search(0, 52, 48, 12, '07-api-key-activity', 'API key inventory',
       'Every API key id seen in range, busiest first, with owner, volume, IP spread, indices touched and first and last use.'),
     search(0, 64, 48, 14, '06-actor-first-seen', 'Identity first and last seen',
