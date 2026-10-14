@@ -35,19 +35,47 @@ async function cleanDashboards() {
   success(`removed ${Object.keys(buildAll()).length} dashboards and ${objs.length} saved objects`);
 }
 
+/**
+ * Order matters. The index template goes first, so a rollover mid-teardown cannot create a backing
+ * index that re-attaches the pipeline. Then the pipeline is detached from EVERY backing index and
+ * that is re-read and confirmed — deleting a pipeline still named as a final_pipeline would make
+ * every audit document fail ingest. Nothing is deleted unless it carries our ownership marker.
+ */
 async function cleanIngest() {
-  await es.raw(`/${cfg.dataStream}/_settings`, {
+  const { MARKER, ours } = await import('./ingest.mjs');
+  const owned = async (path, pick) => {
+    const r = await es.raw(path);
+    if (r.status === 404) return null;
+    const obj = pick(r.body);
+    if (!ours(obj)) throw new Error(`${path} is not ours (no _meta.generator=${MARKER}); refusing to delete`);
+    return obj;
+  };
+  const del = async (path, label) => {
+    const r = await es.raw(path, { method: 'DELETE' });
+    if (!r.ok && r.status !== 404) throw new Error(`${label}: ${r.status} ${JSON.stringify(r.body).slice(0, 200)}`);
+    detail(`${label}: ${r.status === 404 ? 'already gone' : 'deleted'}`);
+  };
+
+  if (await owned(`/_index_template/${cfg.indexTemplate}`, (b) => b.index_templates?.[0]?.index_template)) {
+    await del(`/_index_template/${cfg.indexTemplate}`, 'index template');
+  }
+
+  const reset = await es.raw(`/${cfg.dataStream}/_settings`, {
     method: 'PUT', body: JSON.stringify({ 'index.final_pipeline': null }), headers: { 'Content-Type': 'application/json' },
   });
-  for (const [path, label] of [
-    [`/_index_template/logs-serverless.audit.otel@template`, 'index template'],
-    [`/_component_template/${cfg.pipeline}`, 'component template'],
-    [`/_ingest/pipeline/${cfg.pipeline}`, 'ingest pipeline'],
-  ]) {
-    const r = await es.raw(path, { method: 'DELETE' });
-    detail(`${label}: ${r.status}`);
+  if (!reset.ok && reset.status !== 404) throw new Error(`could not detach ${cfg.pipeline} from ${cfg.dataStream} (${reset.status}); nothing else removed`);
+  const after = await es.raw(`/${cfg.dataStream}/_settings?flat_settings=true`);
+  const still = Object.entries(after.body || {}).filter(([, v]) => v.settings?.['index.final_pipeline'] === cfg.pipeline).map(([k]) => k);
+  if (still.length) throw new Error(`${still.join(', ')} still run ${cfg.pipeline}; not deleting it`);
+  detail(`final_pipeline detached from every backing index of ${cfg.dataStream}`);
+
+  if (await owned(`/_component_template/${cfg.pipeline}`, (b) => b.component_templates?.[0]?.component_template)) {
+    await del(`/_component_template/${cfg.pipeline}`, 'component template');
   }
-  warn('client.* field mappings were left in place — removing a mapping needs a reindex');
+  if (await owned(`/_ingest/pipeline/${cfg.pipeline}`, (b) => b[cfg.pipeline])) {
+    await del(`/_ingest/pipeline/${cfg.pipeline}`, 'ingest pipeline');
+  }
+  warn('client.* and tags field mappings were left in place — removing a mapping needs a reindex');
   success('audit-scoped enrichment removed');
 }
 

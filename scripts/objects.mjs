@@ -7,7 +7,7 @@
  */
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, basename } from 'node:path';
-import { cfg, ROOT } from './lib/env.mjs';
+import { cfg, ROOT, withStream } from './lib/env.mjs';
 import { kb } from './lib/http.mjs';
 import { dataViewObject } from './lib/controls.mjs';
 import { stableUuid } from './lib/ids.mjs';
@@ -17,7 +17,7 @@ const titleCase = (s) => s.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperC
 
 export function vegaObject(file) {
   const name = basename(file, '.json');
-  const spec = JSON.parse(readFileSync(file, 'utf8'));
+  const spec = JSON.parse(withStream(readFileSync(file, 'utf8')));
   const t = spec.title;
   // Spec titles are intentionally blank — the Kibana panel title supplies the heading —
   // so fall back to a readable name derived from the filename. A title may also be an
@@ -41,7 +41,7 @@ export function vegaObject(file) {
 
 function searchObject(file) {
   const slug = basename(file, '.json');
-  const d = JSON.parse(readFileSync(file, 'utf8'));
+  const d = JSON.parse(withStream(readFileSync(file, 'utf8')));
   const adhoc = {
     id: 'cloud-audit-adhoc-dv', title: cfg.dataStream, timeFieldName: '@timestamp',
     sourceFilters: [], type: 'esql', fieldFormats: {}, runtimeFieldMap: {},

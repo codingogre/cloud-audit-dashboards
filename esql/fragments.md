@@ -1,12 +1,12 @@
 # Canonical ES|QL fragments — Cloud Audit Dashboards
 
 Single source of truth. Every panel in `dashboards/` and `vega/` is built from these.
-Measured against `logs-serverless.audit.otel-elastic_cloud`.
+Measured against `logs-elastic_cloud.serverless_audit.otel-default`.
 
 ## Index
 
 ```esql
-FROM logs-serverless.audit.otel-elastic_cloud
+FROM logs-elastic_cloud.serverless_audit.otel-default
 ```
 
 ## Actor resolution — REQUIRED on every actor-facing panel
@@ -68,7 +68,7 @@ all of the forensic value.
 
 ```esql
 | WHERE resource.attributes.service.name == "serverless-kibana"        -- Kibana audit
-| WHERE resource.attributes.service.name == "elasticsearch-serverless" -- Elasticsearch audit
+| WHERE resource.attributes.service.name == "serverless-elasticsearch" -- Elasticsearch audit
 ```
 
 ## Time bucketing

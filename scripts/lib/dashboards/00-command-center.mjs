@@ -26,7 +26,7 @@ export function build() {
       'events', 'Total audited events over time, split by originating service. Elasticsearch audits every transport action, so its volume usually far exceeds Kibana’s — and the Kibana slice is where most of the forensic value is.', { breakdown: 'source' }),
     md(32, 5, 16, 13, LEGEND_MD),
     vega(0, 18, 24, 13, '01-actor-risk-treemap', 'Actor footprint sized by volume, coloured by severity',
-      'Treemap of the top 40 identities in range. Three blocks: service (a named API key, labelled by the KEY not its owner), human (a real email address), and unattributed (a token or opaque principal with neither). A credential is never shown under a person’s name, so no identity appears twice. Area is event volume; colour is accumulated severity, the same quantity the risk leaderboard ranks by.'),
+      'Treemap of the top 40 identities in range, in blocks by kind: service (a named API key, labelled by the KEY, with its owner — the principal that created it — on a second line and in the tooltip), human (a real email address), cloud API key (an organisation-level Cloud key, which the audit stream records only by id and with no owner), and unattributed (a token or opaque principal). A credential is never shown under a person’s name, so no identity appears twice. Area is event volume; colour is accumulated severity, the same quantity the risk leaderboard ranks by.'),
     vega(24, 18, 24, 13, '07-noise-ratio-stream', 'Signal vs noise over time',
       'Stream graph banding the firehose into signal, bulk authentication, query internals and infrastructure noise, with a readable volume axis. Shows why the noise gate exists.'),
     table(0, 31, 16, 12, 'Most frequent actions',

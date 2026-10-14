@@ -33,7 +33,7 @@
     "name": "places",
     "url": {
       "%type%": "esql",
-      "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE client.geo.location IS NOT NULL | STATS events = COUNT(*), at = ST_CENTROID_AGG(client.geo.location), first_seen = MIN(@timestamp), last_seen = MAX(@timestamp) BY actor = attributes.user.email, city = client.geo.city_name, country = client.geo.country_name | EVAL lon = ST_X(at), lat = ST_Y(at), first_ms = TO_LONG(first_seen), last_ms = TO_LONG(last_seen) | KEEP actor, city, country, lon, lat, events, first_seen, last_seen, first_ms, last_ms | SORT events DESC | LIMIT 150",
+      "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE client.geo.location IS NOT NULL | STATS events = COUNT(*), at = ST_CENTROID_AGG(client.geo.location), first_seen = MIN(@timestamp), last_seen = MAX(@timestamp) BY actor = attributes.user.email, city = client.geo.city_name, country = client.geo.country_name | EVAL lon = ST_X(at), lat = ST_Y(at), first_ms = TO_LONG(first_seen), last_ms = TO_LONG(last_seen) | KEEP actor, city, country, lon, lat, events, first_seen, last_seen, first_ms, last_ms | SORT events DESC | LIMIT 150",
       "%timefield%": "@timestamp",
       "%context%": true
     }
@@ -70,7 +70,7 @@
         "name": "coverage",
         "url": {
           "%type%": "esql",
-          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS total = COUNT(*), located = COUNT(client.geo.location), with_ip = COUNT(client.ip)",
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS total = COUNT(*), located = COUNT(client.geo.location), with_ip = COUNT(client.ip)",
           "%timefield%": "@timestamp",
           "%context%": true
         }

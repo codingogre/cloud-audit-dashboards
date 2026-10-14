@@ -55,6 +55,16 @@
           },
           {
             "type": "dashboardLink",
+            "destination": "cloud-audit-03-data-access",
+            "label": "🔎  Elasticsearch Data Access",
+            "options": {
+              "use_filters": true,
+              "use_time_range": true,
+              "open_in_new_tab": false
+            }
+          },
+          {
+            "type": "dashboardLink",
             "destination": "cloud-audit-04-security-anomalies",
             "label": "🚨  Security & Anomalies",
             "options": {
@@ -111,7 +121,7 @@
         "type": "metric",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE resource.attributes.service.name == \"elasticsearch-serverless\" | STATS `Elasticsearch events` = COUNT(*)"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE resource.attributes.service.name == \"serverless-elasticsearch\" | STATS `Elasticsearch events` = COUNT(*)"
         },
         "metrics": [
           {
@@ -140,7 +150,7 @@
         "type": "metric",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS `Indices touched` = COUNT_DISTINCT(attributes.elasticsearch.audit.indices)"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS `Indices touched` = COUNT_DISTINCT(attributes.elasticsearch.audit.indices)"
         },
         "metrics": [
           {
@@ -169,7 +179,7 @@
         "type": "metric",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS `Distinct actions` = COUNT_DISTINCT(attributes.elasticsearch.audit.action)"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS `Distinct actions` = COUNT_DISTINCT(attributes.elasticsearch.audit.action)"
         },
         "metrics": [
           {
@@ -198,7 +208,7 @@
         "type": "metric",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.action LIKE \"*esql*\" | STATS `ES|QL requests` = COUNT(*)"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.action LIKE \"*esql*\" | STATS `ES|QL requests` = COUNT(*)"
         },
         "metrics": [
           {
@@ -227,7 +237,7 @@
         "type": "metric",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.indices IS NOT NULL | MV_EXPAND attributes.elasticsearch.audit.indices | WHERE attributes.elasticsearch.audit.indices LIKE \".*\" | STATS `System index access` = COUNT(*)"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.indices IS NOT NULL | MV_EXPAND attributes.elasticsearch.audit.indices | WHERE attributes.elasticsearch.audit.indices LIKE \".*\" | STATS `System index access` = COUNT(*)"
         },
         "metrics": [
           {
@@ -256,7 +266,7 @@
         "type": "metric",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.event.action == \"access_denied\" OR attributes.event.action == \"anonymous_access_denied\" | STATS `Access denied` = COUNT(*)"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.event.action == \"access_denied\" OR attributes.event.action == \"anonymous_access_denied\" | STATS `Access denied` = COUNT(*)"
         },
         "metrics": [
           {
@@ -305,7 +315,7 @@
             "type": "bar_stacked",
             "data_source": {
               "type": "esql",
-              "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE resource.attributes.service.name == \"elasticsearch-serverless\" | WHERE (attributes.elasticsearch.audit.action IS NULL OR NOT (attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\") OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\")) AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"authentication_success\",\"connection_granted\"))) | MV_EXPAND attributes.event.category | STATS events = COUNT(*) BY BUCKET(@timestamp, 75, ?_tstart, ?_tend), category = attributes.event.category"
+              "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE resource.attributes.service.name == \"serverless-elasticsearch\" | WHERE (attributes.elasticsearch.audit.action IS NULL OR NOT (attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\") OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\")) AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"authentication_success\",\"connection_granted\"))) | MV_EXPAND attributes.event.category | STATS events = COUNT(*) BY BUCKET(@timestamp, 75, ?_tstart, ?_tend), category = attributes.event.category"
             },
             "x": {
               "column": "BUCKET(@timestamp, 75, ?_tstart, ?_tend)",
@@ -353,7 +363,7 @@
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.indices IS NOT NULL | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | MV_EXPAND attributes.elasticsearch.audit.indices | STATS events = COUNT(*), actors = COUNT_DISTINCT(actor) BY index = attributes.elasticsearch.audit.indices | SORT events DESC | LIMIT 15"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.indices IS NOT NULL | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | MV_EXPAND attributes.elasticsearch.audit.indices | STATS events = COUNT(*), actors = COUNT_DISTINCT(actor) BY index = attributes.elasticsearch.audit.indices | SORT events DESC | LIMIT 15"
         },
         "rows": [
           {
@@ -385,7 +395,7 @@
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.action IS NOT NULL | WHERE (attributes.elasticsearch.audit.action IS NULL OR NOT (attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\") OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\")) AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"authentication_success\",\"connection_granted\"))) | STATS events = COUNT(*) BY action = attributes.elasticsearch.audit.action, request = attributes.elasticsearch.audit.request.name | SORT events DESC | LIMIT 15"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.action IS NOT NULL | WHERE (attributes.elasticsearch.audit.action IS NULL OR NOT (attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\") OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\")) AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"authentication_success\",\"connection_granted\"))) | STATS events = COUNT(*) BY action = attributes.elasticsearch.audit.action, request = attributes.elasticsearch.audit.request.name | SORT events DESC | LIMIT 15"
         },
         "rows": [
           {
@@ -417,7 +427,7 @@
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.indices IS NOT NULL | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | MV_EXPAND attributes.elasticsearch.audit.indices | WHERE attributes.elasticsearch.audit.indices LIKE \".*\" | STATS events = COUNT(*), last_seen = MAX(@timestamp) BY actor, index = attributes.elasticsearch.audit.indices, action = attributes.elasticsearch.audit.action | SORT last_seen DESC | LIMIT 25"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.indices IS NOT NULL | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | MV_EXPAND attributes.elasticsearch.audit.indices | WHERE attributes.elasticsearch.audit.indices LIKE \".*\" | STATS events = COUNT(*), last_seen = MAX(@timestamp) BY actor, index = attributes.elasticsearch.audit.indices, action = attributes.elasticsearch.audit.action | SORT last_seen DESC | LIMIT 25"
         },
         "rows": [
           {
@@ -455,7 +465,7 @@
         "type": "pie",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE resource.attributes.service.name == \"elasticsearch-serverless\" | STATS events = COUNT(*) BY outcome = attributes.event.outcome"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE resource.attributes.service.name == \"serverless-elasticsearch\" | STATS events = COUNT(*) BY outcome = attributes.event.outcome"
         },
         "metrics": [
           {

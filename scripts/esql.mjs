@@ -8,7 +8,7 @@
  */
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { ROOT } from './lib/env.mjs';
+import { ROOT, withStream } from './lib/env.mjs';
 import { es } from './lib/http.mjs';
 import { success, fail, detail, warn } from './lib/log.mjs';
 import { buildAll } from './lib/definitions.mjs';
@@ -23,7 +23,7 @@ import { checkLayout } from './lib/layout.mjs';
 const BUDGET_MS = Number(process.env.AUDIT_LINT_BUDGET_MS) || 30e3;
 const SLOW_MS = 5e3;
 
-const PARAMS = () => {
+export const PARAMS = () => {
   const end = new Date(), start = new Date(Date.now() - 3600e3);
   return [{ _tstart: start.toISOString() }, { _tend: end.toISOString() }];
 };
@@ -43,7 +43,7 @@ const TIME_BOUND = 'WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart';
  * keyword, not flattened, and removing the LIKE clauses does not help). Measured side by side on
  * one day: `== "access_granted"` 3.9s, `NOT (... IN ...)` over a same-sized result >60s.
  */
-function bounded(q) {
+export function bounded(q) {
   if (/\?_tstart|\?_tend|@timestamp\s*[<>]/.test(q)) return q;
   const i = q.indexOf('|');
   return i === -1 ? `${q} | ${TIME_BOUND}` : `${q.slice(0, i)}| ${TIME_BOUND} ${q.slice(i)}`;
@@ -80,7 +80,7 @@ function collectDsl(node, out) {
  */
 const CONTEXT_CLAUSES = new Set(['%dashboard_context-must_clause%', '%dashboard_context-must_not_clause%',
   '%dashboard_context-filter_clause%']);
-function stripContext(node) {
+export function stripContext(node) {
   if (Array.isArray(node)) return node.filter((v) => !CONTEXT_CLAUSES.has(v)).map(stripContext);
   if (node && typeof node === 'object') return Object.fromEntries(Object.entries(node).map(([k, v]) => [k, stripContext(v)]));
   return node;
@@ -93,7 +93,7 @@ export function gatherDsl() {
   const p = join(ROOT, 'vega');
   if (!existsSync(p)) return items;
   for (const f of readdirSync(p).filter((f) => f.endsWith('.json'))) {
-    const found = []; collectDsl(JSON.parse(readFileSync(join(p, f), 'utf8')), found);
+    const found = []; collectDsl(JSON.parse(withStream(readFileSync(join(p, f), 'utf8'))), found);
     found.forEach((d, i) => items.push({ src: `vega/${f}`, i, ...d }));
   }
   return items;
@@ -109,7 +109,7 @@ export function gatherQueries() {
     const p = join(ROOT, dir);
     if (!existsSync(p)) continue;
     for (const f of readdirSync(p).filter((f) => f.endsWith('.json'))) {
-      const doc = JSON.parse(readFileSync(join(p, f), 'utf8'));
+      const doc = JSON.parse(withStream(readFileSync(join(p, f), 'utf8')));
       const qs = []; collect(doc, qs);
       qs.forEach((q, i) => items.push({ src: `${dir}/${f}`, i, q }));
     }

@@ -29,7 +29,7 @@
   "data": {
     "url": {
       "%type%": "esql",
-      "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.authentication.type IS NOT NULL | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS events = COUNT(*) BY actor, auth = attributes.authentication.type | SORT events DESC | LIMIT 40",
+      "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.authentication.type IS NOT NULL | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS events = COUNT(*) BY actor, auth = attributes.authentication.type | SORT events DESC | LIMIT 40",
       "%timefield%": "@timestamp",
       "%context%": true
     }

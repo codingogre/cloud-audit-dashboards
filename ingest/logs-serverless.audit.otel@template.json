@@ -1,8 +1,0 @@
-{
-  "index_patterns": ["logs-serverless.audit.otel-*"],
-  "priority": 200,
-  "data_stream": { "hidden": false, "allow_custom_routing": false },
-  "composed_of": ["logs@mappings","logs@settings","otel@mappings","otel@settings","logs-otel@mappings","semconv-resource-to-ecs@mappings","logs@custom","logs-otel@custom","ecs@mappings","logs-serverless.audit.otel@custom"],
-  "ignore_missing_component_templates": ["logs@custom","logs-otel@custom"],
-  "_meta": { "managed": false, "description": "Cloud Audit Dashboards — audit stream: mirrors logs-otel@template and appends audit-only geoip enrichment" }
-}

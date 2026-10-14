@@ -1,7 +1,7 @@
 {
   "title": "[Audit] Security configuration changes",
   "description": "Raw security_config_change payloads \u2014 API key invalidation, user profile writes, role and privilege edits. The field is a JSON string, shown verbatim.",
-  "esql": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE attributes.elasticsearch.audit.security_config_change IS NOT NULL | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | KEEP @timestamp, actor, attributes.event.action, attributes.elasticsearch.audit.security_config_change, client.ip | SORT @timestamp DESC",
+  "esql": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE attributes.elasticsearch.audit.security_config_change IS NOT NULL | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | KEEP @timestamp, actor, attributes.event.action, attributes.elasticsearch.audit.security_config_change, client.ip | SORT @timestamp DESC",
   "columns": [
     "actor",
     "attributes.event.action",

@@ -1,7 +1,7 @@
 {
   "title": "[Audit] System and hidden index access",
   "description": "Reads against .kibana*, .security*, .alerts-* and other dot-prefixed indices \u2014 privileged data access that deserves a second look.",
-  "esql": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE attributes.elasticsearch.audit.indices IS NOT NULL | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | MV_EXPAND attributes.elasticsearch.audit.indices | WHERE attributes.elasticsearch.audit.indices LIKE \".*\" | KEEP @timestamp, actor, attributes.elasticsearch.audit.indices, attributes.elasticsearch.audit.action, attributes.elasticsearch.audit.request.name, client.ip | SORT @timestamp DESC",
+  "esql": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE attributes.elasticsearch.audit.indices IS NOT NULL | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | MV_EXPAND attributes.elasticsearch.audit.indices | WHERE attributes.elasticsearch.audit.indices LIKE \".*\" | KEEP @timestamp, actor, attributes.elasticsearch.audit.indices, attributes.elasticsearch.audit.action, attributes.elasticsearch.audit.request.name, client.ip | SORT @timestamp DESC",
   "columns": [
     "actor",
     "attributes.elasticsearch.audit.indices",

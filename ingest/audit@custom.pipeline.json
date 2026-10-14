@@ -1,0 +1,44 @@
+{
+  "description": "Audit-scoped geoip enrichment of Cloud audit forwarded client IPs. Guarded to the audit dataset, which --ingest substitutes for {{DATASET}} at install time. Keys inside `attributes` are literal dotted strings (attributes['network.forwarded_ip']), so the IP is lifted with a script processor rather than a dotted `field` path; the script also accepts a nested shape in case the stream ever expands them.",
+  "processors": [
+    {
+      "script": {
+        "if": "ctx.data_stream?.dataset == '{{DATASET}}'",
+        "description": "Lift the literal dotted key attributes['network.forwarded_ip'] to top-level client.ip",
+        "lang": "painless",
+        "source": "def a = ctx.attributes; if (a == null) { return; } def ip = a.get('network.forwarded_ip'); if (ip == null && a.get('network') instanceof Map) { ip = a.get('network').get('forwarded_ip'); } if (ip == null || ip == '') { return; } if (ctx.client == null) { ctx.client = new HashMap(); } ctx.client.ip = ip;",
+        "ignore_failure": true
+      }
+    },
+    {
+      "geoip": {
+        "if": "ctx.client?.ip != null",
+        "field": "client.ip",
+        "target_field": "client.geo",
+        "ignore_missing": true,
+        "properties": [
+          "continent_name",
+          "country_iso_code",
+          "country_name",
+          "region_iso_code",
+          "region_name",
+          "city_name",
+          "location"
+        ],
+        "on_failure": [
+          {
+            "set": {
+              "field": "client.geo_error",
+              "value": "{{{_ingest.on_failure_message}}}",
+              "ignore_failure": true
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "_meta": {
+    "generator": "cloud-audit-dashboards",
+    "managed": false
+  }
+}

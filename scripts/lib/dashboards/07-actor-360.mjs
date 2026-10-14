@@ -35,7 +35,7 @@ const drillTo = (destination, panel) => Object.assign(panel, { drill: destinatio
 /** Folds dated daily indices and data-stream backing indices into the family they belong to. */
 const INDEX_FAMILY = String.raw`REPLACE(REPLACE(attributes.elasticsearch.audit.indices, """^\.ds-""", ""), """[-.]?\d{4}[.-]\d{2}[.-]\d{2}(-\d+)?$""", "")`;
 
-const ORIENTATION = `### 👤 Pick a person in the control bar
+const ORIENTATION = `#### 👤 Pick a person in the control bar
 **① Is this normal?** reads a fixed 7 days whatever the time picker says · **② What they did** follows the picker · **③ Evidence** ends in the raw records. With nobody selected, every panel describes the whole estate.`;
 
 export function build() {

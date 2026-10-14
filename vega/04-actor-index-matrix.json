@@ -31,7 +31,7 @@
       "%type%": "esql",
       "%timefield%": "@timestamp",
       "%context%": true,
-      "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.indices IS NOT NULL | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | MV_EXPAND attributes.elasticsearch.audit.indices | RENAME attributes.elasticsearch.audit.indices AS idx | STATS events = COUNT(*) BY actor, idx | SORT events DESC | LIMIT 60"
+      "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.indices IS NOT NULL | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | MV_EXPAND attributes.elasticsearch.audit.indices | RENAME attributes.elasticsearch.audit.indices AS idx | STATS events = COUNT(*) BY actor, idx | SORT events DESC | LIMIT 60"
     }
   },
   "mark": {

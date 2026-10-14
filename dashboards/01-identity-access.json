@@ -35,6 +35,16 @@
           },
           {
             "type": "dashboardLink",
+            "destination": "cloud-audit-01-identity-access",
+            "label": "🔐  Identity & Access",
+            "options": {
+              "use_filters": true,
+              "use_time_range": true,
+              "open_in_new_tab": false
+            }
+          },
+          {
+            "type": "dashboardLink",
             "destination": "cloud-audit-02-kibana-objects",
             "label": "🗂️  Kibana Object Forensics",
             "options": {
@@ -111,7 +121,7 @@
         "type": "metric",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS `Identities` = COUNT_DISTINCT(actor)"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS `Identities` = COUNT_DISTINCT(actor)"
         },
         "metrics": [
           {
@@ -140,7 +150,7 @@
         "type": "metric",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS `Humans` = COUNT_DISTINCT(attributes.user.email)"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS `Humans` = COUNT_DISTINCT(attributes.user.email)"
         },
         "metrics": [
           {
@@ -169,7 +179,7 @@
         "type": "metric",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS `Named API keys` = COUNT_DISTINCT(attributes.api_key.name)"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS `Named API keys` = COUNT_DISTINCT(attributes.api_key.name)"
         },
         "metrics": [
           {
@@ -198,7 +208,7 @@
         "type": "metric",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.user.domain == \"cloud-saml-kibana\" | STATS `SSO events` = COUNT(*)"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.user.domain == \"cloud-saml-kibana\" | STATS `SSO events` = COUNT(*)"
         },
         "metrics": [
           {
@@ -227,7 +237,7 @@
         "type": "metric",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.event.outcome == \"failure\" OR attributes.event.action IN (\"authentication_failed\",\"realm_authentication_failed\",\"anonymous_access_denied\") | STATS `Auth failures` = COUNT(*)"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.event.outcome == \"failure\" OR attributes.event.action IN (\"authentication_failed\",\"realm_authentication_failed\",\"anonymous_access_denied\") | STATS `Auth failures` = COUNT(*)"
         },
         "metrics": [
           {
@@ -256,7 +266,7 @@
         "type": "metric",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS `Kibana sessions` = COUNT_DISTINCT(attributes.kibana.session.id)"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS `Kibana sessions` = COUNT_DISTINCT(attributes.kibana.session.id)"
         },
         "metrics": [
           {
@@ -305,7 +315,7 @@
             "type": "bar_stacked",
             "data_source": {
               "type": "esql",
-              "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.authentication.type IS NOT NULL | STATS events = COUNT(*) BY BUCKET(@timestamp, 75, ?_tstart, ?_tend), auth = attributes.authentication.type"
+              "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.authentication.type IS NOT NULL | STATS events = COUNT(*) BY BUCKET(@timestamp, 75, ?_tstart, ?_tend), auth = attributes.authentication.type"
             },
             "x": {
               "column": "BUCKET(@timestamp, 75, ?_tstart, ?_tend)",
@@ -353,7 +363,7 @@
         "type": "pie",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | EVAL actor_org = CASE(attributes.user.email IS NULL, \"machine\", attributes.user.email LIKE \"*@elastic.co\", \"Elastic\", \"tenant\") | STATS events = COUNT(*) BY actor_org"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | EVAL actor_org = CASE(attributes.user.email IS NULL, \"machine\", attributes.user.email LIKE \"*@elastic.co\", \"Elastic\", \"tenant\") | STATS events = COUNT(*) BY actor_org"
         },
         "metrics": [
           {
@@ -385,7 +395,7 @@
         "type": "pie",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.user.domain IS NOT NULL | EVAL realm = CASE(attributes.user.domain == \"cloud-saml-kibana\", \"SAML SSO\", attributes.user.domain == \"_es_api_key\", \"API key\", attributes.user.domain) | STATS events = COUNT(*) BY realm"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.user.domain IS NOT NULL | EVAL realm = CASE(attributes.user.domain == \"cloud-saml-kibana\", \"SAML SSO\", attributes.user.domain == \"_es_api_key\", \"API key\", attributes.user.domain) | STATS events = COUNT(*) BY realm"
         },
         "metrics": [
           {
@@ -417,7 +427,7 @@
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.api_key.name IS NOT NULL | STATS events = COUNT(*), ips = COUNT_DISTINCT(client.ip) BY api_key = attributes.api_key.name, key_id = attributes.api_key.id, owner = attributes.user.email | SORT events DESC | LIMIT 15"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.api_key.name IS NOT NULL | STATS events = COUNT(*), ips = COUNT_DISTINCT(client.ip) BY api_key = attributes.api_key.name, key_id = attributes.api_key.id, owner = attributes.user.email | SORT events DESC | LIMIT 15"
         },
         "rows": [
           {
@@ -455,7 +465,7 @@
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.user.email IS NOT NULL | STATS events = COUNT(*), first_seen = MIN(@timestamp), last_seen = MAX(@timestamp), ips = COUNT_DISTINCT(client.ip) BY user = attributes.user.email, name = attributes.user.full_name | SORT events DESC | LIMIT 15"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.user.email IS NOT NULL | STATS events = COUNT(*), first_seen = MIN(@timestamp), last_seen = MAX(@timestamp), ips = COUNT_DISTINCT(client.ip) BY user = attributes.user.email, name = attributes.user.full_name | SORT events DESC | LIMIT 15"
         },
         "rows": [
           {
@@ -496,7 +506,7 @@
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-serverless.audit.otel-elastic_cloud | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.event.action IN (\"authentication_failed\",\"realm_authentication_failed\",\"anonymous_access_denied\") OR attributes.event.outcome == \"failure\" | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS events = COUNT(*), last_seen = MAX(@timestamp) BY actor, action = attributes.event.action, ip = client.ip | SORT events DESC | LIMIT 15"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.event.action IN (\"authentication_failed\",\"realm_authentication_failed\",\"anonymous_access_denied\") OR attributes.event.outcome == \"failure\" | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS events = COUNT(*), last_seen = MAX(@timestamp) BY actor, action = attributes.event.action, ip = client.ip | SORT events DESC | LIMIT 15"
         },
         "rows": [
           {

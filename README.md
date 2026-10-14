@@ -1,7 +1,7 @@
 # Cloud Audit Dashboards
 
 Eight cross-linked Kibana dashboards over the Elastic Cloud Serverless audit stream
-`logs-serverless.audit.otel-elastic_cloud`, built entirely from ES|QL and deployed as code
+`logs-elastic_cloud.serverless_audit.otel-default`, built entirely from ES|QL and deployed as code
 by a dependency-free Node CLI.
 
 Everything here is version-controlled and idempotent: `./audit --deploy` is safe to re-run,
@@ -22,7 +22,7 @@ design decision that follows.
 
 | Fact | Consequence |
 | --- | --- |
-| One stream carries **two** audit sources: `elasticsearch-serverless` and `serverless-kibana` | Every panel states which source it reads. Kibana events are usually a small slice of the volume but carry nearly all of the forensic value. |
+| One stream carries **two** audit sources: `serverless-elasticsearch` (named `elasticsearch-serverless` before the 2026 schema change) and `serverless-kibana` | Every panel states which source it reads. Kibana events are usually a small slice of the volume but carry nearly all of the forensic value. |
 | `attributes.user.name` is a **numeric id** (`1234567890`), not a name | Every actor-facing panel resolves identity through `COALESCE(user.email, api_key.name, user.name)`. Without it the whole suite shows integers. |
 | **A single high-volume API key can dominate the stream**, and Elasticsearch stamps that key's **creator** on every event it emits | A noise gate is ON by default everywhere except the Platform Volume dashboard. Actor-facing panels also carry the `api_key` column, so an automated workload is never mistaken for the person who minted its credential. |
 | The gate's old `NOT (field IN (...))` form was **null for every Kibana event**, and `WHERE null` drops the row | Both halves are explicitly null-guarded. Before the fix the "Signal events" KPI excluded 100% of Kibana audit. |
@@ -173,17 +173,30 @@ the project. Instead this installs a dedicated pipeline attached as `index.final
 the audit data stream only, with a component + index template so it survives rollover:
 
 ```
-ingest/logs-serverless.audit.otel@custom.pipeline.json    script (lifts dotted key) + geoip
-ingest/logs-serverless.audit.otel@custom.component.json   client.* mappings + final_pipeline
-ingest/logs-serverless.audit.otel@template.json           mirrors logs-otel@template, priority 200
+ingest/audit@custom.pipeline.json    script (lifts the dotted key) + geoip, guarded to the audit dataset
+ingest/audit@custom.component.json   client.* and tags mappings + final_pipeline
+(index template)                     BUILT at install time from the live logs-otel@template
 ```
 
-`client.geo.location` maps to `geo_point` via the stock `ecs_geo_point` dynamic template, and
-`client.ip` via `ecs_ip` — which is exactly why the target is top-level `client.*` and not
-`attributes.*` (that path would become `flattened`).
+Every name derives from `AUDIT_STREAM` (`logs-<dataset>@custom`, `logs-<dataset>@template`), because
+Elastic has renamed the stream once already and a pipeline guarded on the old dataset installs, attaches
+and silently does nothing.
+
+The index template is **not** a committed copy. The audit stream is created by Elastic's managed
+`logs-otel@template` (logsdb mode, passthrough `attributes`, `dynamic: false`); ours replaces it for this
+one pattern at the next rollover, so a stale copy would silently change the stream's mappings or index
+mode. `--ingest` mirrors the live template, appends our component, **simulates it as a replacement for the
+installed copy, and refuses to install if the index mode would change**. It is idempotent.
+
+The database is Elastic's built-in **MaxMind GeoLite2-City**. On serverless it cannot be inspected or
+replaced (`_ingest/geoip/*` answers 410). Country is reliable; city is often the ISP's location, so read
+city-level panels (impossible travel) accordingly. For the first seconds after the pipeline is attached the
+database may not be loaded yet: those events keep `client.ip`, get no geo, and carry
+`tags: ["_geoip_database_unavailable_GeoLite2-City.mmdb"]`. `tags` is mapped so that is visible.
 
 **Enrichment is forward-only.** Documents indexed before installation carry no geo. Verify it
-is actually running with `./audit --ingest-check`.
+is actually running with `./audit --ingest-check`. Only public client IPs resolve: Kibana's own calls
+to Elasticsearch arrive from internal `100.64.0.0/10` addresses.
 
 ---
 
@@ -206,7 +219,7 @@ Probed against Kibana 9.6 serverless. Several are undocumented and cost real tim
 | An ES\|QL Vega spec **always** follows the time picker — omitting `%timefield%` does not opt out | A panel that needs its own window (a 7-day baseline on a 1h dashboard) is a **DSL** Vega spec: `url.index` + `url.body` with an explicit `@timestamp` range and the `%dashboard_context-*%` placeholders keeps the control-bar filters and ignores the picker. Confirmed on a live dashboard |
 | Two **unnamed** DSL datasets in one Vega spec cross their responses — the second gets nothing and the panel shows a bare "Error" | Every DSL dataset carries a unique `name`; `layout.mjs` fails the build otherwise. (Kibana's `es_query_parser` matches results by the result's index, not the request's) |
 | Kibana themes axis, legend and title text, but **not text marks** — an unstyled text mark is `#000` on the dark theme | Full Vega text marks take `style: "guide-label"` / `"guide-title"`, which Kibana colours per theme. Vega-Lite `style` does not reach text marks at all; there, words go in a `title` whose `text` is an expression |
-| `kibanaAddFilter(query, index)` resolves `index` by data view **title** | Pass `logs-serverless.audit.otel-elastic_cloud`; the id `cloud-audit-dv` renders *Index "cloud-audit-dv" not found* |
+| `kibanaAddFilter(query, index)` resolves `index` by data view **title** | Pass `logs-elastic_cloud.serverless_audit.otel-default`; the id `cloud-audit-dv` renders *Index "cloud-audit-dv" not found* |
 | External URLs are blocked in Vega on serverless | The basemap is Elastic Maps Service: `{"%type%": "emsfile", "name": "World Countries"}` with `format: {type: "topojson", feature: "data"}` — not `property: "features"`, which yields one useless row |
 | Vega errors render inside the panel as `li.vgaVis__message--err`, often as a bare "Error" | `--verify` counts those elements in addition to reading text |
 
@@ -229,6 +242,7 @@ Probed against Kibana 9.6 serverless. Several are undocumented and cost real tim
 ./audit --deploy         Full pipeline
 ./audit --demo-guide     Generate the presenter runbook from live data (--redact to mask identities)
 ./audit --clean <target> Tear down: dashboards | ingest | all
+./audit --synth <sub>    Synthetic audit activity — see below
 ```
 
 `--lint` runs before every deploy and executes every query against the cluster with concrete
@@ -267,6 +281,50 @@ Three failures it was built to catch, all real:
 
 ---
 
+## Synthetic activity and the test suite
+
+A project nobody uses produces no audit events, and a dashboard over an empty stream proves nothing.
+`--synth` drives **real API traffic** as a cast of personas so the platform itself emits audit events,
+then proves each one landed and scores the way the dashboards say it should. It never indexes into the
+audit stream.
+
+```
+./audit --synth run    [--only ids] [--no-verify] [--keep] [--timeout-min n]
+./audit --synth loop   [--minutes n] [--only ids] [--demo]   continuous traffic; --demo compresses cadences so
+                                                      every scenario recurs inside a 1h dashboard window
+./audit --synth schema                                field drift: referenced fields vs the live stream
+./audit --synth list                                  personas, scenarios, weights, cadence
+./audit --synth clean  [--dry-run] [--only ids]       remove syn-* resources
+
+npm test               unit + static schema contract (no network, no .env needed)
+npm run test:it        live suite against the project in .env (AUDIT_IT_ONLY=<ids> to narrow)
+```
+
+**Personas** are Elasticsearch API keys (`syn-sre-maria.lopez`, `syn-contractor-alex.kim`, …), each with its
+own role, minted per run with a 25h expiry and held only in memory. Serverless has no native realm and
+inviting Cloud users sends real email, so a key per persona is the only way to get distinct identities.
+**Scenarios** (`scripts/synth/scenarios/`, contract in `index.mjs`) cover every risk weight — 0, 10, 25,
+30, 35, 40, 45, 50 — across Elasticsearch data access, security configuration, denials, anonymous and
+bogus credentials, Kibana saved objects, and Kibana feature paths (rules, workflows, Agent Builder, SLOs,
+connectors, maintenance windows, spaces).
+
+**Verification** runs each expectation as ES|QL against the stream and scores the matches with
+`panels.mjs`'s own `RISK`, so a test fails when the scorer and the data disagree — not a copy of the
+scorer. Elasticsearch events are scoped to the run by `X-Opaque-Id` (`<runId>/<scenario>/<seq>`), which
+the stream records; Kibana does not record it, so Kibana expectations scope by run-unique object ids.
+Upper-bound claims (`risk`, `max`) are re-judged after a settle delay, because audit delivery takes
+10–60s and a late event can break them.
+
+**Safety.** Every created name starts with `syn-` and every delete passes `assertOwned()`. A full
+`clean` also sweeps keys, roles, indices and spaces project-wide, which removes what a concurrent run is
+using; `--only` and the integration suite clean only their own scenarios' leftovers.
+
+What the suite cannot synthesise: a human SSO login (so `user.email` and `kibana.session.id`), real
+geographic spread (one runner has one egress IP), and multi-day baselines (audit timestamps cannot be
+backfilled — run `loop` for a week).
+
+---
+
 ## Layout
 
 ```
@@ -302,7 +360,7 @@ changes show up as readable diffs in review.
 
 ## Requirements
 
-- Node.js ≥ 20 (uses `process.loadEnvFile`)
+- Node.js ≥ 22 (`process.loadEnvFile`, and glob patterns in `node --test`)
 - An Elastic Cloud Serverless project with Cloud audit logging enabled
 - An API key with `manage_index_templates`, `manage_ingest_pipelines`, read on the audit data
   stream, and Kibana write access to the target space

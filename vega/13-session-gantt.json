@@ -33,7 +33,7 @@
       "on": [
         {
           "events": "@ribbon:click[event.shiftKey]",
-          "update": "datum.actor === 'no email recorded' ? null : kibanaAddFilter({match_phrase: {'attributes.user.email': datum.actor}}, 'logs-serverless.audit.otel-elastic_cloud', 'actor: ' + datum.actor)"
+          "update": "datum.actor === 'no email recorded' ? null : kibanaAddFilter({match_phrase: {'attributes.user.email': datum.actor}}, 'logs-elastic_cloud.serverless_audit.otel-default', 'actor: ' + datum.actor)"
         }
       ]
     }
@@ -42,7 +42,7 @@
     {
       "name": "sessions",
       "url": {
-        "index": "logs-serverless.audit.otel-elastic_cloud",
+        "index": "logs-elastic_cloud.serverless_audit.otel-default",
         "body": {
           "size": 0,
           "query": {

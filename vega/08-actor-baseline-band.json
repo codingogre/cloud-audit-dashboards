@@ -25,7 +25,7 @@
     {
       "name": "hours",
       "url": {
-        "index": "logs-serverless.audit.otel-elastic_cloud",
+        "index": "logs-elastic_cloud.serverless_audit.otel-default",
         "body": {
           "size": 0,
           "query": {

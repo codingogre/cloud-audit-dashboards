@@ -36,7 +36,13 @@ import { CONTROLS } from './lib/controls.mjs';
  */
 const NOISE_TEXT = [/^Refused to execute inline script because it violates/];
 const NOISE_URL = /\/internal\/api\/intercepts\/|\/internal\/cps\/project_routing\/|\/internal\/content_management\/favorites\//;
-const isPlatformNoise = (e) => NOISE_TEXT.some((re) => re.test(e.text)) || NOISE_URL.test(e.url);
+/**
+ * The verifier signs in with an API key, and an API key has no user profile, so Kibana's profile
+ * lookup answers 404 on every page. Only that exact pair is noise: any other status there (a 401 or
+ * 500) still fails the run.
+ */
+const API_KEY_PROFILE_404 = (e) => /\/internal\/security\/user_profile(\?|$)/.test(e.url || '') && /status of 404/.test(e.text);
+const isPlatformNoise = (e) => NOISE_TEXT.some((re) => re.test(e.text)) || NOISE_URL.test(e.url) || API_KEY_PROFILE_404(e);
 
 function loadPlaywright() {
   for (const base of [ROOT, process.env.HOME]) {

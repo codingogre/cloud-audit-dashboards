@@ -2,20 +2,49 @@
   "properties": {
     "client": {
       "properties": {
-        "ip": { "type": "ip" },
-        "geo_error": { "type": "keyword", "ignore_above": 1024 },
+        "ip": {
+          "type": "ip"
+        },
+        "geo_error": {
+          "type": "keyword",
+          "ignore_above": 1024
+        },
         "geo": {
           "properties": {
-            "location":          { "type": "geo_point" },
-            "continent_name":    { "type": "keyword", "ignore_above": 1024 },
-            "country_iso_code":  { "type": "keyword", "ignore_above": 1024 },
-            "country_name":      { "type": "keyword", "ignore_above": 1024 },
-            "region_iso_code":   { "type": "keyword", "ignore_above": 1024 },
-            "region_name":       { "type": "keyword", "ignore_above": 1024 },
-            "city_name":         { "type": "keyword", "ignore_above": 1024 }
+            "location": {
+              "type": "geo_point"
+            },
+            "continent_name": {
+              "type": "keyword",
+              "ignore_above": 1024
+            },
+            "country_iso_code": {
+              "type": "keyword",
+              "ignore_above": 1024
+            },
+            "country_name": {
+              "type": "keyword",
+              "ignore_above": 1024
+            },
+            "region_iso_code": {
+              "type": "keyword",
+              "ignore_above": 1024
+            },
+            "region_name": {
+              "type": "keyword",
+              "ignore_above": 1024
+            },
+            "city_name": {
+              "type": "keyword",
+              "ignore_above": 1024
+            }
           }
         }
       }
+    },
+    "tags": {
+      "type": "keyword",
+      "ignore_above": 1024
     }
   }
 }

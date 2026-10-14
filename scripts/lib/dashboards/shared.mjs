@@ -1,4 +1,5 @@
 /** Constants shared by more than one dashboard module. */
+import { cfg } from '../env.mjs';
 import {
   RISK, VERB, CSS_NAV, RISK_PREFILTER, CHANGE, OBJ, OUTCOME, filterable
 } from '../panels.mjs';
@@ -30,7 +31,7 @@ are excluded; how much that removes varies by workload. Unfiltered totals live o
 
 export const GEO_NOTE = `### 🌍 About this data
 
-Geo is resolved **at ingest** by \`logs-serverless.audit.otel@custom\`, which lifts
+Geo is resolved **at ingest** by \`${cfg.pipeline}\`, which lifts
 \`attributes.network.forwarded_ip\` to \`client.ip\` and resolves \`client.geo.*\`.
 
 **Not \`source.ip\`** — that is the *internal proxy* (\`100.64.x.x\` CGNAT, \`10.x.x.x\` mesh),

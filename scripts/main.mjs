@@ -30,6 +30,12 @@ const HELP = `Usage: ./audit <command>
     --queries          List the ES|QL queries running on the project right now. Check this before
                        trusting any timing: an abandoned query cannot be cancelled on serverless
 
+  Synthetic activity
+    --synth <sub>      Drive real API traffic as a cast of personas so the platform emits audit
+                       events, then prove they landed and score as the dashboards expect.
+                       run [--only ids] [--no-verify] [--keep] | loop [--minutes n] | schema |
+                       list | clean [--dry-run]
+
   Walkthrough
     --demo-guide       Generate the presenter runbook from live data (add --redact to mask identities)
 
@@ -64,6 +70,7 @@ const table = {
   '--verify': () => runModule('./verify.mjs'),
   '--queries': () => runModule('./queries.mjs'),
   '--demo-guide': () => runModule('./demo-guide.mjs'),
+  '--synth': () => runModule('./synth.mjs'),
   '--deploy': doDeploy,
   '--clean': () => runModule('./clean.mjs'),
 };

@@ -32,7 +32,10 @@
  *      gating it removes the thing the panel exists to show.
  */
 
-export const IDX = 'logs-serverless.audit.otel-elastic_cloud';
+import { cfg } from './env.mjs';
+
+/** The audit stream, from config — one definition, so a rename is an .env change, not a code change. */
+export const IDX = cfg.dataStream;
 
 /**
  * Identity resolution, split from actor_kind because the Discover sessions need the first half and
@@ -330,7 +333,8 @@ export const BAND =
 export const TIME   = 'WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart';
 export const BUCKET = 'BUCKET(@timestamp, 75, ?_tstart, ?_tend)';
 export const KIB    = 'WHERE resource.attributes.service.name == "serverless-kibana"';
-export const ESS    = 'WHERE resource.attributes.service.name == "elasticsearch-serverless"';
+/** Elasticsearch's source name; `elasticsearch-serverless` before the 2026 schema change. */
+export const ESS    = 'WHERE resource.attributes.service.name == "serverless-elasticsearch"';
 
 /**
  * Action -> verb. Shared by the change panels, 02's object/verb heatmap and the Discover sessions,
@@ -530,7 +534,12 @@ export const links = (x, y, w, h, current, layout = 'horizontal') => ({
      * Stated explicitly rather than relying on the API default, because the whole drill-down
      * story rests on it.
      */
-    links: DASH.filter(([d]) => d !== current).map(([d, label]) => ({
+    /**
+     * All eight, in the same order on every dashboard. Dropping the current one shifted every
+     * link after it, so the bar re-ordered itself depending on where you were. Kibana renders a
+     * link to the dashboard you are on as the current item, which doubles as "you are here".
+     */
+    links: DASH.map(([d, label]) => ({
       type: 'dashboardLink', destination: d, label,
       options: { use_filters: true, use_time_range: true, open_in_new_tab: false },
     })),
