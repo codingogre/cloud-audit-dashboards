@@ -38,19 +38,30 @@ const KEY_DERIVE = 'EVAL key_id = COALESCE(attributes.api_key.id, attributes.use
   'kind = CASE(attributes.api_key.id IS NULL, "Cloud", "Elasticsearch")';
 
 /**
+ * A count as text with thousands separators ("1,618,996"), the form Lens prints every number beside it
+ * in. TO_STRING alone gave "5390 failed sign-ins" under a "5,390"-style metric at 10x volume. ES|QL has
+ * no number formatting, so the digits are grouped by hand. Up to 12 digits. Use it only on a row a
+ * STATS already produced (a KPI's single row, a bar chart's few categories), never per event.
+ */
+const grouped = (x) => {
+  const s = `TO_STRING(${x})`, n = `LENGTH(${s})`;
+  return `CASE(${n} <= 3, ${s}, ${n} <= 6, CONCAT(LEFT(${s}, ${n} - 3), ",", RIGHT(${s}, 3)), ${n} <= 9, CONCAT(LEFT(${s}, ${n} - 6), ",", SUBSTRING(${s}, ${n} - 5, 3), ",", RIGHT(${s}, 3)), CONCAT(LEFT(${s}, ${n} - 9), ",", SUBSTRING(${s}, ${n} - 8, 3), ",", SUBSTRING(${s}, ${n} - 5, 3), ",", RIGHT(${s}, 3)))`;
+};
+
+/**
  * "N things" for a KPI's secondary line, in words when N is 0 or 1. A digit zero renders slashed in the
  * metric font, which read as a different typeface from the words beside it, so zero is spelt out.
  * A multi-branch CASE, but it runs once, on the single row a STATS without BY returns.
  */
 const count = (x, one, many, zero) =>
-  `CASE(${x} == 0, "${zero}", ${x} == 1, "1 ${one}", CONCAT(TO_STRING(${x}), " ${many}"))`;
+  `CASE(${x} == 0, "${zero}", ${x} == 1, "1 ${one}", CONCAT(${grouped(x)}, " ${many}"))`;
 
 /**
  * A log-scale bar chart's value axis, from 0.5 so a count of 1 still draws a bar (log(1) is the floor
  * otherwise). The API takes a custom domain only with both ends (a min alone is a 400), so the top is
  * set with room to spare. Measured live: one Cloud API key sends ~1.4M events a day, so a 7-day
  * range's ~2.2h intervals peak near 130k and a 30-day total is ~42M. The time chart's 10M is 10x a
- * busy 7-day interval; the whole-range bars' 1B is 10x a 30-day total. Every bar carries its count.
+ * busy 7-day interval; the whole-range bars' 1B is 10x a 30-day total.
  */
 const logBar = (p, max) => { p.config.axis.y.domain = { type: 'custom', min: 0.5, max, rounding: false }; return p; };
 
@@ -75,7 +86,7 @@ export function build() {
     // The line under the number names ONE part, the failed sign-ins; the title says the rest is denied.
     // "N logins · M denied" read as N successful logins beside SSO events' "no new sign-ins", and
     // "539 failed sign-ins · 628 denied" was cut to "… · 62" in an 8-column tile at a 1440px viewport.
-    kpi(32, 0, 8, 5, `FROM ${IDX} | ${TIME} | ${FAILED_OR_DENIED} | STATS \`Failed or denied\` = COUNT(*), signin = COUNT(*) WHERE attributes.event.action IN (${SIGNIN_FAILED}) | EVAL detail = CASE(signin == 0, "no failed sign-ins", signin == 1, "1 failed sign-in", signin == \`Failed or denied\`, "all failed sign-ins", CONCAT(TO_STRING(signin), " failed sign-ins")) | KEEP \`Failed or denied\`, detail`,
+    kpi(32, 0, 8, 5, `FROM ${IDX} | ${TIME} | ${FAILED_OR_DENIED} | STATS \`Failed or denied\` = COUNT(*), signin = COUNT(*) WHERE attributes.event.action IN (${SIGNIN_FAILED}) | EVAL detail = CASE(signin == 0, "no failed sign-ins", signin == 1, "1 failed sign-in", signin == \`Failed or denied\`, "all failed sign-ins", CONCAT(${grouped('signin')}, " failed sign-ins")) | KEEP \`Failed or denied\`, detail`,
       'Failed or denied', 'Failed sign-ins (authentication_failed, realm_authentication_failed, anonymous_access_denied) plus requests refused or failed after sign-in (access_denied and any failed outcome). The line under the number counts the failed sign-ins (nobody signed in: these are not logins); the rest of the number is denied — refused or failed after sign-in. A denial is an authenticated identity hitting a permission wall, not someone guessing credentials. Same predicate as the two failure panels below.',
       { secondary: 'detail' }),
     kpi(40, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE attributes.kibana.session.id IS NOT NULL | STATS \`Kibana sessions\` = COUNT_DISTINCT(attributes.kibana.session.id), people = COUNT_DISTINCT(attributes.user.email) | EVAL detail = CASE(\`Kibana sessions\` == 0, "none in range", ${count('people', 'person', 'people', 'no email recorded')}) | KEEP \`Kibana sessions\`, detail`,
@@ -94,20 +105,23 @@ export function build() {
       'Which credential type each of the 12 busiest identities presents; colour runs teal → blue → purple → pink as events grow (log scale; the legend lists the decades the chart spans). Humans should authenticate by token (SSO); service identities by API key. Only Elasticsearch requests record a credential type, so identities seen only in Kibana or only anonymously are counted in Identities above but are not on this chart. A Cloud API key has no name and is shown as “_4KEO… · Cloud API key”, the first five characters of its id.'),
     // Bars on a log axis, not the donuts they replace. A donut rounds a share: in an hour where a Cloud
     // API key sent ~450k events and one person 33, the only slice label read "Machine 100%" beside a
-    // legend listing Elastic and a Humans tile reading 1 — the label contradicted the page. A bar carries
-    // the count itself, so a category of 33 events reads 33, and on a log axis its bar is visible beside
-    // one of 450k. (The donut labels also set name and percentage in two fonts, and wrapped "Cloud API
-    // key".) The 0.5 floor gives a count of 1 a visible bar, as on the time chart above.
+    // legend listing Elastic and a Humans tile reading 1 — the label contradicted the page. Here the
+    // category name carries the count ("Elastic · 33"), and on a log axis its bar is visible beside one
+    // of 450k. (The donut labels also set name and percentage in two fonts, and wrapped "Cloud API
+    // key".) The count is in the axis label, not a Lens value label: Lens prints a value label only
+    // where it fits inside the bar, so at a 1440px viewport "SAML SSO" (37 events) had no number at
+    // all and "Elastic 37" sat half outside its bar; an axis label is always drawn. The 0.5 floor gives
+    // a count of 1 a visible bar, as on the time chart above.
     // Grouped on the raw email first, then classified: ORG reads only attributes.user.email, so the
     // CASE runs once per person instead of once per event.
     logBar(bar(0, 17, 12, 11, 'Events by identity origin',
-      `FROM ${IDX} | ${TIME} | STATS events = COUNT(*) BY attributes.user.email | ${ORG} | STATS events = SUM(events) BY origin = actor_org | SORT events DESC`,
-      'origin', 'events', 'Events, not identities, by the email on the event: Elastic (@elastic.co), Tenant (any other address), or Machine (no email: service accounts, Cloud API keys, internal users and anonymous requests). Each bar is labelled with its count, on a log scale so a person\'s few dozen events are visible beside a key\'s hundreds of thousands: read the label, not the length. An origin with no bar had no events in range. One busy key can make Machine nearly all of the traffic while most identities are people. An Elasticsearch API key carries its creator\'s email, so traffic from a key a person created counts under that person\'s origin.',
-      { values: true, yScale: 'log' }), 1e9),
+      `FROM ${IDX} | ${TIME} | STATS events = COUNT(*) BY attributes.user.email | ${ORG} | STATS events = SUM(events) BY origin = actor_org | EVAL origin = CONCAT(origin, " · ", ${grouped('events')}) | SORT events DESC`,
+      'origin', 'events', 'Events, not identities, by the email on the event: Elastic (@elastic.co), Tenant (any other address), or Machine (no email: service accounts, Cloud API keys, internal users and anonymous requests). Each origin\'s name carries its count, and the bars are on a log scale so a person\'s few dozen events are visible beside a key\'s hundreds of thousands: read the count, not the length. An origin with no bar had no events in range. One busy key can make Machine nearly all of the traffic while most identities are people. An Elasticsearch API key carries its creator\'s email, so traffic from a key a person created counts under that person\'s origin.',
+      { yScale: 'log' }), 1e9),
     logBar(bar(12, 17, 12, 11, 'Events by authentication realm',
-      `FROM ${IDX} | ${TIME} | WHERE attributes.user.domain IS NOT NULL | STATS events = COUNT(*) BY attributes.user.domain | EVAL realm = CASE(attributes.user.domain == "cloud-saml-kibana", "SAML SSO", attributes.user.domain == "_es_api_key", "Elasticsearch API key", attributes.user.domain == "_cloud_api_key", "Cloud API key", STARTS_WITH(attributes.user.domain, "_service_account"), "Service account", STARTS_WITH(attributes.user.domain, "_"), "Other internal", attributes.user.domain) | STATS events = SUM(events) BY realm | SORT events DESC`,
-      'realm', 'events', 'Events by the security realm that authenticated them, each bar labelled with its count, on a log scale so a small realm is visible beside the bulk: read the label, not the length. SAML SSO is interactive human sign-in (cloud-saml-kibana); Elasticsearch API key (_es_api_key) and Cloud API key (_cloud_api_key) are programmatic — an Elasticsearch key minted by a Cloud API key authenticates in the Cloud key\'s realm; Service account is Elastic\'s own components (_service_account). Any other realm is shown by its name. Anonymous and unauthenticated requests record no realm and are not counted, so the bars can sum to less than Events by identity origin beside it.',
-      { values: true, yScale: 'log' }), 1e9),
+      `FROM ${IDX} | ${TIME} | WHERE attributes.user.domain IS NOT NULL | STATS events = COUNT(*) BY attributes.user.domain | EVAL realm = CASE(attributes.user.domain == "cloud-saml-kibana", "SAML SSO", attributes.user.domain == "_es_api_key", "Elasticsearch API key", attributes.user.domain == "_cloud_api_key", "Cloud API key", STARTS_WITH(attributes.user.domain, "_service_account"), "Service account", STARTS_WITH(attributes.user.domain, "_"), "Other internal", attributes.user.domain) | STATS events = SUM(events) BY realm | EVAL realm = CONCAT(realm, " · ", ${grouped('events')}) | SORT events DESC`,
+      'realm', 'events', 'Events by the security realm that authenticated them. Each realm\'s name carries its count, and the bars are on a log scale so a small realm is visible beside the bulk: read the count, not the length. SAML SSO is interactive human sign-in (cloud-saml-kibana); Elasticsearch API key (_es_api_key) and Cloud API key (_cloud_api_key) are programmatic — an Elasticsearch key minted by a Cloud API key authenticates in the Cloud key\'s realm; Service account is Elastic\'s own components (_service_account). Any other realm is shown by its name. Anonymous and unauthenticated requests record no realm and are not counted, so the bars can sum to less than Events by identity origin beside it.',
+      { yScale: 'log' }), 1e9),
     // Grouped on the raw key fields and derived afterwards; user.name is a group key because it IS the
     // id of a Cloud API key, and for an Elasticsearch key it is the one creator, so it never splits a key.
     // The API key column is assigned in ES|QL so a Cloud key reads "_4KEO… · Cloud API key", the form the

@@ -121,7 +121,7 @@
         "type": "metric",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | STATS `Identities` = COUNT_DISTINCT(actor), human = COUNT_DISTINCT(attributes.user.email), machine = COUNT_DISTINCT(actor) WHERE attributes.user.email IS NULL | EVAL detail = CONCAT(CASE(human == 0, \"no humans\", human == 1, \"1 human\", CONCAT(TO_STRING(human), \" humans\")), \" · \", CASE(machine == 0, \"no machine\", machine == 1, \"1 machine\", CONCAT(TO_STRING(machine), \" machine\"))) | KEEP `Identities`, detail"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | STATS `Identities` = COUNT_DISTINCT(actor), human = COUNT_DISTINCT(attributes.user.email), machine = COUNT_DISTINCT(actor) WHERE attributes.user.email IS NULL | EVAL detail = CONCAT(CASE(human == 0, \"no humans\", human == 1, \"1 human\", CONCAT(CASE(LENGTH(TO_STRING(human)) <= 3, TO_STRING(human), LENGTH(TO_STRING(human)) <= 6, CONCAT(LEFT(TO_STRING(human), LENGTH(TO_STRING(human)) - 3), \",\", RIGHT(TO_STRING(human), 3)), LENGTH(TO_STRING(human)) <= 9, CONCAT(LEFT(TO_STRING(human), LENGTH(TO_STRING(human)) - 6), \",\", SUBSTRING(TO_STRING(human), LENGTH(TO_STRING(human)) - 5, 3), \",\", RIGHT(TO_STRING(human), 3)), CONCAT(LEFT(TO_STRING(human), LENGTH(TO_STRING(human)) - 9), \",\", SUBSTRING(TO_STRING(human), LENGTH(TO_STRING(human)) - 8, 3), \",\", SUBSTRING(TO_STRING(human), LENGTH(TO_STRING(human)) - 5, 3), \",\", RIGHT(TO_STRING(human), 3))), \" humans\")), \" · \", CASE(machine == 0, \"no machine\", machine == 1, \"1 machine\", CONCAT(CASE(LENGTH(TO_STRING(machine)) <= 3, TO_STRING(machine), LENGTH(TO_STRING(machine)) <= 6, CONCAT(LEFT(TO_STRING(machine), LENGTH(TO_STRING(machine)) - 3), \",\", RIGHT(TO_STRING(machine), 3)), LENGTH(TO_STRING(machine)) <= 9, CONCAT(LEFT(TO_STRING(machine), LENGTH(TO_STRING(machine)) - 6), \",\", SUBSTRING(TO_STRING(machine), LENGTH(TO_STRING(machine)) - 5, 3), \",\", RIGHT(TO_STRING(machine), 3)), CONCAT(LEFT(TO_STRING(machine), LENGTH(TO_STRING(machine)) - 9), \",\", SUBSTRING(TO_STRING(machine), LENGTH(TO_STRING(machine)) - 8, 3), \",\", SUBSTRING(TO_STRING(machine), LENGTH(TO_STRING(machine)) - 5, 3), \",\", RIGHT(TO_STRING(machine), 3))), \" machine\"))) | KEEP `Identities`, detail"
         },
         "metrics": [
           {
@@ -187,7 +187,7 @@
         "type": "metric",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.api_key.id IS NOT NULL OR attributes.user.domain == \"_cloud_api_key\" | STATS es = COUNT_DISTINCT(attributes.api_key.id), cloud = COUNT_DISTINCT(attributes.user.name) WHERE attributes.api_key.id IS NULL | EVAL `API keys` = es + cloud, detail = CASE(es + cloud == 0, \"none in range\", CONCAT(CASE(cloud == 0, \"no Cloud\", cloud == 1, \"1 Cloud\", CONCAT(TO_STRING(cloud), \" Cloud\")), \" · \", CASE(es == 0, \"no ES\", es == 1, \"1 ES\", CONCAT(TO_STRING(es), \" ES\")))) | KEEP `API keys`, detail"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.api_key.id IS NOT NULL OR attributes.user.domain == \"_cloud_api_key\" | STATS es = COUNT_DISTINCT(attributes.api_key.id), cloud = COUNT_DISTINCT(attributes.user.name) WHERE attributes.api_key.id IS NULL | EVAL `API keys` = es + cloud, detail = CASE(es + cloud == 0, \"none in range\", CONCAT(CASE(cloud == 0, \"no Cloud\", cloud == 1, \"1 Cloud\", CONCAT(CASE(LENGTH(TO_STRING(cloud)) <= 3, TO_STRING(cloud), LENGTH(TO_STRING(cloud)) <= 6, CONCAT(LEFT(TO_STRING(cloud), LENGTH(TO_STRING(cloud)) - 3), \",\", RIGHT(TO_STRING(cloud), 3)), LENGTH(TO_STRING(cloud)) <= 9, CONCAT(LEFT(TO_STRING(cloud), LENGTH(TO_STRING(cloud)) - 6), \",\", SUBSTRING(TO_STRING(cloud), LENGTH(TO_STRING(cloud)) - 5, 3), \",\", RIGHT(TO_STRING(cloud), 3)), CONCAT(LEFT(TO_STRING(cloud), LENGTH(TO_STRING(cloud)) - 9), \",\", SUBSTRING(TO_STRING(cloud), LENGTH(TO_STRING(cloud)) - 8, 3), \",\", SUBSTRING(TO_STRING(cloud), LENGTH(TO_STRING(cloud)) - 5, 3), \",\", RIGHT(TO_STRING(cloud), 3))), \" Cloud\")), \" · \", CASE(es == 0, \"no ES\", es == 1, \"1 ES\", CONCAT(CASE(LENGTH(TO_STRING(es)) <= 3, TO_STRING(es), LENGTH(TO_STRING(es)) <= 6, CONCAT(LEFT(TO_STRING(es), LENGTH(TO_STRING(es)) - 3), \",\", RIGHT(TO_STRING(es), 3)), LENGTH(TO_STRING(es)) <= 9, CONCAT(LEFT(TO_STRING(es), LENGTH(TO_STRING(es)) - 6), \",\", SUBSTRING(TO_STRING(es), LENGTH(TO_STRING(es)) - 5, 3), \",\", RIGHT(TO_STRING(es), 3)), CONCAT(LEFT(TO_STRING(es), LENGTH(TO_STRING(es)) - 9), \",\", SUBSTRING(TO_STRING(es), LENGTH(TO_STRING(es)) - 8, 3), \",\", SUBSTRING(TO_STRING(es), LENGTH(TO_STRING(es)) - 5, 3), \",\", RIGHT(TO_STRING(es), 3))), \" ES\")))) | KEEP `API keys`, detail"
         },
         "metrics": [
           {
@@ -220,7 +220,7 @@
         "type": "metric",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.user.domain == \"cloud-saml-kibana\" | STATS `SSO events` = COUNT(*), logins = COUNT(*) WHERE attributes.event.action == \"user_login\" | EVAL detail = CASE(logins == 0, \"no new sign-ins\", logins == 1, \"1 new sign-in\", CONCAT(TO_STRING(logins), \" new sign-ins\")) | KEEP `SSO events`, detail"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.user.domain == \"cloud-saml-kibana\" | STATS `SSO events` = COUNT(*), logins = COUNT(*) WHERE attributes.event.action == \"user_login\" | EVAL detail = CASE(logins == 0, \"no new sign-ins\", logins == 1, \"1 new sign-in\", CONCAT(CASE(LENGTH(TO_STRING(logins)) <= 3, TO_STRING(logins), LENGTH(TO_STRING(logins)) <= 6, CONCAT(LEFT(TO_STRING(logins), LENGTH(TO_STRING(logins)) - 3), \",\", RIGHT(TO_STRING(logins), 3)), LENGTH(TO_STRING(logins)) <= 9, CONCAT(LEFT(TO_STRING(logins), LENGTH(TO_STRING(logins)) - 6), \",\", SUBSTRING(TO_STRING(logins), LENGTH(TO_STRING(logins)) - 5, 3), \",\", RIGHT(TO_STRING(logins), 3)), CONCAT(LEFT(TO_STRING(logins), LENGTH(TO_STRING(logins)) - 9), \",\", SUBSTRING(TO_STRING(logins), LENGTH(TO_STRING(logins)) - 8, 3), \",\", SUBSTRING(TO_STRING(logins), LENGTH(TO_STRING(logins)) - 5, 3), \",\", RIGHT(TO_STRING(logins), 3))), \" new sign-ins\")) | KEEP `SSO events`, detail"
         },
         "metrics": [
           {
@@ -253,7 +253,7 @@
         "type": "metric",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.event.action IN (\"authentication_failed\",\"realm_authentication_failed\",\"anonymous_access_denied\") OR attributes.event.outcome == \"failure\" | STATS `Failed or denied` = COUNT(*), signin = COUNT(*) WHERE attributes.event.action IN (\"authentication_failed\",\"realm_authentication_failed\",\"anonymous_access_denied\") | EVAL detail = CASE(signin == 0, \"no failed sign-ins\", signin == 1, \"1 failed sign-in\", signin == `Failed or denied`, \"all failed sign-ins\", CONCAT(TO_STRING(signin), \" failed sign-ins\")) | KEEP `Failed or denied`, detail"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.event.action IN (\"authentication_failed\",\"realm_authentication_failed\",\"anonymous_access_denied\") OR attributes.event.outcome == \"failure\" | STATS `Failed or denied` = COUNT(*), signin = COUNT(*) WHERE attributes.event.action IN (\"authentication_failed\",\"realm_authentication_failed\",\"anonymous_access_denied\") | EVAL detail = CASE(signin == 0, \"no failed sign-ins\", signin == 1, \"1 failed sign-in\", signin == `Failed or denied`, \"all failed sign-ins\", CONCAT(CASE(LENGTH(TO_STRING(signin)) <= 3, TO_STRING(signin), LENGTH(TO_STRING(signin)) <= 6, CONCAT(LEFT(TO_STRING(signin), LENGTH(TO_STRING(signin)) - 3), \",\", RIGHT(TO_STRING(signin), 3)), LENGTH(TO_STRING(signin)) <= 9, CONCAT(LEFT(TO_STRING(signin), LENGTH(TO_STRING(signin)) - 6), \",\", SUBSTRING(TO_STRING(signin), LENGTH(TO_STRING(signin)) - 5, 3), \",\", RIGHT(TO_STRING(signin), 3)), CONCAT(LEFT(TO_STRING(signin), LENGTH(TO_STRING(signin)) - 9), \",\", SUBSTRING(TO_STRING(signin), LENGTH(TO_STRING(signin)) - 8, 3), \",\", SUBSTRING(TO_STRING(signin), LENGTH(TO_STRING(signin)) - 5, 3), \",\", RIGHT(TO_STRING(signin), 3))), \" failed sign-ins\")) | KEEP `Failed or denied`, detail"
         },
         "metrics": [
           {
@@ -286,7 +286,7 @@
         "type": "metric",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.kibana.session.id IS NOT NULL | STATS `Kibana sessions` = COUNT_DISTINCT(attributes.kibana.session.id), people = COUNT_DISTINCT(attributes.user.email) | EVAL detail = CASE(`Kibana sessions` == 0, \"none in range\", CASE(people == 0, \"no email recorded\", people == 1, \"1 person\", CONCAT(TO_STRING(people), \" people\"))) | KEEP `Kibana sessions`, detail"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.kibana.session.id IS NOT NULL | STATS `Kibana sessions` = COUNT_DISTINCT(attributes.kibana.session.id), people = COUNT_DISTINCT(attributes.user.email) | EVAL detail = CASE(`Kibana sessions` == 0, \"none in range\", CASE(people == 0, \"no email recorded\", people == 1, \"1 person\", CONCAT(CASE(LENGTH(TO_STRING(people)) <= 3, TO_STRING(people), LENGTH(TO_STRING(people)) <= 6, CONCAT(LEFT(TO_STRING(people), LENGTH(TO_STRING(people)) - 3), \",\", RIGHT(TO_STRING(people), 3)), LENGTH(TO_STRING(people)) <= 9, CONCAT(LEFT(TO_STRING(people), LENGTH(TO_STRING(people)) - 6), \",\", SUBSTRING(TO_STRING(people), LENGTH(TO_STRING(people)) - 5, 3), \",\", RIGHT(TO_STRING(people), 3)), CONCAT(LEFT(TO_STRING(people), LENGTH(TO_STRING(people)) - 9), \",\", SUBSTRING(TO_STRING(people), LENGTH(TO_STRING(people)) - 8, 3), \",\", SUBSTRING(TO_STRING(people), LENGTH(TO_STRING(people)) - 5, 3), \",\", RIGHT(TO_STRING(people), 3))), \" people\"))) | KEEP `Kibana sessions`, detail"
         },
         "metrics": [
           {
@@ -457,7 +457,7 @@
       },
       "config": {
         "title": "Events by identity origin",
-        "description": "Events, not identities, by the email on the event: Elastic (@elastic.co), Tenant (any other address), or Machine (no email: service accounts, Cloud API keys, internal users and anonymous requests). Each bar is labelled with its count, on a log scale so a person's few dozen events are visible beside a key's hundreds of thousands: read the label, not the length. An origin with no bar had no events in range. One busy key can make Machine nearly all of the traffic while most identities are people. An Elasticsearch API key carries its creator's email, so traffic from a key a person created counts under that person's origin.",
+        "description": "Events, not identities, by the email on the event: Elastic (@elastic.co), Tenant (any other address), or Machine (no email: service accounts, Cloud API keys, internal users and anonymous requests). Each origin's name carries its count, and the bars are on a log scale so a person's few dozen events are visible beside a key's hundreds of thousands: read the count, not the length. An origin with no bar had no events in range. One busy key can make Machine nearly all of the traffic while most identities are people. An Elasticsearch API key carries its creator's email, so traffic from a key a person created counts under that person's origin.",
         "type": "xy",
         "axis": {
           "x": {
@@ -483,7 +483,7 @@
             "type": "bar_horizontal",
             "data_source": {
               "type": "esql",
-              "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS events = COUNT(*) BY attributes.user.email | EVAL actor_org = CASE(attributes.user.email IS NULL, \"Machine\", attributes.user.email LIKE \"*@elastic.co\", \"Elastic\", \"Tenant\") | STATS events = SUM(events) BY origin = actor_org | SORT events DESC"
+              "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS events = COUNT(*) BY attributes.user.email | EVAL actor_org = CASE(attributes.user.email IS NULL, \"Machine\", attributes.user.email LIKE \"*@elastic.co\", \"Elastic\", \"Tenant\") | STATS events = SUM(events) BY origin = actor_org | EVAL origin = CONCAT(origin, \" · \", CASE(LENGTH(TO_STRING(events)) <= 3, TO_STRING(events), LENGTH(TO_STRING(events)) <= 6, CONCAT(LEFT(TO_STRING(events), LENGTH(TO_STRING(events)) - 3), \",\", RIGHT(TO_STRING(events), 3)), LENGTH(TO_STRING(events)) <= 9, CONCAT(LEFT(TO_STRING(events), LENGTH(TO_STRING(events)) - 6), \",\", SUBSTRING(TO_STRING(events), LENGTH(TO_STRING(events)) - 5, 3), \",\", RIGHT(TO_STRING(events), 3)), CONCAT(LEFT(TO_STRING(events), LENGTH(TO_STRING(events)) - 9), \",\", SUBSTRING(TO_STRING(events), LENGTH(TO_STRING(events)) - 8, 3), \",\", SUBSTRING(TO_STRING(events), LENGTH(TO_STRING(events)) - 5, 3), \",\", RIGHT(TO_STRING(events), 3)))) | SORT events DESC"
             },
             "x": {
               "column": "origin",
@@ -498,13 +498,6 @@
         ],
         "legend": {
           "visibility": "hidden"
-        },
-        "styling": {
-          "bars": {
-            "data_labels": {
-              "visible": true
-            }
-          }
         }
       }
     },
@@ -519,7 +512,7 @@
       },
       "config": {
         "title": "Events by authentication realm",
-        "description": "Events by the security realm that authenticated them, each bar labelled with its count, on a log scale so a small realm is visible beside the bulk: read the label, not the length. SAML SSO is interactive human sign-in (cloud-saml-kibana); Elasticsearch API key (_es_api_key) and Cloud API key (_cloud_api_key) are programmatic — an Elasticsearch key minted by a Cloud API key authenticates in the Cloud key's realm; Service account is Elastic's own components (_service_account). Any other realm is shown by its name. Anonymous and unauthenticated requests record no realm and are not counted, so the bars can sum to less than Events by identity origin beside it.",
+        "description": "Events by the security realm that authenticated them. Each realm's name carries its count, and the bars are on a log scale so a small realm is visible beside the bulk: read the count, not the length. SAML SSO is interactive human sign-in (cloud-saml-kibana); Elasticsearch API key (_es_api_key) and Cloud API key (_cloud_api_key) are programmatic — an Elasticsearch key minted by a Cloud API key authenticates in the Cloud key's realm; Service account is Elastic's own components (_service_account). Any other realm is shown by its name. Anonymous and unauthenticated requests record no realm and are not counted, so the bars can sum to less than Events by identity origin beside it.",
         "type": "xy",
         "axis": {
           "x": {
@@ -545,7 +538,7 @@
             "type": "bar_horizontal",
             "data_source": {
               "type": "esql",
-              "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.user.domain IS NOT NULL | STATS events = COUNT(*) BY attributes.user.domain | EVAL realm = CASE(attributes.user.domain == \"cloud-saml-kibana\", \"SAML SSO\", attributes.user.domain == \"_es_api_key\", \"Elasticsearch API key\", attributes.user.domain == \"_cloud_api_key\", \"Cloud API key\", STARTS_WITH(attributes.user.domain, \"_service_account\"), \"Service account\", STARTS_WITH(attributes.user.domain, \"_\"), \"Other internal\", attributes.user.domain) | STATS events = SUM(events) BY realm | SORT events DESC"
+              "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.user.domain IS NOT NULL | STATS events = COUNT(*) BY attributes.user.domain | EVAL realm = CASE(attributes.user.domain == \"cloud-saml-kibana\", \"SAML SSO\", attributes.user.domain == \"_es_api_key\", \"Elasticsearch API key\", attributes.user.domain == \"_cloud_api_key\", \"Cloud API key\", STARTS_WITH(attributes.user.domain, \"_service_account\"), \"Service account\", STARTS_WITH(attributes.user.domain, \"_\"), \"Other internal\", attributes.user.domain) | STATS events = SUM(events) BY realm | EVAL realm = CONCAT(realm, \" · \", CASE(LENGTH(TO_STRING(events)) <= 3, TO_STRING(events), LENGTH(TO_STRING(events)) <= 6, CONCAT(LEFT(TO_STRING(events), LENGTH(TO_STRING(events)) - 3), \",\", RIGHT(TO_STRING(events), 3)), LENGTH(TO_STRING(events)) <= 9, CONCAT(LEFT(TO_STRING(events), LENGTH(TO_STRING(events)) - 6), \",\", SUBSTRING(TO_STRING(events), LENGTH(TO_STRING(events)) - 5, 3), \",\", RIGHT(TO_STRING(events), 3)), CONCAT(LEFT(TO_STRING(events), LENGTH(TO_STRING(events)) - 9), \",\", SUBSTRING(TO_STRING(events), LENGTH(TO_STRING(events)) - 8, 3), \",\", SUBSTRING(TO_STRING(events), LENGTH(TO_STRING(events)) - 5, 3), \",\", RIGHT(TO_STRING(events), 3)))) | SORT events DESC"
             },
             "x": {
               "column": "realm",
@@ -560,13 +553,6 @@
         ],
         "legend": {
           "visibility": "hidden"
-        },
-        "styling": {
-          "bars": {
-            "data_labels": {
-              "visible": true
-            }
-          }
         }
       }
     },
