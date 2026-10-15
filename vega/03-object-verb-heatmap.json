@@ -188,9 +188,12 @@
         "other"
       ],
       "axis": {
-        "title": null,
+        "title": "Operation",
         "labelAngle": 0,
         "orient": "top",
+        "titleOpacity": {
+          "expr": "length(data('rows')) ? 1 : 0"
+        },
         "domainOpacity": {
           "expr": "length(data('rows')) ? 1 : 0"
         }

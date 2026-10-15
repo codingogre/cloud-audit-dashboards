@@ -290,8 +290,8 @@
         "h": 14
       },
       "config": {
-        "title": "⚠️ Mutations — most recent Kibana state changes · 30 at most",
-        "description": "The single most important panel in the suite: state changes in Kibana, with who did it, what it was called, and which space it lives in. These are the 30 most recent (scroll for the rest); every change in range is in \"All mutations\" on Security & Anomalies, and the \"Kibana saved-object activity\" session further down this page lists reads and changes together. Two columns to read carefully. Object type and Object are the real saved-object fields where Kibana records them and are otherwise recovered from the event message, because workflows, ML jobs and agent-builder objects carry no saved_object fields. A workflow cancel, or a test of an unsaved draft, names only its run, so it reads \"execution\" and the run id's first 8 characters. Result is \"attempted\" where Kibana logged the attempt rather than the outcome — that is how the saved-object path records things, so it is normal, and a \"failure\" here is a change that was denied. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email.",
+        "title": "⚠️ Mutations — most recent Kibana state changes, repeats grouped into one row · 30 at most",
+        "description": "The single most important panel in the suite: state changes in Kibana, with who did it, what it was called, and which space it lives in. Each row groups the same change made again: one identity, one operation, one object, one space and one result over the whole time range. Events is how many times that happened and Last change is the newest of them, so a row reading Events 17 is seventeen changes, and the Mutations tile counts each one. The table holds the 30 groups changed most recently; every change in range is in \"All mutations\" on Security & Anomalies, and the \"Kibana saved-object activity\" session further down this page lists reads and changes together. Two columns to read carefully. Object type and Object are the real saved-object fields where Kibana records them and are otherwise recovered from the event message, because workflows, ML jobs and agent-builder objects carry no saved_object fields. A workflow cancel, or a test of an unsaved draft, names only its run, so it reads \"execution\" and the run id's first 8 characters. Result is \"attempted\" where Kibana logged the attempt rather than the outcome — that is how the saved-object path records things, so it is normal, and a \"failure\" here is a change that was denied. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email. The table holds more rows than the panel shows: scroll it for the rest.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
@@ -379,7 +379,7 @@
       },
       "config": {
         "title": "Kibana state changes over time · reads in the heatmap",
-        "description": "The Mutations tile over time, by operation: the same events, so the bars add up to that tile. Reads are left out because they outnumber changes about thirty to one and flattened every change into a sliver; the heatmap beside this panel and Busiest object types below show them. A deploy shows as a block of creates, updates and deletes together.",
+        "description": "The Mutations tile over time, by operation: the same events, so the bars add up to that tile. Creates, updates and deletes each have a colour; every other change — enabling, disabling, running, testing or cancelling a rule or workflow, opening or starting an ML job, removing references — is one \"other change\" series, because each is a few events a day and would be a sliver no one could see. The Mutations table above names each one. Reads are left out because they outnumber changes about thirty to one and flattened every change into a sliver; the heatmap beside this panel and the Object types table below show them. A deploy shows as a block of creates, updates and deletes together.",
         "type": "xy",
         "axis": {
           "x": {
@@ -403,7 +403,7 @@
             "type": "bar_stacked",
             "data_source": {
               "type": "esql",
-              "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) | STATS n = COUNT(*) BY BUCKET(@timestamp, 75, ?_tstart, ?_tend), attributes.event.action | EVAL verb = CASE(attributes.event.action LIKE \"*_execution_cancel\", \"cancel\", attributes.event.action LIKE \"*_run_soon\", \"run\", attributes.event.action LIKE \"*_run\", \"run\", attributes.event.action LIKE \"*_test\", \"test\", attributes.event.action LIKE \"*_enable\", \"enable\", attributes.event.action LIKE \"*_disable\", \"disable\", attributes.event.action LIKE \"ml_put_*\", \"create\", attributes.event.action LIKE \"ml_open_*\", \"open\", attributes.event.action LIKE \"ml_start_*\", \"start\", attributes.event.action LIKE \"*point_in_time\", \"pit\", attributes.event.action LIKE \"*_create*\", \"create\", attributes.event.action LIKE \"*_update*\", \"update\", attributes.event.action LIKE \"*_delete\", \"delete\", attributes.event.action LIKE \"*_find\", \"find\", attributes.event.action LIKE \"*_get\", \"get\", attributes.event.action LIKE \"*_resolve\", \"resolve\", \"other\") | STATS events = SUM(n) BY `BUCKET(@timestamp, 75, ?_tstart, ?_tend)`, verb | SORT verb != \"create\", verb"
+              "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) | STATS n = COUNT(*) BY BUCKET(@timestamp, 75, ?_tstart, ?_tend), attributes.event.action | EVAL verb = CASE(attributes.event.action LIKE \"*_execution_cancel\", \"cancel\", attributes.event.action LIKE \"*_run_soon\", \"run\", attributes.event.action LIKE \"*_run\", \"run\", attributes.event.action LIKE \"*_test\", \"test\", attributes.event.action LIKE \"*_enable\", \"enable\", attributes.event.action LIKE \"*_disable\", \"disable\", attributes.event.action LIKE \"ml_put_*\", \"create\", attributes.event.action LIKE \"ml_open_*\", \"open\", attributes.event.action LIKE \"ml_start_*\", \"start\", attributes.event.action LIKE \"*point_in_time\", \"pit\", attributes.event.action LIKE \"*_create*\", \"create\", attributes.event.action LIKE \"*_update*\", \"update\", attributes.event.action LIKE \"*_delete\", \"delete\", attributes.event.action LIKE \"*_find\", \"find\", attributes.event.action LIKE \"*_get\", \"get\", attributes.event.action LIKE \"*_resolve\", \"resolve\", \"other\") | EVAL verb = CASE(verb IN (\"create\", \"update\", \"delete\"), verb, \"other change\") | STATS events = SUM(n) BY `BUCKET(@timestamp, 75, ?_tstart, ?_tend)`, verb | SORT verb != \"create\", verb != \"update\", verb != \"delete\""
             },
             "x": {
               "column": "BUCKET(@timestamp, 75, ?_tstart, ?_tend)",
@@ -449,74 +449,11 @@
                   },
                   {
                     "values": [
-                      "cancel"
+                      "other change"
                     ],
                     "color": {
                       "type": "color_code",
                       "value": "#6092C0"
-                    }
-                  },
-                  {
-                    "values": [
-                      "run"
-                    ],
-                    "color": {
-                      "type": "color_code",
-                      "value": "#9170B8"
-                    }
-                  },
-                  {
-                    "values": [
-                      "test"
-                    ],
-                    "color": {
-                      "type": "color_code",
-                      "value": "#CA8EAE"
-                    }
-                  },
-                  {
-                    "values": [
-                      "enable"
-                    ],
-                    "color": {
-                      "type": "color_code",
-                      "value": "#B9A888"
-                    }
-                  },
-                  {
-                    "values": [
-                      "disable"
-                    ],
-                    "color": {
-                      "type": "color_code",
-                      "value": "#AA6556"
-                    }
-                  },
-                  {
-                    "values": [
-                      "open"
-                    ],
-                    "color": {
-                      "type": "color_code",
-                      "value": "#D36086"
-                    }
-                  },
-                  {
-                    "values": [
-                      "start"
-                    ],
-                    "color": {
-                      "type": "color_code",
-                      "value": "#D36086"
-                    }
-                  },
-                  {
-                    "values": [
-                      "other"
-                    ],
-                    "color": {
-                      "type": "color_code",
-                      "value": "#DA8B45"
                     }
                   }
                 ]
@@ -536,16 +473,16 @@
       "grid": {
         "x": 0,
         "y": 35,
-        "w": 20,
+        "w": 22,
         "h": 12
       },
       "config": {
-        "title": "Most-accessed objects · suite's own traffic left out · top 10 at most",
-        "description": "Real object titles from kibana.saved_object.name, ranked by events, reads and changes together. Like the high-value table beside it, this leaves out what the noise gate calls query internals: views of this audit suite's own dashboards, searches and data view, and the suite's automated install (the API imports, exports and writes that deploy it, with no browser session), which otherwise filled every row with the suite watching and installing itself. A suite object a person changed in Kibana is kept; every change, the install's included, is in Mutations above. Identities counts people and API keys alike, resolved the way every actor panel resolves them. The tiles, the heatmap and Busiest object types still count suite views: they read all Kibana traffic. On a narrow screen a long object name wraps onto a second line; scroll the table for the last rows.",
+        "title": "Busiest objects · suite left out · top 10 at most (empty when none outside the suite)",
+        "description": "Object titles from kibana.saved_object.name, or the object's id where Kibana recorded no title (a space, or the advanced-settings object, whose id is the Kibana version such as 9.6.0), ranked by events, reads and changes together. Like the high-value table beside it, this leaves out what the noise gate calls query internals: views of this audit suite's own dashboards, searches and data view, the suite's automated install (the API imports, exports and writes that deploy it, with no browser session), and the settings and data-view lookups every Kibana page load makes, which otherwise filled every row with the suite watching and installing itself. So when nothing outside the suite was opened or changed in range the table is empty, while the tiles above still count those views. A suite object a person changed in Kibana is kept; every change, the install's included, is in Mutations above. Identities counts people and API keys alike, resolved the way every actor panel resolves them. The tiles, the heatmap and the Object types table still count suite views: they read all Kibana traffic. On a narrow screen a long object name wraps onto a second line. This panel is empty when none outside the suite. The table holds more rows than the panel shows: scroll it for the rest.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.kibana.saved_object.name IS NOT NULL | WHERE attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\",\"space_get\",\"space_find\") OR (attributes.event.action == \"http_request\" AND attributes.url.original IS NOT NULL AND attributes.url.original RLIKE \"https?://[^/]+(/s/[^/]+)?/((internal|translations|app)/.*|api/content_management/rpc/(get|search|mget|bulkGet).*|bootstrap(-anonymous)?[.]js.*|api/(core|licensing|banners|ui_counters)/.*|api/spaces/space([?].*)?)|https?://[^/]+(/s/[^/]+)?/api/(saved_objects/(_import|_export)|[^?]*/cloud-audit-).*\") OR (attributes.kibana.saved_object.type IS NOT NULL AND ((attributes.event.action == \"saved_object_get\" AND attributes.kibana.saved_object.type IN (\"config\",\"config-global\")) OR (attributes.event.action == \"saved_object_find\" AND attributes.kibana.saved_object.type == \"index-pattern\"))) OR (attributes.kibana.saved_object.id IS NOT NULL AND attributes.kibana.saved_object.id LIKE \"cloud-audit-*\" AND (attributes.event.action IN (\"saved_object_get\",\"saved_object_resolve\",\"saved_object_find\") OR attributes.kibana.session.id IS NULL))) | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS events = COUNT(*), actors = COUNT_DISTINCT(actor) BY name = attributes.kibana.saved_object.name, type = attributes.kibana.saved_object.type | SORT events DESC | LIMIT 10"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.kibana.saved_object.id IS NOT NULL | WHERE attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\",\"space_get\",\"space_find\") OR (attributes.event.action == \"http_request\" AND attributes.url.original IS NOT NULL AND attributes.url.original RLIKE \"https?://[^/]+(/s/[^/]+)?/((internal|translations|app)/.*|api/content_management/rpc/(get|search|mget|bulkGet).*|bootstrap(-anonymous)?[.]js.*|api/(core|licensing|banners|ui_counters)/.*|api/spaces/space([?].*)?)|https?://[^/]+(/s/[^/]+)?/api/(saved_objects/(_import|_export)|[^?]*/cloud-audit-).*\") OR (attributes.kibana.saved_object.type IS NOT NULL AND ((attributes.event.action == \"saved_object_get\" AND attributes.kibana.saved_object.type IN (\"config\",\"config-global\")) OR (attributes.event.action == \"saved_object_find\" AND attributes.kibana.saved_object.type == \"index-pattern\"))) OR (attributes.kibana.saved_object.id IS NOT NULL AND attributes.kibana.saved_object.id LIKE \"cloud-audit-*\" AND (attributes.event.action IN (\"saved_object_get\",\"saved_object_resolve\",\"saved_object_find\") OR attributes.kibana.session.id IS NULL))) | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS events = COUNT(*), actors = COUNT_DISTINCT(actor) BY name = COALESCE(attributes.kibana.saved_object.name, attributes.kibana.saved_object.id), type = attributes.kibana.saved_object.type | SORT events DESC | LIMIT 10"
         },
         "styling": {
           "density": {
@@ -559,7 +496,7 @@
         },
         "rows": [
           {
-            "label": "Name",
+            "label": "Object",
             "column": "name"
           },
           {
@@ -586,14 +523,14 @@
       "type": "vis",
       "id": "tbl-11",
       "grid": {
-        "x": 20,
+        "x": 22,
         "y": 35,
-        "w": 28,
+        "w": 26,
         "h": 12
       },
       "config": {
-        "title": "Latest high-value object access · suite's own traffic left out · 10 at most",
-        "description": "The ten most recent reads and changes of the high-value object types: dashboards, data views, SLOs, alert rules, tags, workflows, agent-builder agents and tools, and ML jobs — who touched which one, and when. A type that nobody touched in range has no rows. Unlike the panel beside it, this one leaves out what the noise gate calls query internals: views of this audit suite's own dashboards and data view and its automated install (API imports, exports and writes with no browser session), page-load lookups, space lookups and point-in-time paging, which on a deployed suite would fill every row. A suite object a person changed in Kibana is kept; every change, the install's included, is in Mutations above. Both `alert` and `alerting_rule` are included, because Kibana records the same rule under either type depending on which code path audited it. On a narrow screen a long object name wraps onto a second line; scroll the table for the last rows. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email.",
+        "title": "Latest high-value object access · suite left out · 10 at most (empty when none outside the suite)",
+        "description": "The ten most recent reads and changes of the high-value object types: dashboards, data views, SLOs, alert rules, tags, workflows, agent-builder agents and tools, and ML jobs — who touched which one, and when. A type that nobody touched in range has no rows. Unlike the panel beside it, this one leaves out what the noise gate calls query internals: views of this audit suite's own dashboards and data view and its automated install (API imports, exports and writes with no browser session), page-load lookups, space lookups and point-in-time paging, which on a deployed suite would fill every row. So when no high-value object outside the suite was opened or changed in range the table is empty. A suite object a person changed in Kibana is kept; every change, the install's included, is in Mutations above. Both `alert` and `alerting_rule` are included, because Kibana records the same rule under either type depending on which code path audited it. On a narrow screen a long object name wraps onto a second line. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email. This panel is empty when none outside the suite. The table holds more rows than the panel shows: scroll it for the rest.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
@@ -613,17 +550,17 @@
           {
             "label": "Identity",
             "column": "actor",
-            "width": 190
+            "width": 182
           },
           {
             "label": "Operation",
-            "width": 80,
+            "width": 76,
             "column": "verb"
           },
           {
             "label": "Object type",
             "column": "type",
-            "width": 110
+            "width": 94
           },
           {
             "label": "Object",
@@ -649,8 +586,8 @@
         "h": 11
       },
       "config": {
-        "title": "Busiest object types · top 9 at most",
-        "description": "All Kibana traffic, the suite's own included, unlike the two tables above: the saved-object types with the most events, reads and changes, as in the heatmap above (which splits each type by operation). Objects is how many distinct objects of that type were touched. \"space\" ranks high because every Kibana page load reads the active space.",
+        "title": "Object types · suite included · up to 9",
+        "description": "All Kibana traffic, the suite's own included, unlike the two tables above: the saved-object types with the most events, busiest first, reads and changes, as in the heatmap above (which splits each type by operation). Objects is how many distinct objects of that type were touched. \"space\" ranks high because every Kibana page load reads the active space.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
@@ -747,7 +684,7 @@
       "config": {
         "ref_id": "cloud-audit-search-08-cross-space-activity",
         "title": "Cross-space activity · all traffic",
-        "description": "Identities ranked by how many Kibana spaces they touched, with every space listed. Anything above one space is worth understanding. All Kibana traffic, like the Spaces tile. Events counts events recorded in a space, so the column can add up to slightly less than the Kibana events tile: a sign-in (user_login) belongs to no space. A space is shown by its id, the /s/<id> in its URL: the audit stream records no space display name, not even on a space read. Spaces that tooling creates and deletes (review or test spaces) are real activity and rank like any other. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email."
+        "description": "Identities ranked by how many Kibana spaces they touched; Spaces is the count, and Space list names them alphabetically on up to three lines — a longer list ends in \"…\", and the ⤢ at a row's left opens the whole list. Anything above one space is worth understanding. All Kibana traffic, like the Spaces tile. Events counts events recorded in a space, so the column can add up to slightly less than the Kibana events tile: a sign-in (user_login) belongs to no space. A space is shown by its id, the /s/<id> in its URL: the audit stream records no space display name, not even on a space read. Spaces that tooling creates and deletes (review or test spaces) are real activity and rank like any other. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email."
       }
     },
     {
@@ -761,7 +698,7 @@
       },
       "config": {
         "ref_id": "cloud-audit-search-04-kibana-object-changes",
-        "title": "Kibana saved-object activity · suite's own traffic left out · newest 1,000 at most",
+        "title": "Kibana saved-object activity · suite left out · newest 1,000 at most",
         "description": "Kibana events that named an object, reads and changes, newest first; the newest 1,000 in range, so the result count above the grid is that cap, not a total. Like the two tables above, it leaves out what the noise gate calls query internals (views of this audit suite's own dashboards, searches and data view, its automated install, page-load lookups, space lookups and point-in-time paging), which otherwise filled every visible row with the suite watching and installing itself. A suite object a person changed in Kibana is kept; every change, the install's included, is in Mutations at the top of the page. Kibana's page requests and logins name no object and are left out too. Object is the title the object had when the event was recorded, so a renamed object shows its old title on older rows; the id in Message does not change. Open in Discover to filter on a column or page further back. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email."
       }
     },
@@ -776,8 +713,8 @@
       },
       "config": {
         "ref_id": "cloud-audit-search-09-session-reconstruction",
-        "title": "Session reconstruction · newest 1,000 at most (empty when nobody used a browser)",
-        "description": "One person's Kibana sessions, event by event, newest first: every object they opened and changed, with the sentence Kibana wrote for each. Operation uses the same words as the heatmap (get, resolve, create …); an event that names no object keeps its own action, such as \"http request\" for a public API call. Pin an identity first, then open in Discover, filter to one Session and sort Time ascending to replay it forward. Kibana's internal UI requests, space lookups and point-in-time internals are left out; public API calls such as an export are kept, and so are views of this audit suite, because they are part of what the person did. Object is the title the object had at the time, so a renamed object shows its old title on older rows. Session is printed in full, so it can be read and copied; on a narrow screen the grid scrolls sideways for Object type, Space and Message. API-key traffic carries no session. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email. This panel is empty when nobody used a browser."
+        "title": "Session reconstruction · newest 1,000 at most (empty when no browser session opened or changed anything)",
+        "description": "One person's Kibana sessions, event by event, newest first: every object they opened and changed, with the sentence Kibana wrote for each, which names the object's type and id (\"User has resolved dashboard [id=…]\"). Operation uses the same words as the heatmap (get, resolve, create …); an event that names no object keeps its own action, such as \"http request\" for a public API call. Pin an identity first, then open in Discover, filter to one Session and sort Time ascending to replay it forward. Kibana's internal UI requests, usage counters, space lookups and point-in-time internals are left out; public API calls such as an export are kept, and so are views of this audit suite, because they are part of what the person did. That is why the panel can be empty while Cross-space activity above counts a signed-in person: a browser tab left open keeps sending those background requests (tag lists, usage counters, paging) without the person opening or changing anything. Object is the title the object had at the time, so a renamed object shows its old title on older rows. Session is printed in full, so it can be read and copied; on a narrow screen the grid scrolls sideways for Space and Message. API-key traffic carries no session. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email. This panel is empty when no browser session opened or changed anything."
       }
     }
   ]

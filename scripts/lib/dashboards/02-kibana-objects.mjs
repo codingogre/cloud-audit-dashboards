@@ -44,23 +44,24 @@ const NOT_HTTP = 'WHERE attributes.kibana.saved_object.type IS NOT NULL OR attri
 const NOT_INTERNAL = `WHERE attributes.event.action IS NULL OR NOT (${KIBANA_INTERNALS})`;
 
 /**
- * Change verbs keep a meaning-bearing colour on every render rather than whatever order the palette
- * hands out that hour: create green, update yellow, delete red. All from PALETTE, so they read on both
- * themes. Nothing that occurs often sits next to delete's red: run was the orange (#DA8B45) and in dark
- * theme the two could not be told apart at sliver height (round-4 review), so orange now marks only
- * "other" (saved_object_remove_references, 17 a day) and the ML open/start pair takes the pink. Every
- * verb VERB can return for a CHANGE event is pinned, so no unpinned value restarts the palette.
+ * The activity chart draws four series: create, update, delete, and "other change" for every other
+ * verb VERB returns on a CHANGE event (enable, disable, run, test, cancel, ML open/start, remove
+ * references). Round 5 drew all eleven: at 24h six of them (cancel, disable, enable, other, run, test)
+ * were a few events a day each, so their legend entries named bars nobody could see, disable's
+ * brown-red and other's orange sat beside delete's red, and "cancel" had no column in the heatmap
+ * beside it (a cancel names a run, not an object id). The Mutations table above names every verb.
+ * Colours are pinned and meaning-bearing — create green, update yellow, delete red, the rest blue —
+ * all from PALETTE, so they read on both themes, and every value the query can produce is pinned.
  */
-const VERB_COLORS = {
-  create: PALETTE[0], update: PALETTE[5], delete: PALETTE[9], cancel: PALETTE[1], run: PALETTE[3],
-  test: PALETTE[4], enable: PALETTE[6], disable: PALETTE[8], open: PALETTE[2], start: PALETTE[2], other: PALETTE[7],
-};
+const VERB_COLORS = { create: PALETTE[0], update: PALETTE[5], delete: PALETTE[9], 'other change': PALETTE[1] };
+const FOLD_VERBS = 'EVAL verb = CASE(verb IN ("create", "update", "delete"), verb, "other change")';
 
 /**
  * The same CHANGE gate as the Mutations tile, so the activity chart's bars add up to that tile. VERB is a
- * multi-branch CASE and runs on the grouped (bucket, action) rows, never per event (QUERY SHAPE rule 1).
+ * multi-branch CASE and runs on the grouped (bucket, action) rows, never per event (QUERY SHAPE rule 1);
+ * so does the fold.
  */
-const CHANGE_SERIES = `${CHANGE} | STATS n = COUNT(*) BY ${BUCKET}, attributes.event.action | ${VERB} | STATS events = SUM(n) BY \`${BUCKET}\`, verb`;
+const CHANGE_SERIES = `${CHANGE} | STATS n = COUNT(*) BY ${BUCKET}, attributes.event.action | ${VERB} | ${FOLD_VERBS} | STATS events = SUM(n) BY \`${BUCKET}\`, verb`;
 
 /**
  * Space ids as the audit stream records them. Kibana writes a space's id (the /s/<id> in its URL) on
@@ -77,10 +78,10 @@ const SPACE_ID_NOTE = 'A space is shown by its id, the /s/<id> in its URL: the a
  * Lens takes series order — stack order and legend order — from the order rows arrive in, and an
  * unsorted STATS hands them back in whatever order the shards finished. Two renders minutes apart
  * drew delete at the bottom of the stack and first in the legend, then create. Create first keeps the
- * bulk as the stable base; the rest follow alphabetically.
- * Sorting runs on the ≤ ~800 aggregated rows, so it costs nothing measurable.
+ * bulk as the stable base, then update, delete and other change — the order the heatmap's columns read.
+ * Sorting runs on the ≤ ~300 aggregated rows, so it costs nothing measurable.
  */
-const SERIES_ORDER = 'SORT verb != "create", verb';
+const SERIES_ORDER = 'SORT verb != "create", verb != "update", verb != "delete"';
 
 export function build() {
   resetIds();
@@ -95,63 +96,81 @@ export function build() {
     kpi(32, 0, 8, 5, `FROM ${IDX} | ${TIME} | STATS \`Spaces\` = COUNT_DISTINCT(attributes.kibana.space.id)`, 'Spaces', 'Distinct Kibana spaces with activity.'),
     kpi(40, 0, 8, 5, `FROM ${IDX} | ${TIME} | ${CHANGE} | ${ACTOR} | STATS \`Editors\` = COUNT_DISTINCT(actor)`, 'Editors',
       'Distinct identities that changed anything in Kibana in range, resolved the same way every other actor panel resolves them. Counting emails alone misses changes made by credentials that carry no email. Includes people who only enabled a rule, ran a workflow or created an ML job — none of which an action-name suffix test counts as a change.'),
-    table(0, 5, 48, 14, '⚠️ Mutations — most recent Kibana state changes',
+    // A row is a GROUP — one identity making one kind of change to one object in one space with one
+    // result, over the whole range — so "the 30 most recent state changes" over a row reading Events 17
+    // promised 30 changes and showed up to 30 × 17 (round-5 review). The title says it is grouped.
+    table(0, 5, 48, 14, '⚠️ Mutations — most recent Kibana state changes, repeats grouped into one row',
       `FROM ${IDX} | ${TIME} | ${CHANGED} | ${EXEC_FLAG} | ${ACTOR} | STATS n = COUNT(*), last_ts = MAX(@timestamp) BY actor, ${CHANGED_KEYS}, obj_name, space = attributes.kibana.space.id, result, is_exec | ${CHANGED_DERIVE} | STATS events = SUM(n), last_change = MAX(last_ts) BY actor, verb, type = obj_type, name = obj_name, space, result, is_exec | SORT last_change DESC | LIMIT 30 | ${EXEC_LABEL}`,
       [sized('actor', 260), 'verb', sized('type', 200, { label: 'Object type' }), sized('name', 430, { label: 'Object' }),
         'space', 'result'], ['events', 'last_change'],
-      'The single most important panel in the suite: state changes in Kibana, with who did it, what it was called, and which space it lives in. These are the 30 most recent (scroll for the rest); every change in range is in "All mutations" on Security & Anomalies, and the "Kibana saved-object activity" session further down this page lists reads and changes together. Two columns to read carefully. Object type and Object are the real saved-object fields where Kibana records them and are otherwise recovered from the event message, because workflows, ML jobs and agent-builder objects carry no saved_object fields. A workflow cancel, or a test of an unsaved draft, names only its run, so it reads "execution" and the run id\'s first 8 characters. Result is "attempted" where Kibana logged the attempt rather than the outcome — that is how the saved-object path records things, so it is normal, and a "failure" here is a change that was denied.',
+      'The single most important panel in the suite: state changes in Kibana, with who did it, what it was called, and which space it lives in. Each row groups the same change made again: one identity, one operation, one object, one space and one result over the whole time range. Events is how many times that happened and Last change is the newest of them, so a row reading Events 17 is seventeen changes, and the Mutations tile counts each one. The table holds the 30 groups changed most recently; every change in range is in "All mutations" on Security & Anomalies, and the "Kibana saved-object activity" session further down this page lists reads and changes together. Two columns to read carefully. Object type and Object are the real saved-object fields where Kibana records them and are otherwise recovered from the event message, because workflows, ML jobs and agent-builder objects carry no saved_object fields. A workflow cancel, or a test of an unsaved draft, names only its run, so it reads "execution" and the run id\'s first 8 characters. Result is "attempted" where Kibana logged the attempt rather than the outcome — that is how the saved-object path records things, so it is normal, and a "failure" here is a change that was denied.',
       // Thirty is the bound the title states ("30 at most"), so the LIMIT stays above the 13 rows the panel shows.
       { scroll: true }),
     vega(0, 19, 24, 13, '03-object-verb-heatmap', 'Object type × operation',
       'Saved-object type against operation, writes first; all Kibana traffic, reads included. Cell colour is the event count on a log scale, running teal (fewest) through blue and purple to pink (most); the legend spans exactly the counts drawn. Every cell has an outline, so a single create, update or delete stays visible beside thousands of reads: the write columns are the forensic signal. Past 13 object types the rest share one "N more types" row at the bottom; types with any write rank first, so a rare change is never the one folded away. Hover a cell for its count and how many distinct objects it covers.'),
     xy(24, 19, 24, 13, 'Kibana state changes over time · reads in the heatmap',
       `FROM ${IDX} | ${TIME} | ${CHANGE_SERIES} | ${SERIES_ORDER}`,
-      'events', 'The Mutations tile over time, by operation: the same events, so the bars add up to that tile. Reads are left out because they outnumber changes about thirty to one and flattened every change into a sliver; the heatmap beside this panel and Busiest object types below show them. A deploy shows as a block of creates, updates and deletes together.',
+      'events', 'The Mutations tile over time, by operation: the same events, so the bars add up to that tile. Creates, updates and deletes each have a colour; every other change — enabling, disabling, running, testing or cancelling a rule or workflow, opening or starting an ML job, removing references — is one "other change" series, because each is a few events a day and would be a sliver no one could see. The Mutations table above names each one. Reads are left out because they outnumber changes about thirty to one and flattened every change into a sliver; the heatmap beside this panel and the Object types table below show them. A deploy shows as a block of creates, updates and deletes together.',
       { breakdown: 'verb', colors: VERB_COLORS, legend: 'right' }),
-    table(0, 32, 20, 12, 'Most-accessed objects · suite\'s own traffic left out',
-      `FROM ${IDX} | ${TIME} | WHERE attributes.kibana.saved_object.name IS NOT NULL | ${NOT_INTERNAL} | ${ACTOR} | STATS events = COUNT(*), actors = COUNT_DISTINCT(actor) BY name = attributes.kibana.saved_object.name, type = attributes.kibana.saved_object.type | SORT events DESC | LIMIT 10`,
-      ['name', sized('type', 100, { label: 'Object type' })], ['events', 'actors'],
-      'Real object titles from kibana.saved_object.name, ranked by events, reads and changes together. Like the high-value table beside it, this leaves out what the noise gate calls query internals: views of this audit suite\'s own dashboards, searches and data view, and the suite\'s automated install (the API imports, exports and writes that deploy it, with no browser session), which otherwise filled every row with the suite watching and installing itself. A suite object a person changed in Kibana is kept; every change, the install\'s included, is in Mutations above. Identities counts people and API keys alike, resolved the way every actor panel resolves them. The tiles, the heatmap and Busiest object types still count suite views: they read all Kibana traffic. On a narrow screen a long object name wraps onto a second line; scroll the table for the last rows.',
+    // 22 columns, two taken from the high-value table: once SUITE_SELF gated the suite's own install,
+    // both tables are empty at 1h on a project nobody but the suite used, and each needs its empty
+    // condition in the title. At w=20 "… · top 10 at most (empty when none outside the suite)" ran past the
+    // panel edge at a 1440px viewport. "Busiest", not "Most-accessed": the word the two panels below use.
+    table(0, 32, 22, 12, 'Busiest objects · suite left out',
+      // Every event that names a saved object by id, shown by its title where Kibana recorded one and by
+      // its id otherwise. Titles alone (saved_object.name IS NOT NULL) dropped every space and settings
+      // write — Kibana records no title for either — so at 1h the table was empty while the activity
+      // session below listed the API key creating spaces and their settings: two panels on one page
+      // disagreeing about whether anything happened (round-5 render). A grouping on a COALESCE is a
+      // computed key (QUERY SHAPE rule 2): 7d replica 190ms → 225ms.
+      `FROM ${IDX} | ${TIME} | WHERE attributes.kibana.saved_object.id IS NOT NULL | ${NOT_INTERNAL} | ${ACTOR} | STATS events = COUNT(*), actors = COUNT_DISTINCT(actor) BY name = COALESCE(attributes.kibana.saved_object.name, attributes.kibana.saved_object.id), type = attributes.kibana.saved_object.type | SORT events DESC | LIMIT 10`,
+      [{ column: 'name', label: 'Object' }, sized('type', 100, { label: 'Object type' })], ['events', 'actors'],
+      'Object titles from kibana.saved_object.name, or the object\'s id where Kibana recorded no title (a space, or the advanced-settings object, whose id is the Kibana version such as 9.6.0), ranked by events, reads and changes together. Like the high-value table beside it, this leaves out what the noise gate calls query internals: views of this audit suite\'s own dashboards, searches and data view, the suite\'s automated install (the API imports, exports and writes that deploy it, with no browser session), and the settings and data-view lookups every Kibana page load makes, which otherwise filled every row with the suite watching and installing itself. So when nothing outside the suite was opened or changed in range the table is empty, while the tiles above still count those views. A suite object a person changed in Kibana is kept; every change, the install\'s included, is in Mutations above. Identities counts people and API keys alike, resolved the way every actor panel resolves them. The tiles, the heatmap and the Object types table still count suite views: they read all Kibana traffic. On a narrow screen a long object name wraps onto a second line.',
       // Wrapped, like the high-value table beside it: at a 1440px viewport Name gets ~230px, and Lens
       // hard-cut "[Audit] Raw signal feed (noise gate applied)" into the Object type column (round-4
-      // skeptic render). No width split of four columns at w=20 fits a 36-character name; at 1920 every
+      // skeptic render). No width split of four columns at w=22 fits a 36-character name; at 1920 every
       // row is still one line.
-      { wrap: true }),
-    table(20, 32, 28, 12, 'Latest high-value object access · suite\'s own traffic left out',
+      { wrap: true, empty: 'empty when none outside the suite' }),
+    table(22, 32, 26, 12, 'Latest high-value object access · suite left out',
       `FROM ${IDX} | ${TIME} | ${KIB} | ${NOT_HTTP} | ${NOT_INTERNAL} | ${OBJ_GROK} | ${OBJ_NAME} | ${EXEC_FLAG} | ${ACTOR} | STATS n = COUNT(*), last_ts = MAX(@timestamp) BY actor, ${CHANGED_KEYS}, obj_name, is_exec | ${CHANGED_DERIVE} | WHERE obj_type IN ("dashboard","slo","alert","alerting_rule","tag","index-pattern","workflow","agent-builder-agent","agent-builder-tool","ml-job") | STATS last_seen = MAX(last_ts) BY actor, verb, type = obj_type, name = obj_name, is_exec | SORT last_seen DESC | LIMIT 10 | ${EXEC_LABEL}`,
-      // 28 of 48 columns, taken from the four-column table beside it: at half width its six columns
-      // clipped at a 1440px viewport (the layout advisory). Every pixel the fixed columns do not need
-      // goes to Object, the column that clipped.
+      // 26 of 48 columns: at half width its six columns clipped at a 1440px viewport (the layout
+      // advisory); with five (no Events) 26 holds them, and the two columns it gave back let the table
+      // beside it carry its empty condition. Every pixel the fixed columns do not need goes to Object,
+      // which wraps rather than clips.
       // Identity keeps its width at a narrow viewport (min): an email cut short names nobody. 190, not
       // 175: a 20-character opaque key id filled 175 to within 8px of Operation, and the two read as one.
       [sized('actor', 190, { min: 175 }), sized('verb', 80), sized('type', 110, { label: 'Object type' }), sized('name', 250, { label: 'Object' })],
       // No Events column: the panel answers "who touched it, and when", and the 72px a count took was
       // what left Object clipped at a 1440px viewport.
       ['last_seen'],
-      'The ten most recent reads and changes of the high-value object types: dashboards, data views, SLOs, alert rules, tags, workflows, agent-builder agents and tools, and ML jobs — who touched which one, and when. A type that nobody touched in range has no rows. Unlike the panel beside it, this one leaves out what the noise gate calls query internals: views of this audit suite\'s own dashboards and data view and its automated install (API imports, exports and writes with no browser session), page-load lookups, space lookups and point-in-time paging, which on a deployed suite would fill every row. A suite object a person changed in Kibana is kept; every change, the install\'s included, is in Mutations above. Both `alert` and `alerting_rule` are included, because Kibana records the same rule under either type depending on which code path audited it. On a narrow screen a long object name wraps onto a second line; scroll the table for the last rows.',
+      'The ten most recent reads and changes of the high-value object types: dashboards, data views, SLOs, alert rules, tags, workflows, agent-builder agents and tools, and ML jobs — who touched which one, and when. A type that nobody touched in range has no rows. Unlike the panel beside it, this one leaves out what the noise gate calls query internals: views of this audit suite\'s own dashboards and data view and its automated install (API imports, exports and writes with no browser session), page-load lookups, space lookups and point-in-time paging, which on a deployed suite would fill every row. So when no high-value object outside the suite was opened or changed in range the table is empty. A suite object a person changed in Kibana is kept; every change, the install\'s included, is in Mutations above. Both `alert` and `alerting_rule` are included, because Kibana records the same rule under either type depending on which code path audited it. On a narrow screen a long object name wraps onto a second line.',
       // Wrapped: at a 1440px viewport Object gets ~180px, and Lens hard-cuts a clipped cell mid-glyph
       // ("[Audit] Elasticsearch Data A"), which reads as a different name. No width split of this row
       // fits both tables' names at 1440 without dropping a column, so the long names take a second line
       // there instead. At 1920 every name fits on one line and the rows render as before.
-      { wrap: true }),
+      { wrap: true, empty: 'empty when none outside the suite' }),
     // A table, not a bar chart: "space" (every page load reads the active space) outweighs the rarest
     // listed types by two to three orders of magnitude, so on a linear axis their bars were hairlines
     // with labels beside nothing, and Lens' log axis printed crowded non-decade ticks at 1h
     // ("1 2 3 5 7 20 40 70 …"). The heatmap above is the picture; this is the numbers.
-    table(0, 44, 12, 11, 'Busiest object types',
-      `FROM ${IDX} | ${TIME} | WHERE attributes.kibana.saved_object.type IS NOT NULL | STATS events = COUNT(*), objects = COUNT_DISTINCT(attributes.kibana.saved_object.id) BY type = attributes.kibana.saved_object.type | SORT events DESC | LIMIT 10`,
+    // "suite included", the counterpart of the "suite left out" on the tables above (a LIMITed table
+    // may not say "all": layout.mjs PROMISES_ALL); "up to 9" (the bound fitRows(11) sets) rather than
+    // the appended "· top 9 at most". "Busiest object types · suite included · up to 9" lost its "9"
+    // past the title line at a 1440px viewport; "Object types" is the tile's own name.
+    table(0, 44, 12, 11, 'Object types · suite included · up to 9',
+      `FROM ${IDX} | ${TIME} | WHERE attributes.kibana.saved_object.type IS NOT NULL | STATS events = COUNT(*), objects = COUNT_DISTINCT(attributes.kibana.saved_object.id) BY type = attributes.kibana.saved_object.type | SORT events DESC | LIMIT 9`,
       [sized('type', 150, { label: 'Object type' })], ['events', sized('objects', 90, { label: 'Objects' })],
-      'All Kibana traffic, the suite\'s own included, unlike the two tables above: the saved-object types with the most events, reads and changes, as in the heatmap above (which splits each type by operation). Objects is how many distinct objects of that type were touched. "space" ranks high because every Kibana page load reads the active space.'),
+      'All Kibana traffic, the suite\'s own included, unlike the two tables above: the saved-object types with the most events, busiest first, reads and changes, as in the heatmap above (which splits each type by operation). Objects is how many distinct objects of that type were touched. "space" ranks high because every Kibana page load reads the active space.'),
     bar(12, 44, 12, 11, 'Busiest spaces by id · all traffic · up to 10',
       `FROM ${IDX} | ${TIME} | WHERE attributes.kibana.space.id IS NOT NULL | STATS events = COUNT(*) BY space = attributes.kibana.space.id | SORT events DESC | LIMIT 10`,
       'space', 'events', `Kibana activity in the ten busiest spaces, all Kibana traffic like the Spaces tile; hover a bar for its count. ${SPACE_ID_NOTE} Viewing these audit dashboards counts too: each panel load is audited in the space it is viewed from, so the space the suite is installed in, and any space it is rendered in for review, carries its own reads.`),
     search(24, 44, 24, 11, '08-cross-space-activity', 'Cross-space activity · all traffic',
-      `Identities ranked by how many Kibana spaces they touched, with every space listed. Anything above one space is worth understanding. All Kibana traffic, like the Spaces tile. Events counts events recorded in a space, so the column can add up to slightly less than the Kibana events tile: a sign-in (user_login) belongs to no space. ${SPACE_ID_NOTE}`),
-    search(0, 55, 48, 15, '04-kibana-object-changes', 'Kibana saved-object activity · suite\'s own traffic left out · newest 1,000 at most',
+      `Identities ranked by how many Kibana spaces they touched; Spaces is the count, and Space list names them alphabetically on up to three lines — a longer list ends in "…", and the ⤢ at a row's left opens the whole list. Anything above one space is worth understanding. All Kibana traffic, like the Spaces tile. Events counts events recorded in a space, so the column can add up to slightly less than the Kibana events tile: a sign-in (user_login) belongs to no space. ${SPACE_ID_NOTE}`),
+    search(0, 55, 48, 15, '04-kibana-object-changes', 'Kibana saved-object activity · suite left out · newest 1,000 at most',
       'Kibana events that named an object, reads and changes, newest first; the newest 1,000 in range, so the result count above the grid is that cap, not a total. Like the two tables above, it leaves out what the noise gate calls query internals (views of this audit suite\'s own dashboards, searches and data view, its automated install, page-load lookups, space lookups and point-in-time paging), which otherwise filled every visible row with the suite watching and installing itself. A suite object a person changed in Kibana is kept; every change, the install\'s included, is in Mutations at the top of the page. Kibana\'s page requests and logins name no object and are left out too. Object is the title the object had when the event was recorded, so a renamed object shows its old title on older rows; the id in Message does not change. Open in Discover to filter on a column or page further back.'),
     search(0, 70, 48, 14, '09-session-reconstruction', 'Session reconstruction · newest 1,000 at most',
-      'One person\'s Kibana sessions, event by event, newest first: every object they opened and changed, with the sentence Kibana wrote for each. Operation uses the same words as the heatmap (get, resolve, create …); an event that names no object keeps its own action, such as "http request" for a public API call. Pin an identity first, then open in Discover, filter to one Session and sort Time ascending to replay it forward. Kibana\'s internal UI requests, space lookups and point-in-time internals are left out; public API calls such as an export are kept, and so are views of this audit suite, because they are part of what the person did. Object is the title the object had at the time, so a renamed object shows its old title on older rows. Session is printed in full, so it can be read and copied; on a narrow screen the grid scrolls sideways for Object type, Space and Message. API-key traffic carries no session.',
-      { empty: 'empty when nobody used a browser' }),
+      'One person\'s Kibana sessions, event by event, newest first: every object they opened and changed, with the sentence Kibana wrote for each, which names the object\'s type and id ("User has resolved dashboard [id=…]"). Operation uses the same words as the heatmap (get, resolve, create …); an event that names no object keeps its own action, such as "http request" for a public API call. Pin an identity first, then open in Discover, filter to one Session and sort Time ascending to replay it forward. Kibana\'s internal UI requests, usage counters, space lookups and point-in-time internals are left out; public API calls such as an export are kept, and so are views of this audit suite, because they are part of what the person did. That is why the panel can be empty while Cross-space activity above counts a signed-in person: a browser tab left open keeps sending those background requests (tag lists, usage counters, paging) without the person opening or changing anything. Object is the title the object had at the time, so a renamed object shows its old title on older rows. Session is printed in full, so it can be read and copied; on a narrow screen the grid scrolls sideways for Space and Message. API-key traffic carries no session.',
+      { empty: 'empty when no browser session opened or changed anything' }),
   ];
   return dash('cloud-audit-02-kibana-objects', '[Audit] 🗂️ Kibana Object Forensics',
     'Every Kibana saved-object read and change, by type, name, space and actor.', P);
