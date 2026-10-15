@@ -237,7 +237,7 @@
       },
       "config": {
         "title": "",
-        "description": "Distinct source.ip values — these are internal proxies, not clients. Shown to make the difference explicit. The line beneath counts the ones that forwarded a real client IP: the rows of \"Proxy vs real client IP, by proxy\".",
+        "description": "Distinct source.ip values — these are Elastic Cloud's own proxies, not clients, which is why they sit in the platform-internal 100.64/10 range. Shown to make the difference explicit. The line beneath counts the ones that forwarded any client address: the rows of \"Proxy vs real client IP, by proxy\".",
         "type": "metric",
         "data_source": {
           "type": "esql",
@@ -299,7 +299,7 @@
         "x": 0,
         "y": 8,
         "w": 24,
-        "h": 16
+        "h": 17
       },
       "config": {
         "ref_id": "cloud-audit-vega-06-geo-origin",
@@ -314,15 +314,15 @@
         "x": 24,
         "y": 8,
         "w": 24,
-        "h": 7
+        "h": 8
       },
       "config": {
-        "title": "Top client locations · 5 at most",
-        "description": "The busiest resolved client locations in range, counting placed events only — the events the map shades. They sum to the Geo-resolved events tile when every location fits. An address's events from before geo enrichment are not here; Busiest client IPs counts them at the address's place, so its Events can be higher by the \"Predates geo enrichment\" row, and its \"Placed\" column is this one. City is often the ISP's point of presence rather than where the person sits; country is reliable.",
+        "title": "Top client locations · 6 at most",
+        "description": "The busiest resolved client locations in range, counting placed events only — the events the map shades. They sum to the Geo-resolved events tile when every location fits. An address's events from before geo enrichment are not here; Busiest client IPs counts them at the address's place, so its Events can be higher by the \"Predates geo enrichment\" row, and its \"Placed events\" column is this one. City is often the ISP's point of presence rather than where the person sits; country is reliable.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE client.geo.country_iso_code IS NOT NULL | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | STATS events = COUNT(*), actors = COUNT_DISTINCT(actor), ips = COUNT_DISTINCT(client.ip) BY city = client.geo.city_name, country = client.geo.country_name | EVAL location = CONCAT(COALESCE(city, \"city unknown\"), \", \", country) | SORT events DESC | LIMIT 5"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE client.geo.country_iso_code IS NOT NULL | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | STATS events = COUNT(*), actors = COUNT_DISTINCT(actor), ips = COUNT_DISTINCT(client.ip) BY city = client.geo.city_name, country = client.geo.country_name | EVAL location = CONCAT(COALESCE(city, \"city unknown\"), \", \", country) | SORT events DESC | LIMIT 6"
         },
         "styling": {
           "density": {
@@ -344,7 +344,7 @@
         "metrics": [
           {
             "label": "Placed events",
-            "width": 90,
+            "width": 105,
             "column": "events"
           },
           {
@@ -365,7 +365,7 @@
       "id": "tbl-09",
       "grid": {
         "x": 24,
-        "y": 15,
+        "y": 16,
         "w": 24,
         "h": 9
       },
@@ -375,7 +375,7 @@
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS n = COUNT(*), placed = COUNT(client.geo.country_iso_code) BY client.ip | EVAL kind = CASE(client.ip IS NULL, \"No client IP\", placed > 0, \"Resolved\", CASE(CIDR_MATCH(client.ip, \"100.64.0.0/10\"), \"Platform-internal (100.64/10)\", CIDR_MATCH(client.ip, \"10.0.0.0/8\", \"172.16.0.0/12\", \"192.168.0.0/16\"), \"Private (RFC1918)\", CIDR_MATCH(client.ip, \"127.0.0.0/8\", \"169.254.0.0/16\"), \"Loopback / link-local\", \"Public, no geoip match\")), late_ip = CASE(placed > 0 AND n > placed, 1, 0) | STATS events = SUM(n), resolved = SUM(placed), addresses = COUNT(client.ip), late_ips = SUM(late_ip) BY kind | INLINE STATS total = SUM(events) | EVAL part = [1, 2] | MV_EXPAND part | WHERE part == 1 OR kind == \"Resolved\" | EVAL geo_status = CASE(part == 2, \"Predates geo enrichment\", kind), events = CASE(part == 2, events - resolved, kind == \"Resolved\", resolved, events), addresses = CASE(part == 2, late_ips, addresses) | WHERE events > 0 OR geo_status == \"Resolved\" | EVAL ord = CASE(geo_status == \"Resolved\", 0, part == 2, 2, kind == \"No client IP\", 3, 1), shown_in = CASE(geo_status == \"Resolved\", \"Map, locations, travel\", part == 2, \"IP tables, at the IP's place\", kind == \"No client IP\", \"Nowhere: no address\", kind == \"Platform-internal (100.64/10)\", \"IP tables, as internal\", \"IP tables, not placeable\"), pct = ROUND(ROUND(events * 1.0 / total, 3) * 100, 1) | EVAL share = CASE(events > 0 AND pct < 0.1, \"<0.1%\", CONCAT(TO_STRING(pct), \"%\")) | SORT ord, events DESC | KEEP geo_status, events, addresses, share, shown_in"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS n = COUNT(*), placed = COUNT(client.geo.country_iso_code) BY client.ip | EVAL kind = CASE(client.ip IS NULL, \"No client IP\", placed > 0, \"Resolved\", CASE(CIDR_MATCH(client.ip, \"100.64.0.0/10\"), \"Platform-internal (100.64/10)\", CIDR_MATCH(client.ip, \"10.0.0.0/8\", \"172.16.0.0/12\", \"192.168.0.0/16\"), \"Private (RFC1918)\", CIDR_MATCH(client.ip, \"127.0.0.0/8\", \"169.254.0.0/16\"), \"Loopback / link-local\", \"Public, no geoip match\")) | STATS events = SUM(n), resolved = SUM(placed), addresses = COUNT(client.ip) BY kind | INLINE STATS total = SUM(events) | EVAL part = [1, 2] | MV_EXPAND part | WHERE part == 1 OR kind == \"Resolved\" | EVAL geo_status = CASE(part == 2, \"Predates geo enrichment\", kind), events = CASE(part == 2, events - resolved, kind == \"Resolved\", resolved, events), addresses = CASE(part == 2, null, addresses) | WHERE events > 0 OR geo_status == \"Resolved\" | EVAL ord = CASE(geo_status == \"Resolved\", 0, part == 2, 2, kind == \"No client IP\", 3, 1), shown_in = CASE(geo_status == \"Resolved\", \"Map, locations, travel\", part == 2, \"IP tables, under its Resolved IP\", kind == \"No client IP\", \"Nowhere: no address\", kind == \"Platform-internal (100.64/10)\", \"IP tables, as internal\", \"IP tables, not placeable\"), pct = ROUND(ROUND(events * 1.0 / total, 3) * 100, 1) | EVAL share = CASE(events > 0 AND pct < 0.1, \"<0.1%\", CONCAT(TO_STRING(pct), \"%\")) | SORT ord, events DESC | KEEP geo_status, events, addresses, share, shown_in"
         },
         "styling": {
           "density": {
@@ -423,7 +423,7 @@
       "id": "tbl-10",
       "grid": {
         "x": 0,
-        "y": 24,
+        "y": 25,
         "w": 24,
         "h": 8
       },
@@ -481,13 +481,13 @@
       "id": "tbl-11",
       "grid": {
         "x": 24,
-        "y": 24,
+        "y": 25,
         "w": 24,
         "h": 8
       },
       "config": {
         "title": "Busiest client IPs · top 6 at most",
-        "description": "Forwarded client IPs, busiest first, with where each resolved; the Client IPs tile counts every one. Events is every event from the address; Placed is the ones geoip resolved, which is what Top client locations and the map count — the difference is the address's events from before geo enrichment. An IP shared by many identities is usually a NAT gateway or CI runner. \"Platform-internal (100.64/10)\" is not a client: it is a hop inside Elastic Cloud — on this project, Kibana's server calling Elasticsearch for a user whose real address is on the Kibana event. \"Not placeable\" means no event from the address ever resolved: a private address no geoip database can place, not an enrichment error. \"Geo resolution of audited events\" accounts for every one. Click an IP to scope the suite to it.",
+        "description": "Forwarded client IPs, busiest first, with where each resolved; the Client IPs tile counts every one. All events is every event from the address; Placed events is the ones geoip resolved — the same column, by the same name, as in Top client locations, and what the map counts. The difference is the address's events from before geo enrichment. An IP shared by many identities is usually a NAT gateway or CI runner. \"Platform-internal (100.64/10)\" is not a client: it is a hop inside Elastic Cloud — on this project, Kibana's server calling Elasticsearch for a user whose real address is on the Kibana event. \"Not placeable\" means no event from the address ever resolved: a private address no geoip database can place, not an enrichment error. \"Geo resolution of audited events\" accounts for every one. Click an IP to scope the suite to it.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
@@ -518,14 +518,14 @@
         ],
         "metrics": [
           {
-            "label": "Events",
+            "label": "All events",
             "width": 90,
             "column": "events"
           },
           {
-            "label": "Placed",
+            "label": "Placed events",
             "column": "placed",
-            "width": 90
+            "width": 105
           },
           {
             "label": "Identities",
@@ -540,13 +540,13 @@
       "id": "xy-12",
       "grid": {
         "x": 0,
-        "y": 32,
+        "y": 33,
         "w": 24,
-        "h": 13
+        "h": 12
       },
       "config": {
-        "title": "Geo-resolved traffic over time, by country",
-        "description": "Resolved client traffic over time, split by country: events per bar, where each bar is a round interval sized so the range holds at most 75 of them (1 minute at 1h, 30 minutes at 24h, 3 hours at 7d). Countries under 5% of resolved events in range are folded into \"Other\". Unresolved events are not drawn — see Geo coverage.",
+        "title": "Audited traffic over time, by client country",
+        "description": "Every audited event over time, split by the country its client address resolved to: events per bar, where each bar is a round interval sized so the range holds at most 75 of them (1 minute at 1h, 30 minutes at 24h, 3 hours at 7d). \"Not placed\" (grey) is every event that resolved to no country — platform-internal hops, private addresses, events from before geo enrichment and events with no client IP — so the coloured part of each bar is the Geo coverage tile over time, and \"Geo resolution of audited events\" breaks the grey down. A stretch with no bar at all had no audit events. Countries under 5% of placed events in range are folded into \"Other\".",
         "type": "xy",
         "axis": {
           "x": {
@@ -571,7 +571,7 @@
             "type": "bar_stacked",
             "data_source": {
               "type": "esql",
-              "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE client.geo.country_iso_code IS NOT NULL | STATS events = COUNT(*) BY ts = BUCKET(@timestamp, 75, ?_tstart, ?_tend), c = client.geo.country_name | INLINE STATS ctot = SUM(events) BY c | INLINE STATS total = SUM(events) | EVAL country = CASE(ctot >= total * 0.05, c, \"Other\") | STATS events = SUM(events) BY ts, country | SORT country"
+              "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS events = COUNT(*) BY ts = BUCKET(@timestamp, 75, ?_tstart, ?_tend), c = client.geo.country_name | INLINE STATS ctot = SUM(events) BY c | INLINE STATS placed = SUM(events) WHERE c IS NOT NULL | EVAL country = CASE(c IS NULL, \"Not placed\", ctot >= placed * 0.05, c, \"Other\") | STATS events = SUM(events) BY ts, country | EVAL ord = CASE(country == \"Not placed\", 2, country == \"Other\", 1, 0) | SORT ord, country, ts | KEEP ts, country, events"
             },
             "x": {
               "column": "ts",
@@ -596,6 +596,15 @@
                       "type": "color_code",
                       "value": "#B9A888"
                     }
+                  },
+                  {
+                    "values": [
+                      "Not placed"
+                    ],
+                    "color": {
+                      "type": "color_code",
+                      "value": "#98A2B3"
+                    }
                   }
                 ]
               }
@@ -613,17 +622,17 @@
       "id": "tbl-13",
       "grid": {
         "x": 24,
-        "y": 32,
+        "y": 33,
         "w": 24,
-        "h": 13
+        "h": 12
       },
       "config": {
-        "title": "Proxy vs real client IP, by proxy · top 12 at most",
-        "description": "Side-by-side proof that source.ip is the internal proxy and client.ip (from network.forwarded_ip) is the real origin: one row per proxy that forwarded a client address — the proxies the Proxy IPs tile's line counts — with the client addresses it carried (in address order, up to three, then \"+N more\"). Analysing the wrong field would put every user in the datacentre. An address marked \"(internal)\" is a platform-internal 100.64/10 hop, not a client: on this project, Kibana's server calling Elasticsearch. Click a proxy to scope the suite to it; Busiest client IPs filters by client.",
+        "title": "Proxy vs real client IP, by proxy · top 10 at most",
+        "description": "Side-by-side proof that source.ip is a proxy and client.ip (from network.forwarded_ip) is the real origin: one row per proxy that forwarded any client address — the proxies the Proxy IPs tile's line counts — with the real client addresses it carried (in address order, up to three, then \"+N more\"). The proxies are Elastic Cloud's own, which is why they sit in the platform-internal 100.64/10 range. Analysing the wrong field would put every user in the datacentre. Client events came from those real clients; Internal-hop events carried a platform-internal 100.64/10 address instead — not a client but, on this project, Kibana's server calling Elasticsearch on a user's behalf — and are kept out of the client list. The two add up to the proxy's whole traffic, and over every proxy to the All events of Busiest client IPs. Click a proxy to scope the suite to it; Busiest client IPs filters by client.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE client.ip IS NOT NULL | STATS n = COUNT(*) BY attributes.source.ip, client.ip | EVAL c = CASE(CIDR_MATCH(client.ip, \"100.64.0.0/10\"), CONCAT(TO_STRING(client.ip), \" (internal)\"), TO_STRING(client.ip)) | STATS events = SUM(n), clients = COUNT(*), cs = VALUES(c) BY attributes.source.ip | EVAL forwarded_for = CONCAT(MV_CONCAT(MV_SLICE(MV_SORT(cs), 0, 2), \", \"), CASE(clients > 3, CONCAT(\" +\", TO_STRING(clients - 3), \" more\"), \"\")) | KEEP attributes.source.ip, forwarded_for, clients, events | SORT events DESC | LIMIT 12"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE client.ip IS NOT NULL | STATS n = COUNT(*) BY attributes.source.ip, client.ip | EVAL hop = CIDR_MATCH(client.ip, \"100.64.0.0/10\"), real = CASE(hop, null, TO_STRING(client.ip)) | STATS events = SUM(n), hop_events = SUM(n) WHERE hop, clients = COUNT(real), cs = VALUES(real) BY attributes.source.ip | EVAL hop_events = COALESCE(hop_events, 0), client_events = events - hop_events, forwarded_for = CASE(clients == 0, \"none, only the internal hop\", CONCAT(MV_CONCAT(MV_SLICE(MV_SORT(cs), 0, 2), \", \"), CASE(clients > 3, CONCAT(\" +\", TO_STRING(clients - 3), \" more\"), \"\"))) | SORT events DESC | KEEP attributes.source.ip, forwarded_for, client_events, hop_events | LIMIT 10"
         },
         "styling": {
           "density": {
@@ -638,26 +647,26 @@
         },
         "rows": [
           {
-            "label": "Proxy IP",
+            "label": "Platform proxy",
             "column": "attributes.source.ip",
             "click_filter": true,
             "width": 125
           },
           {
-            "label": "Client IPs it forwarded",
+            "label": "Real client IPs it forwarded",
             "column": "forwarded_for"
           }
         ],
         "metrics": [
           {
-            "label": "Client IPs",
-            "column": "clients",
-            "width": 90
+            "label": "Client events",
+            "column": "client_events",
+            "width": 100
           },
           {
-            "label": "Events",
-            "width": 90,
-            "column": "events"
+            "label": "Internal-hop events",
+            "column": "hop_events",
+            "width": 130
           }
         ]
       }
