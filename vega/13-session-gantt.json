@@ -482,7 +482,7 @@
             "signal": "noSess ? scale('x', noSess) + (scale('x', noSess) > width / 2 ? -6 : 6) : 0"
           },
           "y": {
-            "signal": "height - 6"
+            "signal": "min(height - 6, length(data('sessions')) * lane + 20)"
           },
           "baseline": {
             "value": "bottom"

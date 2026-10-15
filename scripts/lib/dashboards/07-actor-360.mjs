@@ -3,7 +3,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ROOT } from '../env.mjs';
 import {
-  IDX, TIME, INDEX_FAMILY, IP_GEO, indexFamily, dash, kpi, table, vega, search, md, section, row, stack, resetIds, sized, filterable, grouped
+  IDX, TIME, INDEX_FAMILY, IP_GEO, indexFamily, dash, kpi, table, vega, search, md, section, row, stack, resetIds, sized, filterable, grouped,
+  SYS_INDEX, fitRows
 } from '../panels.mjs';
 import { riskScored, CHANGED, CHANGED_KEYS, CHANGED_DERIVE } from './shared.mjs';
 
@@ -43,6 +44,18 @@ const isPattern = (col) => `LOCATE(${col}, "*") > 0 OR STARTS_WITH(${col}, "<")`
 const NOT_PATTERN = `WHERE NOT (${isPattern('attributes.elasticsearch.audit.indices')})`;
 
 /**
+ * The two index tables in ② count the SAME reads, so every dot-prefixed family in "What they read" is a
+ * row of "System and hidden index reads" with the same Events and Indices (round-4 review: a family at
+ * 283 events on the left was missing on the right, because the left folded its `.ds-.alerts-…` backing
+ * index in and the right dropped every `.ds-*`; the right also listed request patterns the left drops).
+ * Both now leave out request patterns and shard/node fan-out (`search[phase/query]`, `bulk[s][p]` …, the
+ * action half of SYS_INDEX, which repeats a top-level request already audited with the same index), and
+ * the right selects with SYS_INDEX — the definition 03 uses — so a dot-named stream's backing index
+ * counts with its family. NOT_FANOUT is a boolean on a raw keyword, cheap per event (QUERY SHAPE rule 1).
+ */
+const NOT_FANOUT = '(attributes.elasticsearch.audit.action IS NULL OR NOT attributes.elasticsearch.audit.action LIKE "*[*")';
+
+/**
  * What each RISK weight means, in words, for the receipts table's "Why it scored" column. The Risk tile
  * names its worst weight as the NUMBER, which this column sits beside: a tile subtitle holds ~22
  * characters at a 1440px viewport, and "worst: security config change" after a count was cut there. A
@@ -77,6 +90,16 @@ const ORIENTATION = `👤 **Pick a person in the control bar** and every panel b
  * "exactly 30 short" was one delete); during a burst — this repo's own deploy and render traffic creates
  * saved objects by the hundred — it reached 530 of 47,205. No query can pin another panel's "now", so the
  * table puts the difference in the first sentence of its description and both name it.
+ *
+ * Re-measured in round 5, because a review read "30 off with every row visible" as a defect in the
+ * receipt: the browser sent the tile 02:19:07.524 and the table 02:19:06.868 as `?_tend` (0.66s apart;
+ * 0.77s on the next load); the page showed Sum 521,410; both queries re-run on EITHER captured window
+ * 30 seconds later returned 521,480 for both, tile and table alike. So the receipt is complete and the
+ * two queries are equal; what moves is the stream itself — a closed two-minute window kept growing for
+ * 5–7 seconds after it closed (3,005 → 3,025 Elasticsearch events) — and a 30 is one delete landing in
+ * that gap. The fix is to end both windows short of the live edge, which is the suite-wide "trim to
+ * now-1m" question left to the human; until then the table's TITLE says the Sum can trail the tile, so
+ * the explanation is on the surface rather than only in a tooltip.
  */
 const RACE_NOTE = "Kibana reads 'now' separately for each panel when it fetches (about a second apart here), and the newest seconds of the stream are still arriving, so on a relative range the Risk tile and the scoring table can differ by the events that landed or aged out in between: usually none or one, more during a burst of activity. Over the same window the two queries agree to the event; an absolute range that ends a minute or more in the past makes them identical.";
 
@@ -86,10 +109,10 @@ export function build() {
     row(3, [[48, (x, y, w, h) => md(x, y, w, h, ORIENTATION)]]),
 
     row(7, [
-      [16, (x, y, w, h) => table(x, y, w, h, 'Who this is — events with an email',
+      [16, (x, y, w, h) => table(x, y, w, h, 'Who this is — people, by email',
         `FROM ${IDX} | ${TIME} | WHERE attributes.user.email IS NOT NULL | STATS events = COUNT(*), keys = COUNT_DISTINCT(attributes.api_key.name, 100) BY attributes.user.email | SORT events DESC | LIMIT 10`,
         [filterable('attributes.user.email')], ['events', { column: 'keys', label: 'Own API keys' }],
-        'Counts only events that carry a user email, so with nobody selected these rows add up to far less than the Events tile: API-key and service traffic with no email behind it has nothing to group on here, and is counted in the tile. The people in range, busiest first — click an email to pin that identity across the suite. `Own API keys` counts the named API keys acting under that email: Elasticsearch stamps a key\'s CREATOR on every event the key emits, so a person with keys may be carrying a machine\'s traffic. It reads 0 beside API-key credentials in the flow below when that key traffic carries no email — an organization-level Cloud API key (`_4KEO… · Cloud API key`) belongs to no person, so it is not theirs.')],
+        'People only: counts only events that carry a user email, so an organization-level Cloud API key (`_4KEO… · Cloud API key`), which belongs to no person, is never a row here even when it is the busiest credential in the flow below; and with nobody selected these rows add up to far less than the Events tile: API-key and service traffic with no email behind it has nothing to group on here, and is counted in the tile. The people in range, busiest first — click an email to pin that identity across the suite. `Own API keys` counts the named API keys acting under that email: Elasticsearch stamps a key\'s CREATOR on every event the key emits, so a person with keys may be carrying a machine\'s traffic. It reads 0 beside API-key credentials in the flow below when that key traffic carries no email.')],
       [8, (x, y, w, h) => kpi(x, y, w, h,
         `FROM ${IDX} | ${TIME} | STATS Events = COUNT(*), actions = COUNT_DISTINCT(attributes.event.action, 100), last_ts = MAX(@timestamp) | EVAL mins = DATE_DIFF("minutes", last_ts, NOW()) | EVAL detail = CASE(Events == 0, "no activity", CONCAT(${grouped('actions')}, CASE(actions == 1, " action", " actions"), " · ", CASE(mins < 1, "just now", mins < 60, CONCAT(${grouped('mins')}, "m ago"), CONCAT(TO_STRING(mins / 60), "h ago")))) | KEEP Events, detail`,
         'Events', 'Every audited event for the selection, how many different things that was, and how recently they were last seen. Unfiltered by the noise gate, so it includes connection housekeeping.',
@@ -121,7 +144,7 @@ export function build() {
     // set is closed — one row per scoring action and weight, bounded by Kibana's and Elasticsearch's
     // action vocabulary (43 over 24h at today's volume; volume adds events, not rows) — so the LIMIT is
     // a guard, not a cut, and the title says "every" instead of a count (the description says "scroll").
-    row(11, [[48, (x, y, w, h) => drillTo('cloud-audit-04-security-anomalies', table(x, y, w, h, 'Every scoring action and its weight, largest first',
+    row(11, [[48, (x, y, w, h) => drillTo('cloud-audit-04-security-anomalies', table(x, y, w, h, 'Every scoring action and its weight, largest first · its Sum is the Risk tile, give or take events landing as the page loads',
       `FROM ${IDX} | ${TIME} | ${riskScored({ aggs: 'last_ts = MAX(@timestamp)' })} | STATS events = SUM(n), severity = SUM(risk * n), last_seen = MAX(last_ts) BY attributes.event.action, weight = risk | EVAL why = ${weightWords('weight')} | SORT severity DESC | LIMIT 500`,
       // weight is a number, so it reads as one (right-aligned, beside the other numbers); it stays in the
       // BY clause, so the grouping is unchanged. The action stays the raw event.action because it is the
@@ -147,13 +170,18 @@ export function build() {
     // here, so it leads; the rest follow newest first, and the list scrolls to the guard of 100 rows.
     // `gone` is a one-condition EVAL on the grouped rows, so it costs nothing per event.
     row(12, [[48, (x, y, w, h) => table(x, y, w, h, '⚠️ What they changed — deletes first, then newest · up to 100',
-      `FROM ${IDX} | ${TIME} | ${CHANGED} | STATS n = COUNT(*), last_ts = MAX(@timestamp) BY ${CHANGED_KEYS}, obj_name, execution, space = attributes.kibana.space.id, result | ${CHANGED_DERIVE} | STATS events = SUM(n), last_seen = MAX(last_ts) BY verb, type = obj_type, name = obj_name, execution, space, result | EVAL name = CASE(execution == "—", name, CONCAT(name, " · run ", execution)), type = REPLACE(type, "-", " "), gone = verb == "delete" | DROP execution | SORT gone DESC, last_seen DESC | DROP gone | LIMIT 100`,
+      `FROM ${IDX} | ${TIME} | ${CHANGED} | STATS n = COUNT(*), last_ts = MAX(@timestamp) BY ${CHANGED_KEYS}, obj_name, execution, space = attributes.kibana.space.id, result | ${CHANGED_DERIVE} | STATS events = SUM(n), last_seen = MAX(last_ts) BY verb, type = obj_type, name = obj_name, execution, space, result | EVAL name = CASE(execution == "—", name, CONCAT(name, " · run ", execution)), type = REPLACE(type, "-", " "), gone = verb == "delete" | EVAL verb = CASE(result == "failure", CONCAT(verb, " (failed)"), verb) | DROP execution, result | SORT gone DESC, last_seen DESC | DROP gone | LIMIT 100`,
       // Space is a free-form id, so it gets room for one ('syn-marketing' filled 110px edge to edge).
       // No Execution column: it read "—" on every row that is not a workflow run, which is nearly all of
       // them, so the run id rides on the name instead ("Daily sweep · run 3f2a9c1e").
-      ['verb', sized('type', 200), sized('name', 520), sized('space', 170), sized('result', 120)],
+      // No Result column: Kibana logs most saved-object changes as an attempt (outcome "unknown"), so it
+      // read "attempted" on every visible row in every round-4 render and told the reader nothing. The one
+      // outcome that matters, a denied change, rides on the operation instead: "delete (failed)". `result`
+      // stays in the STATS so a failed change never merges with a successful one; the CASE runs on the
+      // grouped rows.
+      ['verb', sized('type', 200), sized('name', 560), sized('space', 170)],
       ['events', 'last_seen'],
-      'What they changed, ran or deleted in Kibana — deletes first, then everything else newest first; scroll for the rest, up to the first 100 rows. `type` and `name` are the real saved-object fields where Kibana records them, and are otherwise recovered from the event message: workflows, agent-builder agents and tools, ML jobs and secrets carry no saved_object fields at all. A workflow run, test or cancel carries its run on the name ("· run" and the first 8 characters of the run id) — a cancel and the run it cancelled share that id; the full id is in the session records at the bottom of the page. `result` reads "attempted" where Kibana logged the attempt rather than the outcome; "failure" is a change that was denied.', { scroll: true })]]),
+      'What they changed, ran or deleted in Kibana — deletes first, then everything else newest first; scroll for the rest, up to the first 100 rows. `type` and `name` are the real saved-object fields where Kibana records them, and are otherwise recovered from the event message: workflows, agent-builder agents and tools, ML jobs and secrets carry no saved_object fields at all. A workflow run, test or cancel carries its run on the name ("· run" and the first 8 characters of the run id) — a cancel and the run it cancelled share that id; the full id is in the session records at the bottom of the page. An operation marked "(failed)" was denied; every other row is a change Kibana recorded as attempted or completed (most saved-object changes are logged as the attempt, before the outcome is known).', { scroll: true })]]),
     row(11, [
       // A table, not a bar chart. The audit stream itself (every dashboard on this page reads it) is
       // routinely 10x the next family, so on a linear axis the rest of the ranking were 1-2px slivers
@@ -161,19 +189,22 @@ export function build() {
       // `values: true` labelled only the two bars that needed it least. The ranking is the point, and
       // a sorted count column carries it at any spread and at any volume.
       [20, (x, y, w, h) => table(x, y, w, h, 'What they read, by index family',
-        `FROM ${IDX} | ${TIME} | WHERE attributes.elasticsearch.audit.indices IS NOT NULL | MV_EXPAND attributes.elasticsearch.audit.indices | STATS n = COUNT(*) BY attributes.elasticsearch.audit.indices | ${NOT_PATTERN} | EVAL family = ${INDEX_FAMILY} | STATS events = SUM(n), indices = COUNT(*) BY family | SORT events DESC | LIMIT 12`,
+        `FROM ${IDX} | ${TIME} | WHERE attributes.elasticsearch.audit.indices IS NOT NULL AND ${NOT_FANOUT} | MV_EXPAND attributes.elasticsearch.audit.indices | STATS n = COUNT(*) BY attributes.elasticsearch.audit.indices | ${NOT_PATTERN} | EVAL family = ${INDEX_FAMILY} | STATS events = SUM(n), indices = COUNT(*) BY family | SORT events DESC, family | LIMIT ${fitRows(11)}`,
         [{ column: 'family', label: 'Index family' }], ['indices', 'events'],
-        'Where their reads concentrate, busiest first. Dated daily indices and data-stream backing indices are folded into the family they belong to, so a date-suffixed series is one row and `Indices` says how many of its members were read. A request naming several indices counts once per index; request patterns such as * and date-math names are left out. The audit stream itself usually tops the list, because every dashboard on this page reads it. This is the busiest few; the Index families tile above counts every family.')],
+        'Where their reads concentrate, busiest first. Dated daily indices and data-stream backing indices are folded into the family they belong to, so a date-suffixed series is one row and `Indices` says how many of its members were read. A request naming several indices counts once per index; request patterns such as * and date-math names are left out, and so are shard- and node-level repeats of a request (search[phase/query], bulk[s][p]), which Elasticsearch audits with the same index as the request itself. Every dot-prefixed family here is also a row of "System and hidden index reads", with the same counts. The audit stream itself usually tops the list, because every dashboard on this page reads it. This is the busiest few; the Index families tile above counts every family.')],
       [28, (x, y, w, h) => drillTo('cloud-audit-03-data-access', table(x, y, w, h, '⚠️ System and hidden index reads',
-        `FROM ${IDX} | ${TIME} | WHERE attributes.elasticsearch.audit.indices IS NOT NULL | MV_EXPAND attributes.elasticsearch.audit.indices | WHERE attributes.elasticsearch.audit.indices LIKE ".*" AND NOT attributes.elasticsearch.audit.indices LIKE ".ds-*" | STATS n = COUNT(*), seen = MAX(@timestamp) BY attributes.elasticsearch.audit.indices, action = attributes.elasticsearch.audit.action | EVAL family = ${INDEX_FAMILY} | STATS events = SUM(n), indices = COUNT_DISTINCT(attributes.elasticsearch.audit.indices), actions = COUNT_DISTINCT(action), last_seen = MAX(seen), \`attributes.elasticsearch.audit.indices\` = MIN(attributes.elasticsearch.audit.indices) BY family | SORT events DESC | LIMIT 20`,
+        `FROM ${IDX} | ${TIME} | WHERE attributes.elasticsearch.audit.indices IS NOT NULL | MV_EXPAND attributes.elasticsearch.audit.indices | ${SYS_INDEX} | STATS n = COUNT(*), seen = MAX(@timestamp) BY attributes.elasticsearch.audit.indices, action = attributes.elasticsearch.audit.action | ${NOT_PATTERN} | EVAL family = ${INDEX_FAMILY} | STATS events = SUM(n), indices = COUNT_DISTINCT(attributes.elasticsearch.audit.indices), actions = COUNT_DISTINCT(action), last_seen = MAX(seen), \`attributes.elasticsearch.audit.indices\` = MIN(attributes.elasticsearch.audit.indices) WHERE NOT attributes.elasticsearch.audit.indices LIKE ".ds-*" BY family | SORT events DESC, family | LIMIT ${fitRows(11)}`,
         // Two count columns at 70px (from 90) so the longest family member, .alerts-observability.threshold.alerts-default, fits at 1440px.
         // The index column flexes and takes the rest; 20/28 split with the family table for the same reason.
         [filterable('attributes.elasticsearch.audit.indices', { label: 'Index (one per family)' })], [sized('indices', 70), sized('actions', 70), 'events', 'last_seen'],
-        'Dot-prefixed indices — system and hidden — that their requests named, one row per index family: daily indices of the same stream are folded together and `Indices` says how many were touched. The index shown is one real member of the family — the row counts the whole family — and it is what a click pins; then "Open in Elasticsearch Data Access" to see who else reads it. Data-stream backing indices (.ds-*) are left out; they are ordinary data.', { empty: 'good' }))],
+        'The dot-prefixed families of "What they read, by index family" beside it — system and hidden indices — counted the same way, so a family reads the same Events and Indices in both: daily indices and a dot-named stream\'s backing indices (.ds-.alerts-…) are folded into their family, and request patterns and shard-level repeats are left out. A backing index of an ordinary stream (.ds-logs-…) is ordinary data and is not here, as on Elasticsearch Data Access. The index shown is one real member of the family, never a backing index when the family has another — the row counts the whole family — and it is what a click pins; then "Open in Elasticsearch Data Access" to see who else reads it.', { empty: 'good' }))],
     ]),
     row(12, [
-      [24, vegaPanel('10-actor-geography', 'Where they connected from')],
-      [24, (x, y, w, h) => drillTo('cloud-audit-05-geo-network', table(x, y, w, h, 'Busiest addresses they used',
+      // 18/30 rather than 24/24: a world map is about twice as wide as it is tall, so at w=24 the map was
+      // height-bound and a third of the panel sat empty beside it (round-4 review); the address table
+      // takes the width instead.
+      [18, vegaPanel('10-actor-geography', 'Where they connected from')],
+      [30, (x, y, w, h) => drillTo('cloud-audit-05-geo-network', table(x, y, w, h, 'Busiest addresses they used',
         `FROM ${IDX} | ${TIME} | WHERE client.ip IS NOT NULL | STATS events = COUNT(*), last_seen = MAX(@timestamp), ${IP_GEO} BY client.ip | EVAL city = CASE(placed == 0, "unplaced", COALESCE(city, "—")), country = CASE(placed == 0, "unplaced", country) | SORT events DESC | LIMIT 25`,
         [filterable('client.ip'), 'city', 'country'], ['events', 'last_seen'],
         'Their real client addresses, busiest first, one row per address — the same addresses the Client IPs tile counts — including the ones the map cannot show. "unplaced" means geoip placed none of that address\'s events, which is always the case for a private or CGNAT address; "—" is a country with no city. An address keeps its place even when some of its events predate geo enrichment. Click an address to pin it, then "Open in Geo & Network".'))],
