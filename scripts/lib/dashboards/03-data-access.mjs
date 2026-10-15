@@ -112,12 +112,16 @@ const BUSIEST_KEY = 'CONCAT(TO_STRING(n + 1000000000000), actor)';
  * Folds every row past the (rows − 1) newest into one "N other identities" row, so a newest-first table
  * still adds up to its tile when more identities are in range than it can show. Runs on the per-identity
  * rows (a few dozen), never per event: INLINE STATS hands each row the newest-first list of Last seen
- * values, the (rows − 1)th of which is the cut. Expects `actor`, `events`, `last_seen`, `latest`,
+ * values, the (rows − 1)th of which is the cut. The sort key is Last seen with the identity appended,
+ * unique per row: VALUES de-duplicates, so on bare Last seen two identities refused in the same
+ * millisecond would share one value, move the cut down a row and push the eleventh row past LIMIT,
+ * where the Denials column no longer adds up to the tile. Expects `actor`, `events`, `last_seen`, `latest`,
  * `actions`, `indices`; adds `folded` (how many identities a row stands for).
  */
 const foldRest = (rows) =>
-  `INLINE STATS ids = COUNT(*), recent = VALUES(last_seen) | EVAL cut = MV_MIN(MV_SLICE(MV_SORT(recent, "DESC"), 0, ${rows - 2})) | ` +
-  `EVAL actor = CASE(ids > ${rows} AND last_seen < cut, "~rest", actor) | ` +
+  `EVAL sk = CONCAT(TO_STRING(last_seen), "|", actor) | ` +
+  `INLINE STATS ids = COUNT(*), recent = VALUES(sk) | EVAL cut = MV_MIN(MV_SLICE(MV_SORT(recent, "DESC"), 0, ${rows - 2})) | ` +
+  `EVAL actor = CASE(ids > ${rows} AND sk < cut, "~rest", actor) | ` +
   'STATS events = SUM(events), last_seen = MAX(last_seen), latest = MAX(latest), actions = MAX(actions), indices = MAX(indices), folded = COUNT(*) BY actor | ' +
   'EVAL actor = CASE(actor == "~rest", CONCAT(TO_STRING(folded), " other identities"), actor)';
 
@@ -181,7 +185,7 @@ export function build() {
     // One row per identity: per (identity, action, index) one persona's run filled the panel and the
     // visible rows summed to 749 of the tile's 853 (round 3). The newest denial's action and index are
     // carried as one sortable string (ISO time first), so they belong to the same event as Last seen.
-    // DENIED_REST folds every identity past the ninth newest into one last row, so the rows add up to
+    // foldRest() folds every identity past the ninth newest into one last row, so the rows add up to
     // the Access denied tile at any count (round 4: ten of fifteen identities summed to 842 of 853).
     table(0, 49, 48, 12, 'Denied requests by identity',
       `FROM ${IDX} | ${TIME} | WHERE attributes.event.action == "access_denied" OR attributes.event.action == "anonymous_access_denied" | STATS events = COUNT(*), seen = MAX(@timestamp) BY attributes.user.email, attributes.api_key.name, attributes.user.name, attributes.elasticsearch.audit.action, attributes.elasticsearch.audit.indices | ${ACTOR_RESOLVE}, k = CONCAT(TO_STRING(seen), "|", COALESCE(attributes.elasticsearch.audit.action, "—"), "|", COALESCE(attributes.elasticsearch.audit.indices, "—")) | STATS events = SUM(events), last_seen = MAX(seen), latest = MAX(k), actions = COUNT_DISTINCT(attributes.elasticsearch.audit.action), indices = COUNT_DISTINCT(attributes.elasticsearch.audit.indices) BY actor | ${foldRest(fitRows(12))} | EVAL latest_action = CASE(folded > 1, " ", MV_SLICE(SPLIT(latest, "|"), 1)), latest_index = CASE(folded > 1, " ", MV_SLICE(SPLIT(latest, "|"), 2)), actions = CASE(folded > 1 OR actions == 0, null, actions), indices = CASE(folded > 1 OR indices == 0, null, indices) | KEEP actor, latest_action, latest_index, actions, indices, events, last_seen | SORT last_seen DESC | LIMIT ${fitRows(12)}`,
