@@ -41,10 +41,13 @@ const logFloor = (p) => { p.config.axis.y.domain = { type: 'custom', min: 0.5, m
 
 /**
  * The bottom row: 13 grid rows hold exactly 12 table rows (fitRows), with no blank strip and stray rule
- * under the last one. Widths 14 / 20 / 14 for 1440px: at 12 columns Most frequent actions clipped
- * "anonymous_access_denied" against Source, and Busiest identities' Identity had ~600px to spare at 24.
+ * under the last one. Widths 13 / 22 / 13 for 1440px, with the count columns at 72px (a 7-digit count
+ * still fits): at 12 columns Most frequent actions clipped "anonymous_access_denied" against Source, and
+ * at 20 Busiest identities hard-cut "<unauthenticated-cloud-access-token>" (~241px at 1440) to
+ * "<unauthenticated-cloud-a" (round-6 skeptic render). At 13 Event categories still prints every decade.
  */
 const TABLE_H = 13;
+const COUNT_W = 72;
 
 export function build() {
   resetIds();
@@ -96,9 +99,9 @@ export function build() {
       `FROM ${IDX} | ${TIME} | STATS n = COUNT(*) BY ts = ${BUCKET}, ${BAND_KEYS} | ${BAND} | EVAL side = CASE(band == "signal", "Signal", "Noise") | STATS events = SUM(n) BY ts, side | EVAL ord = CASE(side == "Signal", 0, 1) | SORT ord, ts`,
       'events', 'Every audited event per time bucket, on either side of the noise gate: Signal is what the gate keeps (the Signal events tile, and what every gated panel reads), Noise is what it removes (health pings, query internals, API key lookups, page loads, bulk sign-in events and this suite’s own traffic). The two bars of a bucket add up to its Audit volume bar. LOG SCALE: each gridline is ten times the one below, so a bucket with one signal event among tens of thousands still shows; read the gap between the two bar tops as a ratio (one gridline apart is 10×). Platform Volume splits the noise into its bands. As on Audit volume, the last bucket covers only part of its interval, and a missing bar means no events on that side of the gate in that bucket.',
       { kind: 'bar', xcol: 'ts', breakdown: 'side', colors: { Signal: '#54B399', Noise: '#98A2B3' }, yScale: 'log' }))),
-    table(0, 33, 14, TABLE_H, 'Most frequent actions',
+    table(0, 33, 13, TABLE_H, 'Most frequent actions',
       `FROM ${IDX} | ${TIME} | ${NOISE} | STATS events = COUNT(*) BY action = attributes.event.action, source = resource.attributes.service.name | ${SOURCE_LABEL} | SORT events DESC | LIMIT ${fitRows(TABLE_H)}`,
-      ['action', sized('source', 105, { min: 100 })], ['events'], 'Top audited actions after the noise gate, with the service that emitted them.'),
+      ['action', sized('source', 100, { min: 100 })], [sized('events', COUNT_W, { min: COUNT_W })], 'Top audited actions after the noise gate, with the service that emitted them.'),
     /**
      * Groups on the computed `actor` like the Distinct actors tile, so the two count identities the
      * same way. A Kind column was tried and dropped: telling a cloud API key from an unattributed
@@ -114,9 +117,9 @@ export function build() {
      * it still reads where it happens and costs no width where it does not. `actor` is computed, so
      * relabelling it loses no click-filter (it never had one).
      */
-    table(14, 33, 20, TABLE_H, 'Busiest identities',
+    table(13, 33, 22, TABLE_H, 'Busiest identities',
       `FROM ${IDX} | ${TIME} | ${NOISE} | ${ACTOR} | STATS events = COUNT(*), actions = COUNT_DISTINCT(attributes.event.action), last_seen = MAX(@timestamp) BY actor, attributes.api_key.name | EVAL actor = CASE(attributes.api_key.name IS NOT NULL AND attributes.api_key.name != actor, CONCAT(actor, " · via key ", attributes.api_key.name), actor) | SORT events DESC | LIMIT ${fitRows(TABLE_H)}`,
-      ['actor'], ['events', 'actions', 'last_seen'],
+      ['actor'], [sized('events', COUNT_W, { min: COUNT_W }), sized('actions', COUNT_W, { min: COUNT_W }), 'last_seen'],
       'The identities generating the most signal traffic, and how varied their behaviour is; the rows sum to Signal events when they all fit, and fewer rows than the bound means every identity with signal is listed (Distinct actors counts the same set). Identity resolves to an email, then an API key name, then a user id. An identity’s treemap tile and its row here can differ by an event or two at the range’s edges, because each panel reads the clock for itself. Elasticsearch stamps an API key’s CREATOR’s email on every event the key emits, so any number of machines authenticating with one key resolve to one person: such a row reads “email · via key name” and is a credential’s traffic, not the person at a keyboard. To follow one person across the suite, pick them in the Person (email) control above.'),
     // A bar rather than the donut it replaces: the donut's thin slices carried no label and it had no
     // legend, so the small categories could not be named. Grouping on the multi-valued field counts
@@ -124,7 +127,7 @@ export function build() {
     // Every label carries its count, as 01's log bars do, and the axis is compact: in full digits Lens
     // dropped the 100,000 tick at 24h, and a count printed inside only the bars wide enough for it left
     // the reader two places to look. grouped() runs on the eight rows left after the LIMIT.
-    compactValues(bar(34, 33, 14, TABLE_H, `Event categories${ALL}`,
+    compactValues(bar(35, 33, 13, TABLE_H, `Event categories${ALL}`,
       `FROM ${IDX} | ${TIME} | STATS events = COUNT(*) BY category = attributes.event.category | EVAL category = COALESCE(category, "none recorded") | SORT events DESC | LIMIT 8 | EVAL category = CONCAT(category, " · ", ${grouped('events')}) | KEEP category, events`,
       'category', 'events', 'ECS event categories over the whole stream, noise included, each with its count, on a log scale so the small categories are as readable as the bulk: read each bar by its count, not its length (each axis step is ten times the one before). event.category is a multi-value array, so an event in two categories counts once in each and the bars sum to more than the event total; “none recorded” is events that carry no category. A category with a single event has no visible bar.',
       { yScale: 'log' })),

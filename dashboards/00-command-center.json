@@ -483,7 +483,7 @@
       "grid": {
         "x": 0,
         "y": 36,
-        "w": 14,
+        "w": 13,
         "h": 13
       },
       "config": {
@@ -513,13 +513,13 @@
           {
             "label": "Source",
             "column": "source",
-            "width": 105
+            "width": 100
           }
         ],
         "metrics": [
           {
             "label": "Events",
-            "width": 90,
+            "width": 72,
             "column": "events"
           }
         ]
@@ -529,9 +529,9 @@
       "type": "vis",
       "id": "tbl-12",
       "grid": {
-        "x": 14,
+        "x": 13,
         "y": 36,
-        "w": 20,
+        "w": 22,
         "h": 13
       },
       "config": {
@@ -562,12 +562,12 @@
         "metrics": [
           {
             "label": "Events",
-            "width": 90,
+            "width": 72,
             "column": "events"
           },
           {
             "label": "Actions",
-            "width": 90,
+            "width": 72,
             "column": "actions"
           },
           {
@@ -582,9 +582,9 @@
       "type": "vis",
       "id": "xy-13",
       "grid": {
-        "x": 34,
+        "x": 35,
         "y": 36,
-        "w": 14,
+        "w": 13,
         "h": 13
       },
       "config": {
