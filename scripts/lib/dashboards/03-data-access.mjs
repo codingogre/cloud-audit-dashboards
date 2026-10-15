@@ -60,6 +60,20 @@ const SYS_AREA = sysArea('attributes.elasticsearch.audit.indices');
 const foldSys = (col) => `EVAL ${col} = CASE(LEFT(${col}, 1) == ".", ${sysArea(col)}, ${col})`;
 
 /**
+ * Per-run indices: a name stamped with a date AND a time of day, then whatever the run appended
+ * (`syn-tmp-20261014-152111-2820-mv8b4yna60`, `syn-tmp-20261014-133125-8909-2454`), is one family,
+ * shown as its stem with a `*` (`syn-tmp*`). INDEX_FAMILY folds only a trailing calendar date, so each
+ * such index was its own family: a 24h window held 60 of them at ~10 events each, they took 6 of the
+ * matrix's 25 rows under raw generated names and counted 60 times in the Index families tile (round-5
+ * review). The test is the shape of the name (8 digits, then 6), never a particular prefix. One
+ * REPLACE on grouped rows, after INDEX_FAMILY; vega/04 embeds the same text.
+ */
+const foldRun = (col) => String.raw`EVAL ${col} = REPLACE(${col}, """[-.]\d{8}[-.T]?\d{6}(?:[-.].*)?$""", "*")`;
+
+/** INDEX_FAMILY's value, then both folds: what "index family" means on every panel of this page. */
+const fold = (col) => `${foldRun(col)} | ${foldSys(col)}`;
+
+/**
  * The copies of a request that name the same index again: shard and node copies (`…[s]`, `[n]`,
  * `search[phase/…]`), and the ES|QL engine's `search_shards` and `data` steps. Left out PER EVENT
  * (a boolean, cheap — QUERY SHAPE rule 1) by every panel that counts events per index, so a request
@@ -117,13 +131,15 @@ const BUSIEST_KEY = 'CONCAT(TO_STRING(n + 1000000000000), actor)';
  * unique per row: VALUES de-duplicates, so on bare Last seen two identities refused in the same
  * millisecond would share one value, move the cut down a row and push the eleventh row past LIMIT,
  * where the Denials column no longer adds up to the tile. Expects `actor`, `events`, `last_seen`, `latest`,
- * `actions`, `indices`; adds `folded` (how many identities a row stands for).
+ * and `actions`, `indices` as VALUES lists, so the folded row carries the union of its identities' actions and
+ * indices (a true distinct count, not the largest of theirs) and its newest denial, the one its Last seen
+ * names; adds `folded` (how many identities a row stands for).
  */
 const foldRest = (rows) =>
   `EVAL sk = CONCAT(TO_STRING(last_seen), "|", actor) | ` +
   `INLINE STATS ids = COUNT(*), recent = VALUES(sk) | EVAL cut = MV_MIN(MV_SLICE(MV_SORT(recent, "DESC"), 0, ${rows - 2})) | ` +
   `EVAL actor = CASE(ids > ${rows} AND sk < cut, "~rest", actor) | ` +
-  'STATS events = SUM(events), last_seen = MAX(last_seen), latest = MAX(latest), actions = MAX(actions), indices = MAX(indices), folded = COUNT(*) BY actor | ' +
+  'STATS events = SUM(events), last_seen = MAX(last_seen), latest = MAX(latest), actions = VALUES(actions), indices = VALUES(indices), folded = COUNT(*) BY actor | ' +
   'EVAL actor = CASE(actor == "~rest", CONCAT(TO_STRING(folded), " other identities"), actor)';
 
 /** The tooltip for a Vega panel is its spec's own description — one source, so they cannot disagree. */
@@ -141,8 +157,8 @@ export function build() {
   resetIds();
   const P = [
     kpi(0, 0, 8, 5, `FROM ${IDX} | ${TIME} | ${ESS} | STATS \`Elasticsearch events\` = COUNT(*)`, 'Elasticsearch events', 'All Elasticsearch audit events in range.'),
-    kpi(8, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE attributes.elasticsearch.audit.indices IS NOT NULL AND ${COPIES} | STATS BY attributes.elasticsearch.audit.indices | ${CONCRETE} | EVAL family = ${INDEX_FAMILY} | ${foldSys('family')} | STATS \`Index families\` = COUNT_DISTINCT(family)`,
-      'Index families', 'Distinct index families named in audited requests — the rows Top index families and the matrix would list with no cut. A data stream and its backing indices are one family, as is a run of dated daily indices, and system and hidden indices count once per area (.alerts*, .slo*, .kibana*…), the groups the ⚠️ table names. Wildcard and date-math expressions (*, -*, <…{now/d}>) are patterns, not indices, and are left out.'),
+    kpi(8, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE attributes.elasticsearch.audit.indices IS NOT NULL AND ${COPIES} | STATS BY attributes.elasticsearch.audit.indices | ${CONCRETE} | EVAL family = ${INDEX_FAMILY} | ${fold('family')} | STATS \`Index families\` = COUNT_DISTINCT(family)`,
+      'Index families', 'Distinct index families named in audited requests — the rows Top index families and the matrix would list with no cut. A data stream and its backing indices are one family, as is a run of dated daily indices or of per-run indices stamped with a date and time (syn-tmp-20261014-152111-… is syn-tmp*), and system and hidden indices count once per area (.alerts*, .slo*, .kibana*…), the groups the ⚠️ table names. Wildcard and date-math expressions (*, -*, <…{now/d}>) are patterns, not indices, and are left out.'),
     kpi(16, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE attributes.elasticsearch.audit.action IS NOT NULL | STATS BY attributes.elasticsearch.audit.action | WHERE NOT ${FANOUT} | STATS \`Distinct actions\` = COUNT(*)`, 'Distinct actions',
       'Distinct Elasticsearch transport actions (cluster:*, indices:*), with shard-level copies and ES|QL sub-steps folded away — the same actions Top transport actions lists, all traffic.'),
     // The top-level request only. `LIKE "*esql*"` also counted the engine's own fan-out (compute,
@@ -166,7 +182,12 @@ export function build() {
     // off the top-left. Round 3 showed one 1h identity as two cells adrift in a 900×800 panel.
     // With three identities or fewer (a quiet hour is often only these dashboards' own key) the
     // columns widen to 200px and the labels stand level, centred over their cells — round 4 read a
-    // lone identity as a rotated id. The line above the matrix counts what is drawn ("1 identity ×
+    // lone identity as a rotated id; round 5 found the CELL still capped at 64px inside the 200px
+    // column, so a level label spilled past it on both sides — the cell now fills its column there,
+    // and the axis title stands 8px clear of the labels. Rows are in Top index families' order (each
+    // family's events from every identity, then name — the table sorts the same way), so the two
+    // read side by side; ranked only among the ten identities shown, they had no visible order.
+    // The line above the matrix counts what is drawn ("1 identity ×
     // 2 index families shown"), so a sparse window reads as sparse, not as a panel that promised
     // ten identities and failed to draw them.
     vega(24, 5, 24, 30, '04-actor-index-matrix', 'Who reads which index family · up to 10 identities', specDescription('04-actor-index-matrix')),
@@ -176,9 +197,9 @@ export function build() {
     // The Indices count gave its width to it: with both, a 48-character family name was cut at a
     // 1440px viewport, and wrapping it took three lines a row (rendered).
     table(0, 20, 24, 15, 'Top index families by events',
-      `FROM ${IDX} | ${TIME} | WHERE attributes.elasticsearch.audit.indices IS NOT NULL AND ${COPIES} | STATS n = COUNT(*) BY attributes.user.email, attributes.api_key.name, attributes.user.name, attributes.elasticsearch.audit.indices | ${CONCRETE} | ${ACTOR_RESOLVE}, index = ${INDEX_FAMILY} | ${foldSys('index')} | STATS n = SUM(n) BY index, actor | EVAL k = ${BUSIEST_KEY} | STATS events = SUM(n), actors = COUNT(*), top = MAX(k) BY index | SORT events DESC | LIMIT ${fitRows(15)} | EVAL busiest = SUBSTRING(top, 14) | EVAL busiest = ${cloudKeyLabel('busiest')} | KEEP index, busiest, actors, events`,
+      `FROM ${IDX} | ${TIME} | WHERE attributes.elasticsearch.audit.indices IS NOT NULL AND ${COPIES} | STATS n = COUNT(*) BY attributes.user.email, attributes.api_key.name, attributes.user.name, attributes.elasticsearch.audit.indices | ${CONCRETE} | ${ACTOR_RESOLVE}, index = ${INDEX_FAMILY} | ${fold('index')} | STATS n = SUM(n) BY index, actor | EVAL k = ${BUSIEST_KEY} | STATS events = SUM(n), actors = COUNT(*), top = MAX(k) BY index | SORT events DESC, index | LIMIT ${fitRows(15)} | EVAL busiest = SUBSTRING(top, 14) | EVAL busiest = ${cloudKeyLabel('busiest')} | KEEP index, busiest, actors, events`,
       [{ column: 'index', label: 'Index family' }, sized('busiest', 170, { label: 'Busiest identity' })], [sized('actors', 80), sized('events', 84)],
-      'The busiest index families, all traffic; the Index families tile counts every one, so the rest are beyond this list. Identities is how many distinct identities touched the family, and Busiest identity is the one with the most events against it — over a quiet hour the list is often only the audit stream itself, read by the identity these dashboards run as. A data stream and its backing indices are one row, as is a run of dated daily indices, and system and hidden indices are one row per area (.alerts*, .slo*, .kibana*…), as in the ⚠️ table: one request naming ten alert indices is one .alerts* row, not ten. Events counts a request once per index it names, so a system area\'s events per identity are the ⚠️ table\'s; shard-level copies and the ES|QL engine\'s per-shard steps name the same indices again and are left out (an ES|QL query counts once, by the step that resolves its indices). Wildcard and date-math expressions are left out. The same count the matrix beside it colours. A Busiest identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key, which the audit stream records only by its opaque id.'),
+      'The busiest index families, all traffic; the Index families tile counts every one, so the rest are beyond this list. Identities is how many distinct identities touched the family, and Busiest identity is the one with the most events against it — over a quiet hour the list is often only the audit stream itself, read by the identity these dashboards run as. A data stream and its backing indices are one row, as is a run of dated daily indices or of per-run indices stamped with a date and time (syn-tmp-20261014-152111-… is syn-tmp*), and system and hidden indices are one row per area (.alerts*, .slo*, .kibana*…), as in the ⚠️ table: one request naming ten alert indices is one .alerts* row, not ten. Events counts a request once per index it names, so a system area\'s events per identity are the ⚠️ table\'s; shard-level copies and the ES|QL engine\'s per-shard steps name the same indices again and are left out (an ES|QL query counts once, by the step that resolves its indices). Wildcard and date-math expressions are left out. The same count the matrix beside it colours, and the matrix lists its families in this order. A Busiest identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key, which the audit stream records only by its opaque id.'),
     table(0, 35, 48, 14, 'Top transport actions',
       `FROM ${IDX} | ${TIME} | WHERE attributes.elasticsearch.audit.action IS NOT NULL | STATS n = COUNT(*), seen = MAX(@timestamp) BY attributes.user.email, attributes.api_key.name, attributes.user.name, attributes.elasticsearch.audit.action, request = attributes.elasticsearch.audit.request.name | WHERE NOT ${FANOUT} AND NOT ${ASYNC_INNER} | ${ACTOR_RESOLVE}, request = CASE(request IS NULL OR request == "", "—", request) | STATS events = SUM(n), actors = COUNT_DISTINCT(actor), last_seen = MAX(seen) BY attributes.elasticsearch.audit.action, request | SORT events DESC | LIMIT ${fitRows(14)}`,
       [sized('attributes.elasticsearch.audit.action', 420), 'request'], ['actors', 'events', 'last_seen'],
@@ -189,9 +210,9 @@ export function build() {
     // foldRest() folds every identity past the ninth newest into one last row, so the rows add up to
     // the Access denied tile at any count (round 4: ten of fifteen identities summed to 842 of 853).
     table(0, 49, 48, 12, 'Denied requests by identity',
-      `FROM ${IDX} | ${TIME} | WHERE attributes.event.action == "access_denied" OR attributes.event.action == "anonymous_access_denied" | STATS events = COUNT(*), seen = MAX(@timestamp) BY attributes.user.email, attributes.api_key.name, attributes.user.name, attributes.elasticsearch.audit.action, attributes.elasticsearch.audit.indices | ${ACTOR_RESOLVE}, k = CONCAT(TO_STRING(seen), "|", COALESCE(attributes.elasticsearch.audit.action, "—"), "|", COALESCE(attributes.elasticsearch.audit.indices, "—")) | STATS events = SUM(events), last_seen = MAX(seen), latest = MAX(k), actions = COUNT_DISTINCT(attributes.elasticsearch.audit.action), indices = COUNT_DISTINCT(attributes.elasticsearch.audit.indices) BY actor | ${foldRest(fitRows(12))} | EVAL latest_action = CASE(folded > 1, " ", MV_SLICE(SPLIT(latest, "|"), 1)), latest_index = CASE(folded > 1, " ", MV_SLICE(SPLIT(latest, "|"), 2)), actions = CASE(folded > 1 OR actions == 0, null, actions), indices = CASE(folded > 1 OR indices == 0, null, indices) | KEEP actor, latest_action, latest_index, actions, indices, events, last_seen | SORT last_seen DESC | LIMIT ${fitRows(12)}`,
+      `FROM ${IDX} | ${TIME} | WHERE attributes.event.action == "access_denied" OR attributes.event.action == "anonymous_access_denied" | STATS events = COUNT(*), seen = MAX(@timestamp) BY attributes.user.email, attributes.api_key.name, attributes.user.name, attributes.elasticsearch.audit.action, attributes.elasticsearch.audit.indices | ${ACTOR_RESOLVE}, k = CONCAT(TO_STRING(seen), "|", COALESCE(attributes.elasticsearch.audit.action, "—"), "|", COALESCE(attributes.elasticsearch.audit.indices, "—")) | STATS events = SUM(events), last_seen = MAX(seen), latest = MAX(k), actions = VALUES(attributes.elasticsearch.audit.action), indices = VALUES(attributes.elasticsearch.audit.indices) BY actor | ${foldRest(fitRows(12))} | EVAL latest_action = MV_SLICE(SPLIT(latest, "|"), 1), latest_index = MV_SLICE(SPLIT(latest, "|"), 2), actions = COALESCE(MV_COUNT(actions), 0), indices = COALESCE(MV_COUNT(indices), 0) | KEEP actor, latest_action, latest_index, actions, indices, events, last_seen | SORT last_seen DESC | LIMIT ${fitRows(12)}`,
       ['actor', { column: 'latest_action', label: 'Latest denied action' }, { column: 'latest_index', label: 'On index' }], [{ column: 'actions', label: 'Actions' }, 'indices', { column: 'events', label: 'Denials' }, 'last_seen'],
-      'Who was refused, newest first: one row per identity, with the action and index of its most recent denial, how many distinct actions and indices it was refused on, and its denials in range. When more identities were refused than the panel has rows, the last row (“N other identities”) holds the rest — their denials and newest Last seen — so the Denials column always adds up to the Access denied tile. On index "—" is a cluster-level request, with no index to count; <anonymous> with action "—" is an HTTP call that carried no credentials, refused before it named an action.',
+      'Who was refused, newest first: one row per identity, with the action and index of its most recent denial, how many distinct actions and indices it was refused on, and its denials in range. When more identities were refused than the panel has rows, the last row (“N other identities”) holds the rest — their denials, the distinct actions and indices any of them was refused on, and the newest of their denials — so the Denials column always adds up to the Access denied tile. On index "—" with Indices 0 is a cluster-level request, with no index to count; <anonymous> with action "—" and Actions 0 is an HTTP call that carried no credentials, refused before it named an action.',
       { empty: 'good' }),
     // One row per identity, for the same reason: per (identity, index group, action) a single
     // resolve/index request naming a dozen system areas filled the panel and pushed every other
