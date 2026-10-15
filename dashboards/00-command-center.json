@@ -146,7 +146,7 @@
       },
       "config": {
         "title": "",
-        "description": "Events left after the noise gate removes health checks (cluster:monitor/main, elastic.maintenance), query internals (search, ES|QL, field_caps and async-search sub-requests, Kibana /internal/ page requests and page-load lookups, and this suite reading and automatically installing its own saved objects), connection_granted and bulk authentication_success.",
+        "description": "Events left after the noise gate removes health checks (cluster:monitor/main, elastic.maintenance), query internals (search, ES|QL, field_caps and async-search sub-requests, API key metadata lookups, Kibana /internal/ page requests and page-load lookups, and this suite reading and automatically installing its own saved objects), connection_granted and bulk authentication_success.",
         "type": "metric",
         "data_source": {
           "type": "esql",
@@ -295,18 +295,14 @@
       },
       "config": {
         "title": "Audit volume by source · all traffic",
-        "description": "Total audited events over time, split by originating service. Elasticsearch audits every transport action, so its volume usually far exceeds Kibana’s — and the Kibana slice is where most of the forensic value is. The range ends a minute ago, part-way through the last bucket, so the last bar covers only part of its interval and is usually short; a bucket with no bar had no audit events delivered for it (the stream arrives in batches).",
+        "description": "Total audited events over time, split by originating service. Elasticsearch audits every transport action, so its volume usually far exceeds Kibana’s — and the Kibana slice is where most of the forensic value is. The plot spans exactly the time range. The range ends a minute ago, part-way through the last bucket, so the last bar covers only part of its interval and is usually short; a bucket with no bar had no audit events delivered for it (the stream arrives in batches). Signal vs noise draws the same buckets over the same span.",
         "type": "xy",
         "axis": {
           "x": {
             "title": {
               "visible": false
             },
-            "scale": "temporal",
-            "domain": {
-              "type": "fit",
-              "rounding": false
-            }
+            "scale": "temporal"
           },
           "y": {
             "title": {
@@ -391,12 +387,12 @@
       "config": {
         "ref_id": "cloud-audit-vega-01-actor-risk-treemap",
         "title": "Actor footprint · area by √events, color by risk total",
-        "description": "The top 12 identities by signal volume (fewer on a narrow screen, down to 8), in one block per kind; the rest of each kind is folded into one grey “+N more” tile (just “+N” where the tile is narrow; hover it for the count). Blocks: named API key (labelled by the KEY, with its owner — the principal that created it — on a further line when there is room, and in the tooltip); person (a real email address); cloud API key (an organization-level Cloud key, which the audit stream records only by id and with no owner); platform (Elastic’s own service accounts and automation, such as elastic/kibana, the Kibana service account); user, no email (a user name that signed in but carries no email; absent on most projects); and unattributed (no authenticated principal: <anonymous>, an unauthenticated token, or a user name that only ever failed to sign in, such as elastic or admin in a password-guessing run). An identity is one tile even when its events disagree about its kind; it goes in the most specific block any of them supports. Area grows with the SQUARE ROOT of event volume, so one dominant identity cannot crush the rest into slivers, plus the same small share for every tile, so the quietest identity keeps a readable name but is never drawn larger than a busier one. Each tile prints its event count where it fits (a bare number on a narrow tile): read the number, not the area, for how much more one identity did. A name too long for its tile ends in “…” — the tooltip has the full name and exact counts. Color is Risk total, the quantity the Security Anomalies risk leaderboard ranks by: each scoring event’s risk weight (from 10 for a workflow run to 50 for a security configuration change; 0 for anything that does not score) summed over the identity’s events, on a square-root scale. It is in weight × events, not events, so it runs well above the counts on the tiles. A key that carries its creator’s email is its own tile here, but counts under the person in Busiest identities."
+        "description": "The top 12 identities by signal volume (fewer on a narrow screen, down to 8), in one block per kind; the rest of each kind is folded into one grey “+N more” tile (just “+N” where the tile is narrow; hover it for the count). Blocks: named API key (labelled by the KEY, with its owner — the principal that created it — on a further line when there is room, and in the tooltip); person (a real email address); cloud API key (an organization-level Cloud key, which the audit stream records only by id and with no owner); platform (Elastic’s own service accounts and automation, such as elastic/kibana, the Kibana service account); user, no email (a user name that signed in but carries no email; absent on most projects); and unattributed (no authenticated principal: <anonymous>, an unauthenticated token, or a user name that only ever failed to sign in, such as elastic or admin in a password-guessing run). An identity is one tile even when its events disagree about its kind; it goes in the most specific block any of them supports. Area grows with the SQUARE ROOT of event volume, so one dominant identity cannot crush the rest into slivers, plus the same small share for every tile, so the quietest identity keeps a readable name but is never drawn larger than a busier one. Each tile prints its event count where it fits (a bare number on a narrow tile): read the number, not the area, for how much more one identity did. A name too long for its tile ends in “…” — the tooltip has the full name and exact counts. Color is Risk total, the quantity the Security Anomalies risk leaderboard ranks by: each scoring event’s risk weight (from 10 for a workflow run to 50 for a security configuration change; 0 for anything that does not score, and 0 for Kibana’s own routine API-key clean-up, which Privileged ops leaves out too) summed over the identity’s events, on a square-root scale. It is in weight × events, not events, so it runs well above the counts on the tiles. A key that carries its creator’s email is its own tile here, but counts under the person in Busiest identities. The range ends a minute ago, so nothing in it is still arriving; each panel reads the clock for itself, up to a second apart, so two panels side by side can differ by the events of that second at either end of the range: usually none, a few on a busy all-traffic count or during a burst. That is how a tile here and the same identity’s row in Busiest identities can differ by one or two events."
       }
     },
     {
       "type": "vis",
-      "id": "vega-10",
+      "id": "xy-10",
       "grid": {
         "x": 24,
         "y": 21,
@@ -404,9 +400,81 @@
         "h": 15
       },
       "config": {
-        "ref_id": "cloud-audit-vega-07-noise-ratio-stream",
-        "title": "Signal vs noise over time",
-        "description": "Audit events per time bucket, stacked by band — Signal on the baseline, then bulk authentication, query internals and infrastructure health — so the top edge is the whole firehose. Shows why the noise gate exists. Hover a segment for its band and the bucket total. Infrastructure health (cluster:monitor/main pings) is usually too thin to see beside the rest, or absent from a short window, although its legend entry stays: Platform Volume counts it. As on Audit volume, the last bucket covers only part of its interval and an empty bucket had no audit events delivered."
+        "title": "Signal vs noise over time · all traffic",
+        "description": "Every audited event per time bucket, on either side of the noise gate: Signal is what the gate keeps (the Signal events tile, and what every gated panel reads), Noise is what it removes (health pings, query internals, API key lookups, page loads, bulk sign-in events and this suite’s own traffic). The two bars of a bucket add up to its Audit volume bar. LOG SCALE: each gridline is ten times the one below, so a bucket with one signal event among tens of thousands still shows; read the gap between the two bar tops as a ratio (one gridline apart is 10×). Platform Volume splits the noise into its bands. As on Audit volume, the last bucket covers only part of its interval, and a missing bar means no events on that side of the gate in that bucket.",
+        "type": "xy",
+        "axis": {
+          "x": {
+            "title": {
+              "visible": false
+            },
+            "scale": "temporal"
+          },
+          "y": {
+            "title": {
+              "visible": false
+            },
+            "scale": "log",
+            "domain": {
+              "type": "custom",
+              "min": 0.5,
+              "max": 10000000,
+              "rounding": false
+            }
+          }
+        },
+        "layers": [
+          {
+            "type": "bar",
+            "data_source": {
+              "type": "esql",
+              "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS n = COUNT(*) BY ts = BUCKET(@timestamp, 75, ?_tstart, ?_tend), attributes.elasticsearch.audit.action, attributes.event.action, kib_internal = (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\",\"space_get\",\"space_find\") OR (attributes.event.action == \"http_request\" AND attributes.url.original IS NOT NULL AND attributes.url.original RLIKE \"https?://[^/]+(/s/[^/]+)?/((internal|translations|app)/.*|api/content_management/rpc/(get|search|mget|bulkGet).*|bootstrap(-anonymous)?[.]js.*|api/(core|licensing|banners|ui_counters)/.*|api/spaces/space([?].*)?)|https?://[^/]+(/s/[^/]+)?/api/(saved_objects/(_import|_export)|[^?]*/cloud-audit-).*\") OR (attributes.kibana.saved_object.type IS NOT NULL AND ((attributes.event.action == \"saved_object_get\" AND attributes.kibana.saved_object.type IN (\"config\",\"config-global\")) OR (attributes.event.action == \"saved_object_find\" AND attributes.kibana.saved_object.type == \"index-pattern\"))) OR (attributes.kibana.saved_object.id IS NOT NULL AND attributes.kibana.saved_object.id LIKE \"cloud-audit-*\" AND (attributes.event.action IN (\"saved_object_get\",\"saved_object_resolve\",\"saved_object_find\") OR attributes.kibana.session.id IS NULL))) | EVAL band = CASE(attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\"), \"infra-noise\", attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/msearch*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/scroll*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/esql*\" OR attributes.elasticsearch.audit.action LIKE \"indices:admin/esql/*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/field_caps*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/async_search/*\" OR attributes.elasticsearch.audit.action LIKE \"indices:admin/resolve/*\" OR attributes.elasticsearch.audit.action == \"indices:admin/shards/search_shards\" OR attributes.elasticsearch.audit.action LIKE \"cluster:monitor/xpack/esql/*\" OR attributes.elasticsearch.audit.action IN (\"cluster:monitor/project/tags\", \"cluster:monitor/xpack/inference/get\", \"cluster:admin/xpack/security/api_key/get\", \"cluster:admin/xpack/security/api_key/query\"), \"query-noise\", kib_internal, \"query-noise\", attributes.event.action == \"connection_granted\", \"query-noise\", attributes.event.action == \"authentication_success\", \"authn-volume\", \"signal\") | EVAL side = CASE(band == \"signal\", \"Signal\", \"Noise\") | STATS events = SUM(n) BY ts, side | EVAL ord = CASE(side == \"Signal\", 0, 1) | SORT ord, ts"
+            },
+            "x": {
+              "column": "ts",
+              "label": "@timestamp"
+            },
+            "y": [
+              {
+                "column": "events"
+              }
+            ],
+            "breakdown_by": {
+              "column": "side",
+              "color": {
+                "mode": "categorical",
+                "palette": "eui_amsterdam",
+                "mapping": [
+                  {
+                    "values": [
+                      "Signal"
+                    ],
+                    "color": {
+                      "type": "color_code",
+                      "value": "#54B399"
+                    }
+                  },
+                  {
+                    "values": [
+                      "Noise"
+                    ],
+                    "color": {
+                      "type": "color_code",
+                      "value": "#98A2B3"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        ],
+        "legend": {
+          "visibility": "visible",
+          "position": "bottom",
+          "layout": {
+            "type": "list"
+          }
+        }
       }
     },
     {
@@ -415,16 +483,16 @@
       "grid": {
         "x": 0,
         "y": 36,
-        "w": 12,
-        "h": 12
+        "w": 14,
+        "h": 13
       },
       "config": {
-        "title": "Most frequent actions · top 10 at most",
+        "title": "Most frequent actions · top 12 at most",
         "description": "Top audited actions after the noise gate, with the service that emitted them.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE (attributes.elasticsearch.audit.action IS NULL OR NOT (attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\") OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/msearch*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/scroll*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/esql*\" OR attributes.elasticsearch.audit.action LIKE \"indices:admin/esql/*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/field_caps*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/async_search/*\" OR attributes.elasticsearch.audit.action LIKE \"indices:admin/resolve/*\" OR attributes.elasticsearch.audit.action == \"indices:admin/shards/search_shards\" OR attributes.elasticsearch.audit.action LIKE \"cluster:monitor/xpack/esql/*\" OR attributes.elasticsearch.audit.action IN (\"cluster:monitor/project/tags\", \"cluster:monitor/xpack/inference/get\", \"cluster:admin/xpack/security/api_key/get\", \"cluster:admin/xpack/security/api_key/query\"))) AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"authentication_success\",\"connection_granted\") OR attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\",\"space_get\",\"space_find\") OR (attributes.event.action == \"http_request\" AND attributes.url.original IS NOT NULL AND attributes.url.original RLIKE \"https?://[^/]+(/s/[^/]+)?/((internal|translations|app)/.*|api/content_management/rpc/(get|search|mget|bulkGet).*|bootstrap(-anonymous)?[.]js.*|api/(core|licensing|banners|ui_counters)/.*|api/spaces/space([?].*)?)|https?://[^/]+(/s/[^/]+)?/api/(saved_objects/(_import|_export)|[^?]*/cloud-audit-).*\") OR (attributes.kibana.saved_object.type IS NOT NULL AND ((attributes.event.action == \"saved_object_get\" AND attributes.kibana.saved_object.type IN (\"config\",\"config-global\")) OR (attributes.event.action == \"saved_object_find\" AND attributes.kibana.saved_object.type == \"index-pattern\"))) OR (attributes.kibana.saved_object.id IS NOT NULL AND attributes.kibana.saved_object.id LIKE \"cloud-audit-*\" AND (attributes.event.action IN (\"saved_object_get\",\"saved_object_resolve\",\"saved_object_find\") OR attributes.kibana.session.id IS NULL)))) | STATS events = COUNT(*) BY action = attributes.event.action, source = resource.attributes.service.name | EVAL source = CASE(source == \"serverless-elasticsearch\", \"Elasticsearch\", source == \"serverless-kibana\", \"Kibana\", source) | SORT source | SORT events DESC | LIMIT 10"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE (attributes.elasticsearch.audit.action IS NULL OR NOT (attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\") OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/msearch*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/scroll*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/esql*\" OR attributes.elasticsearch.audit.action LIKE \"indices:admin/esql/*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/field_caps*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/async_search/*\" OR attributes.elasticsearch.audit.action LIKE \"indices:admin/resolve/*\" OR attributes.elasticsearch.audit.action == \"indices:admin/shards/search_shards\" OR attributes.elasticsearch.audit.action LIKE \"cluster:monitor/xpack/esql/*\" OR attributes.elasticsearch.audit.action IN (\"cluster:monitor/project/tags\", \"cluster:monitor/xpack/inference/get\", \"cluster:admin/xpack/security/api_key/get\", \"cluster:admin/xpack/security/api_key/query\"))) AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"authentication_success\",\"connection_granted\") OR attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\",\"space_get\",\"space_find\") OR (attributes.event.action == \"http_request\" AND attributes.url.original IS NOT NULL AND attributes.url.original RLIKE \"https?://[^/]+(/s/[^/]+)?/((internal|translations|app)/.*|api/content_management/rpc/(get|search|mget|bulkGet).*|bootstrap(-anonymous)?[.]js.*|api/(core|licensing|banners|ui_counters)/.*|api/spaces/space([?].*)?)|https?://[^/]+(/s/[^/]+)?/api/(saved_objects/(_import|_export)|[^?]*/cloud-audit-).*\") OR (attributes.kibana.saved_object.type IS NOT NULL AND ((attributes.event.action == \"saved_object_get\" AND attributes.kibana.saved_object.type IN (\"config\",\"config-global\")) OR (attributes.event.action == \"saved_object_find\" AND attributes.kibana.saved_object.type == \"index-pattern\"))) OR (attributes.kibana.saved_object.id IS NOT NULL AND attributes.kibana.saved_object.id LIKE \"cloud-audit-*\" AND (attributes.event.action IN (\"saved_object_get\",\"saved_object_resolve\",\"saved_object_find\") OR attributes.kibana.session.id IS NULL)))) | STATS events = COUNT(*) BY action = attributes.event.action, source = resource.attributes.service.name | EVAL source = CASE(source == \"serverless-elasticsearch\", \"Elasticsearch\", source == \"serverless-kibana\", \"Kibana\", source) | SORT source | SORT events DESC | LIMIT 12"
         },
         "styling": {
           "density": {
@@ -445,13 +513,13 @@
           {
             "label": "Source",
             "column": "source",
-            "width": 100
+            "width": 105
           }
         ],
         "metrics": [
           {
             "label": "Events",
-            "width": 72,
+            "width": 90,
             "column": "events"
           }
         ]
@@ -461,18 +529,18 @@
       "type": "vis",
       "id": "tbl-12",
       "grid": {
-        "x": 12,
+        "x": 14,
         "y": 36,
-        "w": 24,
-        "h": 12
+        "w": 20,
+        "h": 13
       },
       "config": {
-        "title": "Busiest identities · top 10 at most",
-        "description": "The identities generating the most signal traffic, and how varied their behaviour is; the rows sum to Signal events when they all fit, and fewer rows than the bound means every identity with signal is listed (Distinct actors counts the same set). Identity resolves to an email, then an API key name, then a user id. Elasticsearch stamps an API key’s CREATOR’s email on every event the key emits, so any number of machines authenticating with one key resolve to one person: such a row reads “email · via key name” and is a credential’s traffic, not the person at a keyboard. To follow one person across the suite, pick them in the Person (email) control above. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email.",
+        "title": "Busiest identities · top 12 at most",
+        "description": "The identities generating the most signal traffic, and how varied their behaviour is; the rows sum to Signal events when they all fit, and fewer rows than the bound means every identity with signal is listed (Distinct actors counts the same set). Identity resolves to an email, then an API key name, then a user id. An identity’s treemap tile and its row here can differ by an event or two at the range’s edges, because each panel reads the clock for itself. Elasticsearch stamps an API key’s CREATOR’s email on every event the key emits, so any number of machines authenticating with one key resolve to one person: such a row reads “email · via key name” and is a credential’s traffic, not the person at a keyboard. To follow one person across the suite, pick them in the Person (email) control above. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE (attributes.elasticsearch.audit.action IS NULL OR NOT (attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\") OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/msearch*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/scroll*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/esql*\" OR attributes.elasticsearch.audit.action LIKE \"indices:admin/esql/*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/field_caps*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/async_search/*\" OR attributes.elasticsearch.audit.action LIKE \"indices:admin/resolve/*\" OR attributes.elasticsearch.audit.action == \"indices:admin/shards/search_shards\" OR attributes.elasticsearch.audit.action LIKE \"cluster:monitor/xpack/esql/*\" OR attributes.elasticsearch.audit.action IN (\"cluster:monitor/project/tags\", \"cluster:monitor/xpack/inference/get\", \"cluster:admin/xpack/security/api_key/get\", \"cluster:admin/xpack/security/api_key/query\"))) AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"authentication_success\",\"connection_granted\") OR attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\",\"space_get\",\"space_find\") OR (attributes.event.action == \"http_request\" AND attributes.url.original IS NOT NULL AND attributes.url.original RLIKE \"https?://[^/]+(/s/[^/]+)?/((internal|translations|app)/.*|api/content_management/rpc/(get|search|mget|bulkGet).*|bootstrap(-anonymous)?[.]js.*|api/(core|licensing|banners|ui_counters)/.*|api/spaces/space([?].*)?)|https?://[^/]+(/s/[^/]+)?/api/(saved_objects/(_import|_export)|[^?]*/cloud-audit-).*\") OR (attributes.kibana.saved_object.type IS NOT NULL AND ((attributes.event.action == \"saved_object_get\" AND attributes.kibana.saved_object.type IN (\"config\",\"config-global\")) OR (attributes.event.action == \"saved_object_find\" AND attributes.kibana.saved_object.type == \"index-pattern\"))) OR (attributes.kibana.saved_object.id IS NOT NULL AND attributes.kibana.saved_object.id LIKE \"cloud-audit-*\" AND (attributes.event.action IN (\"saved_object_get\",\"saved_object_resolve\",\"saved_object_find\") OR attributes.kibana.session.id IS NULL)))) | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS events = COUNT(*), actions = COUNT_DISTINCT(attributes.event.action), last_seen = MAX(@timestamp) BY actor, attributes.api_key.name | EVAL actor = CASE(attributes.api_key.name IS NOT NULL AND attributes.api_key.name != actor, CONCAT(actor, \" · via key \", attributes.api_key.name), actor) | SORT events DESC | LIMIT 10 | EVAL actor = CASE((LENGTH(actor) == 20 AND actor RLIKE \"[-_A-Za-z0-9]{20}\" AND NOT actor RLIKE \"[0-9]{20}\"), CONCAT(LEFT(actor, 5), \"… · Cloud API key\"), actor)"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE (attributes.elasticsearch.audit.action IS NULL OR NOT (attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\") OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/msearch*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/scroll*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/esql*\" OR attributes.elasticsearch.audit.action LIKE \"indices:admin/esql/*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/field_caps*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/async_search/*\" OR attributes.elasticsearch.audit.action LIKE \"indices:admin/resolve/*\" OR attributes.elasticsearch.audit.action == \"indices:admin/shards/search_shards\" OR attributes.elasticsearch.audit.action LIKE \"cluster:monitor/xpack/esql/*\" OR attributes.elasticsearch.audit.action IN (\"cluster:monitor/project/tags\", \"cluster:monitor/xpack/inference/get\", \"cluster:admin/xpack/security/api_key/get\", \"cluster:admin/xpack/security/api_key/query\"))) AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"authentication_success\",\"connection_granted\") OR attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\",\"space_get\",\"space_find\") OR (attributes.event.action == \"http_request\" AND attributes.url.original IS NOT NULL AND attributes.url.original RLIKE \"https?://[^/]+(/s/[^/]+)?/((internal|translations|app)/.*|api/content_management/rpc/(get|search|mget|bulkGet).*|bootstrap(-anonymous)?[.]js.*|api/(core|licensing|banners|ui_counters)/.*|api/spaces/space([?].*)?)|https?://[^/]+(/s/[^/]+)?/api/(saved_objects/(_import|_export)|[^?]*/cloud-audit-).*\") OR (attributes.kibana.saved_object.type IS NOT NULL AND ((attributes.event.action == \"saved_object_get\" AND attributes.kibana.saved_object.type IN (\"config\",\"config-global\")) OR (attributes.event.action == \"saved_object_find\" AND attributes.kibana.saved_object.type == \"index-pattern\"))) OR (attributes.kibana.saved_object.id IS NOT NULL AND attributes.kibana.saved_object.id LIKE \"cloud-audit-*\" AND (attributes.event.action IN (\"saved_object_get\",\"saved_object_resolve\",\"saved_object_find\") OR attributes.kibana.session.id IS NULL)))) | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS events = COUNT(*), actions = COUNT_DISTINCT(attributes.event.action), last_seen = MAX(@timestamp) BY actor, attributes.api_key.name | EVAL actor = CASE(attributes.api_key.name IS NOT NULL AND attributes.api_key.name != actor, CONCAT(actor, \" · via key \", attributes.api_key.name), actor) | SORT events DESC | LIMIT 12 | EVAL actor = CASE((LENGTH(actor) == 20 AND actor RLIKE \"[-_A-Za-z0-9]{20}\" AND NOT actor RLIKE \"[0-9]{20}\"), CONCAT(LEFT(actor, 5), \"… · Cloud API key\"), actor)"
         },
         "styling": {
           "density": {
@@ -514,14 +582,14 @@
       "type": "vis",
       "id": "xy-13",
       "grid": {
-        "x": 36,
+        "x": 34,
         "y": 36,
-        "w": 12,
-        "h": 12
+        "w": 14,
+        "h": 13
       },
       "config": {
         "title": "Event categories · all traffic",
-        "description": "ECS event categories over the whole stream, noise included, on a log scale so the small categories are as readable as the bulk: read each bar by its label, not its length. event.category is a multi-value array, so an event in two categories counts once in each and the bars sum to more than the event total; “none recorded” is events that carry no category. A bar too short to hold its number carries it in its label instead: one under about a third of the longest bar (on this log scale), which includes a category with a single event, drawn with no bar at all.",
+        "description": "ECS event categories over the whole stream, noise included, each with its count, on a log scale so the small categories are as readable as the bulk: read each bar by its count, not its length (each axis step is ten times the one before). event.category is a multi-value array, so an event in two categories counts once in each and the bars sum to more than the event total; “none recorded” is events that carry no category. A category with a single event has no visible bar.",
         "type": "xy",
         "axis": {
           "x": {
@@ -541,7 +609,7 @@
             "type": "bar_horizontal",
             "data_source": {
               "type": "esql",
-              "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS events = COUNT(*) BY category = attributes.event.category | INLINE STATS top = MAX(events) | EVAL category = COALESCE(category, \"none recorded\") | SORT events DESC | LIMIT 8 | EVAL category = CASE(LOG10(events) < 0.3 * LOG10(top), CONCAT(category, \" · \", CASE(LENGTH(TO_STRING(events)) <= 3, TO_STRING(events), LENGTH(TO_STRING(events)) <= 6, CONCAT(LEFT(TO_STRING(events), LENGTH(TO_STRING(events)) - 3), \",\", RIGHT(TO_STRING(events), 3)), LENGTH(TO_STRING(events)) <= 9, CONCAT(LEFT(TO_STRING(events), LENGTH(TO_STRING(events)) - 6), \",\", SUBSTRING(TO_STRING(events), LENGTH(TO_STRING(events)) - 5, 3), \",\", RIGHT(TO_STRING(events), 3)), CONCAT(LEFT(TO_STRING(events), LENGTH(TO_STRING(events)) - 9), \",\", SUBSTRING(TO_STRING(events), LENGTH(TO_STRING(events)) - 8, 3), \",\", SUBSTRING(TO_STRING(events), LENGTH(TO_STRING(events)) - 5, 3), \",\", RIGHT(TO_STRING(events), 3)))), category) | KEEP category, events"
+              "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS events = COUNT(*) BY category = attributes.event.category | EVAL category = COALESCE(category, \"none recorded\") | SORT events DESC | LIMIT 8 | EVAL category = CONCAT(category, \" · \", CASE(LENGTH(TO_STRING(events)) <= 3, TO_STRING(events), LENGTH(TO_STRING(events)) <= 6, CONCAT(LEFT(TO_STRING(events), LENGTH(TO_STRING(events)) - 3), \",\", RIGHT(TO_STRING(events), 3)), LENGTH(TO_STRING(events)) <= 9, CONCAT(LEFT(TO_STRING(events), LENGTH(TO_STRING(events)) - 6), \",\", SUBSTRING(TO_STRING(events), LENGTH(TO_STRING(events)) - 5, 3), \",\", RIGHT(TO_STRING(events), 3)), CONCAT(LEFT(TO_STRING(events), LENGTH(TO_STRING(events)) - 9), \",\", SUBSTRING(TO_STRING(events), LENGTH(TO_STRING(events)) - 8, 3), \",\", SUBSTRING(TO_STRING(events), LENGTH(TO_STRING(events)) - 5, 3), \",\", RIGHT(TO_STRING(events), 3)))) | KEEP category, events"
             },
             "x": {
               "column": "category",
@@ -549,20 +617,18 @@
             },
             "y": [
               {
-                "column": "events"
+                "column": "events",
+                "format": {
+                  "type": "number",
+                  "decimals": 0,
+                  "compact": true
+                }
               }
             ]
           }
         ],
         "legend": {
           "visibility": "hidden"
-        },
-        "styling": {
-          "bars": {
-            "data_labels": {
-              "visible": true
-            }
-          }
         }
       }
     },
@@ -571,14 +637,14 @@
       "id": "ds-14",
       "grid": {
         "x": 0,
-        "y": 48,
+        "y": 49,
         "w": 48,
         "h": 25
       },
       "config": {
         "ref_id": "cloud-audit-search-10-raw-signal-feed",
-        "title": "Live signal feed",
-        "description": "The newest 200 signal events, newest first, behind the same noise gate as Signal events. Detail is the Kibana message, the transport action on an Elasticsearch event, or for a security change (API key, role) what it changed: “API key <name or id> + N more” for one call that invalidated several keys. A Client IP marked internal is Kibana or the platform calling Elasticsearch on someone’s behalf, not where they are; “none recorded” is an event with no client address, such as Kibana’s own service account working inside the platform. Automation reads as long runs of near-identical rows from one identity: this suite’s own install is left out by the gate, but any other script — a deploy, a scan, a tool polling an API — can fill this feed for minutes. To read past it, pick a Person above, or open the session and filter that identity out. Open the Discover session to page further back or add columns. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email."
+        "title": "Live signal feed · Kibana key clean-up left out",
+        "description": "The newest 200 signal events, newest first, behind the same noise gate as Signal events, without Kibana’s own routine API-key clean-up (invalidate_apikeys by the elastic/kibana service account, every few seconds), which would otherwise fill it: Privileged ops counts those in its “excl. N cleanups” line, and they still count in Signal events. Detail is the Kibana message, the transport action on an Elasticsearch event, or for a security change (API key, role) what it changed: “API key <name or id> + N more” for one call that invalidated several keys. A Client IP marked internal is Kibana or the platform calling Elasticsearch on someone’s behalf, not where they are; “none recorded” is an event with no client address, such as Kibana’s own service account working inside the platform. Automation reads as long runs of near-identical rows from one identity: this suite’s own install is left out by the gate, but any other script — a deploy, a scan, a tool polling an API — can fill this feed for minutes. To read past it, pick a Person above, or open the session and filter that identity out. Open the Discover session to page further back or add columns. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email."
       }
     }
   ]

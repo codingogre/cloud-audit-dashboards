@@ -1,6 +1,6 @@
 {
   "$schema": "https://vega.github.io/schema/vega/v5.json",
-  "description": "The top 12 identities (fewer on a narrow panel, down to 8) by signal volume, one tile per identity, in a block per kind (named API key, person, cloud API key, platform, user with no email, unattributed); the rest of each kind is folded into one grey \"+N more\" tile. Area grows with the square root of event volume plus the same small share for every tile, so a quiet identity keeps a readable name but never outgrows a busier one; each tile prints its event count where it fits, at one font size (12px, or 10px where that saves a line, keeps the count line 12px would drop, or the name needs it; a name too long to break at its separators is shortened with an ellipsis and the tooltip has it in full); colour is Risk total (risk weight × events, the quantity the risk leaderboard ranks by) on a square-root scale. A key owner that is an opaque Cloud API key id is shown in the suite's one form for it. Grouped on raw fields first and resolved afterwards, so an identity whose events disagree about its kind is still one tile, in its most specific block.",
+  "description": "The top 12 identities (fewer on a narrow panel, down to 8) by signal volume, one tile per identity, in a block per kind (named API key, person, cloud API key, platform, user with no email, unattributed); the rest of each kind is folded into one grey \"+N more\" tile. Area grows with the square root of event volume plus the same small share for every tile, so a quiet identity keeps a readable name but never outgrows a busier one; each tile prints its event count where it fits, at the largest of three sizes that still fits the name and its count (14px on a tile at least 200x100, else 12px, else 10px; a name too long to break at its separators is shortened with an ellipsis and the tooltip has it in full); colour is Risk total (risk weight × events, the quantity the risk leaderboard ranks by) on a square-root scale. A key owner that is an opaque Cloud API key id is shown in the suite's one form for it. Grouped on raw fields first and resolved afterwards, so an identity whose events disagree about its kind is still one tile, in its most specific block.",
   "autosize": {
     "type": "fit",
     "contains": "padding"
@@ -353,6 +353,91 @@
         },
         {
           "type": "formula",
+          "as": "c_cpl",
+          "expr": "max(1, floor((datum.tw - 8) / (14 * 0.6)))"
+        },
+        {
+          "type": "formula",
+          "as": "c_rows",
+          "expr": "floor((datum.th - 4) / (16.8))"
+        },
+        {
+          "type": "formula",
+          "as": "c_b1",
+          "expr": "length(datum.label) <= datum.c_cpl ? length(datum.label) : (indexof(datum.label, '@') >= 1 && indexof(datum.label, '@') <= datum.c_cpl && length(datum.label) - indexof(datum.label, '@') <= datum.c_cpl) ? indexof(datum.label, '@') : (indexof(datum.label, '@') >= 1 && indexof(datum.label, '@') < datum.c_cpl && length(datum.label) - indexof(datum.label, '@') - 1 <= datum.c_cpl) ? indexof(datum.label, '@') + 1 : max(lastindexof(substring(datum.label, 0, datum.c_cpl), '-'), lastindexof(substring(datum.label, 0, datum.c_cpl), '.'), lastindexof(substring(datum.label, 0, datum.c_cpl), '@'), lastindexof(substring(datum.label, 0, datum.c_cpl), '_'), lastindexof(substring(datum.label, 0, datum.c_cpl), '/'), lastindexof(substring(datum.label, 0, datum.c_cpl), ' ')) >= 1 ? max(lastindexof(substring(datum.label, 0, datum.c_cpl), '-'), lastindexof(substring(datum.label, 0, datum.c_cpl), '.'), lastindexof(substring(datum.label, 0, datum.c_cpl), '@'), lastindexof(substring(datum.label, 0, datum.c_cpl), '_'), lastindexof(substring(datum.label, 0, datum.c_cpl), '/'), lastindexof(substring(datum.label, 0, datum.c_cpl), ' ')) + 1 : datum.c_cpl"
+        },
+        {
+          "type": "formula",
+          "as": "c_l1",
+          "expr": "substring(datum.label, 0, datum.c_b1)"
+        },
+        {
+          "type": "formula",
+          "as": "c_r1",
+          "expr": "substring(datum.label, datum.c_b1)"
+        },
+        {
+          "type": "formula",
+          "as": "c_b2",
+          "expr": "length(datum.c_r1) <= datum.c_cpl ? length(datum.c_r1) : (indexof(datum.c_r1, '@') >= 1 && indexof(datum.c_r1, '@') <= datum.c_cpl && length(datum.c_r1) - indexof(datum.c_r1, '@') <= datum.c_cpl) ? indexof(datum.c_r1, '@') : (indexof(datum.c_r1, '@') >= 1 && indexof(datum.c_r1, '@') < datum.c_cpl && length(datum.c_r1) - indexof(datum.c_r1, '@') - 1 <= datum.c_cpl) ? indexof(datum.c_r1, '@') + 1 : max(lastindexof(substring(datum.c_r1, 0, datum.c_cpl), '-'), lastindexof(substring(datum.c_r1, 0, datum.c_cpl), '.'), lastindexof(substring(datum.c_r1, 0, datum.c_cpl), '@'), lastindexof(substring(datum.c_r1, 0, datum.c_cpl), '_'), lastindexof(substring(datum.c_r1, 0, datum.c_cpl), '/'), lastindexof(substring(datum.c_r1, 0, datum.c_cpl), ' ')) >= 1 ? max(lastindexof(substring(datum.c_r1, 0, datum.c_cpl), '-'), lastindexof(substring(datum.c_r1, 0, datum.c_cpl), '.'), lastindexof(substring(datum.c_r1, 0, datum.c_cpl), '@'), lastindexof(substring(datum.c_r1, 0, datum.c_cpl), '_'), lastindexof(substring(datum.c_r1, 0, datum.c_cpl), '/'), lastindexof(substring(datum.c_r1, 0, datum.c_cpl), ' ')) + 1 : datum.c_cpl"
+        },
+        {
+          "type": "formula",
+          "as": "c_l2",
+          "expr": "substring(datum.c_r1, 0, datum.c_b2)"
+        },
+        {
+          "type": "formula",
+          "as": "c_r2",
+          "expr": "substring(datum.c_r1, datum.c_b2)"
+        },
+        {
+          "type": "formula",
+          "as": "c_b3",
+          "expr": "length(datum.c_r2) <= datum.c_cpl ? length(datum.c_r2) : (indexof(datum.c_r2, '@') >= 1 && indexof(datum.c_r2, '@') <= datum.c_cpl && length(datum.c_r2) - indexof(datum.c_r2, '@') <= datum.c_cpl) ? indexof(datum.c_r2, '@') : (indexof(datum.c_r2, '@') >= 1 && indexof(datum.c_r2, '@') < datum.c_cpl && length(datum.c_r2) - indexof(datum.c_r2, '@') - 1 <= datum.c_cpl) ? indexof(datum.c_r2, '@') + 1 : max(lastindexof(substring(datum.c_r2, 0, datum.c_cpl), '-'), lastindexof(substring(datum.c_r2, 0, datum.c_cpl), '.'), lastindexof(substring(datum.c_r2, 0, datum.c_cpl), '@'), lastindexof(substring(datum.c_r2, 0, datum.c_cpl), '_'), lastindexof(substring(datum.c_r2, 0, datum.c_cpl), '/'), lastindexof(substring(datum.c_r2, 0, datum.c_cpl), ' ')) >= 1 ? max(lastindexof(substring(datum.c_r2, 0, datum.c_cpl), '-'), lastindexof(substring(datum.c_r2, 0, datum.c_cpl), '.'), lastindexof(substring(datum.c_r2, 0, datum.c_cpl), '@'), lastindexof(substring(datum.c_r2, 0, datum.c_cpl), '_'), lastindexof(substring(datum.c_r2, 0, datum.c_cpl), '/'), lastindexof(substring(datum.c_r2, 0, datum.c_cpl), ' ')) + 1 : datum.c_cpl"
+        },
+        {
+          "type": "formula",
+          "as": "c_l3",
+          "expr": "substring(datum.c_r2, 0, datum.c_b3)"
+        },
+        {
+          "type": "formula",
+          "as": "c_r3",
+          "expr": "substring(datum.c_r2, datum.c_b3)"
+        },
+        {
+          "type": "formula",
+          "as": "c_nl",
+          "expr": "datum.c_r1 === '' ? 1 : datum.c_r2 === '' ? 2 : 3"
+        },
+        {
+          "type": "formula",
+          "as": "c_hard",
+          "expr": "(datum.c_r1 !== '' && indexof('-._@/ ', substring(datum.c_l1, length(datum.c_l1) - 1)) < 0 && substring(datum.c_r1, 0, 1) !== '@') || (datum.c_r2 !== '' && indexof('-._@/ ', substring(datum.c_l2, length(datum.c_l2) - 1)) < 0 && substring(datum.c_r2, 0, 1) !== '@')"
+        },
+        {
+          "type": "formula",
+          "as": "c_ok",
+          "expr": "!datum.c_hard && datum.c_r3 === '' && datum.c_nl <= datum.c_rows && datum.th >= 20.8"
+        },
+        {
+          "type": "formula",
+          "as": "c_cnt",
+          "expr": "datum.c_rows > datum.c_nl && length(format(datum.events, ',')) <= datum.c_cpl"
+        },
+        {
+          "type": "formula",
+          "as": "c_own",
+          "expr": "datum.owner != null && datum.c_rows > datum.c_nl + (datum.c_cnt ? 1 : 0) && length(datum.owner) + 7 <= datum.c_cpl"
+        },
+        {
+          "type": "formula",
+          "as": "c_lines",
+          "expr": "split(join(slice([datum.c_l1, datum.c_l2, datum.c_l3], 0, datum.c_nl), '\\n') + (datum.c_cnt ? '\\n' + (length(datum.count) <= datum.c_cpl ? datum.count : format(datum.events, ',')) : '') + (datum.c_own ? '\\nowner: ' + datum.owner : ''), '\\n')"
+        },
+        {
+          "type": "formula",
           "as": "b_cpl",
           "expr": "max(1, floor((datum.tw - 8) / (10 * 0.6)))"
         },
@@ -438,13 +523,18 @@
         },
         {
           "type": "formula",
+          "as": "huge",
+          "expr": "datum.c_ok && datum.c_cnt && datum.tw >= 200 && datum.th >= 100"
+        },
+        {
+          "type": "formula",
           "as": "big",
-          "expr": "datum.a_ok && !(datum.b_ok && (datum.b_nl < datum.a_nl || (datum.b_cnt && !datum.a_cnt)))"
+          "expr": "datum.a_ok && (datum.a_cnt || !(datum.b_ok && datum.b_cnt))"
         },
         {
           "type": "formula",
           "as": "ffs",
-          "expr": "datum.big ? 12 : 10"
+          "expr": "datum.huge ? 14 : datum.big ? 12 : 10"
         },
         {
           "type": "formula",
@@ -454,7 +544,7 @@
         {
           "type": "formula",
           "as": "lines",
-          "expr": "datum.big ? datum.a_lines : datum.b_ok ? datum.b_lines : datum.th >= 40 && datum.tw >= 30 ? [datum.label, format(datum.events, ',')] : datum.th >= 16 && datum.tw >= 30 ? [datum.label] : []"
+          "expr": "datum.huge ? datum.c_lines : datum.big ? datum.a_lines : datum.b_ok ? datum.b_lines : datum.th >= 40 && datum.tw >= 30 ? [datum.label, format(datum.events, ',')] : datum.th >= 16 && datum.tw >= 30 ? [datum.label] : []"
         }
       ]
     }
