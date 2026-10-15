@@ -150,11 +150,11 @@
       },
       "config": {
         "title": "",
-        "description": "Distinct email addresses in all traffic — the people Busiest human identities ranks. An Elasticsearch API key carries its creator's email, so a person can count here through a key they made without signing in; the line under the number says how many signed in through SAML SSO.",
+        "description": "Distinct email addresses in all traffic — the people Busiest human identities ranks. An Elasticsearch API key carries its creator's email, so a person can count here through a key they made without signing in; the line under the number says how many of them used SAML SSO in range (a browser session, whether it began in range or earlier — SSO events beside it says which).",
         "type": "metric",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS `Humans` = COUNT_DISTINCT(attributes.user.email), sso = COUNT_DISTINCT(attributes.user.email) WHERE attributes.user.domain == \"cloud-saml-kibana\" | EVAL detail = CASE(sso == 0, \"none signed in by SSO\", CONCAT(CASE(LENGTH(TO_STRING(sso)) <= 3, TO_STRING(sso), LENGTH(TO_STRING(sso)) <= 6, CONCAT(LEFT(TO_STRING(sso), LENGTH(TO_STRING(sso)) - 3), \",\", RIGHT(TO_STRING(sso), 3)), LENGTH(TO_STRING(sso)) <= 9, CONCAT(LEFT(TO_STRING(sso), LENGTH(TO_STRING(sso)) - 6), \",\", SUBSTRING(TO_STRING(sso), LENGTH(TO_STRING(sso)) - 5, 3), \",\", RIGHT(TO_STRING(sso), 3)), CONCAT(LEFT(TO_STRING(sso), LENGTH(TO_STRING(sso)) - 9), \",\", SUBSTRING(TO_STRING(sso), LENGTH(TO_STRING(sso)) - 8, 3), \",\", SUBSTRING(TO_STRING(sso), LENGTH(TO_STRING(sso)) - 5, 3), \",\", RIGHT(TO_STRING(sso), 3))), \" signed in by SSO\")) | KEEP `Humans`, detail"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS `Humans` = COUNT_DISTINCT(attributes.user.email), sso = COUNT_DISTINCT(attributes.user.email) WHERE attributes.user.domain == \"cloud-saml-kibana\" | EVAL detail = CASE(sso == 0, \"none used SSO\", CONCAT(CASE(LENGTH(TO_STRING(sso)) <= 3, TO_STRING(sso), LENGTH(TO_STRING(sso)) <= 6, CONCAT(LEFT(TO_STRING(sso), LENGTH(TO_STRING(sso)) - 3), \",\", RIGHT(TO_STRING(sso), 3)), LENGTH(TO_STRING(sso)) <= 9, CONCAT(LEFT(TO_STRING(sso), LENGTH(TO_STRING(sso)) - 6), \",\", SUBSTRING(TO_STRING(sso), LENGTH(TO_STRING(sso)) - 5, 3), \",\", RIGHT(TO_STRING(sso), 3)), CONCAT(LEFT(TO_STRING(sso), LENGTH(TO_STRING(sso)) - 9), \",\", SUBSTRING(TO_STRING(sso), LENGTH(TO_STRING(sso)) - 8, 3), \",\", SUBSTRING(TO_STRING(sso), LENGTH(TO_STRING(sso)) - 5, 3), \",\", RIGHT(TO_STRING(sso), 3))), \" used SSO\")) | KEEP `Humans`, detail"
         },
         "metrics": [
           {
@@ -183,11 +183,11 @@
       },
       "config": {
         "title": "",
-        "description": "Distinct API keys seen in range, of both kinds: Elastic Cloud API keys (recorded by id only) and Elasticsearch (ES) API keys (by id and name); the line under the number splits them. One per row of API key inventory. A re-issued Elasticsearch key keeps its name under a new id and counts again.",
+        "description": "Distinct API keys seen in range, by id, of both kinds: Elastic Cloud API keys (recorded by id only) and Elasticsearch API keys (by id and name) — one per row of API key inventory. The line under the number counts the names those ids carry (a Cloud API key, which has none, by its id), one per row of Busiest API keys by name: a re-issued Elasticsearch key keeps its name under a new id, so a name with many ids is one key re-issued many times. These are the key names in the Identities tile beside it, unless a person created a key: that key's traffic carries the person's email, so Identities counts the person instead and this count of names is higher.",
         "type": "metric",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.api_key.id IS NOT NULL OR attributes.user.domain == \"_cloud_api_key\" | STATS es = COUNT_DISTINCT(attributes.api_key.id), cloud = COUNT_DISTINCT(attributes.user.name) WHERE attributes.api_key.id IS NULL | EVAL `API keys` = es + cloud, detail = CASE(es + cloud == 0, \"none in range\", CONCAT(CASE(cloud == 0, \"no Cloud\", cloud == 1, \"1 Cloud\", CONCAT(CASE(LENGTH(TO_STRING(cloud)) <= 3, TO_STRING(cloud), LENGTH(TO_STRING(cloud)) <= 6, CONCAT(LEFT(TO_STRING(cloud), LENGTH(TO_STRING(cloud)) - 3), \",\", RIGHT(TO_STRING(cloud), 3)), LENGTH(TO_STRING(cloud)) <= 9, CONCAT(LEFT(TO_STRING(cloud), LENGTH(TO_STRING(cloud)) - 6), \",\", SUBSTRING(TO_STRING(cloud), LENGTH(TO_STRING(cloud)) - 5, 3), \",\", RIGHT(TO_STRING(cloud), 3)), CONCAT(LEFT(TO_STRING(cloud), LENGTH(TO_STRING(cloud)) - 9), \",\", SUBSTRING(TO_STRING(cloud), LENGTH(TO_STRING(cloud)) - 8, 3), \",\", SUBSTRING(TO_STRING(cloud), LENGTH(TO_STRING(cloud)) - 5, 3), \",\", RIGHT(TO_STRING(cloud), 3))), \" Cloud\")), \" · \", CASE(es == 0, \"no ES\", es == 1, \"1 ES\", CONCAT(CASE(LENGTH(TO_STRING(es)) <= 3, TO_STRING(es), LENGTH(TO_STRING(es)) <= 6, CONCAT(LEFT(TO_STRING(es), LENGTH(TO_STRING(es)) - 3), \",\", RIGHT(TO_STRING(es), 3)), LENGTH(TO_STRING(es)) <= 9, CONCAT(LEFT(TO_STRING(es), LENGTH(TO_STRING(es)) - 6), \",\", SUBSTRING(TO_STRING(es), LENGTH(TO_STRING(es)) - 5, 3), \",\", RIGHT(TO_STRING(es), 3)), CONCAT(LEFT(TO_STRING(es), LENGTH(TO_STRING(es)) - 9), \",\", SUBSTRING(TO_STRING(es), LENGTH(TO_STRING(es)) - 8, 3), \",\", SUBSTRING(TO_STRING(es), LENGTH(TO_STRING(es)) - 5, 3), \",\", RIGHT(TO_STRING(es), 3))), \" ES\")))) | KEEP `API keys`, detail"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.api_key.id IS NOT NULL OR attributes.user.domain == \"_cloud_api_key\" | STATS BY attributes.api_key.id, attributes.api_key.name, attributes.user.name | EVAL key_id = COALESCE(attributes.api_key.id, attributes.user.name), kind = CASE(attributes.api_key.id IS NULL, \"Cloud\", \"Elasticsearch\"), name = COALESCE(attributes.api_key.name, attributes.user.name) | STATS `API keys` = COUNT_DISTINCT(key_id), names = COUNT_DISTINCT(name) | EVAL detail = CASE(`API keys` == 0, \"none in range\", names == 1, \"1 name\", CONCAT(CASE(LENGTH(TO_STRING(names)) <= 3, TO_STRING(names), LENGTH(TO_STRING(names)) <= 6, CONCAT(LEFT(TO_STRING(names), LENGTH(TO_STRING(names)) - 3), \",\", RIGHT(TO_STRING(names), 3)), LENGTH(TO_STRING(names)) <= 9, CONCAT(LEFT(TO_STRING(names), LENGTH(TO_STRING(names)) - 6), \",\", SUBSTRING(TO_STRING(names), LENGTH(TO_STRING(names)) - 5, 3), \",\", RIGHT(TO_STRING(names), 3)), CONCAT(LEFT(TO_STRING(names), LENGTH(TO_STRING(names)) - 9), \",\", SUBSTRING(TO_STRING(names), LENGTH(TO_STRING(names)) - 8, 3), \",\", SUBSTRING(TO_STRING(names), LENGTH(TO_STRING(names)) - 5, 3), \",\", RIGHT(TO_STRING(names), 3))), \" names\")) | KEEP `API keys`, detail"
         },
         "metrics": [
           {
@@ -216,11 +216,11 @@
       },
       "config": {
         "title": "",
-        "description": "Events authenticated through the cloud-saml-kibana SAML realm — a person in a browser. The line under the number counts Kibana user_login events: a session that began before the range shows events here but no new sign-in.",
+        "description": "Events authenticated through the cloud-saml-kibana SAML realm — a person in a browser. The line under the number counts Kibana user_login events in range, or reads “signed in earlier” when there are none: the sessions behind these events began before the range, so a person can use SSO (the Humans tile) with no new sign-in here.",
         "type": "metric",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.user.domain == \"cloud-saml-kibana\" | STATS `SSO events` = COUNT(*), logins = COUNT(*) WHERE attributes.event.action == \"user_login\" | EVAL detail = CASE(logins == 0, \"no new sign-ins\", logins == 1, \"1 new sign-in\", CONCAT(CASE(LENGTH(TO_STRING(logins)) <= 3, TO_STRING(logins), LENGTH(TO_STRING(logins)) <= 6, CONCAT(LEFT(TO_STRING(logins), LENGTH(TO_STRING(logins)) - 3), \",\", RIGHT(TO_STRING(logins), 3)), LENGTH(TO_STRING(logins)) <= 9, CONCAT(LEFT(TO_STRING(logins), LENGTH(TO_STRING(logins)) - 6), \",\", SUBSTRING(TO_STRING(logins), LENGTH(TO_STRING(logins)) - 5, 3), \",\", RIGHT(TO_STRING(logins), 3)), CONCAT(LEFT(TO_STRING(logins), LENGTH(TO_STRING(logins)) - 9), \",\", SUBSTRING(TO_STRING(logins), LENGTH(TO_STRING(logins)) - 8, 3), \",\", SUBSTRING(TO_STRING(logins), LENGTH(TO_STRING(logins)) - 5, 3), \",\", RIGHT(TO_STRING(logins), 3))), \" new sign-ins\")) | KEEP `SSO events`, detail"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.user.domain == \"cloud-saml-kibana\" | STATS `SSO events` = COUNT(*), logins = COUNT(*) WHERE attributes.event.action == \"user_login\" | EVAL detail = CASE(`SSO events` == 0, \"none in range\", logins == 0, \"signed in earlier\", logins == 1, \"1 new sign-in\", CONCAT(CASE(LENGTH(TO_STRING(logins)) <= 3, TO_STRING(logins), LENGTH(TO_STRING(logins)) <= 6, CONCAT(LEFT(TO_STRING(logins), LENGTH(TO_STRING(logins)) - 3), \",\", RIGHT(TO_STRING(logins), 3)), LENGTH(TO_STRING(logins)) <= 9, CONCAT(LEFT(TO_STRING(logins), LENGTH(TO_STRING(logins)) - 6), \",\", SUBSTRING(TO_STRING(logins), LENGTH(TO_STRING(logins)) - 5, 3), \",\", RIGHT(TO_STRING(logins), 3)), CONCAT(LEFT(TO_STRING(logins), LENGTH(TO_STRING(logins)) - 9), \",\", SUBSTRING(TO_STRING(logins), LENGTH(TO_STRING(logins)) - 8, 3), \",\", SUBSTRING(TO_STRING(logins), LENGTH(TO_STRING(logins)) - 5, 3), \",\", RIGHT(TO_STRING(logins), 3))), \" new sign-ins\")) | KEEP `SSO events`, detail"
         },
         "metrics": [
           {
@@ -314,8 +314,8 @@
         "h": 12
       },
       "config": {
-        "title": "Authentication method over time",
-        "description": "Elasticsearch requests per interval by how they presented credentials: API key, token (SSO browser sessions and service accounts) or realm (username and password). One bar per credential type per interval, on a log scale, so a type carrying a fraction of a percent of the traffic is as readable as the bulk; an interval with no bar had no requests of that type. A shift in this mix is worth explaining.",
+        "title": "Elasticsearch requests per minute by credential type",
+        "description": "Elasticsearch requests per minute by how they presented credentials: API key, token (SSO browser sessions and service accounts), realm (username and password) or SAML. One bar per credential type per interval — 1 minute at 1h, 30 minutes at 24h, 3 hours at 7d — and its height is that interval's requests divided by its minutes, so the scale reads the same at every range: a lone request in a 30-minute bar is 0.033 a minute. A log scale, so a type carrying a fraction of a percent of the traffic is as readable as the bulk; an interval with no bar had no requests of that type. The first and last bars cover only part of their interval, so they read low. A shift in this mix is worth explaining.",
         "type": "xy",
         "axis": {
           "x": {
@@ -335,8 +335,8 @@
             "scale": "log",
             "domain": {
               "type": "custom",
-              "min": 0.5,
-              "max": 10000000,
+              "min": 0.001,
+              "max": 100000,
               "rounding": false
             }
           }
@@ -346,7 +346,7 @@
             "type": "bar",
             "data_source": {
               "type": "esql",
-              "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.authentication.type IS NOT NULL | STATS events = COUNT(*) BY BUCKET(@timestamp, 75, ?_tstart, ?_tend), attributes.authentication.type | EVAL auth = CASE(attributes.authentication.type == \"api_key\", \"API key\", attributes.authentication.type == \"token\", \"Token\", attributes.authentication.type == \"realm\", \"Realm\", attributes.authentication.type == \"saml\", \"SAML\", attributes.authentication.type == \"anonymous\", \"Anonymous\", attributes.authentication.type == \"internal\", \"Internal\", attributes.authentication.type) | SORT auth"
+              "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.authentication.type IS NOT NULL | STATS events = COUNT(*) BY BUCKET(@timestamp, 75, ?_tstart, ?_tend), attributes.authentication.type | STATS events = SUM(events) BY `BUCKET(@timestamp, 75, ?_tstart, ?_tend)`, attributes.authentication.type, prev = BUCKET(`BUCKET(@timestamp, 75, ?_tstart, ?_tend)` - 1 millisecond, 75, ?_tstart, ?_tend) | EVAL per_minute = events * 60.0 / DATE_DIFF(\"second\", prev, `BUCKET(@timestamp, 75, ?_tstart, ?_tend)`), auth = CASE(attributes.authentication.type == \"api_key\", \"API key\", attributes.authentication.type == \"token\", \"Token\", attributes.authentication.type == \"realm\", \"Realm\", attributes.authentication.type == \"saml\", \"SAML\", attributes.authentication.type == \"anonymous\", \"Anonymous\", attributes.authentication.type == \"internal\", \"Internal\", attributes.authentication.type) | KEEP `BUCKET(@timestamp, 75, ?_tstart, ?_tend)`, auth, per_minute | SORT auth"
             },
             "x": {
               "column": "BUCKET(@timestamp, 75, ?_tstart, ?_tend)",
@@ -354,7 +354,11 @@
             },
             "y": [
               {
-                "column": "events"
+                "column": "per_minute",
+                "format": {
+                  "type": "custom",
+                  "pattern": "0.[000]a"
+                }
               }
             ],
             "breakdown_by": {
@@ -442,8 +446,8 @@
       },
       "config": {
         "ref_id": "cloud-audit-vega-02-auth-matrix",
-        "title": "Credential type by identity",
-        "description": "Which credential type each of the busiest identities presents, 12 at most; colour runs teal → blue → purple → pink as events grow (log scale; the legend is labelled at the smallest and largest cell and the decades between). Humans should authenticate by token (SSO); service identities by API key. Only Elasticsearch requests record a credential type, so identities seen only in Kibana or only anonymously are counted in Identities above but are not on this chart. A Cloud API key has no name and is shown as “_4KEO… · Cloud API key”, the first five characters of its id."
+        "title": "Credential type by identity · Elasticsearch requests",
+        "description": "Which credential type each of the busiest identities presents, 12 at most, and how many Elasticsearch requests it made with each: the count is printed in the cell. Cells are coloured by credential type, in the same colours as the time chart beside it, so a colour means the same thing in both panels. Humans should authenticate by token (SSO); service identities by API key. Only Elasticsearch requests record a credential type, so the counts leave out Kibana traffic and can be lower than the same identity's count in the tables below (Busiest API keys counts both), and identities seen only in Kibana or only anonymously are counted in Identities above but are not on this chart. A Cloud API key has no name and is shown as “_4KEO… · Cloud API key”, the first five characters of its id."
       }
     },
     {
@@ -576,12 +580,12 @@
         "h": 12
       },
       "config": {
-        "title": "Busiest API keys · top 10 at most",
-        "description": "The busiest API keys of both kinds, one row per key, with request volume and how many distinct client IPs used it. Kind is Cloud (an Elastic Cloud API key: it has no name and is recorded by its id, so it reads “_4KEO… · Cloud API key”, the first five characters of the id in Key ID) or Elasticsearch (an Elasticsearch API key: id and name). A key used from many IPs is worth investigating. A re-issued key keeps its name under a new id, so a name can appear twice. The full list, with owner and first and last use, is API key inventory below. On a rolling time range each panel reads “now” at the moment it loads, and the newest events reach the stream a few seconds late, so a key still sending requests can show slightly different counts here and in the inventory, which loads a moment apart.",
+        "title": "Busiest API keys by name · top 10 at most",
+        "description": "The busiest API keys of both kinds, one row per key name, with request volume and how many distinct client IPs used it. Kind is Cloud (an Elastic Cloud API key: it has no name and is recorded by its id, so it reads “_4KEO… · Cloud API key”, the first five characters of its id) or Elasticsearch (an Elasticsearch API key: id and name). A re-issued Elasticsearch key keeps its name under a new id, so Key IDs counts the ids a name ran under in range; API key inventory below has one row per id, with owner and first and last use. The API keys tile counts every id and every name in range, so past the ten busiest names the rows here add up to less than it; the rest are in the inventory. A key used from many IPs is worth investigating. The range ends a minute ago, so nothing in it is still arriving; each panel reads the clock for itself, up to a second apart, so two panels side by side can differ by the events of that second at either end of the range: usually none, a few on a busy all-traffic count or during a burst.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.api_key.id IS NOT NULL OR attributes.user.domain == \"_cloud_api_key\" | STATS events = COUNT(*), ips = COUNT_DISTINCT(client.ip) BY api_key = attributes.api_key.name, attributes.api_key.id, attributes.user.name | EVAL key_id = COALESCE(attributes.api_key.id, attributes.user.name), kind = CASE(attributes.api_key.id IS NULL, \"Cloud\", \"Elasticsearch\"), api_key = COALESCE(api_key, CASE((LENGTH(attributes.user.name) == 20 AND attributes.user.name RLIKE \"[-_A-Za-z0-9]{20}\" AND NOT attributes.user.name RLIKE \"[0-9]{20}\"), CONCAT(LEFT(attributes.user.name, 5), \"… · Cloud API key\"), \"(no name)\")) | SORT events DESC | LIMIT 10"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.api_key.id IS NOT NULL OR attributes.user.domain == \"_cloud_api_key\" | STATS events = COUNT(*), ips = COUNT_DISTINCT(client.ip), key_ids = COUNT_DISTINCT(attributes.api_key.id) BY api_key = attributes.api_key.name, attributes.user.name | EVAL kind = CASE(key_ids == 0, \"Cloud\", \"Elasticsearch\"), key_ids = GREATEST(key_ids, 1), api_key = COALESCE(api_key, CASE((LENGTH(attributes.user.name) == 20 AND attributes.user.name RLIKE \"[-_A-Za-z0-9]{20}\" AND NOT attributes.user.name RLIKE \"[0-9]{20}\"), CONCAT(LEFT(attributes.user.name, 5), \"… · Cloud API key\"), \"(no name)\")) | SORT events DESC, api_key | LIMIT 10"
         },
         "styling": {
           "density": {
@@ -600,17 +604,17 @@
             "column": "api_key"
           },
           {
-            "label": "Key ID",
-            "column": "key_id",
-            "width": 175
-          },
-          {
             "label": "Kind",
             "column": "kind",
             "width": 105
           }
         ],
         "metrics": [
+          {
+            "label": "Key IDs",
+            "column": "key_ids",
+            "width": 90
+          },
           {
             "label": "Events",
             "width": 90,
@@ -683,7 +687,7 @@
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.event.action IN (\"authentication_failed\",\"anonymous_access_denied\") OR (attributes.event.outcome == \"failure\" AND (attributes.event.action IS NULL OR attributes.event.action != \"realm_authentication_failed\")) | STATS events = COUNT(*), last_seen = MAX(@timestamp) BY attributes.user.email, attributes.api_key.name, attributes.user.name, action = attributes.event.action, ip = client.ip | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | STATS events = SUM(events), last_seen = MAX(last_seen) BY actor, action, ip | EVAL result = CASE(action IN (\"authentication_failed\",\"anonymous_access_denied\"), \"failed sign-in\", action == \"access_denied\", \"denied\", \"failed\") | SORT events DESC | LIMIT 10 | EVAL actor = CASE((LENGTH(actor) == 20 AND actor RLIKE \"[-_A-Za-z0-9]{20}\" AND NOT actor RLIKE \"[0-9]{20}\"), CONCAT(LEFT(actor, 5), \"… · Cloud API key\"), actor)"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.event.action IN (\"authentication_failed\",\"anonymous_access_denied\") OR (attributes.event.outcome == \"failure\" AND (attributes.event.action IS NULL OR attributes.event.action != \"realm_authentication_failed\")) | STATS events = COUNT(*), last_seen = MAX(@timestamp) BY attributes.user.email, attributes.api_key.name, attributes.user.name, action = attributes.event.action, ip = client.ip | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | STATS events = SUM(events), last_seen = MAX(last_seen) BY actor, action, ip | EVAL result = CASE(action IN (\"authentication_failed\",\"anonymous_access_denied\"), \"failed sign-in\", action == \"access_denied\", \"denied\", \"failed\"), ip = COALESCE(TO_STRING(ip), \"no IP\") | SORT events DESC, last_seen DESC, actor, action, ip | LIMIT 10 | EVAL actor = CASE((LENGTH(actor) == 20 AND actor RLIKE \"[-_A-Za-z0-9]{20}\" AND NOT actor RLIKE \"[0-9]{20}\"), CONCAT(LEFT(actor, 5), \"… · Cloud API key\"), actor)"
         },
         "styling": {
           "density": {
