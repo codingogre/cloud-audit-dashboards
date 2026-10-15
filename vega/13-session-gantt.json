@@ -90,7 +90,9 @@
                         "terms": {
                           "attributes.event.action": [
                             "saved_object_open_point_in_time",
-                            "saved_object_close_point_in_time"
+                            "saved_object_close_point_in_time",
+                            "space_get",
+                            "space_find"
                           ]
                         }
                       },

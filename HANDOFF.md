@@ -14,6 +14,11 @@ conflict. This file is "where we are right now" and should be assumed stale.
   `attributes.kibana.session.id`) and zooms the picker to the session ±1 min; the zoom is sent from a
   Vega timer 0.7s/1.4s later (see README, *Vega panels filter too*). Shift-click still pins the email.
   Clicked in Playwright on r103: pill present, time range changed, records show one session only.
+- **Skeptic (r103c):** vega/13 counted Kibana's space lookups (`space_get`, `space_find`) that searches/09 leaves out, so a
+  clicked bar's tooltip said 1,019 events over 773 records and the spec's "exactly as in the session records below" was
+  false. The spec now excludes them too; per-session counts match the records query exactly (773 / 1,609). Re-clicked
+  B (07) and D (02) on the older session: pill, range zoomed, 773 rows of that session only; shift-click pins the email.
+  Still open: at 1440, Session reconstruction's Message gets ~215px and cuts before `[id=…]` (expand the row to read it).
 - **searches/09** shows the raw `attributes.kibana.session.id` (full id), so a dashboard cell offers
   Filter for/out (clicked: pill added, 1,000 → 845 rows, one session). No friendlier header exists in
   9.6: `grid.columns.<name>` accepts only `width`, and `fieldAttrs.customLabel` is ignored in ES|QL mode.
