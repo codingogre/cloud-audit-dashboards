@@ -20,7 +20,7 @@
   "grid": {
     "columns": {
       "Time": {
-        "width": 215
+        "width": 208
       },
       "Identity": {
         "width": 185
@@ -35,7 +35,7 @@
         "width": 260
       },
       "Space": {
-        "width": 100
+        "width": 80
       }
     }
   }

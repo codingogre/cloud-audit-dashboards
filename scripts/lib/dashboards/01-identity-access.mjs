@@ -3,6 +3,7 @@ import {
   IDX, ACTOR_RESOLVE, ORG, CRED_TYPE_LABEL, CRED_TYPE_COLORS, TIME, dash, kpi, xy, table, sized,
   vega, search, resetIds, bar, cloudKeyLabel, grouped, FAILED_OR_DENIED, SIGNIN_FAILED, SIGNIN_WORDS, EDGE_NOTE
 } from '../panels.mjs';
+import { rawId } from '../suite.mjs';
 import { WHO } from './shared.mjs';
 
 // FAILED_OR_DENIED, SIGNIN_FAILED and SIGNIN_WORDS live in panels.mjs: 04's failure panels count the same way.
@@ -94,6 +95,17 @@ const ANCHORED = {
 const compactLog = (p) => {
   p.config.layers[0].y[0].format = { type: 'number', decimals: 0, compact: true };
   return p;
+};
+
+/** The intro (draft 3 of the 1.0.3 customer copy; INTRO TEXT in panels.mjs). */
+const INTRO = {
+  h: 6,
+  heading: "Who signed in, how, and what failed",
+  paragraphs: [
+    "See which sign-in methods and credentials are in use, your busiest people and API keys, every key and when it was last used, and each failed or denied attempt.",
+    "Use it to check that access looks the way you expect, to review API keys, or to follow up on a run of failed sign-ins. Empty failure panels are good news.",
+    "**How to use it:** choose a Project, Person (email) or Client IP in the controls and set the time picker. Click an email in a table to filter the whole suite to that person.",
+  ],
 };
 
 export function build() {
@@ -233,6 +245,6 @@ export function build() {
     search(0, 65, 48, 14, '06-actor-first-seen', 'Identity first and last seen',
       'Every identity in range (up to 1,000), all traffic — one row per identity the Identities tile counts — with its first and last appearance, Events (everything it did, the same count as Busiest human identities) and Signal events (what is left after the noise gate, the count the gated panels across the suite use). Newest first appearance on top. Widen the time range to tell a brand-new identity from one that was simply quiet.'),
   ];
-  return dash('cloud-audit-01-identity-access', '[Audit] 🔐 Identity & Access',
-    'Who authenticated, how, from where, and what failed. Resolves the numeric user.name into real identities.', P);
+  return dash(rawId('01-identity-access'), '[Audit] 🔐 Identity & Access',
+    'Who authenticated, how, from where, and what failed. Resolves the numeric user.name into real identities.', P, { intro: INTRO });
 }

@@ -2,6 +2,7 @@
 import {
   IDX, ACTOR_RESOLVE, IP_GEO, TIME, BUCKET, EDGE_NOTE, dash, kpi, xy, table, vega, filterable, sized, resetIds, grouped
 } from '../panels.mjs';
+import { rawId } from '../suite.mjs';
 
 /**
  * Why an address that reached the audit stream could not be placed, by address class. One CASE, used
@@ -126,6 +127,17 @@ const PROXIES =
  */
 const PLACED_W = 105;
 
+/** The intro (draft 7 of the 1.0.3 customer copy; INTRO TEXT in panels.mjs). */
+const INTRO = {
+  h: 6,
+  heading: "Where your users and API keys connect from",
+  paragraphs: [
+    "See activity by country and city, your busiest client addresses, and anyone seen in more than one country in the same period, a common sign of a shared or stolen credential.",
+    "Locations come from each client's real address, not Elastic's own network hops. Country is reliable; city is often your internet provider's nearest hub. Private network addresses cannot be placed on a map.",
+    "**How to use it:** choose a Project, Person (email) or Client IP in the controls and set the time picker. Click an address or email in a table to filter the whole suite to it.",
+  ],
+};
+
 export function build() {
   resetIds();
   const P = [
@@ -197,7 +209,7 @@ export function build() {
     table(24, 22, 24, 8, 'Busiest client IPs',
       `FROM ${IDX} | ${TIME} | WHERE client.ip IS NOT NULL | ${ACTOR_RESOLVE} | STATS events = COUNT(*), actors = COUNT_DISTINCT(actor), ${IP_GEO} BY client.ip | ${LOCATION} | SORT events DESC | LIMIT 6`,
       [filterable('client.ip'), 'location'], [{ column: 'events', label: 'All events' }, { column: 'placed', label: 'Placed events', width: PLACED_W }, 'actors'],
-      'Forwarded client IPs, busiest first, with where each resolved; the Client IPs tile counts every one. All events is every event from the address; Placed events is the ones geoip resolved — the same column, by the same name, as in Top client locations, and what the map counts. The difference is the address\'s events from before geo enrichment. An IP shared by many identities is usually a NAT gateway or CI runner. "Platform-internal (100.64/10)" is not a client: it is a hop inside Elastic Cloud — on this project, Kibana\'s server calling Elasticsearch for a user whose real address is on the Kibana event. "Not placeable" means no event from the address ever resolved: a private address no geoip database can place, not an enrichment error. "Geo resolution of audited events" accounts for every one. Click an IP to scope the suite to it. ' + EDGE_NOTE),
+      'Forwarded client IPs, busiest first, with where each resolved; the Client IPs tile counts every one. All events is every event from the address; Placed events is the ones geoip resolved — the same column, by the same name, as in Top client locations, and what the map counts. The difference is the address\'s events from before geo enrichment. An IP shared by many identities is usually a NAT gateway or CI runner. "Platform-internal (100.64/10)" is not a client: it is a hop inside Elastic Cloud — on this project, Kibana\'s server calling Elasticsearch for a user whose real address is on the Kibana event. "Not placeable" means no event from the address ever resolved: a private address no geoip database can place, not an enrichment error. "Geo resolution of audited events" accounts for every one. Click an IP to scope the suite to it. Every address here is network.forwarded_ip, the real client; source.ip is only Elastic Cloud\'s proxy (Proxy vs real client IP shows both). ' + EDGE_NOTE),
     // By name, not ISO code, so the legend reads "United States". Countries under 5% of PLACED traffic
     // fold into "Other": that caps the split at 19 named series in theory and a handful in practice, and
     // the right-hand legend (one per line) cannot clip the way a bottom row does — which is why it
@@ -229,6 +241,6 @@ export function build() {
       [{ column: 'client_events', label: 'Client events', width: 100 }, { column: 'hop_events', label: 'Internal-hop events', width: 130 }],
       'Side-by-side proof that source.ip is a proxy and client.ip (from network.forwarded_ip) is the real origin: one row per proxy that forwarded any client address — the proxies the Proxy IPs tile\'s line counts — with the real client addresses it carried (in address order, up to three, then "+N more"). The proxies are Elastic Cloud\'s own, which is why they sit in the platform-internal 100.64/10 range. Analysing the wrong field would put every user in the datacentre. Busiest proxy first by Client events, which came from those real clients; Internal-hop events carried a platform-internal 100.64/10 address instead — not a client but, on this project, Kibana\'s server calling Elasticsearch on a user\'s behalf — and are kept out of the client list. The two add up to the proxy\'s whole traffic, and over every proxy to the All events of Busiest client IPs. Click a proxy to scope the suite to it; Busiest client IPs filters by client. ' + EDGE_NOTE),
   ];
-  return dash('cloud-audit-05-geo-network', '[Audit] 🌍 Geo & Network',
-    'Real client geography from forwarded_ip, geo-resolved at ingest. Impossible-travel detection.', P);
+  return dash(rawId('05-geo-network'), '[Audit] 🌍 Geo & Network',
+    'Real client geography from forwarded_ip, geo-resolved at ingest. Impossible-travel detection.', P, { intro: INTRO });
 }

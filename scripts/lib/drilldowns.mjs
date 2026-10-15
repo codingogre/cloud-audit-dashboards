@@ -20,9 +20,9 @@
  */
 import { stableUuid } from './ids.mjs';
 import { nsId } from './env.mjs';
-import { SUITE, deployed } from './suite.mjs';
+import { SUITE, deployed, dashId } from './suite.mjs';
 
-export const ACTOR_360 = nsId('cloud-audit-07-actor-360');
+export const ACTOR_360 = dashId('07-actor-360');
 
 /** Panels with at least one click-to-filter column are the ones a FILTER_TRIGGER can fire on. */
 export const hasFilterableColumn = (panel) =>
@@ -47,7 +47,7 @@ export const drilldownRefs = (panelIndex, enhancements) => (enhancements?.dynami
   .map((ev) => ({ name: `${panelIndex}:drilldown:DASHBOARD_TO_DASHBOARD_DRILLDOWN:${ev.eventId}:dashboardId`, type: 'dashboard', id: ev.action.config.dashboardId }));
 
 export function panelDrilldown(dashboardId, panelId, dest = ACTOR_360) {
-  // Destinations are authored as the deployed `cloud-audit-…` ids (see cfg.ns); the default, ACTOR_360,
+  // Destinations are authored as the un-namespaced ids (rawId(), lib/suite.mjs); the default, ACTOR_360,
   // is already namespaced, and nsId() leaves a namespaced id alone.
   const destination = nsId(dest);
   // A drilldown to a dashboard this run does not deploy (an opt-in left out) would open "not found".

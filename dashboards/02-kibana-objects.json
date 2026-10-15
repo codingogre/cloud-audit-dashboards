@@ -12,7 +12,7 @@
   "panels": [
     {
       "type": "links",
-      "id": "nav-18",
+      "id": "nav-19",
       "grid": {
         "x": 0,
         "y": 0,
@@ -35,7 +35,7 @@
           },
           {
             "type": "dashboardLink",
-            "destination": "cloud-audit-07-actor-360",
+            "destination": "elastic_cloud-audit-actor-360",
             "label": "👤  Actor 360",
             "options": {
               "use_filters": true,
@@ -45,7 +45,7 @@
           },
           {
             "type": "dashboardLink",
-            "destination": "cloud-audit-01-identity-access",
+            "destination": "elastic_cloud-audit-identity-access",
             "label": "🔐  Identity & Access",
             "options": {
               "use_filters": true,
@@ -55,7 +55,7 @@
           },
           {
             "type": "dashboardLink",
-            "destination": "cloud-audit-02-kibana-objects",
+            "destination": "elastic_cloud-audit-kibana-objects",
             "label": "🗂️  Kibana Object Forensics",
             "options": {
               "use_filters": true,
@@ -65,7 +65,7 @@
           },
           {
             "type": "dashboardLink",
-            "destination": "cloud-audit-03-data-access",
+            "destination": "elastic_cloud-audit-data-access",
             "label": "🔎  Elasticsearch Data Access",
             "options": {
               "use_filters": true,
@@ -75,7 +75,7 @@
           },
           {
             "type": "dashboardLink",
-            "destination": "cloud-audit-04-security-anomalies",
+            "destination": "elastic_cloud-audit-security-anomalies",
             "label": "🚨  Security & Anomalies",
             "options": {
               "use_filters": true,
@@ -85,7 +85,7 @@
           },
           {
             "type": "dashboardLink",
-            "destination": "cloud-audit-05-geo-network",
+            "destination": "elastic_cloud-audit-geo-network",
             "label": "🌍  Geo & Network",
             "options": {
               "use_filters": true,
@@ -97,11 +97,24 @@
       }
     },
     {
+      "type": "markdown",
+      "id": "md-18",
+      "grid": {
+        "x": 0,
+        "y": 3,
+        "w": 48,
+        "h": 7
+      },
+      "config": {
+        "content": "### Every change to your Kibana content, and who made it\n\nDashboards, visualizations, data views, alert rules, SLOs, workflows and other saved objects: what was created, edited, deleted or opened, in which space, and by whom.\n\nUse it to answer \"who deleted that dashboard?\" or \"what changed before the alert stopped firing?\". Panels marked *noise gate applied* skip these audit dashboards' own activity, so you see your team's work.\n\n**How to use it:** choose a Project, Person (email) or Client IP in the controls and set the time picker. The session view at the bottom replays one browser session step by step. Click a session bar or a session id to see exactly what happened in that browser session.\n"
+      }
+    },
+    {
       "type": "vis",
       "id": "kpi-01",
       "grid": {
         "x": 0,
-        "y": 3,
+        "y": 10,
         "w": 8,
         "h": 5
       },
@@ -130,7 +143,7 @@
       "id": "kpi-02",
       "grid": {
         "x": 8,
-        "y": 3,
+        "y": 10,
         "w": 8,
         "h": 5
       },
@@ -159,7 +172,7 @@
       "id": "kpi-03",
       "grid": {
         "x": 16,
-        "y": 3,
+        "y": 10,
         "w": 8,
         "h": 5
       },
@@ -188,7 +201,7 @@
       "id": "kpi-04",
       "grid": {
         "x": 24,
-        "y": 3,
+        "y": 10,
         "w": 8,
         "h": 5
       },
@@ -217,7 +230,7 @@
       "id": "kpi-05",
       "grid": {
         "x": 32,
-        "y": 3,
+        "y": 10,
         "w": 8,
         "h": 5
       },
@@ -246,7 +259,7 @@
       "id": "kpi-06",
       "grid": {
         "x": 40,
-        "y": 3,
+        "y": 10,
         "w": 8,
         "h": 5
       },
@@ -275,7 +288,7 @@
       "id": "tbl-07",
       "grid": {
         "x": 0,
-        "y": 8,
+        "y": 15,
         "w": 48,
         "h": 14
       },
@@ -348,7 +361,7 @@
       "id": "vega-08",
       "grid": {
         "x": 0,
-        "y": 22,
+        "y": 29,
         "w": 24,
         "h": 13
       },
@@ -363,7 +376,7 @@
       "id": "xy-09",
       "grid": {
         "x": 24,
-        "y": 22,
+        "y": 29,
         "w": 24,
         "h": 13
       },
@@ -462,7 +475,7 @@
       "id": "tbl-10",
       "grid": {
         "x": 0,
-        "y": 35,
+        "y": 42,
         "w": 22,
         "h": 12
       },
@@ -514,7 +527,7 @@
       "id": "tbl-11",
       "grid": {
         "x": 22,
-        "y": 35,
+        "y": 42,
         "w": 26,
         "h": 12
       },
@@ -571,7 +584,7 @@
       "id": "tbl-12",
       "grid": {
         "x": 0,
-        "y": 47,
+        "y": 54,
         "w": 12,
         "h": 11
       },
@@ -619,7 +632,7 @@
       "id": "xy-13",
       "grid": {
         "x": 12,
-        "y": 47,
+        "y": 54,
         "w": 12,
         "h": 11
       },
@@ -667,7 +680,7 @@
       "id": "ds-14",
       "grid": {
         "x": 24,
-        "y": 47,
+        "y": 54,
         "w": 24,
         "h": 11
       },
@@ -682,7 +695,7 @@
       "id": "ds-15",
       "grid": {
         "x": 0,
-        "y": 58,
+        "y": 65,
         "w": 48,
         "h": 15
       },
@@ -697,7 +710,7 @@
       "id": "vega-16",
       "grid": {
         "x": 0,
-        "y": 73,
+        "y": 80,
         "w": 48,
         "h": 7
       },
@@ -712,7 +725,7 @@
       "id": "ds-17",
       "grid": {
         "x": 0,
-        "y": 80,
+        "y": 87,
         "w": 48,
         "h": 14
       },

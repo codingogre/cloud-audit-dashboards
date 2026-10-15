@@ -3,6 +3,7 @@ import {
   IDX, ACTOR_RESOLVE, RISK_INDEX_STATS, RISK_INDEX_EVAL, NOISE, TIME, BUCKET, SCOPE, PALETTE, PRIVILEGED,
   privilegedKpi, FAILED_OR_DENIED, SIGNIN_WORDS, EDGE_NOTE, dash, kpi, xy, table, vega, search, sized, fitRows, resetIds
 } from '../panels.mjs';
+import { rawId } from '../suite.mjs';
 import {
   ACTOR_KEYS, riskScored
 } from './shared.mjs';
@@ -112,6 +113,17 @@ const TH = 13;
  * where there is one, the action. It runs on the grouped rows, so it costs nothing.
  */
 
+/** The intro (draft 6 of the 1.0.3 customer copy; INTRO TEXT in panels.mjs). */
+const INTRO = {
+  h: 6,
+  heading: "The activity most worth a second look",
+  paragraphs: [
+    "Each sensitive action earns a risk weight, from 10 for a workflow run up to 50 for a security setting change, while routine work scores zero.",
+    "Panels rank identities by that risk, show newly seen identities, and list every security configuration change. Elastic's own routine API key clean-up is counted separately so it never hides real changes.",
+    "**How to use it:** choose a Project, Person (email) or Client IP in the controls and set the time picker. Hover the ⓘ beside a panel title to see how it is scored.",
+  ],
+};
+
 export function build() {
   resetIds();
   const P = [
@@ -207,6 +219,6 @@ export function build() {
     search(0, 77, 48, 25, '01-all-mutations', 'Mutation feed · newest 1,000 at most',
       `Creates, updates and deletes across Kibana and Elasticsearch security config, newest first. Object is what the change named: the saved object or feature object for a Kibana change; for an Elasticsearch security change, the API key's name, the key ids of an invalidation, the role or the profile, with its full JSON payload under Message. ${CLEANUP}. Space id is the space's id, the /s/<id> in its URL: the audit stream records no space display name, not even on a space read. It is empty on an Elasticsearch security change, which belongs to no space. Spaces that tooling creates and deletes (review or test spaces) are real activity, and so is the config object Kibana creates the first time a space is opened. Discover returns at most the newest 1,000 events, and its result count is that cap rather than the total. Scroll the grid for older rows; to reach older events still, narrow the time range.`),
   ];
-  return dash('cloud-audit-04-security-anomalies', '[Audit] 🚨 Security & Anomalies',
-    'Mean-severity risk scoring, privileged operations, failures and newly seen identities.', P);
+  return dash(rawId('04-security-anomalies'), '[Audit] 🚨 Security & Anomalies',
+    'Mean-severity risk scoring, privileged operations, failures and newly seen identities.', P, { intro: INTRO });
 }

@@ -28,6 +28,7 @@ import { buildAll } from './lib/definitions.mjs';
 import { controlGroup, dataViewObject, isControlRef, CONTROLS } from './lib/controls.mjs';
 import { panelDrilldown, hasFilterableColumn, ACTOR_360, drilldownRefs, isDrilldownRef } from './lib/drilldowns.mjs';
 import { checkLayout } from './lib/layout.mjs';
+import { smallMarkdown } from './lib/panels.mjs';
 
 /**
  * The Dashboards API payload: the definitions minus the in-memory annotations the post-pass and the
@@ -36,7 +37,7 @@ import { checkLayout } from './lib/layout.mjs';
  * stripped here, which is also what gets written to dashboards/*.json, since those files are the
  * payload as sent.
  */
-const payload = (def) => ({ ...def, panels: def.panels.map(({ drill, narrow1440, lint, ...p }) => p) });
+const payload = (def) => ({ ...def, panels: def.panels.map(({ drill, narrow1440, lint, headed, ...p }) => p) });
 
 /** Write the generated definitions to disk so they are diffable in review. */
 export function emit() {
@@ -71,6 +72,7 @@ async function applyImportOnlyState(all) {
   let drillTotal = 0;
   for (const [name, def] of Object.entries(all)) {
     const id = dashId(name);
+    const introPanels = Object.fromEntries(def.panels.filter((p) => p.headed).map((p) => [p.id, p.config.content]));
     const vegaPanels = Object.fromEntries(
       def.panels.filter((p) => p.type === 'vis' && p.config?.ref_id).map((p) => [p.id, p.config.ref_id]));
     // Drilldowns fire on FILTER_TRIGGER, so they belong only on panels that already carry a
@@ -100,6 +102,19 @@ async function applyImportOnlyState(all) {
     // `label`) on data_table rows AND metrics itself — verified by PUT then _export — so they ride
     // the PUT like any other panel option and this post-pass no longer touches them.
 
+    // Intro panels (INTRO TEXT, panels.mjs) become a by-value legacy markdown visualization, the only
+    // markdown renderer with a text size; their content is the same markdown the PUT carried.
+    let intros = 0;
+    for (const p of panels) {
+      const src = introPanels[p.panelIndex];
+      if (!src) continue;
+      p.type = 'visualization';
+      p.embeddableConfig = smallMarkdown(src);
+      delete p.panelRefName;
+      refs = refs.filter((r) => !r.name.startsWith(`${p.panelIndex}:`));
+      intros++;
+    }
+
     let drilled = 0;
     for (const p of panels) {
       if (!drillPanels.has(p.panelIndex)) continue;
@@ -112,7 +127,8 @@ async function applyImportOnlyState(all) {
     obj.attributes.controlGroupInput = controlGroupInput;
     obj.references = [...refs, ...controlRefs];
     await kb.importObjects([obj]);
-    detail(`${id}: ${changed} vega re-pointed, ${CONTROLS.length} controls, ${drilled} drilldown(s)`);
+    if (intros !== Object.keys(introPanels).length) throw new Error(`${id}: ${intros} of ${Object.keys(introPanels).length} intro panels found in the export`);
+    detail(`${id}: ${changed} vega re-pointed, ${intros} intro(s), ${CONTROLS.length} controls, ${drilled} drilldown(s)`);
     vegaTotal += changed;
     drillTotal += drilled;
   }
@@ -121,9 +137,10 @@ async function applyImportOnlyState(all) {
 
 /**
  * A suite dashboard this run does not deploy must not stay behind in the space: its nav strip would
- * still list the old set, and a retired id still links to dashboards by their old ids. That is the
- * pre-1.0.2 Command Center id (cloud-audit-00-command-center, now elastic_cloud-audit-dashboard), and Platform
- * Volume when it is not opted in. Only those exact ids are touched, and each is read first.
+ * still list the old set, and a retired id still links to dashboards by their old ids. That is every
+ * RETIRED_IDS entry (lib/suite.mjs: the pre-1.0.2 Command Center id cloud-audit-00-command-center and the
+ * numbered pre-1.0.3 ids cloud-audit-<NN>-<name>), and Platform Volume when it is not opted in. Only those
+ * exact ids are touched, and each is read first.
  */
 async function removeStrays() {
   for (const id of strays()) {

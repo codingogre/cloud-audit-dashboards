@@ -549,9 +549,11 @@ export const RISK_RESTORE =
  *                   saved_object_find of `index-pattern` (the logs-* / metrics-* default data-view check,
  *                   the workflows data views): 2,021 each in 24h, one per page load, by every viewer and
  *                   by the verify renderer. Reading, creating or changing a particular data view stays.
- *   The suite       (SUITE_SELF) what the suite does to its own saved objects — `cloud-audit-*`, plus
- *                   Command Center's `elastic_cloud-audit-dashboard` (1.0.2, the id the Cloud UI links
- *                   to) as `elastic_cloud-audit-*`; both cover every AUDIT_ID_NS namespace too:
+ *   The suite       (SUITE_SELF) what the suite does to its own saved objects — `cloud-audit-*` (the Vega
+ *                   and Discover objects, the data view, and the retired numbered dashboard ids), plus
+ *                   every dashboard as `elastic_cloud-audit-*` (Command Center's `elastic_cloud-audit-dashboard`
+ *                   since 1.0.2, the id the Cloud UI links to; every other dashboard since 1.0.3); both
+ *                   cover every AUDIT_ID_NS namespace too:
  *                     · a READ (get, resolve, find) by anyone: "User has accessed dashboard
  *                       [id=cloud-audit-…]" is the suite watching itself be watched, one per panel
  *                       load per viewer;
@@ -1391,6 +1393,50 @@ export const md = (x, y, w, h, content, { title, description } = {}) => {
 };
 
 /**
+ * INTRO TEXT (1.0.3, the human's format). Every dashboard opens with a customer-facing intro directly under
+ * the navigation strip, and Command Center's "How to read this suite" box reads the same way: a normal
+ * markdown heading INSIDE the panel (`###`, no trailing period, no panel title over it), then the body as
+ * compact small text, one source line per paragraph.
+ *
+ * The 9.6 markdown panel cannot do small text. It renders through EuiMarkdownFormat, which has no size
+ * setting through the API and SANITISES raw HTML: a `<style>` block or a `<div class>` is dropped before
+ * render (probed on r103f: no style element reaches the page, and the h3 and paragraphs come through
+ * bare, at 20px and 16px). So was CSS_NAV, the style block Command Center's legend carried for the
+ * navigation strip until 1.0.3: it never reached the page, and it is gone. The legacy markdown
+ * visualization does have a size: its `fontSize` (pt) sets the body, and its heading keeps a heading's size
+ * (probed: fontSize 9 → paragraphs 12px on an 18px line, `###` 17px, 14px between paragraphs, theme
+ * colours in both themes). So an intro is authored and PUT as a plain markdown panel, which is what
+ * dashboards/*.json shows and what anything that skips the post-pass still renders, and the post-pass in
+ * scripts/dashboards.mjs (smallMarkdown) swaps it for a by-value legacy markdown visualization at
+ * INTRO_PT, title hidden — the same _export → mutate → _import route that re-points Vega. The legacy
+ * renderer escapes HTML, so an intro carries none.
+ *
+ * HEIGHT is measured, not estimated: a 48-column intro at fontSize 9 is ~151px for a 37px heading and three
+ * one-line paragraphs, so h=6 (160px) holds it at 1920 and at 1440 (a paragraph stays on one line up to ~205
+ * characters at 1440). A paragraph that wraps at 1440 costs 18px: 02 needs h=7 (169px), and 07, two
+ * paragraphs with one that wraps, h=6 (137px). Probe with `AUDIT_VERIFY_WIDTH=1440` after any copy change:
+ * a panel that is too short shows a scrollbar, and the layout check cannot see it.
+ *
+ * `headed: true` is an in-memory annotation: the layout check allows the heading there and nowhere else,
+ * the post-pass finds the panel by it, and the API payload strips it.
+ */
+export const INTRO_PT = 9;
+export const introMd = (x, y, w, h, heading, paragraphs) => {
+  if (/[.\n]$/.test(heading) || /^#/.test(heading)) throw new Error(`intro heading "${heading}": plain words, no trailing period`);
+  if (paragraphs.some((p) => p.includes('\n'))) throw new Error(`intro "${heading}": one source line per paragraph`);
+  if (paragraphs.some((p) => /<[a-z/]/i.test(p))) throw new Error(`intro "${heading}": no HTML (the legacy renderer escapes it)`);
+  const content = `### ${heading}\n\n${paragraphs.join('\n\n')}\n`;
+  return { type: 'markdown', id: nid('md'), grid: { x, y, w, h }, headed: true, config: { content } };
+};
+
+/** The by-value legacy markdown visualization an intro panel becomes (see INTRO TEXT). */
+export const smallMarkdown = (content) => ({
+  hidePanelTitles: true, enhancements: {},
+  savedVis: { id: '', title: '', description: '', type: 'markdown', uiState: {}, data: { aggs: [], searchSource: {} },
+    params: { fontSize: INTRO_PT, openLinksInNewTab: false, markdown: content } },
+});
+
+/**
  * A section header. `window` is required, not decorative: a dashboard can mix panels that follow
  * the time picker with panels on a fixed window (see TIME BINDING above), and a reader who cannot
  * tell which is which will misread both. Making it a parameter is what stops a fixed-window panel
@@ -1446,19 +1492,6 @@ export const links = (x, y, w, h, current, layout = 'horizontal') => ({
   },
 });
 
-export const CSS_NAV = `<style>
-ul, li { margin: 0; padding: 0; list-style: none; position: relative; }
-a {
-  display: block; padding: 8px 14px;
-  color: #1ba9f5 !important; text-decoration: none !important;
-  transition: all 0.3s ease !important; border-radius: 4px;
-}
-a:hover {
-  background-color: rgba(27, 169, 245, 0.1) !important;
-  color: #0079b8 !important; padding-left: 20px !important; cursor: pointer;
-}
-</style>
-`;
 
 /**
  * Three grid rows (76px): the panel title plus one row of links, with nothing spare. At four the bar
@@ -1492,10 +1525,19 @@ export const NAV_H = 3;
  */
 export const TIME_TO = 'now-1m';
 export const EDGE_NOTE = 'The range ends a minute ago, so nothing in it is still arriving; each panel reads the clock for itself, up to a second apart, so two panels side by side can differ by the events of that second at either end of the range: usually none, a few on a busy all-traffic count or during a burst.';
-export const dash = (id, title, description, panels, timeFrom = 'now-1h') => ({
-  title, description,
-  time_range: { from: timeFrom, to: TIME_TO },
-  refresh_interval: { pause: true, value: 60000 },
-  panels: [links(0, 0, 48, NAV_H, id),
-           ...panels.map((p) => ({ ...p, grid: { ...p.grid, y: p.grid.y + NAV_H } }))],
-});
+/**
+ * `intro` is the dashboard's customer-facing intro ({ h, heading, paragraphs }, see INTRO TEXT): full
+ * width, directly under the navigation strip, and every authored panel moves down by its height, so a
+ * module authors its own panels from y=0 and the intro's height changes nothing else in it.
+ */
+export const dash = (id, title, description, panels, { intro, timeFrom = 'now-1h' } = {}) => {
+  const top = intro ? [introMd(0, NAV_H, 48, intro.h, intro.heading, intro.paragraphs)] : [];
+  const below = NAV_H + (intro ? intro.h : 0);
+  return {
+    title, description,
+    time_range: { from: timeFrom, to: TIME_TO },
+    refresh_interval: { pause: true, value: 60000 },
+    panels: [links(0, 0, 48, NAV_H, id), ...top,
+             ...panels.map((p) => ({ ...p, grid: { ...p.grid, y: p.grid.y + below } }))],
+  };
+};

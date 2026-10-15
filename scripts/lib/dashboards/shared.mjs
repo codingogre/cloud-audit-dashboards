@@ -1,6 +1,6 @@
 /** Constants shared by more than one dashboard module. */
 import {
-  RISK, VERB, CSS_NAV, RISK_PREFILTER, RISK_KEYS, RISK_RESTORE, CHANGE, OBJ_GROK, OBJ_NAME, OBJ_TYPE, OUTCOME,
+  RISK, VERB, introMd, RISK_PREFILTER, RISK_KEYS, RISK_RESTORE, CHANGE, OBJ_GROK, OBJ_NAME, OBJ_TYPE, OUTCOME,
   filterable
 } from '../panels.mjs';
 import { isDeployed } from '../suite.mjs';
@@ -26,32 +26,29 @@ export const specDescription = (ref) => JSON.parse(readFileSync(join(ROOT, 'vega
 export const WHO = filterable('attributes.user.email');
 
 /**
- * The suite legend on Command Center (16 columns: ~560px wide at 1920, ~410px at 1440, ~330px tall —
- * at 1440 a separate closing line for the hover hint fell below the panel edge, so it ends the last paragraph).
- * One source line per paragraph: Kibana's markdown renders a source newline as a line break, so a
- * hard-wrapped paragraph breaks mid-sentence wherever the source did. A code chip cannot break either,
- * so each paragraph ends on plain words — `authentication_success` used to land alone on a line of its
- * own. The first sentence states the exception, because three panels on that page read all traffic and
- * say so in their titles. The noise sentence names every class NOISE gates (panels.mjs), in the reader's
- * words — infra health, query internals, API key lookups (API_KEY_READS), page loads and their lookups, bulk sign-in events
- * (connection_granted, authentication_success), and SUITE_SELF (the suite's views and its automated
- * install) — so a change to the gate changes this sentence too. It must leave the closing paragraph
- * visible at 1440px: round 5's longer version, with a code chip, pushed it under the panel edge.
+ * The suite legend on Command Center, "How to read this suite" (16 columns beside Audit volume: ~560px wide
+ * at 1920, ~410px at 1440), in the intro style (INTRO TEXT in panels.mjs, draft 1b of the 1.0.3 customer
+ * copy): Kibana's own heading, then small text, one source line per paragraph. It says in the reader's words
+ * what NOISE gates (panels.mjs) — health checks, query internals ("the background requests behind each
+ * search and page load"), API key lookups (API_KEY_READS), bulk sign-in records and SUITE_SELF — so a change
+ * to the gate changes this sentence too. The exact list in field names is the Signal events tooltip; the
+ * identity order is on Busiest identities and Distinct actors; network.forwarded_ip against source.ip is on
+ * Geo & Network's Busiest client IPs and Proxy vs real client IP.
  * Never put sentence punctuation between two code chips: round 5's "the numeric `user.name`. `_4KEO…`"
  * rendered as two chips joined by a stray period and read as if user.name were the Cloud key.
+ * It no longer carries CSS_NAV: the 9.6 markdown panel drops a style block before render (it never styled
+ * the strip), and the legacy renderer this panel becomes would print it as text (INTRO TEXT, panels.mjs).
  *
  * A function, because Platform Volume is opt-in (lib/suite.mjs): the pointer to its unfiltered totals
  * is there only when it is deployed, so the legend never names a dashboard the nav strip does not have.
  */
-export const legendMd = () => CSS_NAV + `
-### How to read this suite
-
-**Noise gate is ON** unless a title says *all traffic*: health pings, query internals, API key lookups, page loads, bulk sign-in events and this suite's own traffic are left out${
-  isDeployed('06-platform-volume') ? '; unfiltered totals are on **📊 Platform Volume**' : ''}.
-
-**Identity** is the email, else the API key name, else the numeric \`user.name\`; a Cloud API key has only an id and reads \`_4KEO… · Cloud API key\` everywhere.
-
-**Client IPs are real**: geography comes from \`network.forwarded_ip\`; \`source.ip\` is only the proxy. *Hover a panel title for detail.*`;
+export const legendPanel = (x, y, w, h) => introMd(x, y, w, h, 'How to read this suite', [
+  `**Routine traffic is left out** unless a panel title says *all traffic*. That covers health checks, the background requests behind each search and page load, API key lookups, bulk sign-in records, and these dashboards' own activity${
+    isDeployed('06-platform-volume') ? '. **📊 Platform Volume** shows everything' : ''}.`,
+  "**Each identity is named** by its email address, or the API key's name when there is no email, or a numeric user ID as a last resort.",
+  '**Cloud API keys have no name** in the audit log, so they appear by the start of their ID, such as `_4KEO… · Cloud API key`.',
+  "**Locations use the real client address,** not Elastic's own network hops. *Hover the ⓘ beside a panel title for details.*",
+]);
 
 /** The raw identity fields ACTOR_RESOLVE reads, for a STATS that has to resolve the actor afterwards. */
 export const ACTOR_KEYS = 'attributes.user.email, attributes.api_key.name, attributes.user.name';

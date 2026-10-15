@@ -12,7 +12,7 @@
   "panels": [
     {
       "type": "links",
-      "id": "nav-15",
+      "id": "nav-16",
       "grid": {
         "x": 0,
         "y": 0,
@@ -35,7 +35,7 @@
           },
           {
             "type": "dashboardLink",
-            "destination": "cloud-audit-07-actor-360",
+            "destination": "elastic_cloud-audit-actor-360",
             "label": "👤  Actor 360",
             "options": {
               "use_filters": true,
@@ -45,7 +45,7 @@
           },
           {
             "type": "dashboardLink",
-            "destination": "cloud-audit-01-identity-access",
+            "destination": "elastic_cloud-audit-identity-access",
             "label": "🔐  Identity & Access",
             "options": {
               "use_filters": true,
@@ -55,7 +55,7 @@
           },
           {
             "type": "dashboardLink",
-            "destination": "cloud-audit-02-kibana-objects",
+            "destination": "elastic_cloud-audit-kibana-objects",
             "label": "🗂️  Kibana Object Forensics",
             "options": {
               "use_filters": true,
@@ -65,7 +65,7 @@
           },
           {
             "type": "dashboardLink",
-            "destination": "cloud-audit-03-data-access",
+            "destination": "elastic_cloud-audit-data-access",
             "label": "🔎  Elasticsearch Data Access",
             "options": {
               "use_filters": true,
@@ -75,7 +75,7 @@
           },
           {
             "type": "dashboardLink",
-            "destination": "cloud-audit-04-security-anomalies",
+            "destination": "elastic_cloud-audit-security-anomalies",
             "label": "🚨  Security & Anomalies",
             "options": {
               "use_filters": true,
@@ -85,7 +85,7 @@
           },
           {
             "type": "dashboardLink",
-            "destination": "cloud-audit-05-geo-network",
+            "destination": "elastic_cloud-audit-geo-network",
             "label": "🌍  Geo & Network",
             "options": {
               "use_filters": true,
@@ -97,11 +97,24 @@
       }
     },
     {
+      "type": "markdown",
+      "id": "md-15",
+      "grid": {
+        "x": 0,
+        "y": 3,
+        "w": 48,
+        "h": 6
+      },
+      "config": {
+        "content": "### See who did what across your Elastic Cloud projects\n\nThis overview shows how much activity there was, who was busiest, which identities carry the most risk, and the latest events as they arrive.\n\nStart here for a routine review or when something looks wrong, then use the links above to go deeper on one person, sign-ins, Kibana objects, data access, security or location.\n\n**How to use it:** choose a Project, Person (email) or Client IP in the controls to focus every panel, and set the period in the time picker.\n"
+      }
+    },
+    {
       "type": "vis",
       "id": "kpi-01",
       "grid": {
         "x": 0,
-        "y": 3,
+        "y": 9,
         "w": 8,
         "h": 5
       },
@@ -130,7 +143,7 @@
       "id": "kpi-02",
       "grid": {
         "x": 8,
-        "y": 3,
+        "y": 9,
         "w": 7,
         "h": 5
       },
@@ -159,7 +172,7 @@
       "id": "kpi-03",
       "grid": {
         "x": 15,
-        "y": 3,
+        "y": 9,
         "w": 7,
         "h": 5
       },
@@ -188,7 +201,7 @@
       "id": "kpi-04",
       "grid": {
         "x": 22,
-        "y": 3,
+        "y": 9,
         "w": 7,
         "h": 5
       },
@@ -217,7 +230,7 @@
       "id": "kpi-05",
       "grid": {
         "x": 29,
-        "y": 3,
+        "y": 9,
         "w": 10,
         "h": 5
       },
@@ -250,7 +263,7 @@
       "id": "kpi-06",
       "grid": {
         "x": 39,
-        "y": 3,
+        "y": 9,
         "w": 9,
         "h": 5
       },
@@ -279,9 +292,9 @@
       "id": "xy-07",
       "grid": {
         "x": 0,
-        "y": 8,
+        "y": 14,
         "w": 32,
-        "h": 13
+        "h": 11
       },
       "config": {
         "title": "Audit volume by source · all traffic",
@@ -356,13 +369,12 @@
       "id": "md-08",
       "grid": {
         "x": 32,
-        "y": 8,
+        "y": 14,
         "w": 16,
-        "h": 13
+        "h": 11
       },
       "config": {
-        "content": "<style>\nul, li { margin: 0; padding: 0; list-style: none; position: relative; }\na {\n  display: block; padding: 8px 14px;\n  color: #1ba9f5 !important; text-decoration: none !important;\n  transition: all 0.3s ease !important; border-radius: 4px;\n}\na:hover {\n  background-color: rgba(27, 169, 245, 0.1) !important;\n  color: #0079b8 !important; padding-left: 20px !important; cursor: pointer;\n}\n</style>\n\n**Noise gate is ON** unless a title says *all traffic*: health pings, query internals, API key lookups, page loads, bulk sign-in events and this suite's own traffic are left out.\n\n**Identity** is the email, else the API key name, else the numeric `user.name`; a Cloud API key has only an id and reads `_4KEO… · Cloud API key` everywhere.\n\n**Client IPs are real**: geography comes from `network.forwarded_ip`; `source.ip` is only the proxy. *Hover a panel title for detail.*",
-        "title": "How to read this suite"
+        "content": "### How to read this suite\n\n**Routine traffic is left out** unless a panel title says *all traffic*. That covers health checks, the background requests behind each search and page load, API key lookups, bulk sign-in records, and these dashboards' own activity.\n\n**Each identity is named** by its email address, or the API key's name when there is no email, or a numeric user ID as a last resort.\n\n**Cloud API keys have no name** in the audit log, so they appear by the start of their ID, such as `_4KEO… · Cloud API key`.\n\n**Locations use the real client address,** not Elastic's own network hops. *Hover the ⓘ beside a panel title for details.*\n"
       }
     },
     {
@@ -370,7 +382,7 @@
       "id": "vega-09",
       "grid": {
         "x": 0,
-        "y": 21,
+        "y": 25,
         "w": 24,
         "h": 15
       },
@@ -385,7 +397,7 @@
       "id": "xy-10",
       "grid": {
         "x": 24,
-        "y": 21,
+        "y": 25,
         "w": 24,
         "h": 15
       },
@@ -472,7 +484,7 @@
       "id": "tbl-11",
       "grid": {
         "x": 0,
-        "y": 36,
+        "y": 40,
         "w": 13,
         "h": 13
       },
@@ -520,7 +532,7 @@
       "id": "tbl-12",
       "grid": {
         "x": 13,
-        "y": 36,
+        "y": 40,
         "w": 22,
         "h": 13
       },
@@ -573,7 +585,7 @@
       "id": "xy-13",
       "grid": {
         "x": 35,
-        "y": 36,
+        "y": 40,
         "w": 13,
         "h": 13
       },
@@ -627,7 +639,7 @@
       "id": "ds-14",
       "grid": {
         "x": 0,
-        "y": 49,
+        "y": 53,
         "w": 48,
         "h": 25
       },

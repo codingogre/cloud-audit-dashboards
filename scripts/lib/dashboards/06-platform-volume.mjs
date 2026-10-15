@@ -1,8 +1,9 @@
 /** 06 Platform Volume — see scripts/lib/definitions.mjs for how the suite is assembled. */
 import {
   IDX, ACTOR, ACTOR_RESOLVE, NOISE, BAND, BAND_KEYS, TIME, BUCKET, KIND_REFINE, SOURCE_LABEL, SOURCE_COLORS,
-  dash, kpi, xy, table, vega, md, filterable, resetIds, cloudKeyLabel, isCloudKeyId, grouped
+  dash, kpi, xy, table, vega, filterable, resetIds, cloudKeyLabel, isCloudKeyId, grouped
 } from '../panels.mjs';
+import { rawId } from '../suite.mjs';
 
 /**
  * SIGNAL VS NOISE OVER TIME is one full-Vega panel (vega/07), not a Vega stream above a Lens share chart.
@@ -83,17 +84,20 @@ import {
  */
 
 /**
- * The note is a full-width strip rather than a side column: at 10 columns every inline code chip
- * wrapped onto its own line and the API-key caveat — the sentence that matters most — was clipped
- * off the bottom. Bands are bold run-ins named exactly as the legends and KPI tiles name them.
+ * The intro (draft 8 of the 1.0.3 customer copy, INTRO TEXT in panels.mjs). It replaces "The quarantine
+ * dashboard" note that sat under the tiles; what that note said in field names now lives in the tiles'
+ * tooltips (authentication_success, cluster:monitor/main, the band sum on All events), and the API key
+ * creator rule (Kind "human + key") in Highest-volume identities'. Bands are named exactly as the tiles.
  */
-const VOL_NOTE = `### The quarantine dashboard
-
-Every other dashboard applies a **noise gate**; this one does not, so the whole firehose stays measurable. Every event lands in exactly one band, so the four band tiles add up to **All events** (give or take the events of the second between two tiles' fetches):
-**Signal**: what the other dashboards read · **Auth success**: Elasticsearch's \`authentication_success\`, one per authenticated request
-**Query internals**: search, \`ES|QL\`, Kibana \`/internal/\`, the suite's own traffic, \`connection_granted\` · **Infra health**: \`cluster:monitor/main\`, \`elastic.maintenance\`
-
-A named API key's events carry its **creator**: a person's key counts under that person (Kind **human + key**), any other under its own name.`;
+const INTRO = {
+  h: 6,
+  heading: 'All audit traffic, with nothing left out',
+  paragraphs: [
+    'The other dashboards hide routine background traffic so the meaningful events stand out. This page counts everything, split into four groups that add up to the total.',
+    "**Signal** is what the other dashboards show. **Auth success** is logged once for every authenticated request. **Query internals** are the background steps behind searches and page loads. **Infra health** is Elastic's own monitoring.",
+    'Use it to understand audit volume and to see how busy each API key is. **How to use it:** choose a Project, Person (email) or Client IP in the controls and set the time picker.',
+  ],
+};
 
 export function build() {
   resetIds();
@@ -105,10 +109,10 @@ export function build() {
     // has no thousands separator, so grouped() writes "52,113" the way Lens prints the number above it.
     // "requests", not "HTTP requests": "728,436 HTTP requests" was cut at an 8-column tile's edge at 1440px.
     kpi(0, 0, 8, 5, `FROM ${IDX} | ${TIME} | STATS \`All events\` = COUNT(*), requests = COUNT_DISTINCT(attributes.http.request.id) | EVAL detail = CONCAT(${grouped('requests')}, " requests") | KEEP \`All events\`, detail`, 'All events',
-      'Total audited events, unfiltered. Beneath it, the distinct HTTP requests behind them — one request often emits several audit records.', { secondary: 'detail' }),
+      'Total audited events, unfiltered. Beneath it, the distinct HTTP requests behind them — one request often emits several audit records. Every event lands in exactly one of the four bands (Signal, Auth success, Query internals, Infra health), so those tiles add up to this one, give or take the events of the second between two tiles\' fetches.', { secondary: 'detail' }),
     kpi(8, 0, 8, 5, `FROM ${IDX} | ${TIME} | ${NOISE} | STATS \`Signal\` = COUNT(*)`, 'Signal', 'Events that survive the noise gate: what every other dashboard reads.'),
     kpi(16, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE attributes.event.action == "authentication_success" | STATS \`Auth success\` = COUNT(*)`, 'Auth success',
-      'Successful authentication events. Elasticsearch logs one per authenticated request, so credentials making many calls generate most of them.'),
+      'Successful authentication events (authentication_success). Elasticsearch logs one per authenticated request, so credentials making many calls generate most of them.'),
     // Counted BY BAND_KEYS with no prefilter, like Signal share: BAND decides membership over the
     // grouped rows, so this tile cannot drift from the charts. A positive superset prefilter measured
     // no faster (450ms vs 454ms, 7d replica) once KIBANA_INTERNALS joined the band, and it was one more
@@ -116,10 +120,9 @@ export function build() {
     kpi(24, 0, 8, 5, `FROM ${IDX} | ${TIME} | STATS n = COUNT(*) BY ${BAND_KEYS} | ${BAND} | WHERE band == "query-noise" | STATS q = SUM(n) | EVAL \`Query internals\` = COALESCE(q, 0) | KEEP \`Query internals\``, 'Query internals',
       'The machinery behind a query, not a decision anyone made: Elasticsearch search phases, ES|QL sub-requests, field_caps, async search and point-in-time; reads of API key metadata (api_key/get and query); Kibana /internal/ page requests; reads of this suite’s own saved objects; and transport connection_granted.'),
     kpi(32, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE attributes.elasticsearch.audit.action IN ("cluster:monitor/main","elastic.maintenance") | STATS \`Infra health\` = COUNT(*)`, 'Infra health',
-      'Health-check and platform maintenance traffic.'),
+      'Health-check and platform maintenance traffic: cluster:monitor/main and elastic.maintenance.'),
     kpi(40, 0, 8, 5, `FROM ${IDX} | ${TIME} | STATS n = COUNT(*) BY ${BAND_KEYS} | ${BAND} | STATS total = SUM(n), sig = SUM(CASE(band == "signal", n, 0)) | EVAL \`Signal share\` = ROUND(sig * 1.0 / total, 4) | KEEP \`Signal share\``, 'Signal share',
       'Percentage of the firehose that survives the noise gate. The lower this is, the more the other dashboards are earning their keep.', { fmt: 'percent', dec: 2 }),
-    md(0, 5, 48, 7, VOL_NOTE),
     // vega/07 draws one rect per band per bucket, and JSON has nowhere to say why it looks as it
     // does. A rect is one bucket wide: the smaller of the closest gap between buckets and the
     // interval BUCKET(…, 75, …) picks for the window (ES|QL's auto-date roundings, 1s … 1y), never
@@ -131,7 +134,7 @@ export function build() {
     // right edge on 00 at 1440px. The blank zone is measured in PIXELS — 36px for "22:25", 100px for a
     // midnight label carrying its date — because a 6%-of-window zone dropped a last label that had room.
     // At 25 rows the spec draws its three charts on one time axis (SIGNAL VS NOISE OVER TIME, above).
-    vega(0, 12, 30, 25, '07-noise-ratio-stream', 'Signal vs noise over time',
+    vega(0, 5, 30, 25, '07-noise-ratio-stream', 'Signal vs noise over time',
       'Three views of the same buckets on one time axis. Top: audit events per bucket, stacked by band, so the top edge is the whole firehose and Signal sits on the baseline. Middle: Signal alone, on its own square-root scale, so a rise or fall in the events the other dashboards read is visible at any share. Bottom: each bucket as 100%, split by band — whether a spike was more noise or more signal. A lull is shaded and not split, because as a percentage a few dozen events would stand as tall as the busiest bucket: a bucket under a tenth of the window’s typical volume (the median bucket, leaving out a trickle under a twentieth of the average), one under a third right beside such a bucket, and a lone low bucket inside a lull; a stretch that is merely quiet is split. Hover any bar for its numbers.'),
     // Named keys only, which is why it can be empty while the stream is busy: an organization-level Cloud
     // API key — very often the one running this suite — carries no name, and the stream records it by id
@@ -146,7 +149,7 @@ export function build() {
     // for a Cloud API key, its id, shown in the suite's one form.
     // Created by at 140px and Events at 72px leave the key name ~260px at a 1440px viewport: at 150 / 90
     // "syn-new-hire-20261014-152111-2820" ran under Created by, and at 140 / 80 it touched it.
-    table(30, 12, 18, 15, 'Named API keys',
+    table(30, 5, 18, 15, 'Named API keys',
       `FROM ${IDX} | ${TIME} | WHERE attributes.api_key.name IS NOT NULL | STATS events = COUNT(*), emails = VALUES(attributes.user.email), names = VALUES(attributes.user.name) BY attributes.api_key.name ` +
       `| EVAL creator = COALESCE(MV_MIN(emails), MV_MIN(names)), n_creators = COALESCE(MV_COUNT(emails), 0) + COALESCE(MV_COUNT(names), 0) ` +
       `| EVAL created_by = COALESCE(CONCAT(${cloudKeyLabel('creator')}, CASE(n_creators > 1 AND emails IS NULL, CONCAT(" + ", TO_STRING(n_creators - 1), " more"), "")), " ") ` +
@@ -156,7 +159,7 @@ export function build() {
       { empty: 'empty when unused' }),
     // Grouped on the raw keyword, relabelled after: the two-condition CASE runs on the grouped rows,
     // not on every event (panels.mjs QUERY SHAPE rules 1–2). Same labels, colours and order as 00's.
-    xy(30, 27, 18, 10, 'Audit volume by source service',
+    xy(30, 20, 18, 10, 'Audit volume by source service',
       `FROM ${IDX} | ${TIME} | STATS events = COUNT(*) BY ${BUCKET}, source = resource.attributes.service.name | ${SOURCE_LABEL}`,
       'events', 'Elasticsearch versus Kibana audit volume over time. Elasticsearch audits every transport action, so it usually dwarfs Kibana.',
       { breakdown: 'source', colors: SOURCE_COLORS }),
@@ -168,7 +171,7 @@ export function build() {
     // characters are the count. The label runs on the grouped rows, before the SORT/LIMIT that table()
     // lowers; the name breaks ties, which otherwise swapped two equal rows between refreshes. Measured on
     // the 7-day replica: 111–158ms against 101–113ms for the count it replaces.
-    table(0, 37, 22, 10, 'Noisiest transport actions',
+    table(0, 30, 22, 10, 'Noisiest transport actions',
       `FROM ${IDX} | ${TIME} | WHERE attributes.elasticsearch.audit.action IS NOT NULL | ${ACTOR_RESOLVE} ` +
       '| STATS n = COUNT(*) BY attributes.elasticsearch.audit.action, actor ' +
       '| STATS events = SUM(n), actors = COUNT(*), top = MAX(CONCAT(TO_STRING(1000000000000 + n), actor)) BY attributes.elasticsearch.audit.action ' +
@@ -197,7 +200,7 @@ export function build() {
     // h=10 for both tables in this row: fitRows(10) = 8 rows, ending 14px above the grid's bottom rule.
     // At h=13 (12 rows) the last row ended 2px above it and read as a sliver of a thirteenth (round-5
     // review), and at 1h, when a handful of identities make the whole stream, 12 rows left 60% blank.
-    table(22, 37, 26, 10, 'Highest-volume identities',
+    table(22, 30, 26, 10, 'Highest-volume identities',
       `FROM ${IDX} | ${TIME} | ${ACTOR} | STATS events = COUNT(*), via_key = COUNT(attributes.api_key.name), ` +
       `acts = VALUES(attributes.event.action) BY actor, actor_kind | ${KIND_REFINE} ` +
       '| EVAL actions = MV_COUNT(acts), acts = MV_CONCAT(MV_SORT(acts), ",") ' +
@@ -212,6 +215,6 @@ export function build() {
       ['actor', { column: 'actor_kind', width: 120 }], ['events', { column: 'actions', width: 72 }],
       'Unfiltered volume leaderboard, top identities by events — this is where the machine traffic shows up (often the Cloud API key running this suite). Only the busiest rows fit, so quieter identities — including the smaller keys in Named API keys — are beyond the rows shown. Kind “API key” is a named (Elasticsearch) API key, listed under its own name, or a Cloud API key; who made a named key is in Named API keys. When a PERSON makes a key, its events carry that person’s email, so they count under the person, whose Kind then reads “human + key”. Kind “failed sign-in” is a username that only ever failed to authenticate — usually a guess, not an account.'),
   ];
-  return dash('cloud-audit-06-platform-volume', '[Audit] 📊 Platform Volume & API Keys',
-    'The unfiltered firehose, quarantined so the forensic dashboards stay readable.', P);
+  return dash(rawId('06-platform-volume'), '[Audit] 📊 Platform Volume & API Keys',
+    'The unfiltered firehose, quarantined so the forensic dashboards stay readable.', P, { intro: INTRO });
 }

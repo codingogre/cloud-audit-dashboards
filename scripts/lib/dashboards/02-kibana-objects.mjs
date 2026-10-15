@@ -3,6 +3,7 @@ import {
   IDX, ACTOR, TIME, BUCKET, KIB, VERB, CHANGE, OBJ_GROK, OBJ_NAME, OBJ_ID, OBJ_TYPE, PALETTE, KIBANA_INTERNALS, dash, kpi, xy, bar, table,
   vega, search, resetIds, sized
 } from '../panels.mjs';
+import { rawId } from '../suite.mjs';
 import {
   CHANGED, CHANGED_KEYS, CHANGED_DERIVE, specDescription
 } from './shared.mjs';
@@ -106,6 +107,17 @@ const SPACE_ID_NOTE = 'A space is shown by its id, the /s/<id> in its URL: the a
  * Sorting runs on the ≤ ~300 aggregated rows, so it costs nothing measurable.
  */
 const SERIES_ORDER = 'SORT verb != "create", verb != "update", verb != "delete"';
+
+/** The intro (draft 4 of the 1.0.3 customer copy; INTRO TEXT in panels.mjs). */
+const INTRO = {
+  h: 7,
+  heading: "Every change to your Kibana content, and who made it",
+  paragraphs: [
+    "Dashboards, visualizations, data views, alert rules, SLOs, workflows and other saved objects: what was created, edited, deleted or opened, in which space, and by whom.",
+    "Use it to answer \"who deleted that dashboard?\" or \"what changed before the alert stopped firing?\". Panels marked *noise gate applied* skip these audit dashboards' own activity, so you see your team's work.",
+    "**How to use it:** choose a Project, Person (email) or Client IP in the controls and set the time picker. The session view at the bottom replays one browser session step by step. Click a session bar or a session id to see exactly what happened in that browser session.",
+  ],
+};
 
 export function build() {
   resetIds();
@@ -211,6 +223,6 @@ export function build() {
       'One person\'s Kibana sessions, event by event, newest first: every object they opened and changed, with the sentence Kibana wrote for each, which names the object\'s type and id ("User has resolved dashboard [id=…]"). Operation uses the same words as the heatmap (get, resolve, create …); an event that names no object keeps its own action, such as "http request" for a public API call. To replay one session, click its bar in the session timeline above (it pins that session and zooms the time range to it), or hover a cell of the attributes.kibana.session.id column and choose Filter for value; then open in Discover and sort Time ascending to read it forward. Kibana\'s internal UI requests, usage counters, space lookups and point-in-time internals are left out; public API calls such as an export are kept, and so are views of this audit suite, because they are part of what the person did. That is why the panel can be empty while Cross-space activity above counts a signed-in person: a browser tab left open keeps sending those background requests (tag lists, usage counters, paging) without the person opening or changing anything. Object is the title the object had at the time, so a renamed object shows its old title on older rows. The session column keeps its field name, attributes.kibana.session.id, because a Discover session takes a header only from a rename, and a renamed column offers no Filter for on a dashboard; it holds the full id, cut to fit, and expanding a row (the ⤢ at its left) shows all of it. On a narrow screen the grid scrolls sideways for Space and Message. API-key traffic carries no session.',
       { empty: 'empty when no browser session opened or changed anything' }),
   ];
-  return dash('cloud-audit-02-kibana-objects', '[Audit] 🗂️ Kibana Object Forensics',
-    'Every Kibana saved-object read and change, by type, name, space and actor.', P);
+  return dash(rawId('02-kibana-objects'), '[Audit] 🗂️ Kibana Object Forensics',
+    'Every Kibana saved-object read and change, by type, name, space and actor.', P, { intro: INTRO });
 }

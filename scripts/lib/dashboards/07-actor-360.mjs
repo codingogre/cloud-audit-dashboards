@@ -1,8 +1,9 @@
 /** 07 Actor 360 — see scripts/lib/definitions.mjs for how the suite is assembled. */
 import {
-  IDX, TIME, INDEX_FAMILY, IP_GEO, indexFamily, dash, kpi, table, vega, search, md, section, row, stack, resetIds, sized, filterable, grouped,
+  IDX, TIME, INDEX_FAMILY, IP_GEO, indexFamily, dash, kpi, table, vega, search, section, row, stack, resetIds, sized, filterable, grouped,
   SYS_INDEX, fitRows
 } from '../panels.mjs';
+import { rawId } from '../suite.mjs';
 import { riskScored, CHANGED, CHANGED_KEYS, CHANGED_DERIVE, specDescription } from './shared.mjs';
 
 /**
@@ -99,16 +100,20 @@ const WEIGHT_WORDS = [[50, 'security config change'], [45, 'API keys invalidated
 const weightWords = (col) => `CASE(${WEIGHT_WORDS.map(([w, words]) => `${col} == ${w}, "${words}"`).join(', ')}, "scored")`;
 
 /**
- * One paragraph with a bold lead rather than a `####` heading over a paragraph: markdown renders
- * `####` at bold body size, which sat visibly SMALLER than the 16px paragraph under it — an inverted
- * hierarchy in the first thing on the page. The section bands below carry the real headings.
- *
- * The clock is named here because the page mixes two: section ① is computed in UTC (a weekly rhythm
- * has to read the same for every viewer), while every table timestamp and the session timeline are in
- * the browser's zone like the rest of Kibana. Side by side they disagree by the viewer's UTC offset,
- * and nothing else on the page says which is which.
+ * The intro (draft 2 of the 1.0.3 customer copy, INTRO TEXT in panels.mjs): why you would open the page,
+ * then how. It names the clock because the page mixes two: section ① is computed in UTC (a weekly rhythm
+ * has to read the same for every viewer), while every table timestamp and the session timeline are in the
+ * browser's zone like the rest of Kibana, and side by side they disagree by the viewer's UTC offset. The
+ * section bands below carry the section headings.
  */
-const ORIENTATION = `👤 **Pick a person in the Person (email) control** and every panel becomes their story; with nobody selected it is the whole estate. **① Is this normal?** is a fixed 7 days in UTC · **② What they did** follows the time picker · **③ Evidence** ends in the raw records. Table times and the session timeline are in your time zone.`;
+const INTRO = {
+  h: 6,
+  heading: 'Everything one person did, on one page',
+  paragraphs: [
+    'Use it to answer "is this normal for them?", to see what they changed and read, and to gather evidence for a review or investigation.',
+    '**How to use it:** pick someone in the Person (email) control, or click an email in a table; with nobody selected, the page covers everyone. ① *Is this normal?* always looks at the last 7 days in UTC, ② *What they did* follows the time picker, and ③ *Evidence* ends in the raw records. Table times are in your time zone.',
+  ],
+};
 
 /**
  * Why the Risk tile and the scoring table can disagree on a live stream, measured rather than guessed.
@@ -152,8 +157,6 @@ const RACE_NOTE = 'This tile and "Every scoring action" both count whole minutes
 export function build() {
   resetIds();
   const P = stack([
-    row(3, [[48, (x, y, w, h) => md(x, y, w, h, ORIENTATION)]]),
-
     row(7, [
       [16, (x, y, w, h) => table(x, y, w, h, 'Who this is — people, by email',
         `FROM ${IDX} | ${TIME} | STATS events = COUNT(*), keys = COUNT_DISTINCT(attributes.api_key.name, 100) BY attributes.user.email | INLINE STATS all = SUM(events) | WHERE attributes.user.email IS NOT NULL | EVAL share = TO_DOUBLE(events) / all | DROP all | SORT events DESC | LIMIT 10`,
@@ -192,7 +195,7 @@ export function build() {
     // set is closed — one row per scoring action and weight, bounded by Kibana's and Elasticsearch's
     // action vocabulary (43 over 24h at today's volume; volume adds events, not rows) — so the LIMIT is
     // a guard, not a cut, and the title says "every" instead of a count (the description says "scroll").
-    row(13, [[48, (x, y, w, h) => drillTo('cloud-audit-04-security-anomalies', table(x, y, w, h, 'Every scoring action and its weight, largest first · its Sum is the Risk tile',
+    row(13, [[48, (x, y, w, h) => drillTo(rawId('04-security-anomalies'), table(x, y, w, h, 'Every scoring action and its weight, largest first · its Sum is the Risk tile',
       `FROM ${IDX} | ${WHOLE_MINUTES} | ${riskScored({ aggs: 'last_ts = MAX(@timestamp)' })} | STATS events = SUM(n), severity = SUM(risk * n), last_seen = MAX(last_ts) BY attributes.event.action, weight = risk | EVAL why = ${weightWords('weight')} | SORT severity DESC | LIMIT 500`,
       // weight is a number, so it reads as one (right-aligned, beside the other numbers); it stays in the
       // BY clause, so the grouping is unchanged. The action stays the raw event.action because it is the
@@ -240,7 +243,7 @@ export function build() {
         `FROM ${IDX} | ${TIME} | WHERE attributes.elasticsearch.audit.indices IS NOT NULL AND ${NOT_FANOUT} | MV_EXPAND attributes.elasticsearch.audit.indices | STATS n = COUNT(*) BY attributes.elasticsearch.audit.indices | ${NOT_PATTERN} | EVAL family = ${INDEX_FAMILY} | STATS events = SUM(n), indices = COUNT(*) BY family | SORT events DESC, family | LIMIT ${fitRows(11)}`,
         [{ column: 'family', label: 'Index family' }], ['indices', 'events'],
         'Where their reads concentrate, busiest first. Dated daily indices and data-stream backing indices are folded into the family they belong to, so a date-suffixed series is one row and `Indices` says how many of its members were read. A request naming several indices counts once per index; request patterns such as * and date-math names are left out, and so are shard- and node-level repeats of a request (search[phase/query], bulk[s][p]), which Elasticsearch audits with the same index as the request itself. Every dot-prefixed family here is also a row of "System and hidden index reads", with the same counts. The audit stream itself usually tops the list, because every dashboard on this page reads it. This is the busiest few; the Index families tile above counts every family.')],
-      [28, (x, y, w, h) => drillTo('cloud-audit-03-data-access', table(x, y, w, h, '⚠️ System and hidden index reads',
+      [28, (x, y, w, h) => drillTo(rawId('03-data-access'), table(x, y, w, h, '⚠️ System and hidden index reads',
         `FROM ${IDX} | ${TIME} | WHERE attributes.elasticsearch.audit.indices IS NOT NULL | MV_EXPAND attributes.elasticsearch.audit.indices | ${SYS_INDEX} | STATS n = COUNT(*), seen = MAX(@timestamp) BY attributes.elasticsearch.audit.indices, action = attributes.elasticsearch.audit.action | ${NOT_PATTERN} | EVAL family = ${INDEX_FAMILY} | INLINE STATS events = SUM(n), indices = COUNT_DISTINCT(attributes.elasticsearch.audit.indices), actions = COUNT_DISTINCT(action), last_seen = MAX(seen), named_idx = MIN(attributes.elasticsearch.audit.indices) WHERE NOT attributes.elasticsearch.audit.indices LIKE ".ds-*", any_idx = MIN(attributes.elasticsearch.audit.indices) BY family | WHERE attributes.elasticsearch.audit.indices == COALESCE(named_idx, any_idx) | STATS events = MAX(events), indices = MAX(indices), actions = MAX(actions), last_seen = MAX(last_seen) BY attributes.elasticsearch.audit.indices, family | SORT events DESC, family | LIMIT ${fitRows(11)}`,
         // The index column is the GROUP KEY of the last STATS, never assigned by an EVAL. Through 1.0.2 it was
         // `EVAL attributes.elasticsearch.audit.indices = COALESCE(named_idx, any_idx)` after a STATS BY family:
@@ -259,17 +262,17 @@ export function build() {
       // height-bound and a third of the panel sat empty beside it (round-4 review); the address table
       // takes the width instead.
       [18, vegaPanel('10-actor-geography', 'Where they connected from')],
-      [30, (x, y, w, h) => drillTo('cloud-audit-05-geo-network', table(x, y, w, h, 'Busiest addresses they used',
+      [30, (x, y, w, h) => drillTo(rawId('05-geo-network'), table(x, y, w, h, 'Busiest addresses they used',
         `FROM ${IDX} | ${TIME} | WHERE client.ip IS NOT NULL | STATS events = COUNT(*), last_seen = MAX(@timestamp), ${IP_GEO} BY client.ip | EVAL city = CASE(placed == 0, "unplaced", COALESCE(city, "—")), country = CASE(placed == 0, "unplaced", country) | SORT events DESC | LIMIT 25`,
         [filterable('client.ip'), 'city', 'country'], ['events', 'last_seen'],
         'Their real client addresses, busiest first, one row per address — the same addresses the Client IPs tile counts — including the ones the map cannot show. "unplaced" means geoip placed none of that address\'s events, which is always the case for a private or CGNAT address; "—" is a country with no city. An address keeps its place even when some of its events predate geo enrichment. Click an address to pin it, then "Open in Geo & Network".'))],
     ]),
 
     row(2, [[48, (x, y, w, h) => section(x, y, w, h, '③ Evidence', 'session timeline is fixed at 24 hours · the records follow the time picker · your time zone')]]),
-    row(7, [[48, vegaPanel('13-session-gantt', 'Kibana browser sessions — last 24 hours, your time zone')]]),
+    row(7, [[48, vegaPanel('13-session-gantt', 'Kibana browser sessions · fixed last 24 hours, your time zone')]]),
     row(12, [[48, (x, y, w, h) => search(x, y, w, h, '09-session-reconstruction', 'Session records · newest 1,000 at most',
       'The raw Kibana events behind the session timeline above, newest first and capped at the newest 1,000 — so "1,000 results" above the grid is that cap, not a count of the range — with the session, the object and the message Kibana wrote. To read one session, click its bar in the timeline above, or hover a cell of the attributes.kibana.session.id column (the full session id, under its field name so that the cell can filter) and choose Filter for value. Columns are cut to fit the panel: expand a row (the ⤢ at its left) to read the full session id, object name and message, or open the session in Discover. Like the timeline, it leaves out what an open browser tab does on its own — internal page requests, usage counters, point-in-time paging — so a session in the timeline always has records here, and an hour in which they only had Kibana open is empty.', { empty: 'quiet' })]]),
   ]);
-  return dash('cloud-audit-07-actor-360', '[Audit] 👤 Actor 360',
-    'One identity’s complete footprint — pick a person in the control bar and every panel becomes their story.', P);
+  return dash(rawId('07-actor-360'), '[Audit] 👤 Actor 360',
+    'One identity’s complete footprint — pick a person in the control bar and every panel becomes their story.', P, { intro: INTRO });
 }

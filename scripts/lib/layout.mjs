@@ -336,13 +336,16 @@ function checkVega(problems) {
 /**
  * md() lifts a leading `#`-`###` heading into the panel title (see panels.mjs MARKDOWN SIZE), so one
  * that survives into the content is a heading in the middle of a note, rendering at ~20px over 14px
- * panel titles. `####` and below are fine: they render as bold body text.
+ * panel titles. `####` and below are fine: they render as bold body text. The one exception is an intro
+ * panel (introMd(), `headed`): its heading IS its title, so it carries exactly one, before its body, and
+ * no panel title over it.
  */
 function checkMarkdown(name, panels, problems) {
   for (const p of panels) {
     if (p.type !== 'markdown') continue;
-    const line = (p.config?.content || '').split('\n').find((l) => /^#{1,3}\s/.test(l));
-    if (line) problems.push(`${name}: markdown panel ${p.id} has an oversized heading "${line.slice(0, 40)}" — use the panel title, or ####`);
+    const lines = (p.config?.content || '').split('\n').filter((l) => /^#{1,3}\s/.test(l));
+    const allowed = p.headed && !p.config?.title && lines.length === 1 && p.config.content.startsWith(lines[0]) ? 1 : 0;
+    for (const line of lines.slice(allowed)) problems.push(`${name}: markdown panel ${p.id} has an oversized heading "${line.slice(0, 40)}" — use the panel title, or ####`);
   }
 }
 

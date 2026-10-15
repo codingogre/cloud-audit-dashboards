@@ -3,6 +3,36 @@
 `CLAUDE.md`-style durable context lives in `README.md` and `esql/fragments.md` and wins on
 conflict. This file is "where we are right now" and should be assumed stale.
 
+## Release 1.0.3 — unnumbered ids, customer intros, 2026-10-15
+
+- **Dashboard ids drop their numbers** (the human's choice): `elastic_cloud-audit-<name>`, i.e.
+  `elastic_cloud-audit-dashboard` (Command Center, unchanged), `-actor-360`, `-identity-access`, `-kibana-objects`,
+  `-data-access`, `-security-anomalies`, `-geo-network`, `-platform-volume` (opt-in). Only dashboard ids changed:
+  Vega (`cloud-audit-vega-*`), Discover (`cloud-audit-search-*`) and the data view keep theirs. `SUITE` in
+  `lib/suite.mjs` owns them (`rawId()`, `dashId()`); modules and 07's outbound drilldowns read `rawId()`.
+  Every numbered id (`cloud-audit-00-command-center` … `cloud-audit-07-actor-360`, 06 included) is in
+  `RETIRED_IDS`, so `--dashboards` reads and deletes them and `--clean dashboards` covers them. With
+  `AUDIT_ID_NS=x` ids are `elastic_cloud-audit-x-<name>`. `SUITE_SELF` / `SUITE_INSTALL_URL` already matched
+  `elastic_cloud-audit-*`; a unit test now pins a namespaced and an un-namespaced new id.
+  Proven on r103f: HEAD 6c604f4 deployed (6 numbered ids + Command Center), then this deploy removed all 6
+  numbered ids and left exactly the 7 new ones. Playwright: 42/42 cross-dashboard nav links and 7/7
+  drilldowns (01 → Actor 360, 05 ×3 → Actor 360, 07 → Security & Anomalies, Data Access, Geo & Network)
+  land on the new id with the filter pill.
+- **Customer intros** (approved copy, drafts 1–8): every dashboard opens with a full-width intro under the
+  nav strip (`dash(…, { intro })`, `introMd()` in panels.mjs); Actor 360's orientation line and Platform
+  Volume's "quarantine" note are replaced; Command Center's legend is draft 1b (`legendPanel()`), 11 rows
+  now (13 left a 100px blank). Deviation from the brief: **a markdown panel's `<style>` block is dropped by
+  9.6** (EuiMarkdownFormat sanitises HTML; no style element reaches the DOM, so `CSS_NAV` never styled the
+  nav strip and is deleted). Small text therefore comes from the legacy markdown visualization's
+  `fontSize`: intros are PUT as plain markdown and the post-pass swaps each for a by-value legacy markdown
+  vis at 9pt (12px on an 18px line, 14px paragraph gap, 17px `###`). Heights measured at 1920 and 1440:
+  h=6 everywhere, 02 h=7 (its last paragraph wraps at 1440). Draft 4's "*suite left out*" now reads
+  "*noise gate applied*", the label 02's titles actually carry since round 5. Detail the old texts carried
+  moved into tooltips: 05 Busiest client IPs (forwarded_ip vs source.ip), 06 All events (band sum),
+  Auth success (`authentication_success`), Infra health (`cluster:monitor/main`, `elastic.maintenance`).
+- **Small fixes:** 07's timeline title matches 02 (`· fixed last 24 hours, your time zone`); README's private
+  example ids; searches/09 Time 215 → 208 and Space 100 → 80, so Message gets 248px at 1440 (was 221).
+
 ## Release 1.0.3 — 1.0.2 merged under round 6, plus session filtering, 2026-10-15
 
 - **Merge:** release-1.0.2 (7cfd933) merged into ui-polish. 1.0.2 wins on ids (`elastic_cloud-audit-dashboard`,

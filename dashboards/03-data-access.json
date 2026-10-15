@@ -12,7 +12,7 @@
   "panels": [
     {
       "type": "links",
-      "id": "nav-14",
+      "id": "nav-15",
       "grid": {
         "x": 0,
         "y": 0,
@@ -35,7 +35,7 @@
           },
           {
             "type": "dashboardLink",
-            "destination": "cloud-audit-07-actor-360",
+            "destination": "elastic_cloud-audit-actor-360",
             "label": "👤  Actor 360",
             "options": {
               "use_filters": true,
@@ -45,7 +45,7 @@
           },
           {
             "type": "dashboardLink",
-            "destination": "cloud-audit-01-identity-access",
+            "destination": "elastic_cloud-audit-identity-access",
             "label": "🔐  Identity & Access",
             "options": {
               "use_filters": true,
@@ -55,7 +55,7 @@
           },
           {
             "type": "dashboardLink",
-            "destination": "cloud-audit-02-kibana-objects",
+            "destination": "elastic_cloud-audit-kibana-objects",
             "label": "🗂️  Kibana Object Forensics",
             "options": {
               "use_filters": true,
@@ -65,7 +65,7 @@
           },
           {
             "type": "dashboardLink",
-            "destination": "cloud-audit-03-data-access",
+            "destination": "elastic_cloud-audit-data-access",
             "label": "🔎  Elasticsearch Data Access",
             "options": {
               "use_filters": true,
@@ -75,7 +75,7 @@
           },
           {
             "type": "dashboardLink",
-            "destination": "cloud-audit-04-security-anomalies",
+            "destination": "elastic_cloud-audit-security-anomalies",
             "label": "🚨  Security & Anomalies",
             "options": {
               "use_filters": true,
@@ -85,7 +85,7 @@
           },
           {
             "type": "dashboardLink",
-            "destination": "cloud-audit-05-geo-network",
+            "destination": "elastic_cloud-audit-geo-network",
             "label": "🌍  Geo & Network",
             "options": {
               "use_filters": true,
@@ -97,11 +97,24 @@
       }
     },
     {
+      "type": "markdown",
+      "id": "md-14",
+      "grid": {
+        "x": 0,
+        "y": 3,
+        "w": 48,
+        "h": 6
+      },
+      "config": {
+        "content": "### What data was read or written in Elasticsearch, and by whom\n\nSee which indices each identity uses, the kinds of requests they made, any denied requests, and every touch of system or hidden indices.\n\nRelated indices are grouped into one family, so a data stream and its daily backing indices read as a single row. Use it to confirm sensitive data is only reached by the people and keys you expect.\n\n**How to use it:** choose a Project, Person (email) or Client IP in the controls and set the time picker. Empty denied and system-index panels usually mean all is well.\n"
+      }
+    },
+    {
       "type": "vis",
       "id": "kpi-01",
       "grid": {
         "x": 0,
-        "y": 3,
+        "y": 9,
         "w": 8,
         "h": 5
       },
@@ -130,7 +143,7 @@
       "id": "kpi-02",
       "grid": {
         "x": 8,
-        "y": 3,
+        "y": 9,
         "w": 8,
         "h": 5
       },
@@ -159,7 +172,7 @@
       "id": "kpi-03",
       "grid": {
         "x": 16,
-        "y": 3,
+        "y": 9,
         "w": 8,
         "h": 5
       },
@@ -188,7 +201,7 @@
       "id": "kpi-04",
       "grid": {
         "x": 24,
-        "y": 3,
+        "y": 9,
         "w": 8,
         "h": 5
       },
@@ -217,7 +230,7 @@
       "id": "kpi-05",
       "grid": {
         "x": 32,
-        "y": 3,
+        "y": 9,
         "w": 8,
         "h": 5
       },
@@ -246,7 +259,7 @@
       "id": "kpi-06",
       "grid": {
         "x": 40,
-        "y": 3,
+        "y": 9,
         "w": 8,
         "h": 5
       },
@@ -275,7 +288,7 @@
       "id": "xy-07",
       "grid": {
         "x": 0,
-        "y": 8,
+        "y": 14,
         "w": 24,
         "h": 15
       },
@@ -405,7 +418,7 @@
       "id": "vega-08",
       "grid": {
         "x": 24,
-        "y": 8,
+        "y": 14,
         "w": 24,
         "h": 30
       },
@@ -420,7 +433,7 @@
       "id": "tbl-09",
       "grid": {
         "x": 0,
-        "y": 23,
+        "y": 29,
         "w": 24,
         "h": 15
       },
@@ -473,7 +486,7 @@
       "id": "tbl-10",
       "grid": {
         "x": 0,
-        "y": 38,
+        "y": 44,
         "w": 48,
         "h": 14
       },
@@ -531,7 +544,7 @@
       "id": "tbl-11",
       "grid": {
         "x": 0,
-        "y": 52,
+        "y": 58,
         "w": 48,
         "h": 12
       },
@@ -597,7 +610,7 @@
       "id": "tbl-12",
       "grid": {
         "x": 0,
-        "y": 64,
+        "y": 70,
         "w": 48,
         "h": 10
       },
@@ -658,7 +671,7 @@
       "id": "ds-13",
       "grid": {
         "x": 0,
-        "y": 74,
+        "y": 80,
         "w": 48,
         "h": 12
       },

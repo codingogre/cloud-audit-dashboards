@@ -35,7 +35,7 @@
           },
           {
             "type": "dashboardLink",
-            "destination": "cloud-audit-07-actor-360",
+            "destination": "elastic_cloud-audit-actor-360",
             "label": "👤  Actor 360",
             "options": {
               "use_filters": true,
@@ -45,7 +45,7 @@
           },
           {
             "type": "dashboardLink",
-            "destination": "cloud-audit-01-identity-access",
+            "destination": "elastic_cloud-audit-identity-access",
             "label": "🔐  Identity & Access",
             "options": {
               "use_filters": true,
@@ -55,7 +55,7 @@
           },
           {
             "type": "dashboardLink",
-            "destination": "cloud-audit-02-kibana-objects",
+            "destination": "elastic_cloud-audit-kibana-objects",
             "label": "🗂️  Kibana Object Forensics",
             "options": {
               "use_filters": true,
@@ -65,7 +65,7 @@
           },
           {
             "type": "dashboardLink",
-            "destination": "cloud-audit-03-data-access",
+            "destination": "elastic_cloud-audit-data-access",
             "label": "🔎  Elasticsearch Data Access",
             "options": {
               "use_filters": true,
@@ -75,7 +75,7 @@
           },
           {
             "type": "dashboardLink",
-            "destination": "cloud-audit-04-security-anomalies",
+            "destination": "elastic_cloud-audit-security-anomalies",
             "label": "🚨  Security & Anomalies",
             "options": {
               "use_filters": true,
@@ -85,7 +85,7 @@
           },
           {
             "type": "dashboardLink",
-            "destination": "cloud-audit-05-geo-network",
+            "destination": "elastic_cloud-audit-geo-network",
             "label": "🌍  Geo & Network",
             "options": {
               "use_filters": true,
@@ -98,23 +98,23 @@
     },
     {
       "type": "markdown",
-      "id": "md-01",
+      "id": "md-21",
       "grid": {
         "x": 0,
         "y": 3,
         "w": 48,
-        "h": 3
+        "h": 6
       },
       "config": {
-        "content": "👤 **Pick a person in the Person (email) control** and every panel becomes their story; with nobody selected it is the whole estate. **① Is this normal?** is a fixed 7 days in UTC · **② What they did** follows the time picker · **③ Evidence** ends in the raw records. Table times and the session timeline are in your time zone."
+        "content": "### Everything one person did, on one page\n\nUse it to answer \"is this normal for them?\", to see what they changed and read, and to gather evidence for a review or investigation.\n\n**How to use it:** pick someone in the Person (email) control, or click an email in a table; with nobody selected, the page covers everyone. ① *Is this normal?* always looks at the last 7 days in UTC, ② *What they did* follows the time picker, and ③ *Evidence* ends in the raw records. Table times are in your time zone.\n"
       }
     },
     {
       "type": "vis",
-      "id": "tbl-02",
+      "id": "tbl-01",
       "grid": {
         "x": 0,
-        "y": 6,
+        "y": 9,
         "w": 16,
         "h": 7
       },
@@ -169,10 +169,10 @@
     },
     {
       "type": "vis",
-      "id": "kpi-03",
+      "id": "kpi-02",
       "grid": {
         "x": 16,
-        "y": 6,
+        "y": 9,
         "w": 8,
         "h": 7
       },
@@ -202,10 +202,10 @@
     },
     {
       "type": "vis",
-      "id": "kpi-04",
+      "id": "kpi-03",
       "grid": {
         "x": 24,
-        "y": 6,
+        "y": 9,
         "w": 8,
         "h": 7
       },
@@ -235,10 +235,10 @@
     },
     {
       "type": "vis",
-      "id": "kpi-05",
+      "id": "kpi-04",
       "grid": {
         "x": 32,
-        "y": 6,
+        "y": 9,
         "w": 8,
         "h": 7
       },
@@ -268,10 +268,10 @@
     },
     {
       "type": "vis",
-      "id": "kpi-06",
+      "id": "kpi-05",
       "grid": {
         "x": 40,
-        "y": 6,
+        "y": 9,
         "w": 8,
         "h": 7
       },
@@ -301,10 +301,10 @@
     },
     {
       "type": "vis",
-      "id": "tbl-07",
+      "id": "tbl-06",
       "grid": {
         "x": 0,
-        "y": 13,
+        "y": 16,
         "w": 48,
         "h": 13
       },
@@ -369,10 +369,10 @@
     },
     {
       "type": "markdown",
-      "id": "md-08",
+      "id": "md-07",
       "grid": {
         "x": 0,
-        "y": 26,
+        "y": 29,
         "w": 48,
         "h": 2
       },
@@ -382,10 +382,10 @@
     },
     {
       "type": "vis",
-      "id": "vega-09",
+      "id": "vega-08",
       "grid": {
         "x": 0,
-        "y": 28,
+        "y": 31,
         "w": 20,
         "h": 14
       },
@@ -397,10 +397,10 @@
     },
     {
       "type": "vis",
-      "id": "vega-10",
+      "id": "vega-09",
       "grid": {
         "x": 20,
-        "y": 28,
+        "y": 31,
         "w": 12,
         "h": 14
       },
@@ -412,10 +412,10 @@
     },
     {
       "type": "vis",
-      "id": "vega-11",
+      "id": "vega-10",
       "grid": {
         "x": 32,
-        "y": 28,
+        "y": 31,
         "w": 16,
         "h": 14
       },
@@ -427,10 +427,10 @@
     },
     {
       "type": "markdown",
-      "id": "md-12",
+      "id": "md-11",
       "grid": {
         "x": 0,
-        "y": 42,
+        "y": 45,
         "w": 48,
         "h": 2
       },
@@ -440,10 +440,10 @@
     },
     {
       "type": "vis",
-      "id": "vega-13",
+      "id": "vega-12",
       "grid": {
         "x": 0,
-        "y": 44,
+        "y": 47,
         "w": 48,
         "h": 11
       },
@@ -455,10 +455,10 @@
     },
     {
       "type": "vis",
-      "id": "tbl-14",
+      "id": "tbl-13",
       "grid": {
         "x": 0,
-        "y": 55,
+        "y": 58,
         "w": 48,
         "h": 12
       },
@@ -518,10 +518,10 @@
     },
     {
       "type": "vis",
-      "id": "tbl-15",
+      "id": "tbl-14",
       "grid": {
         "x": 0,
-        "y": 67,
+        "y": 70,
         "w": 20,
         "h": 11
       },
@@ -566,10 +566,10 @@
     },
     {
       "type": "vis",
-      "id": "tbl-16",
+      "id": "tbl-15",
       "grid": {
         "x": 20,
-        "y": 67,
+        "y": 70,
         "w": 28,
         "h": 11
       },
@@ -625,10 +625,10 @@
     },
     {
       "type": "vis",
-      "id": "vega-17",
+      "id": "vega-16",
       "grid": {
         "x": 0,
-        "y": 78,
+        "y": 81,
         "w": 18,
         "h": 12
       },
@@ -640,10 +640,10 @@
     },
     {
       "type": "vis",
-      "id": "tbl-18",
+      "id": "tbl-17",
       "grid": {
         "x": 18,
-        "y": 78,
+        "y": 81,
         "w": 30,
         "h": 12
       },
@@ -699,10 +699,10 @@
     },
     {
       "type": "markdown",
-      "id": "md-19",
+      "id": "md-18",
       "grid": {
         "x": 0,
-        "y": 90,
+        "y": 93,
         "w": 48,
         "h": 2
       },
@@ -712,25 +712,25 @@
     },
     {
       "type": "vis",
-      "id": "vega-20",
+      "id": "vega-19",
       "grid": {
         "x": 0,
-        "y": 92,
+        "y": 95,
         "w": 48,
         "h": 7
       },
       "config": {
         "ref_id": "cloud-audit-vega-13-session-gantt",
-        "title": "Kibana browser sessions — last 24 hours, your time zone",
+        "title": "Kibana browser sessions · fixed last 24 hours, your time zone",
         "description": "One bar per Kibana browser session in the last 24 hours, newest first — its length runs from the first to the last thing they did in it and its strength is how much it did, which are independent: a short session can carry far more activity than a long one left open and idle. Click a bar to filter the dashboard to that session (a \"session: …\" pill on attributes.kibana.session.id) and to set the time range to the session plus a minute either side, so the session records directly below this timeline show exactly that session's events: those records follow the time picker, while this timeline stays on its fixed 24 hours. To return, remove the pill and set the time range again. The pill narrows every panel on the page to that session, so a panel of Elasticsearch events, which carry no session id, reads empty while it is on. Shift-click pins that identity by email across the suite instead. What an open browser tab does on its own — internal page requests, usage counters, point-in-time paging — is left out, exactly as in the session records below, so a tab left open does not stretch a bar past the person's last action and every bar has records under it. Only Kibana browser sign-ins carry a session id: work through an API key or the Elasticsearch API has no session and draws no bar, so the dashed line marks the latest such event in the same 24 hours — activity after the last bar is real, it is just not a session. An identity that only works through the API has no bars, and that is the correct answer. Twelve most recent sessions, each labelled with who and when it started (with the weekday when that was not today); a session already open when the 24-hour window begins starts at the window's left edge and is labelled \"or earlier\", because its real start is outside the window. Times are in your browser's timezone, like the rest of Kibana. Fixed 24-hour window: does not follow the time picker."
       }
     },
     {
       "type": "discover_session",
-      "id": "ds-21",
+      "id": "ds-20",
       "grid": {
         "x": 0,
-        "y": 99,
+        "y": 102,
         "w": 48,
         "h": 12
       },

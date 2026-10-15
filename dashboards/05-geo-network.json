@@ -12,7 +12,7 @@
   "panels": [
     {
       "type": "links",
-      "id": "nav-14",
+      "id": "nav-15",
       "grid": {
         "x": 0,
         "y": 0,
@@ -35,7 +35,7 @@
           },
           {
             "type": "dashboardLink",
-            "destination": "cloud-audit-07-actor-360",
+            "destination": "elastic_cloud-audit-actor-360",
             "label": "👤  Actor 360",
             "options": {
               "use_filters": true,
@@ -45,7 +45,7 @@
           },
           {
             "type": "dashboardLink",
-            "destination": "cloud-audit-01-identity-access",
+            "destination": "elastic_cloud-audit-identity-access",
             "label": "🔐  Identity & Access",
             "options": {
               "use_filters": true,
@@ -55,7 +55,7 @@
           },
           {
             "type": "dashboardLink",
-            "destination": "cloud-audit-02-kibana-objects",
+            "destination": "elastic_cloud-audit-kibana-objects",
             "label": "🗂️  Kibana Object Forensics",
             "options": {
               "use_filters": true,
@@ -65,7 +65,7 @@
           },
           {
             "type": "dashboardLink",
-            "destination": "cloud-audit-03-data-access",
+            "destination": "elastic_cloud-audit-data-access",
             "label": "🔎  Elasticsearch Data Access",
             "options": {
               "use_filters": true,
@@ -75,7 +75,7 @@
           },
           {
             "type": "dashboardLink",
-            "destination": "cloud-audit-04-security-anomalies",
+            "destination": "elastic_cloud-audit-security-anomalies",
             "label": "🚨  Security & Anomalies",
             "options": {
               "use_filters": true,
@@ -85,7 +85,7 @@
           },
           {
             "type": "dashboardLink",
-            "destination": "cloud-audit-05-geo-network",
+            "destination": "elastic_cloud-audit-geo-network",
             "label": "🌍  Geo & Network",
             "options": {
               "use_filters": true,
@@ -97,11 +97,24 @@
       }
     },
     {
+      "type": "markdown",
+      "id": "md-14",
+      "grid": {
+        "x": 0,
+        "y": 3,
+        "w": 48,
+        "h": 6
+      },
+      "config": {
+        "content": "### Where your users and API keys connect from\n\nSee activity by country and city, your busiest client addresses, and anyone seen in more than one country in the same period, a common sign of a shared or stolen credential.\n\nLocations come from each client's real address, not Elastic's own network hops. Country is reliable; city is often your internet provider's nearest hub. Private network addresses cannot be placed on a map.\n\n**How to use it:** choose a Project, Person (email) or Client IP in the controls and set the time picker. Click an address or email in a table to filter the whole suite to it.\n"
+      }
+    },
+    {
       "type": "vis",
       "id": "kpi-01",
       "grid": {
         "x": 0,
-        "y": 3,
+        "y": 9,
         "w": 8,
         "h": 5
       },
@@ -130,7 +143,7 @@
       "id": "kpi-02",
       "grid": {
         "x": 8,
-        "y": 3,
+        "y": 9,
         "w": 8,
         "h": 5
       },
@@ -159,7 +172,7 @@
       "id": "kpi-03",
       "grid": {
         "x": 16,
-        "y": 3,
+        "y": 9,
         "w": 8,
         "h": 5
       },
@@ -188,7 +201,7 @@
       "id": "kpi-04",
       "grid": {
         "x": 24,
-        "y": 3,
+        "y": 9,
         "w": 8,
         "h": 5
       },
@@ -221,7 +234,7 @@
       "id": "kpi-05",
       "grid": {
         "x": 32,
-        "y": 3,
+        "y": 9,
         "w": 8,
         "h": 5
       },
@@ -254,7 +267,7 @@
       "id": "kpi-06",
       "grid": {
         "x": 40,
-        "y": 3,
+        "y": 9,
         "w": 8,
         "h": 5
       },
@@ -287,7 +300,7 @@
       "id": "vega-07",
       "grid": {
         "x": 0,
-        "y": 8,
+        "y": 14,
         "w": 24,
         "h": 17
       },
@@ -302,7 +315,7 @@
       "id": "tbl-08",
       "grid": {
         "x": 24,
-        "y": 8,
+        "y": 14,
         "w": 24,
         "h": 8
       },
@@ -355,7 +368,7 @@
       "id": "tbl-09",
       "grid": {
         "x": 24,
-        "y": 16,
+        "y": 22,
         "w": 24,
         "h": 9
       },
@@ -413,7 +426,7 @@
       "id": "tbl-10",
       "grid": {
         "x": 0,
-        "y": 25,
+        "y": 31,
         "w": 24,
         "h": 8
       },
@@ -471,13 +484,13 @@
       "id": "tbl-11",
       "grid": {
         "x": 24,
-        "y": 25,
+        "y": 31,
         "w": 24,
         "h": 8
       },
       "config": {
         "title": "Busiest client IPs · top 6 at most",
-        "description": "Forwarded client IPs, busiest first, with where each resolved; the Client IPs tile counts every one. All events is every event from the address; Placed events is the ones geoip resolved — the same column, by the same name, as in Top client locations, and what the map counts. The difference is the address's events from before geo enrichment. An IP shared by many identities is usually a NAT gateway or CI runner. \"Platform-internal (100.64/10)\" is not a client: it is a hop inside Elastic Cloud — on this project, Kibana's server calling Elasticsearch for a user whose real address is on the Kibana event. \"Not placeable\" means no event from the address ever resolved: a private address no geoip database can place, not an enrichment error. \"Geo resolution of audited events\" accounts for every one. Click an IP to scope the suite to it. The range ends a minute ago, so nothing in it is still arriving; each panel reads the clock for itself, up to a second apart, so two panels side by side can differ by the events of that second at either end of the range: usually none, a few on a busy all-traffic count or during a burst.",
+        "description": "Forwarded client IPs, busiest first, with where each resolved; the Client IPs tile counts every one. All events is every event from the address; Placed events is the ones geoip resolved — the same column, by the same name, as in Top client locations, and what the map counts. The difference is the address's events from before geo enrichment. An IP shared by many identities is usually a NAT gateway or CI runner. \"Platform-internal (100.64/10)\" is not a client: it is a hop inside Elastic Cloud — on this project, Kibana's server calling Elasticsearch for a user whose real address is on the Kibana event. \"Not placeable\" means no event from the address ever resolved: a private address no geoip database can place, not an enrichment error. \"Geo resolution of audited events\" accounts for every one. Click an IP to scope the suite to it. Every address here is network.forwarded_ip, the real client; source.ip is only Elastic Cloud's proxy (Proxy vs real client IP shows both). The range ends a minute ago, so nothing in it is still arriving; each panel reads the clock for itself, up to a second apart, so two panels side by side can differ by the events of that second at either end of the range: usually none, a few on a busy all-traffic count or during a burst.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
@@ -530,7 +543,7 @@
       "id": "xy-12",
       "grid": {
         "x": 0,
-        "y": 33,
+        "y": 39,
         "w": 24,
         "h": 13
       },
@@ -612,7 +625,7 @@
       "id": "tbl-13",
       "grid": {
         "x": 24,
-        "y": 33,
+        "y": 39,
         "w": 24,
         "h": 13
       },

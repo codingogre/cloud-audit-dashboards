@@ -15,7 +15,10 @@ cp .env.example .env      # fill in EC_URL, KB_URL, EC_API_KEY
 
 Command Center, the entry point, deploys at the saved-object id **`elastic_cloud-audit-dashboard`**:
 `<kibana>/s/<space>/app/dashboards#/view/elastic_cloud-audit-dashboard`. The Cloud UI's *Log delivery* page
-links to that id, so it is fixed. Every other dashboard is `cloud-audit-<NN>-<name>`.
+links to that id, so it is fixed. Every other dashboard is `elastic_cloud-audit-<name>`, with no number:
+`elastic_cloud-audit-actor-360`, `-identity-access`, `-kibana-objects`, `-data-access`, `-security-anomalies`,
+`-geo-network` and, when deployed, `-platform-volume`. The numbered ids of 1.0.2 and earlier
+(`cloud-audit-<NN>-<name>`) are retired: `--dashboards` removes them from the space it deploys to.
 
 ---
 
@@ -50,13 +53,14 @@ Full fragment reference: [`esql/fragments.md`](esql/fragments.md).
 
 ## The dashboards
 
-Every dashboard carries a horizontal navigation bar pinned at the top, a default range of the last hour
+Every dashboard carries a horizontal navigation bar pinned at the top, a short customer-facing intro
+directly under it (what the page is for and how to use it, as a heading over small text), a default range of the last hour
 ending a minute ago (`now-1h` → `now-1m`, `TIME_TO`),
 auto-refresh off, and a hover tooltip on every panel explaining what it shows and how to read it.
 The bar lists the deployed dashboards in one order on every page: Command Center, Actor 360,
 Identity & Access, Kibana Object Forensics, Elasticsearch Data Access, Security & Anomalies, Geo &
 Network, and Platform Volume last when it is deployed. The numbers below are source file names
-(`scripts/lib/dashboards/NN-*.mjs`, `dashboards/NN-*.json`), not the bar's order.
+(`scripts/lib/dashboards/NN-*.mjs`, `dashboards/NN-*.json`), not the bar's order and not part of any id.
 
 | # | Dashboard | What it answers |
 | --- | --- | --- |
@@ -251,10 +255,10 @@ Probed against Kibana 9.6 serverless. Several are undocumented and cost real tim
 | `kibanaAddFilter(query, index)` resolves `index` by data view **title** | Pass `logs-elastic_cloud.serverless_audit.otel-default`; the id `cloud-audit-dv` renders *Index "cloud-audit-dv" not found* |
 | External URLs are blocked in Vega on serverless | The basemap is Elastic Maps Service: `{"%type%": "emsfile", "name": "World Countries"}` with `format: {type: "topojson", feature: "data"}` — not `property: "features"`, which yields one useless row |
 | Vega errors render inside the panel as `li.vgaVis__message--err`, often as a bare "Error" | `--verify` counts those elements in addition to reading text |
-| Dashboards, visualizations, searches and data views are **multiple-isolated**: an id is unique across all spaces | With the suite deployed in one space, a second space's `PUT /api/dashboards/cloud-audit-…` is a 409 and `_import` silently re-ids the Vega and Discover objects. For a private render set `AUDIT_ID_NS` alongside `AUDIT_SPACE` (`AUDIT_SPACE=x AUDIT_ID_NS=x ./audit --objects`, then `--dashboards`, `--verify`) and every id becomes `cloud-audit-x-…`, Command Center's included (`cloud-audit-x-dashboard`) |
+| Dashboards, visualizations, searches and data views are **multiple-isolated**: an id is unique across all spaces | With the suite deployed in one space, a second space's `PUT /api/dashboards/cloud-audit-…` is a 409 and `_import` silently re-ids the Vega and Discover objects. For a private render set `AUDIT_ID_NS` alongside `AUDIT_SPACE` (`AUDIT_SPACE=x AUDIT_ID_NS=x ./audit --objects`, then `--dashboards`, `--verify`) and every id is namespaced: `cloud-audit-x-…` for the Vega and Discover objects and the data view, `elastic_cloud-audit-x-…` for the dashboards (`elastic_cloud-audit-x-dashboard`, `elastic_cloud-audit-x-actor-360`, …) |
 | `data_table` rows and metrics take `label` and `width` natively (stored as the Lens `customLabel` and column width) | `table()` titles every column and sizes it by role; see *Presentation conventions*. A label never changes the filtered field |
 | An `xy` chart's legend defaults to `hidden`, even with a `breakdown_by` | `xy()` emits `config.legend` (`bottom` list by default when there is a split) and the `eui_amsterdam` palette; Kibana's `default` palette pairs each hue with a pale tint that vanishes on white |
-| Markdown panels have no font-size setting, and `###` renders at ~20px | `md()` lifts a leading heading into the panel title; `layout.mjs` rejects `#`–`###` anywhere else |
+| Markdown panels have no font-size setting, `###` renders at ~20px, and raw HTML is **dropped** before render: a `<style>` block or a `<div class>` never reaches the page (probed: no style element in the DOM; the old `CSS_NAV` block on Command Center never styled anything) | `md()` lifts a leading heading into the panel title; `layout.mjs` rejects `#`–`###` anywhere else. The intros need small text, which only the legacy markdown *visualization* has (`fontSize` in pt), so the post-pass swaps each intro for a by-value one at 9pt: 12px paragraphs, a 17px `###` heading, theme colours (see *Presentation conventions*) |
 | Discover in ES\|QL mode ignores the ad-hoc data view's `fieldAttrs.customLabel` | Session headers come from a trailing `RENAME` — see *Presentation conventions* for the filter trade-off |
 
 ---
@@ -399,6 +403,17 @@ unpinned, slice colours follow slice order, which follows volume.
 **Markdown — `md()`.** A note's heading is its panel title. A leading `#`–`###` line is lifted into
 it; `####` is a bold run-in label (and what `section()` draws).
 
+**Intros — `introMd()` / `dash(…, { intro })`.** Every dashboard opens with a full-width intro under the
+nav strip (`intro: { h, heading, paragraphs }`; `dash()` places it and moves every authored panel down by
+`h`), and Command Center's *How to read this suite* box (`legendPanel()`) is written the same way: a `###`
+heading in the panel with no trailing period and no panel title, then one source line per paragraph, no
+HTML. They are PUT as plain markdown, which is what `dashboards/*.json` shows, and the post-pass replaces
+each with a by-value legacy markdown visualization at `INTRO_PT` (9pt: 12px text on an 18px line, 14px
+between paragraphs). Size `h` by rendering at 1920 and at 1440 (`AUDIT_VERIFY_WIDTH=1440`): a 48-column
+intro with three one-line paragraphs is ~151px, so h=6; a paragraph that wraps at 1440 (over ~205
+characters) adds 18px. Too short shows a scrollbar, too tall a blank band, and no check sees either.
+Technical detail (field names, exceptions) goes in the panel tooltips, not in an intro.
+
 **Discover sessions — `searches/*.json`.** End the ES\|QL with `| RENAME field AS Header, …` after
 every drift-checked fragment, list the new names in `columns` and `sort`, and put `@timestamp` first
 (renamed `Time`). `grid.columns` sets widths; dates and IPs get one by default, and rows are one line
@@ -501,13 +516,15 @@ AUDIT_WITH=platform-volume ./audit --verify      # same set from the environment
 make the choice once for every command, so `--objects`, `--dashboards`, `--verify`, `--perf` and
 `--lint` always agree on the set (`lib/suite.mjs` owns it). An unknown name fails the command. When
 Platform Volume is left out there is no nav tab for it, no drilldown to it, and no text that mentions
-it: the Command Center legend's "unfiltered totals are on Platform Volume" and the two tooltips that
+it: the Command Center legend's "Platform Volume shows everything" and the two tooltips that
 point at it appear only when it is deployed. The Vega spec it shares with Command Center (signal vs
 noise) deploys either way.
 
 `--dashboards` deploys exactly that set. A suite dashboard left in the space by an earlier deploy and
 not in this run's set is read and removed: Platform Volume after a deploy without `--with`, and
-Command Center's pre-1.0.2 id `cloud-audit-00-command-center`. `dashboards/*.json` is written for the
+every retired id in `RETIRED_IDS` (`lib/suite.mjs`): Command Center's pre-1.0.2 `cloud-audit-00-command-center`
+and the numbered `cloud-audit-<NN>-<name>` ids of 1.0.2, Platform Volume's included. `--clean dashboards`
+removes them too. `dashboards/*.json` is written for the
 set too, so the committed files are the default seven; a `--with` run (without `AUDIT_ID_NS`) adds
 `dashboards/06-platform-volume.json` and the eighth nav link to the others.
 
