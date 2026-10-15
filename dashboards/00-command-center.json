@@ -141,7 +141,7 @@
       "grid": {
         "x": 8,
         "y": 3,
-        "w": 8,
+        "w": 7,
         "h": 5
       },
       "config": {
@@ -168,9 +168,9 @@
       "type": "vis",
       "id": "kpi-03",
       "grid": {
-        "x": 16,
+        "x": 15,
         "y": 3,
-        "w": 8,
+        "w": 7,
         "h": 5
       },
       "config": {
@@ -197,9 +197,9 @@
       "type": "vis",
       "id": "kpi-04",
       "grid": {
-        "x": 24,
+        "x": 22,
         "y": 3,
-        "w": 8,
+        "w": 7,
         "h": 5
       },
       "config": {
@@ -226,23 +226,23 @@
       "type": "vis",
       "id": "kpi-05",
       "grid": {
-        "x": 32,
+        "x": 29,
         "y": 3,
-        "w": 8,
+        "w": 10,
         "h": 5
       },
       "config": {
         "title": "",
-        "description": "Security configuration changes — API keys created, changed or invalidated, roles and user profiles written — by any identity, all traffic. Kibana’s own routine clean-up of API keys (invalidate_apikeys by the elastic/kibana service account) is not counted here; the line under the number (“N key cleanups left out”) says how many there were. Any other non-zero value deserves review.",
+        "description": "Security configuration changes — API keys created, changed or invalidated, roles and user profiles written — by any identity, over all traffic (the noise gate removes none of these, so gated and ungated counts are the same). Kibana’s own routine clean-up of API keys (invalidate_apikeys by the elastic/kibana service account) is not counted here; the line under the number (“N key cleanups left out”) says how many there were. Any other non-zero value deserves review.",
         "type": "metric",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.security_config_change IS NOT NULL | EVAL housekeeping = (attributes.event.action IS NOT NULL AND attributes.event.action == \"invalidate_apikeys\" AND attributes.user.name IS NOT NULL AND attributes.user.name IN (\"elastic.maintenance\",\"autoscaling\",\"elasticsearch-controller\",\"elastic/fleet-server\",\"elastic/kibana\") AND attributes.api_key.name IS NULL) | STATS `Privileged ops` = COUNT(*) WHERE NOT housekeeping, cleanups = COUNT(*) WHERE housekeeping | EVAL housekeeping_note = CASE(cleanups > 0, CONCAT(TO_STRING(cleanups), \" key cleanups left out\"), \"no key cleanups in range\")"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.security_config_change IS NOT NULL | EVAL housekeeping = (attributes.event.action IS NOT NULL AND attributes.event.action == \"invalidate_apikeys\" AND attributes.user.name IS NOT NULL AND attributes.user.name IN (\"elastic.maintenance\",\"autoscaling\",\"elasticsearch-controller\",\"elastic/fleet-server\",\"elastic/kibana\") AND attributes.api_key.name IS NULL) | STATS `Privileged ops · all traffic` = COUNT(*) WHERE NOT housekeeping, cleanups = COUNT(*) WHERE housekeeping | EVAL housekeeping_note = CASE(cleanups > 0, CONCAT(TO_STRING(cleanups), \" key cleanups left out\"), \"no key cleanups in range\")"
         },
         "metrics": [
           {
             "type": "primary",
-            "column": "Privileged ops",
+            "column": "Privileged ops · all traffic",
             "format": {
               "type": "number",
               "decimals": 0
@@ -259,23 +259,23 @@
       "type": "vis",
       "id": "kpi-06",
       "grid": {
-        "x": 40,
+        "x": 39,
         "y": 3,
-        "w": 8,
+        "w": 9,
         "h": 5
       },
       "config": {
         "title": "",
-        "description": "Failed outcomes plus anonymous access denials — the first place to look during an incident.",
+        "description": "Failed outcomes plus anonymous access denials over all traffic, not only signal: a failure is worth seeing even when it is a health check or a query internal. The first place to look during an incident.",
         "type": "metric",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.event.outcome == \"failure\" OR attributes.event.action == \"anonymous_access_denied\" | STATS `Failed events` = COUNT(*)"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.event.outcome == \"failure\" OR attributes.event.action == \"anonymous_access_denied\" | STATS `Failed events · all traffic` = COUNT(*)"
         },
         "metrics": [
           {
             "type": "primary",
-            "column": "Failed events",
+            "column": "Failed events · all traffic",
             "format": {
               "type": "number",
               "decimals": 0
@@ -295,7 +295,7 @@
       },
       "config": {
         "title": "Audit volume by source · all traffic",
-        "description": "Total audited events over time, split by originating service. Elasticsearch audits every transport action, so its volume usually far exceeds Kibana’s — and the Kibana slice is where most of the forensic value is.",
+        "description": "Total audited events over time, split by originating service. Elasticsearch audits every transport action, so its volume usually far exceeds Kibana’s — and the Kibana slice is where most of the forensic value is. The last bar is the bucket still filling, so it is usually short; a bucket with no bar had no audit events delivered for it (the stream arrives in batches).",
         "type": "xy",
         "axis": {
           "x": {
@@ -393,8 +393,8 @@
       },
       "config": {
         "ref_id": "cloud-audit-vega-01-actor-risk-treemap",
-        "title": "Actor footprint sized by volume, coloured by severity",
-        "description": "The top 12 identities by signal volume (fewer on a narrow screen, down to 8), in one block per kind; the rest of each kind is folded into one grey “+N more” tile (hover it for the count). Blocks: named API key (labelled by the KEY, with its owner — the principal that created it — on a further line when there is room, and in the tooltip), person (a real email address), cloud API key (an organization-level Cloud key, which the audit stream records only by id and with no owner), and unattributed (a token or opaque principal). An identity is one tile even when its events disagree about its kind; it goes in the most specific block any of them supports. Area grows with the SQUARE ROOT of event volume, so one dominant identity cannot crush the rest into slivers, and the smallest identities get a minimum tile so every name stays readable; a name too long for its tile ends in “…” — the tooltip has the full name and exact counts. Colour is accumulated severity, the quantity the risk leaderboard ranks by, on a square-root scale. A key that carries its creator’s email is its own tile here, but counts under the person in Busiest identities."
+        "title": "Actor footprint · area by √events, colour by severity",
+        "description": "The top 12 identities by signal volume (fewer on a narrow screen, down to 8), in one block per kind; the rest of each kind is folded into one grey “+N more” tile (hover it for the count). Blocks: named API key (labelled by the KEY, with its owner — the principal that created it — on a further line when there is room, and in the tooltip), person (a real email address), cloud API key (an organization-level Cloud key, which the audit stream records only by id and with no owner), and unattributed (a token or opaque principal). An identity is one tile even when its events disagree about its kind; it goes in the most specific block any of them supports. Area grows with the SQUARE ROOT of event volume, so one dominant identity cannot crush the rest into slivers, plus the same small share for every tile, so the quietest identity keeps a readable name but is never drawn larger than a busier one. Each tile prints its event count where it fits: read the number, not the area, for how much more one identity did. A name too long for its tile ends in “…” — the tooltip has the full name and exact counts. Colour is accumulated severity, the quantity the risk leaderboard ranks by, on a square-root scale. A key that carries its creator’s email is its own tile here, but counts under the person in Busiest identities."
       }
     },
     {
@@ -409,7 +409,7 @@
       "config": {
         "ref_id": "cloud-audit-vega-07-noise-ratio-stream",
         "title": "Signal vs noise over time",
-        "description": "Audit events per time bucket, stacked by band — Signal on the baseline, then bulk authentication, query internals and infrastructure health — so the top edge is the whole firehose. Shows why the noise gate exists. Hover a segment for its band and the bucket total."
+        "description": "Audit events per time bucket, stacked by band — Signal on the baseline, then bulk authentication, query internals and infrastructure health — so the top edge is the whole firehose. Shows why the noise gate exists. Hover a segment for its band and the bucket total. Infrastructure health (cluster:monitor/main pings) is usually too thin to see beside the rest, or absent from a short window, although its legend entry stays: Platform Volume counts it. As on Audit volume, the last bucket is still filling and an empty bucket had no audit events delivered."
       }
     },
     {
@@ -524,7 +524,7 @@
       },
       "config": {
         "title": "Event categories · all traffic",
-        "description": "ECS event categories over the whole stream, noise included, on a log scale so the small categories are as readable as the bulk: read each bar by its label, not its length. event.category is a multi-value array, so an event in two categories counts once in each and the bars sum to more than the event total; “none recorded” is events that carry no category.",
+        "description": "ECS event categories over the whole stream, noise included, on a log scale so the small categories are as readable as the bulk: read each bar by its label, not its length. event.category is a multi-value array, so an event in two categories counts once in each and the bars sum to more than the event total; “none recorded” is events that carry no category. A bar too short to hold its number (under 100 events) carries it in its label instead.",
         "type": "xy",
         "axis": {
           "x": {
@@ -544,7 +544,7 @@
             "type": "bar_horizontal",
             "data_source": {
               "type": "esql",
-              "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS events = COUNT(*) BY category = attributes.event.category | EVAL category = COALESCE(category, \"none recorded\") | SORT events DESC | LIMIT 8"
+              "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS events = COUNT(*) BY category = attributes.event.category | EVAL category = COALESCE(category, \"none recorded\") | SORT events DESC | LIMIT 8 | EVAL category = CASE(events < 100, CONCAT(category, \" · \", TO_STRING(events)), category)"
             },
             "x": {
               "column": "category",
@@ -576,12 +576,12 @@
         "x": 0,
         "y": 48,
         "w": 48,
-        "h": 15
+        "h": 25
       },
       "config": {
         "ref_id": "cloud-audit-search-10-raw-signal-feed",
         "title": "Live signal feed",
-        "description": "The newest 200 signal events, newest first, behind the same noise gate as Signal events. Detail is the Kibana message, or the transport action on an Elasticsearch event. A Client IP marked internal is Kibana or the platform calling Elasticsearch on someone’s behalf, not where they are. Open the Discover session to page further back or add columns. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email."
+        "description": "The newest 200 signal events, newest first, behind the same noise gate as Signal events. Detail is the Kibana message, the transport action on an Elasticsearch event, or for a security change (API key, role) what it changed: “API key <name or id> + N more” for one call that invalidated several keys. A Client IP marked internal is Kibana or the platform calling Elasticsearch on someone’s behalf, not where they are; “none recorded” is an event with no client address, such as Kibana’s own service account working inside the platform. Automation reads as long runs of near-identical rows from one identity: a deploy or a scripted scan can fill this feed for minutes. To read past it, pick a Person above, or open the session and filter that identity out. Open the Discover session to page further back or add columns. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email."
       }
     }
   ]
