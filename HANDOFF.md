@@ -32,6 +32,17 @@ conflict. This file is "where we are right now" and should be assumed stale.
   Auth success (`authentication_success`), Infra health (`cluster:monitor/main`, `elastic.maintenance`).
 - **Small fixes:** 07's timeline title matches 02 (`· fixed last 24 hours, your time zone`); README's private
   example ids; searches/09 Time 215 → 208 and Space 100 → 80, so Message gets 248px at 1440 (was 221).
+- **Skeptic (r103g):** 6c604f4 deployed from a temporary worktree (Command Center + 6 numbered ids), then HEAD:
+  `--dashboards` removed all 6 numbered ids and the space held exactly the 7 new ones. Confirmed on the old
+  deploy that `CSS_NAV` never reached the DOM (no matching style element; nav links in the theme colour), so
+  dropping it loses nothing. Official `--verify` clean in dark 1h and light 24h at 1920 and 1440. Every intro
+  and the legend measured in both themes at both widths: no scrollbar (no overflowing ancestor), 12px/18px
+  body, 17px heading; spare space under the last line is the 25px padding except 07 and 02 at 1920 (~30px
+  more, one grid row would scroll at 1440). Clicked 42/42 nav links and 7/7 drilldowns (menu shows "Open in
+  …", lands on the new id with the filter pill). searches/09 at 1440: Time 208px holds the 194px date,
+  Space 80px holds `s_audit`, nothing in either column truncated. Fixed: demo-guide's "the quarantine
+  dashboard" now appears only when Platform Volume is deployed; `PUT /api/dashboards/…` examples in README,
+  fragments.md and env.mjs name the new `elastic_cloud-audit-…` prefix.
 
 ## Release 1.0.3 — 1.0.2 merged under round 6, plus session filtering, 2026-10-15
 

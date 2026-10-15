@@ -157,7 +157,7 @@ export async function run(argv = []) {
         say: `This project has audited ${fmt(docs)} events${days ? ` over ${days} days` : ''}. In this window, ${fmt(total)} of them. Much of that is typically machine traffic — services authenticating and health-checking, not a person doing something. The number that matters is Signal: ${fmt(signal)}, about ${signalShare.toFixed(1)}% of the stream. Everything else in this suite reads that ${signalShare.toFixed(1)}%.`,
         note: {
           kind: 'tip', label: 'If someone asks how the gate works',
-          body: 'Four bands, and the quarantine dashboard shows all of them: infra health pings, query internals (search phases, reader contexts, point-in-time), bulk authentication, and signal. The first three are transport chatter with no forensic content.',
+          body: `Four bands${PV ? ', and Platform Volume shows all of them' : ''}: infra health pings, query internals (search phases, reader contexts, point-in-time), bulk authentication, and signal. The first three are transport chatter with no forensic content.`,
         },
       }),
       step('Find the humans', {
