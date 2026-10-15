@@ -1,6 +1,6 @@
 /** 05 Geo & Network — see scripts/lib/definitions.mjs for how the suite is assembled. */
 import {
-  IDX, ACTOR_RESOLVE, IP_GEO, TIME, BUCKET, dash, kpi, xy, table, vega, filterable, sized, resetIds, grouped
+  IDX, ACTOR_RESOLVE, IP_GEO, TIME, BUCKET, EDGE_NOTE, dash, kpi, xy, table, vega, filterable, sized, resetIds, grouped
 } from '../panels.mjs';
 
 /**
@@ -67,7 +67,9 @@ const SHARE = (num, den) => `ROUND(${num} * 1.0 / ${den}, 3)`;
  * into two rows. The second row's Addresses is null (Lens prints "-"): its addresses are Resolved's
  * own, so counting them again made the column add up to 3 under a Client IPs tile reading 2 (round-4
  * review). Null rather than 0, because "391 events from 0 addresses" is false, and the column now
- * partitions the tile exactly as Events partitions the stream. A table rather than the donut it replaced: Lens drew a ~40% slice's label inside the
+ * partitions the tile exactly as Events partitions the stream. "No client IP" is null too: printed as
+ * 0 it read "30,854 events from 0 addresses" beside the other row's "-", two notations for one thing
+ * (round-5 review), so "-" in this column always means no address of the row's own. A table rather than the donut it replaced: Lens drew a ~40% slice's label inside the
  * ring, the legend order swapped between 1h and 24h, and a 0.05% slice was invisible.
  */
 const GEO_RESOLUTION =
@@ -78,7 +80,7 @@ const GEO_RESOLUTION =
   `| EVAL part = [1, 2] | MV_EXPAND part | WHERE part == 1 OR kind == "Resolved" ` +
   `| EVAL geo_status = CASE(part == 2, "Predates geo enrichment", kind), ` +
   `events = CASE(part == 2, events - resolved, kind == "Resolved", resolved, events), ` +
-  `addresses = CASE(part == 2, null, addresses) ` +
+  `addresses = CASE(part == 2 OR kind == "No client IP", null, addresses) ` +
   `| WHERE events > 0 OR geo_status == "Resolved" ` +
   `| EVAL ord = CASE(geo_status == "Resolved", 0, part == 2, 2, kind == "No client IP", 3, 1), ` +
   `shown_in = CASE(geo_status == "Resolved", "Map, locations, travel", part == 2, "IP tables, under its Resolved IP", ` +
@@ -103,6 +105,10 @@ const GEO_RESOLUTION =
  * run on those pairs, the list is in address order, capped at three with a "+N more", and every EVAL
  * sits before the trailing SORT/KEEP/LIMIT so table() can set the LIMIT. 7d on the replica: 85–127ms
  * against 75–99ms for the tagged list it replaced.
+ *
+ * Ranked by Client events, the first column a reader compares, then Internal-hop events. Ranked by the
+ * proxy's total, which KEEP drops, neither visible column was in order (291,314 above 309,038 at 24h,
+ * round-5 review) and nothing on the panel said why one proxy outranked another.
  */
 const PROXIES =
   `FROM ${IDX} | ${TIME} | WHERE client.ip IS NOT NULL | STATS n = COUNT(*) BY attributes.source.ip, client.ip ` +
@@ -111,7 +117,7 @@ const PROXIES =
   `| EVAL hop_events = COALESCE(hop_events, 0), client_events = events - hop_events, ` +
   `forwarded_for = CASE(clients == 0, "none, only the internal hop", ` +
   `CONCAT(MV_CONCAT(MV_SLICE(MV_SORT(cs), 0, 2), ", "), CASE(clients > 3, CONCAT(" +", TO_STRING(clients - 3), " more"), ""))) ` +
-  `| SORT events DESC | KEEP attributes.source.ip, forwarded_for, client_events, hop_events | LIMIT 10`;
+  `| SORT client_events DESC, hop_events DESC | KEEP attributes.source.ip, forwarded_for, client_events, hop_events | LIMIT 10`;
 
 /**
  * "Placed events" is one measure printed in two tables (Top client locations, Busiest client IPs), so it
@@ -123,7 +129,7 @@ const PLACED_W = 105;
 export function build() {
   resetIds();
   const P = [
-    kpi(0, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE client.geo.country_iso_code IS NOT NULL | STATS \`Geo-resolved events\` = COUNT(*)`, 'Geo-resolved events', 'Events with a resolved client location — the Resolved row of "Geo resolution of audited events", and the sum of Top client locations when every location fits.'),
+    kpi(0, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE client.geo.country_iso_code IS NOT NULL | STATS \`Geo-resolved events\` = COUNT(*)`, 'Geo-resolved events', `Events with a resolved client location — the Resolved row of "Geo resolution of audited events", and the sum of Top client locations when every location fits. ${EDGE_NOTE}`),
     kpi(8, 0, 8, 5, `FROM ${IDX} | ${TIME} | STATS total = COUNT(*), resolved = COUNT(client.geo.country_iso_code) | EVAL \`Geo coverage\` = ${SHARE('resolved', 'total')} | KEEP \`Geo coverage\``, 'Geo coverage',
       `Share of audited events that resolve to a country — the honest denominator for every geographic panel here, and the same number as the map's title line and the Resolved share in "Geo resolution of audited events". It can be low: events with no forwarded IP, Kibana's own server-side calls into Elasticsearch (forwarded from a platform-internal 100.64/10 address), and private addresses cannot be placed by any geoip database. "Geo resolution of audited events" breaks it down.`,
       { fmt: 'percent', dec: 1 }),
@@ -157,18 +163,18 @@ export function build() {
     // The unit this row gained is the one the proxy table gave up: the page needs ~42 units to clear
     // verify.mjs's 1400px floor at 1920px, and here it buys a sixth location and a taller map.
     vega(0, 5, 24, 17, '06-geo-origin', 'Audited traffic by country',
-      'Audited events by real client country: client.ip, which ingest takes from network.forwarded_ip and geo-resolves; source.ip is only the proxy hop. Color is volume on a log scale, teal (few) through blue and purple to pink (most); the legend appears once two or more countries are shaded, since one country has no range to read. Hover a country for events, identities and its share. The title line states how much of the stream could be placed at all — the same number as the Geo coverage tile, computed the same way (the map fetches on its own, so in a busy last hour it can be a tenth of a point apart while new events land) — and "Geo resolution of audited events" beside it says where the rest went: absence on the map is not absence of traffic.'),
+      'Audited events by real client country: client.ip, which ingest takes from network.forwarded_ip and geo-resolves; source.ip is only the proxy hop. Once two or more countries are shaded, color is volume on a log scale, teal (few) through blue and purple to pink (most), with a legend; it is a quantity, so it does not match a country\'s colour in the time chart below, which is a name. A lone country has no range to read, so it is drawn in teal, the colour it has in that time chart. Hover a country for events, identities and its share. The title line states how much of the stream could be placed at all — the same number as the Geo coverage tile, computed the same way (the map fetches on its own, so in a busy last hour it can be a tenth of a point apart while new events land) — and "Geo resolution of audited events" beside it says where the rest went: absence on the map is not absence of traffic.'),
     // A table rather than a bar chart: with one location the old bar filled the panel as a solid
     // block, and at 5-10x the cities its 25 rows overprinted their labels. A table keeps the exact
     // count beside each place and stops at the rows that fit.
     table(24, 5, 24, 8, 'Top client locations',
       `FROM ${IDX} | ${TIME} | WHERE client.geo.country_iso_code IS NOT NULL | ${ACTOR_RESOLVE} | STATS events = COUNT(*), actors = COUNT_DISTINCT(actor), ips = COUNT_DISTINCT(client.ip) BY city = client.geo.city_name, country = client.geo.country_name | EVAL location = CONCAT(COALESCE(city, "city unknown"), ", ", country) | SORT events DESC | LIMIT 6`,
       ['location'], [{ column: 'events', label: 'Placed events', width: PLACED_W }, 'actors', { column: 'ips', label: 'Client IPs' }],
-      'The busiest resolved client locations in range, counting placed events only — the events the map shades. They sum to the Geo-resolved events tile when every location fits. An address\'s events from before geo enrichment are not here; Busiest client IPs counts them at the address\'s place, so its Events can be higher by the "Predates geo enrichment" row, and its "Placed events" column is this one. City is often the ISP\'s point of presence rather than where the person sits; country is reliable.'),
+      'The busiest resolved client locations in range, counting placed events only — the events the map shades. They sum to the Geo-resolved events tile when every location fits. An address\'s events from before geo enrichment are not here; Busiest client IPs counts them at the address\'s place, so its Events can be higher by the "Predates geo enrichment" row, and its "Placed events" column is this one. City is often the ISP\'s point of presence rather than where the person sits; country is reliable. ' + EDGE_NOTE),
     table(24, 13, 24, 9, 'Geo resolution of audited events', GEO_RESOLUTION,
       [sized('geo_status', 190, { label: 'Resolution', min: 175 }), { column: 'shown_in', label: 'Where it shows' }],
       ['events', 'addresses', sized('share', 70, { label: 'Share' })],
-      `Every audited event in range, by whether it could be placed on a map, with the addresses behind each row. The Resolved share is the Geo coverage tile and the map's title line, and only those events appear on any geographic panel. "Platform-internal (100.64/10)" is not a client that failed to resolve: the address is a hop inside Elastic Cloud — on this project, Kibana's server calling Elasticsearch on behalf of a user, whose real address is on the Kibana event for the same request. "Private (RFC1918)" and "Loopback / link-local" are clients reaching the project over a private network, which no geoip database can place; a "Public, no geoip match" row WOULD be a geoip problem worth chasing. "Predates geo enrichment" is events from an address that did resolve, sent before enrichment was in place (enrichment is forward-only). "No client IP" is mostly Elasticsearch transport traffic, which forwards no address at all. Shares are rounded one by one, so they can sum to 99.9% or 100.1%.`,
+      `Every audited event in range, by whether it could be placed on a map, with the addresses behind each row. The Resolved share is the Geo coverage tile and the map's title line, and only those events appear on any geographic panel. "Platform-internal (100.64/10)" is not a client that failed to resolve: the address is a hop inside Elastic Cloud — on this project, Kibana's server calling Elasticsearch on behalf of a user, whose real address is on the Kibana event for the same request. "Private (RFC1918)" and "Loopback / link-local" are clients reaching the project over a private network, which no geoip database can place; a "Public, no geoip match" row WOULD be a geoip problem worth chasing. "Predates geo enrichment" is events from an address that did resolve, sent before enrichment was in place (enrichment is forward-only). "No client IP" is mostly Elasticsearch transport traffic, which forwards no address at all. A "-" under Addresses means the row has no address of its own: none was forwarded, or its address is already counted on the Resolved row. Shares are rounded one by one, so they can sum to 99.9% or 100.1%. ${EDGE_NOTE}`,
       { cut: false }),
     // Every person with geo-resolved traffic, ranked — not only those over the threshold. Filtering to
     // `countries > 1` left the whole panel at "No results found" under a warning title whenever the
@@ -178,11 +184,11 @@ export function build() {
     // viewport ("shawn.hooton@elast"). City is the ISP's point of presence, not evidence of travel.
     // h=8 (6 rows) for this and Busiest client IPs beside it: at 12 units each held 1–2 rows over
     // ~250px of blank card on a one-person, two-address project; six still leads with any traveller.
-    table(0, 22, 24, 8, 'Countries per person (impossible travel)',
+    table(0, 22, 24, 8, 'Countries per person (impossible travel) · no service credentials',
       `FROM ${IDX} | ${TIME} | WHERE attributes.user.email IS NOT NULL AND client.geo.country_iso_code IS NOT NULL | STATS countries = COUNT_DISTINCT(client.geo.country_iso_code), ips = COUNT_DISTINCT(client.ip), events = COUNT(*), names = VALUES(client.geo.country_name) BY attributes.user.email | EVAL verdict = CASE(countries > 1, "Check travel", "One country"), seen_from = MV_CONCAT(MV_SORT(names), ", ") | SORT countries DESC, events DESC | LIMIT 6`,
       [filterable('attributes.user.email'), sized('verdict', 115, { label: 'Reading', min: 100 }), { column: 'seen_from', label: 'Countries seen' }],
       [{ column: 'ips', label: 'Client IPs' }, 'events'],
-      'People (identities with an email) whose traffic resolved to a country in range, most countries first. Two or more countries inside one window is the classic impossible-travel indicator — compare "Countries seen" with where the person actually is. "One country" on every row is the clean state. Service credentials are excluded, since multi-region is normal for machines, and a person whose every address is unplaceable (private egress) cannot appear here — see Geo coverage. Click an email to scope the suite to that person.'),
+      'People (identities with an email) whose traffic resolved to a country in range, most countries first. Only people, so it lists fewer identities than the Identities column of Top client locations, which counts service credentials too: API keys, Cloud API keys and Kibana\'s own service account. Two or more countries inside one window is the classic impossible-travel indicator — compare "Countries seen" with where the person actually is. "One country" on every row is the clean state. Service credentials are excluded, since multi-region is normal for machines, and a person whose every address is unplaceable (private egress) cannot appear here — see Geo coverage. Click an email to scope the suite to that person.'),
     // One row per address (IP_GEO): grouped by the geo fields too, an address with events from before
     // enrichment printed twice — placed, and "not placeable" — and the table outgrew the Client IPs tile.
     // "Placed" is IP_GEO's own count, shown so the row reconciles with Top client locations above: the
@@ -191,7 +197,7 @@ export function build() {
     table(24, 22, 24, 8, 'Busiest client IPs',
       `FROM ${IDX} | ${TIME} | WHERE client.ip IS NOT NULL | ${ACTOR_RESOLVE} | STATS events = COUNT(*), actors = COUNT_DISTINCT(actor), ${IP_GEO} BY client.ip | ${LOCATION} | SORT events DESC | LIMIT 6`,
       [filterable('client.ip'), 'location'], [{ column: 'events', label: 'All events' }, { column: 'placed', label: 'Placed events', width: PLACED_W }, 'actors'],
-      'Forwarded client IPs, busiest first, with where each resolved; the Client IPs tile counts every one. All events is every event from the address; Placed events is the ones geoip resolved — the same column, by the same name, as in Top client locations, and what the map counts. The difference is the address\'s events from before geo enrichment. An IP shared by many identities is usually a NAT gateway or CI runner. "Platform-internal (100.64/10)" is not a client: it is a hop inside Elastic Cloud — on this project, Kibana\'s server calling Elasticsearch for a user whose real address is on the Kibana event. "Not placeable" means no event from the address ever resolved: a private address no geoip database can place, not an enrichment error. "Geo resolution of audited events" accounts for every one. Click an IP to scope the suite to it.'),
+      'Forwarded client IPs, busiest first, with where each resolved; the Client IPs tile counts every one. All events is every event from the address; Placed events is the ones geoip resolved — the same column, by the same name, as in Top client locations, and what the map counts. The difference is the address\'s events from before geo enrichment. An IP shared by many identities is usually a NAT gateway or CI runner. "Platform-internal (100.64/10)" is not a client: it is a hop inside Elastic Cloud — on this project, Kibana\'s server calling Elasticsearch for a user whose real address is on the Kibana event. "Not placeable" means no event from the address ever resolved: a private address no geoip database can place, not an enrichment error. "Geo resolution of audited events" accounts for every one. Click an IP to scope the suite to it. ' + EDGE_NOTE),
     // By name, not ISO code, so the legend reads "United States". Countries under 5% of PLACED traffic
     // fold into "Other": that caps the split at 19 named series in theory and a handful in practice, and
     // the right-hand legend (one per line) cannot clip the way a bottom row does — which is why it
@@ -203,21 +209,25 @@ export function build() {
     // tile over time, and a blank stretch can only mean no audit events at all.
     // Aggregated on the raw keyword first, so the fold runs over buckets, not events (no country filter
     // any more, so it reads every event: 7d on the replica 224–277ms, against 139–155ms geo-only).
-    xy(0, 30, 24, 12, 'Audited traffic over time, by client country',
+    xy(0, 30, 24, 13, 'Audited traffic over time, by client country',
       `FROM ${IDX} | ${TIME} | STATS events = COUNT(*) BY ts = ${BUCKET}, c = client.geo.country_name | INLINE STATS ctot = SUM(events) BY c | INLINE STATS placed = SUM(events) WHERE c IS NOT NULL | EVAL country = CASE(c IS NULL, "${NOT_PLACED}", ctot >= placed * 0.05, c, "Other") | STATS events = SUM(events) BY ts, country | EVAL ord = CASE(country == "${NOT_PLACED}", 2, country == "Other", 1, 0) | SORT ord, country, ts | KEEP ts, country, events`,
       'events', `Every audited event over time, split by the country its client address resolved to: events per bar, where each bar is a round interval sized so the range holds at most 75 of them (1 minute at 1h, 30 minutes at 24h, 3 hours at 7d). "${NOT_PLACED}" (grey) is every event that resolved to no country — platform-internal hops, private addresses, events from before geo enrichment and events with no client IP — so the coloured part of each bar is the Geo coverage tile over time, and "Geo resolution of audited events" breaks the grey down. A stretch with no bar at all had no audit events. Countries under 5% of placed events in range are folded into "Other".`,
       { breakdown: 'country', xcol: 'ts', legend: 'right', colors: { Other: '#B9A888', [NOT_PLACED]: '#98A2B3' }, yTitle: 'Events per bar' }),
     // The proxy column is the raw field, labelled, so it is a click-to-filter link (an ES|QL alias
     // would cost the pill). See PROXIES for why one row per proxy, and why the internal hop has its own
     // column. "Platform proxy" says on the panel face why every proxy is a 100.64/10 address, the range
-    // the page calls platform-internal. h=12 (10 rows) holds every forwarding proxy seen so far (8 at
-    // 24h); at 13 the 1h render was two rows over an ~80% empty card. 12 is also the floor: at 11 the
-    // page fell to verify.mjs's 1400px "did the measurement work" limit at a 1920px viewport and every
-    // render was flagged TRUNCATED.
-    table(24, 30, 24, 12, 'Proxy vs real client IP, by proxy', PROXIES,
+    // the page calls platform-internal. h=13 (12 rows) holds every forwarding proxy seen so far (8 at
+    // 24h). Not 12: the data grid sizes its first render by an estimated ~34px row, not the 24px compact
+    // row it draws, so at 8 rows in a 10-row card it decided it had a scrollbar and drew its bottom
+    // border ~70px under the last row, a stray hairline across the card (round-5 review; a window resize
+    // clears it, which is how it was pinned down). At 13 that needs 9+ rows. The cost is a little more
+    // empty card at 1h, where 2 proxies forward. 12 is also the floor: at 11 the page fell to
+    // verify.mjs's 1400px "did the measurement work" limit at a 1920px viewport and every render was
+    // flagged TRUNCATED.
+    table(24, 30, 24, 13, 'Proxy vs real client IP, by proxy', PROXIES,
       [filterable('attributes.source.ip', { label: 'Platform proxy', width: 125 }), { column: 'forwarded_for', label: 'Real client IPs it forwarded' }],
       [{ column: 'client_events', label: 'Client events', width: 100 }, { column: 'hop_events', label: 'Internal-hop events', width: 130 }],
-      'Side-by-side proof that source.ip is a proxy and client.ip (from network.forwarded_ip) is the real origin: one row per proxy that forwarded any client address — the proxies the Proxy IPs tile\'s line counts — with the real client addresses it carried (in address order, up to three, then "+N more"). The proxies are Elastic Cloud\'s own, which is why they sit in the platform-internal 100.64/10 range. Analysing the wrong field would put every user in the datacentre. Client events came from those real clients; Internal-hop events carried a platform-internal 100.64/10 address instead — not a client but, on this project, Kibana\'s server calling Elasticsearch on a user\'s behalf — and are kept out of the client list. The two add up to the proxy\'s whole traffic, and over every proxy to the All events of Busiest client IPs. Click a proxy to scope the suite to it; Busiest client IPs filters by client.'),
+      'Side-by-side proof that source.ip is a proxy and client.ip (from network.forwarded_ip) is the real origin: one row per proxy that forwarded any client address — the proxies the Proxy IPs tile\'s line counts — with the real client addresses it carried (in address order, up to three, then "+N more"). The proxies are Elastic Cloud\'s own, which is why they sit in the platform-internal 100.64/10 range. Analysing the wrong field would put every user in the datacentre. Busiest proxy first by Client events, which came from those real clients; Internal-hop events carried a platform-internal 100.64/10 address instead — not a client but, on this project, Kibana\'s server calling Elasticsearch on a user\'s behalf — and are kept out of the client list. The two add up to the proxy\'s whole traffic, and over every proxy to the All events of Busiest client IPs. Click a proxy to scope the suite to it; Busiest client IPs filters by client. ' + EDGE_NOTE),
   ];
   return dash('cloud-audit-05-geo-network', '[Audit] 🌍 Geo & Network',
     'Real client geography from forwarded_ip, geo-resolved at ingest. Impossible-travel detection.', P);
