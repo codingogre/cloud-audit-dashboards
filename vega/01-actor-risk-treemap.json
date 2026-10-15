@@ -319,7 +319,7 @@
         {
           "type": "formula",
           "as": "a_cnt",
-          "expr": "datum.a_rows > datum.a_nl && length(datum.count) <= datum.a_cpl"
+          "expr": "datum.a_rows > datum.a_nl && length(format(datum.events, ',')) <= datum.a_cpl"
         },
         {
           "type": "formula",
@@ -329,7 +329,7 @@
         {
           "type": "formula",
           "as": "a_lines",
-          "expr": "split(join(slice([datum.a_l1, datum.a_l2, datum.a_l3], 0, datum.a_nl), '\\n') + (datum.a_cnt ? '\\n' + datum.count : '') + (datum.a_own ? '\\nowner: ' + datum.owner : ''), '\\n')"
+          "expr": "split(join(slice([datum.a_l1, datum.a_l2, datum.a_l3], 0, datum.a_nl), '\\n') + (datum.a_cnt ? '\\n' + (length(datum.count) <= datum.a_cpl ? datum.count : format(datum.events, ',')) : '') + (datum.a_own ? '\\nowner: ' + datum.owner : ''), '\\n')"
         },
         {
           "type": "formula",
@@ -389,7 +389,7 @@
         {
           "type": "formula",
           "as": "b_cnt",
-          "expr": "datum.b_rows > datum.b_nl && length(datum.count) <= datum.b_cpl"
+          "expr": "datum.b_rows > datum.b_nl && length(format(datum.events, ',')) <= datum.b_cpl"
         },
         {
           "type": "formula",
@@ -399,7 +399,7 @@
         {
           "type": "formula",
           "as": "b_lines",
-          "expr": "split(join(slice([datum.b_l1, datum.b_l2, datum.b_l3], 0, datum.b_nl), '\\n') + (datum.b_cnt ? '\\n' + datum.count : '') + (datum.b_own ? '\\nowner: ' + datum.owner : ''), '\\n')"
+          "expr": "split(join(slice([datum.b_l1, datum.b_l2, datum.b_l3], 0, datum.b_nl), '\\n') + (datum.b_cnt ? '\\n' + (length(datum.count) <= datum.b_cpl ? datum.count : format(datum.events, ',')) : '') + (datum.b_own ? '\\nowner: ' + datum.owner : ''), '\\n')"
         },
         {
           "type": "formula",
