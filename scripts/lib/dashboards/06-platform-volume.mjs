@@ -33,7 +33,7 @@ import {
  * fence again (live, 1h, median 4,240: minutes of 1,249 / 1,727 / 1,581 / 1,287 / 2,417 straddle the
  * 1,413 cut, so every other bar vanished). Any single cut fences whatever traffic oscillates around it.
  *
- * So the cut has hysteresis (a Schmitt trigger): with T the window's median bucket total, a bucket is
+ * So the cut has hysteresis (a Schmitt trigger): with T the window's typical bucket total, a bucket is
  * tiny under T/10 and quiet under T/3, and only a tiny bucket can START a blank. A quiet bucket is blank
  * only when its run of quiet buckets reaches a tiny one; a stretch that merely swings around T/3, with no
  * tiny bucket in it, is drawn whole.
@@ -43,6 +43,21 @@ import {
  *   quiet, otherwise             drawn: a dip, or a quiet stretch, is not a lull
  *   loud (≥ T/3)                 drawn, unless it is under T and BOTH sides are blank: a lone low bar
  *                                inside a lull. A bucket at or above T is always drawn.
+ *
+ * A bucket under T that sits between two blank ones (or empty slots) is blank as well, quiet or loud: the
+ * loud case above approximates its neighbours from their totals, and a quiet bucket two places from any
+ * tiny one escaped it — round-6 skeptic, live 1h: one 1,064-event minute split at full height between
+ * eight shaded minutes on each side, the picket the rule exists to prevent. A second pass over the
+ * computed flags (lag/lead of blank) catches both; a bucket at either edge of the data is never forced.
+ *
+ * T is the median of the buckets holding at least a twentieth of the MEAN bucket, not of every bucket.
+ * A plain median is captured by whatever most buckets are, and when most of a window is an overnight
+ * trickle the trickle IS typical (round-6 skeptic, live 4h 10:00–14:00Z: 28 buckets of 1–37 events
+ * then 19 of 3,700–49,000; median 19, so every 5-event bucket split at full height beside the 49,000
+ * ones). The mean is pulled up by the busy buckets, so a twentieth of it drops the trickle from the
+ * median and leaves a steady stream with one spike alone (60 minutes of ~100 and one of 20,000: mean
+ * ~465, cut ~23, T 100). Simulated on the same live and replica windows: 4h and 6h now shade the trickle
+ * as one run; 1h, 24h and every 7-day-replica window blank the same buckets as before.
  *
  * Beyond the first or last bucket counts as unknown, not as 0: otherwise a window that opens on a quiet
  * minute reads the minute before it as a lull and blanks its own opening (it did, at 16:00–17:00: two
@@ -117,7 +132,7 @@ export function build() {
     // midnight label carrying its date — because a 6%-of-window zone dropped a last label that had room.
     // At 25 rows the spec draws its three charts on one time axis (SIGNAL VS NOISE OVER TIME, above).
     vega(0, 12, 30, 25, '07-noise-ratio-stream', 'Signal vs noise over time',
-      'Three views of the same buckets on one time axis. Top: audit events per bucket, stacked by band, so the top edge is the whole firehose and Signal sits on the baseline. Middle: Signal alone, on its own square-root scale, so a rise or fall in the events the other dashboards read is visible at any share. Bottom: each bucket as 100%, split by band — whether a spike was more noise or more signal. A lull is shaded and not split, because as a percentage a few dozen events would stand as tall as the busiest bucket: a bucket under a tenth of the window’s typical (median) volume, one under a third right beside such a bucket, and a lone low bucket inside a lull; a stretch that is merely quiet is split. Hover any bar for its numbers.'),
+      'Three views of the same buckets on one time axis. Top: audit events per bucket, stacked by band, so the top edge is the whole firehose and Signal sits on the baseline. Middle: Signal alone, on its own square-root scale, so a rise or fall in the events the other dashboards read is visible at any share. Bottom: each bucket as 100%, split by band — whether a spike was more noise or more signal. A lull is shaded and not split, because as a percentage a few dozen events would stand as tall as the busiest bucket: a bucket under a tenth of the window’s typical volume (the median bucket, leaving out a trickle under a twentieth of the average), one under a third right beside such a bucket, and a lone low bucket inside a lull; a stretch that is merely quiet is split. Hover any bar for its numbers.'),
     // Named keys only, which is why it can be empty while the stream is busy: an organization-level Cloud
     // API key — very often the one running this suite — carries no name, and the stream records it by id
     // alone, so it is on Highest-volume identities, marked, and never here (listing it would need a

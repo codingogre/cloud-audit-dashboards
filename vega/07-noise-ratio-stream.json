@@ -218,16 +218,33 @@
             "gap"
           ],
           "ops": [
-            "median",
+            "mean",
             "min",
             "max",
             "min"
           ],
           "as": [
-            "typical",
+            "mean_total",
             "lo",
             "hi",
             "min_gap"
+          ]
+        },
+        {
+          "type": "formula",
+          "as": "ref",
+          "expr": "datum.total * 20 >= datum.mean_total ? datum.total : null"
+        },
+        {
+          "type": "joinaggregate",
+          "fields": [
+            "ref"
+          ],
+          "ops": [
+            "median"
+          ],
+          "as": [
+            "typical"
           ]
         },
         {
@@ -269,6 +286,34 @@
           "type": "formula",
           "as": "blank",
           "expr": "datum.total * 10 < datum.typical ? true : datum.total * 3 < datum.typical ? ((datum.p1 >= 0 && datum.p1 * 10 < datum.typical) || (datum.n1 >= 0 && datum.n1 * 10 < datum.typical) || ((datum.p1 >= 0 && datum.p1 * 3 < datum.typical) && (datum.p2 >= 0 && datum.p2 * 10 < datum.typical)) || ((datum.n1 >= 0 && datum.n1 * 3 < datum.typical) && (datum.n2 >= 0 && datum.n2 * 10 < datum.typical))) : datum.total >= datum.typical ? false : ((datum.p1 < 0 || (datum.p1 >= 0 && datum.p1 * 10 < datum.typical) || ((datum.p1 >= 0 && datum.p1 * 3 < datum.typical) && ((datum.p2 >= 0 && datum.p2 * 10 < datum.typical) || ((datum.p2 >= 0 && datum.p2 * 3 < datum.typical) && (datum.p3 >= 0 && datum.p3 * 10 < datum.typical))))) && (datum.n1 < 0 || (datum.n1 >= 0 && datum.n1 * 10 < datum.typical) || ((datum.n1 >= 0 && datum.n1 * 3 < datum.typical) && ((datum.n2 >= 0 && datum.n2 * 10 < datum.typical) || ((datum.n2 >= 0 && datum.n2 * 3 < datum.typical) && (datum.n3 >= 0 && datum.n3 * 10 < datum.typical))))))"
+        },
+        {
+          "type": "window",
+          "sort": {
+            "field": "ms",
+            "order": "ascending"
+          },
+          "ops": [
+            "lag",
+            "lead"
+          ],
+          "fields": [
+            "blank",
+            "blank"
+          ],
+          "params": [
+            1,
+            1
+          ],
+          "as": [
+            "pb",
+            "nb"
+          ]
+        },
+        {
+          "type": "formula",
+          "as": "blank",
+          "expr": "datum.blank || (datum.total < datum.typical && datum.ms - span >= datum.lo && datum.ms + span <= datum.hi && (datum.lm1 === datum.ms - span ? datum.pb : true) && (datum.ld1 === datum.ms + span ? datum.nb : true))"
         }
       ]
     },
@@ -870,7 +915,7 @@
                 "value": 0
               },
               "tooltip": {
-                "signal": "{'Bucket start': timeFormat(toDate(datum.ts), '%b %d, %H:%M'), 'Events': format(datum.total, ','), 'Typical bucket (median)': format(typical, ','), 'Not split': 'too few events: as a percentage this bucket would stand as tall as the busiest one'}"
+                "signal": "{'Bucket start': timeFormat(toDate(datum.ts), '%b %d, %H:%M'), 'Events': format(datum.total, ','), 'Typical bucket': format(typical, ','), 'Not split': 'too few events: as a percentage this bucket would stand as tall as the busiest one'}"
               }
             }
           }
