@@ -1,6 +1,6 @@
 {
   "$schema": "https://vega.github.io/schema/vega/v5.json",
-  "description": "One bar per Kibana browser session in the last 24 hours, newest first — its length runs from the first to the last thing they did in it and its strength is how much it did, which are independent: a short session can carry far more activity than a long one left open and idle. Click a bar to set the dashboard's time range to that session (plus a minute either side); use the time picker's back arrow to return. Shift-click pins that identity across the suite. What an open browser tab does on its own — internal page requests, usage counters, point-in-time paging — is left out, exactly as in the Session records below, so a tab left open does not stretch a bar past the person's last action and every bar has records under it. Only Kibana browser sign-ins carry a session id: work through an API key or the Elasticsearch API has no session and draws no bar, so the dashed line marks the latest such event in the same 24 hours — activity after the last bar is real, it is just not a session. An identity that only works through the API has no bars, and that is the correct answer. Twelve most recent sessions, each labelled with who and when it started. Times are in your browser's timezone, like the rest of Kibana. Fixed 24-hour window: does not follow the time picker.",
+  "description": "One bar per Kibana browser session in the last 24 hours, newest first — its length runs from the first to the last thing they did in it and its strength is how much it did, which are independent: a short session can carry far more activity than a long one left open and idle. Click a bar to set the dashboard's time range to that session (plus a minute either side); use the time picker's back arrow to return. Shift-click pins that identity across the suite. What an open browser tab does on its own — internal page requests, usage counters, point-in-time paging — is left out, exactly as in the Session records below, so a tab left open does not stretch a bar past the person's last action and every bar has records under it. Only Kibana browser sign-ins carry a session id: work through an API key or the Elasticsearch API has no session and draws no bar, so the dashed line marks the latest such event in the same 24 hours — activity after the last bar is real, it is just not a session. An identity that only works through the API has no bars, and that is the correct answer. Twelve most recent sessions, each labelled with who and when it started (with the weekday when that was not today); a session already open when the 24-hour window begins starts at the window's left edge and is labelled \"or earlier\", because its real start is outside the window. Times are in your browser's timezone, like the rest of Kibana. Fixed 24-hour window: does not follow the time picker.",
   "autosize": {
     "type": "fit",
     "contains": "padding"
@@ -199,7 +199,7 @@
         {
           "type": "formula",
           "as": "base",
-          "expr": "datum.actor + ' · from ' + timeFormat(datum.first.value, '%H:%M')"
+          "expr": "datum.actor + ' · from ' + timeFormat(datum.first.value, timeFormat(datum.first.value, '%a') === timeFormat(now(), '%a') ? '%H:%M' : '%a %H:%M') + (datum.first.value < now() - 86400000 + 600000 ? ' or earlier' : '')"
         },
         {
           "type": "window",
@@ -361,7 +361,8 @@
       "scale": "y",
       "ticks": false,
       "domain": false,
-      "labelLimit": 240,
+      "labelLimit": 340,
+      "labelPadding": 8,
       "labelFontSize": 12
     }
   ],
