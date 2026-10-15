@@ -540,8 +540,8 @@
         "h": 12
       },
       "config": {
-        "title": "Most-accessed objects · suite views left out · top 10",
-        "description": "Real object titles from kibana.saved_object.name, ranked by events, reads and changes together. Like the high-value table beside it, this leaves out what the noise gate calls query internals: views of this audit suite's own dashboards, searches and data view, which otherwise filled every row with the suite watching itself be watched. A change to a suite object is kept, so a deploy of the suite ranks here. Identities counts people and API keys alike, resolved the way every actor panel resolves them. The tiles, the heatmap and Busiest object types still count suite views: they read all Kibana traffic.",
+        "title": "Most-accessed objects · suite views left out · top 10 · scroll",
+        "description": "Real object titles from kibana.saved_object.name, ranked by events, reads and changes together. Like the high-value table beside it, this leaves out what the noise gate calls query internals: views of this audit suite's own dashboards, searches and data view, which otherwise filled every row with the suite watching itself be watched. A change to a suite object is kept, so a deploy of the suite ranks here. Identities counts people and API keys alike, resolved the way every actor panel resolves them. The tiles, the heatmap and Busiest object types still count suite views: they read all Kibana traffic. On a narrow screen a long object name wraps onto a second line; scroll the table for the last rows.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
@@ -552,8 +552,7 @@
             "mode": "compact",
             "height": {
               "value": {
-                "type": "custom",
-                "lines": 1
+                "type": "auto"
               }
             }
           }
@@ -748,7 +747,7 @@
       "config": {
         "ref_id": "cloud-audit-search-08-cross-space-activity",
         "title": "Cross-space activity · all traffic",
-        "description": "Identities ranked by how many Kibana spaces they touched, with every space listed. Anything above one space is worth understanding. All Kibana traffic, like the Spaces tile. A space is shown by its id, the /s/<id> in its URL: the audit stream records no space display name, not even on a space read. Spaces that tooling creates and deletes (review or test spaces) are real activity and rank like any other. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email."
+        "description": "Identities ranked by how many Kibana spaces they touched, with every space listed. Anything above one space is worth understanding. All Kibana traffic, like the Spaces tile. Events counts events recorded in a space, so the column can add up to slightly less than the Kibana events tile: a sign-in (user_login) belongs to no space. A space is shown by its id, the /s/<id> in its URL: the audit stream records no space display name, not even on a space read. Spaces that tooling creates and deletes (review or test spaces) are real activity and rank like any other. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email."
       }
     },
     {
