@@ -1,6 +1,6 @@
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
-  "description": "Audited events by real client country. Countries are colored by event volume on a log scale, teal (few) through blue and purple to pink (most): the suite’s four mid-tone magnitude hues from the suite palette, so every step stands apart from the grey no-data countries in both themes, and the gradient legend reads as a scale. An opacity ramp of one blue drew a 1-event country almost exactly like a country with no data in dark theme. Hover for events, identities, client IPs and share of placed traffic. The title line states how much of the stream could be placed at all: CGNAT and private addresses resolve to nothing and many events carry no client IP, so a blank country is not evidence of no traffic.",
+  "description": "Audited events by real client country. Countries are colored by event volume on a log scale, teal (few) through blue and purple to pink (most): the suite’s four mid-tone magnitude hues, so every step stands apart from the grey no-data countries in both themes. The gradient legend sits inside the map, over open ocean at the bottom left, labelled at the decades inside the data, and only once two or more countries are shaded — a single country has no range to read, and a 1-to-max ramp beside it matched nothing on the map. Hover for events, identities, client IPs and share of placed traffic. The title line states how much of the stream could be placed at all, rounded once in ES|QL exactly as the Geo coverage tile is (ROUND(located / total, 3)), so the two always print the same tenth of a percent: platform-internal hops, private addresses and events with no client IP resolve to nothing, so a blank country is not evidence of no traffic.",
   "autosize": {
     "type": "fit",
     "contains": "padding"
@@ -22,11 +22,11 @@
   },
   "title": {
     "text": {
-      "expr": "length(data('coverage')) && data('coverage')[0].total > 0 ? length(data('countries')) + (length(data('countries')) == 1 ? ' country' : ' countries') + ' · placed on the map: ' + format(data('coverage')[0].located / data('coverage')[0].total, '.1%') + ' of events · could not be placed: ' + format(1 - data('coverage')[0].located / data('coverage')[0].total, '.1%') : 'No activity for this selection in this time range'"
+      "expr": "length(data('coverage')) && data('coverage')[0].total > 0 ? length(data('countries')) + (length(data('countries')) == 1 ? ' country' : ' countries') + ' · placed on the map: ' + format(data('coverage')[0].share, '.1%') + ' of events · could not be placed: ' + format(1 - data('coverage')[0].share, '.1%') : 'No activity for this selection in this time range'"
     },
     "subtitle": [
       "Location is client.ip, the real client from network.forwarded_ip; source.ip is only the proxy hop.",
-      "Color is event volume, log scale. Why the rest could not be placed is broken down below the map."
+      "Color is event volume, log scale. Where the rest of the stream went is in the table beside the map."
     ]
   },
   "projection": {
@@ -64,7 +64,7 @@
         "name": "coverage",
         "url": {
           "%type%": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS total = COUNT(*), located = COUNT(client.geo.country_iso_code)",
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS total = COUNT(*), located = COUNT(client.geo.country_iso_code) | EVAL share = ROUND(located * 1.0 / total, 3)",
           "%timefield%": "@timestamp",
           "%context%": true
         }
@@ -153,23 +153,24 @@
           },
           "legend": {
             "title": "Events",
-            "orient": "right",
-            "direction": "vertical",
-            "gradientLength": 120,
+            "orient": "bottom-left",
+            "direction": "horizontal",
+            "gradientLength": 140,
             "gradientThickness": 10,
             "values": {
-              "expr": "length(data('countries')) ? (domain('color')[1] > domain('color')[0] ? domain('color') : [domain('color')[0]]) : []"
+              "expr": "!(length(data('countries')) > 1) ? [] : floor(log(domain('color')[1]) / LN10 + 1e-9) - ceil(log(domain('color')[0]) / LN10 - 1e-9) >= 1 ? slice([1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000], ceil(log(domain('color')[0]) / LN10 - 1e-9), 1 + floor(log(domain('color')[1]) / LN10 + 1e-9)) : domain('color')"
             },
-            "labelExpr": "format(datum.value, '.3~s')",
+            "labelExpr": "format(datum.value, '.2~s')",
             "titleOpacity": {
-              "expr": "length(data('countries')) ? 1 : 0"
+              "expr": "length(data('countries')) > 1 ? 1 : 0"
             },
             "labelOpacity": {
-              "expr": "length(data('countries')) ? 1 : 0"
+              "expr": "length(data('countries')) > 1 ? 1 : 0"
             },
             "gradientOpacity": {
-              "expr": "length(data('countries')) ? 1 : 0"
-            }
+              "expr": "length(data('countries')) > 1 ? 1 : 0"
+            },
+            "offset": 4
           }
         },
         "tooltip": [
