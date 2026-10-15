@@ -71,15 +71,15 @@ const logBar = (p, max) => { p.config.axis.y.domain = { type: 'custom', min: 0.5
 
 /**
  * The two whole-range bar charts carry each count in the category label ("Machine · 78,628"), so their
- * value axis is only a log ruler. Lens thinned its horizontal tick labels to fit each plot, and the two
- * plots differ in width by their category labels, so side by side with the same domain one read
- * "1 · 100 · 10,000 · 100,000,000" and the other "1 · 100 · 1,000,000". Angled labels need less width
- * each, and both panels now print the same four decades (rendered at 1440px). The API refuses
- * `labels.visible` (a 400), so hiding them was not an option. The 1B top stays: it keeps a 10x-busier
- * 7-day range on the plot, and above the last label it is one unlabelled decade, not a third of the plot.
+ * value axis is only a log ruler. Lens thins tick labels that do not fit, and the plots differ in width
+ * by their category labels, so with full digits one read "1 · 100 · 10,000 · 100,000,000" and the other
+ * "1 · 100 · 1,000,000"; angled labels made both agree but still dropped 1,000,000, so the decades were
+ * spaced unevenly. Compact numbers (1 · 100 · 10k · 1m · 100m) fit every second decade horizontally on
+ * both plots at 1440px and 1920px. The API refuses `labels.visible` (a 400), so hiding them was not an
+ * option. The 1B top stays: it keeps a 10x-busier 7-day range on the plot.
  */
-const angledLog = (p) => {
-  Object.assign(p.config.axis.y, { labels: { orientation: 'angled' } });
+const compactLog = (p) => {
+  p.config.layers[0].y[0].format = { type: 'number', decimals: 0, compact: true };
   return p;
 };
 
@@ -141,11 +141,11 @@ export function build() {
     // a count of 1 a visible bar, as on the time chart above.
     // Grouped on the raw email first, then classified: ORG reads only attributes.user.email, so the
     // CASE runs once per person instead of once per event.
-    angledLog(logBar(bar(0, 17, 12, 12, 'Events by identity origin',
+    compactLog(logBar(bar(0, 17, 12, 12, 'Events by identity origin',
       `FROM ${IDX} | ${TIME} | STATS events = COUNT(*) BY attributes.user.email | ${ORG} | STATS events = SUM(events) BY origin = actor_org | EVAL origin = CONCAT(origin, " · ", ${grouped('events')}) | SORT events DESC`,
       'origin', 'events', 'Events, not identities, by the email on the event: Elastic (@elastic.co), Tenant (any other address), or Machine (no email: service accounts, Cloud API keys, internal users and anonymous requests). Each origin\'s name carries its count, and the bars are on a log scale so a person\'s few dozen events are visible beside a key\'s hundreds of thousands: read the count, not the length. An origin with no bar had no events in range. One busy key can make Machine nearly all of the traffic while most identities are people. An Elasticsearch API key carries its creator\'s email, so traffic from a key a person created counts under that person\'s origin.',
       { yScale: 'log' }), 1e9)),
-    angledLog(logBar(bar(12, 17, 12, 12, 'Events by authentication realm',
+    compactLog(logBar(bar(12, 17, 12, 12, 'Events by authentication realm',
       `FROM ${IDX} | ${TIME} | WHERE attributes.user.domain IS NOT NULL | STATS events = COUNT(*) BY attributes.user.domain | EVAL realm = CASE(attributes.user.domain == "cloud-saml-kibana", "SAML SSO", attributes.user.domain == "_es_api_key", "Elasticsearch API key", attributes.user.domain == "_cloud_api_key", "Cloud API key", STARTS_WITH(attributes.user.domain, "_service_account"), "Service account", STARTS_WITH(attributes.user.domain, "_"), "Other internal", attributes.user.domain) | STATS events = SUM(events) BY realm | EVAL realm = CONCAT(realm, " · ", ${grouped('events')}) | SORT events DESC`,
       'realm', 'events', 'Events by the security realm that authenticated them. Each realm\'s name carries its count, and the bars are on a log scale so a small realm is visible beside the bulk: read the count, not the length. SAML SSO is interactive human sign-in (cloud-saml-kibana); Elasticsearch API key (_es_api_key) and Cloud API key (_cloud_api_key) are programmatic — an Elasticsearch key minted by a Cloud API key authenticates in the Cloud key\'s realm; Service account is Elastic\'s own components (_service_account). Any other realm is shown by its name. Anonymous and unauthenticated requests record no realm and are not counted, so the bars can sum to less than Events by identity origin beside it.',
       { yScale: 'log' }), 1e9)),

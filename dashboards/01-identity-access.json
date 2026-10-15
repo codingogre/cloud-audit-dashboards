@@ -475,9 +475,6 @@
               "min": 0.5,
               "max": 1000000000,
               "rounding": false
-            },
-            "labels": {
-              "orientation": "angled"
             }
           }
         },
@@ -494,7 +491,12 @@
             },
             "y": [
               {
-                "column": "events"
+                "column": "events",
+                "format": {
+                  "type": "number",
+                  "decimals": 0,
+                  "compact": true
+                }
               }
             ]
           }
@@ -533,9 +535,6 @@
               "min": 0.5,
               "max": 1000000000,
               "rounding": false
-            },
-            "labels": {
-              "orientation": "angled"
             }
           }
         },
@@ -552,7 +551,12 @@
             },
             "y": [
               {
-                "column": "events"
+                "column": "events",
+                "format": {
+                  "type": "number",
+                  "decimals": 0,
+                  "compact": true
+                }
               }
             ]
           }
