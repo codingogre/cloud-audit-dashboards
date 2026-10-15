@@ -27,8 +27,8 @@ design decision that follows.
 | **A single high-volume API key can dominate the stream**, and Elasticsearch stamps that key's **creator** on every event it emits | A noise gate is ON by default everywhere except the Platform Volume dashboard. Actor-facing panels also carry the `api_key` column, so an automated workload is never mistaken for the person who minted its credential. |
 | The gate's old `NOT (field IN (...))` form was **null for every Kibana event**, and `WHERE null` drops the row | Both halves are explicitly null-guarded. Before the fix the "Signal events" KPI excluded 100% of Kibana audit. |
 | Composition depends on the workload, so no single noise class can be assumed to be the bulk — health checks (`cluster:monitor/main`), **search-phase internals** and transport **`connection_granted`** are all targeted | The gate and the volume bands share one vocabulary (`NOISE_ES_ACTIONS`, `NOISE_ES_QUERY_INTERNALS`, `NOISE_EVENT_ACTIONS`) so they cannot disagree. |
-| **Reading the audit stream is audited.** Every dashboard panel, Discover tab and API client that queries data emits ES\|QL sub-requests (`esql/compute`, `esql/data`, `esql/search_shards`, `resolve_fields`), `field_caps`, `async_search`, Kibana `/internal/*`, content-management and page-load requests (`bootstrap.js`, `/app/…`, capabilities, licensing), "User has accessed space" and "User has accessed dashboard" reads — with thousands of viewers, the viewers' own queries were the top "signal" | All of it is **Query internals**, gated out with search phases (`KIBANA_INTERNALS` covers the Kibana half). The two lookups every page load makes (`config-global` get, `index-pattern` find) are noise. So is the suite's own traffic (`SUITE_SELF`): a get/resolve/find of a `cloud-audit-*` object by anyone, and any event on one with no Kibana browser session — the automated install, with its `_import` / `_export` request lines. A person editing a suite dashboard in a browser stays signal, and every change, the install's included, stays in `CHANGE_PRED`. Unfiltered counts stay on Platform Volume and on 02's object panels. 7-day replica: signal 1.54M → 0.38M of 2.6M events. |
-| Wide time windows once looked unservable — "2h, 3h and 4h all exceed 60s" | Those readings were taken back to back, and a synchronous ES\|QL query outlives the client that gave up on it and **cannot be cancelled** on serverless. Every query this repo runs now goes through a cancellable, budgeted call, and `--lint` reports its timings. What actually costs is query *shape* — see [`esql/fragments.md`](esql/fragments.md). Measured with `./audit --perf` on a 2.6M-event, 7-day replica, every panel query now returns in under 0.7s at 7 days and every dashboard loads in under 3.5s (see *Performance*). Dashboards still default to `now-1h` as the readable view of right now. |
+| **Reading the audit stream is audited.** Every dashboard panel, Discover tab and API client that queries data emits ES\|QL sub-requests (`esql/compute`, `esql/data`, `esql/search_shards`, `resolve_fields`), `field_caps`, `async_search`, Kibana `/internal/*`, content-management and page-load requests (`bootstrap.js`, `/app/…`, capabilities, licensing), "User has accessed space" and "User has accessed dashboard" reads — with thousands of viewers, the viewers' own queries were the top "signal" | All of it is **Query internals**, gated out with search phases (`KIBANA_INTERNALS` covers the Kibana half). So are reads of API key metadata (`security/api_key/get` and `/query`): a client polling its own key, which on this project is the suite's own tooling key; creating, granting, updating and invalidating a key stay signal. The two lookups every page load makes (`config-global` get, `index-pattern` find) are noise. So is the suite's own traffic (`SUITE_SELF`): a get/resolve/find of a `cloud-audit-*` object by anyone, and any event on one with no Kibana browser session — the automated install, with its `_import` / `_export` request lines. A person editing a suite dashboard in a browser stays signal, and every change, the install's included, stays in `CHANGE_PRED`. Unfiltered counts stay on Platform Volume and on 02's object panels. 7-day replica: signal 1.54M → 0.38M of 2.6M events. |
+| Wide time windows once looked unservable — "2h, 3h and 4h all exceed 60s" | Those readings were taken back to back, and a synchronous ES\|QL query outlives the client that gave up on it and **cannot be cancelled** on serverless. Every query this repo runs now goes through a cancellable, budgeted call, and `--lint` reports its timings. What actually costs is query *shape* — see [`esql/fragments.md`](esql/fragments.md). Measured with `./audit --perf` on a 2.6M-event, 7-day replica, every panel query now returns in under 0.7s at 7 days and every dashboard loads in under 3.5s (see *Performance*). Dashboards still default to `now-1h` as the readable view of right now, ending at `now-1m` so nothing in range is still arriving. |
 | `attributes.source.ip` is the **internal proxy** (`100.64.x.x` CGNAT, `10.x.x.x` mesh) | All geography uses `attributes.network.forwarded_ip`, the real public client IP. Using the obvious field would place every user in the datacentre. |
 | `attributes.event.category` / `.type` are **arrays** | `MV_EXPAND` before any `STATS ... BY`. |
 | `attributes.event.type` is **single-valued on Kibana** but **multi-valued on Elasticsearch** (`access_granted` = `["access","allowed"]`), and ES\|QL returns **null, not false**, for `IN` on a multi-value operand | The "what changed" predicate selects on `event.type` and is therefore implicitly Kibana-only. It carries an explicit `service.name` test so that is visible rather than accidental, and it is fail-closed everywhere else. |
@@ -46,7 +46,8 @@ Full fragment reference: [`esql/fragments.md`](esql/fragments.md).
 
 ## The dashboards
 
-All eight carry a horizontal navigation bar pinned at the top, a default `now-1h` range,
+All eight carry a horizontal navigation bar pinned at the top, a default range of the last hour ending
+a minute ago (`now-1h` → `now-1m`, `TIME_TO`),
 auto-refresh off, and a hover tooltip on every panel explaining what it shows and how to read it.
 
 | # | Dashboard | What it answers |
@@ -66,6 +67,7 @@ Severity weights, with routine activity scoring **0** on purpose:
 
 | Event | Weight |
 | --- | --- |
+| Kibana's own API-key clean-up (`HOUSEKEEPING`: `invalidate_apikeys` by a platform account through no named key) | 0 |
 | `security_config_change` present | 50 |
 | `invalidate_apikeys` | 45 |
 | `event.outcome == "failure"` | 40 |
@@ -74,6 +76,10 @@ Severity weights, with routine activity scoring **0** on purpose:
 | any other Kibana change | 25 |
 | workflow execution (`run` / `test` / `execution_cancel`) | 10 |
 | everything else | 0 |
+
+The clean-up row is tested first and is the same rule the Privileged ops and Config changes tiles leave
+out, so no risk panel paints `elastic/kibana` hot for events those tiles call routine. A deliberate
+invalidation by a person, a named key or a Cloud API key still weighs 45.
 
 **Branch order is load-bearing.** ES|QL `CASE` is first-match-wins, and the original order tested
 the generic predicates first, which made two of these weights dead code: `invalidate_apikeys`
@@ -317,8 +323,16 @@ in shared code rather than at call sites.
   `privilegedKpi(col)` puts the excluded count in the tile's secondary line in the short form
   *"excl. 2,285 cleanups"*: Lens right-aligns that line directly above the number, and the longer
   *"284 key cleanups left out"* over a *1* read as the tile's headline. A key Kibana creates on a
-  user's behalf, and any tenant invalidation, still count. The risk model still scores every
-  invalidation; the leaderboard's `actor_scope` separates platform identities.
+  user's behalf, and any tenant invalidation, still count. The risk model scores the same clean-up 0
+  (`RISK`'s first branch reads the `housekeeping` key of `RISK_KEYS`), so every risk panel agrees with
+  these tiles; never write a tooltip that explains a mismatch between them.
+- *Failed sign-ins count once.* Every failure count uses `FAILED_OR_DENIED` (`panels.mjs`), which drops
+  the per-realm `realm_authentication_failed` traces; `SIGNIN_WORDS` says so in a description. 01 and 04
+  both use it, so their failure tiles are the same number.
+- *Live edge.* Every saved range ends at `now-1m` (`TIME_TO` in `dash()`; `--verify` renders the same), so
+  never describe a bar or a total as "still filling", or two panels as differing by "rows landing between
+  the two queries". The last bucket covers only part of its interval. Where a page sets a total beside
+  its parts, `EDGE_NOTE` states the one gap left: panels read the clock up to a second apart.
 
 **KPI secondary lines — grouped digits.** A metric tile's secondary line is a string the query builds,
 and ES\|QL's `TO_STRING` prints *"2326"* beside tiles Lens prints as *"1,728,070"*. Every count in it goes
@@ -436,7 +450,8 @@ legends over an empty domain, decade axes, solid placeholder cells, a flat line 
 ./audit --dashboards     Generate dashboards/*.json and deploy every dashboard
 ./audit --verify         Render every dashboard in Chromium and inspect for broken panels
                          AUDIT_VERIFY_THEME=light renders light mode (default: dark)
-                         AUDIT_VERIFY_RANGE=now-24h widens the window (default: now-1h)
+                         AUDIT_VERIFY_RANGE=now-24h widens the window (default: now-1h); every
+                         range ends at now-1m, as the dashboards' saved range does
                          AUDIT_VERIFY_WIDTH=1440 narrows the viewport (default: 1920)
                          AUDIT_VERIFY_ONLY=00,07 renders only dashboards whose name contains one
 ./audit --perf <sub>     Time every query at production volume on a replica: seed | run | clean

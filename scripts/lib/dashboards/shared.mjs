@@ -23,17 +23,19 @@ export const WHO = filterable('attributes.user.email');
  * so each paragraph ends on plain words — `authentication_success` used to land alone on a line of its
  * own. The first sentence states the exception, because three panels on that page read all traffic and
  * say so in their titles. The noise sentence names every class NOISE gates (panels.mjs), in the reader's
- * words — infra health, query internals, page loads and their lookups, bulk sign-in events
+ * words — infra health, query internals, API key lookups (API_KEY_READS), page loads and their lookups, bulk sign-in events
  * (connection_granted, authentication_success), and SUITE_SELF (the suite's views and its automated
  * install) — so a change to the gate changes this sentence too. It must leave the closing paragraph
  * visible at 1440px: round 5's longer version, with a code chip, pushed it under the panel edge.
+ * Never put sentence punctuation between two code chips: round 5's "the numeric `user.name`. `_4KEO…`"
+ * rendered as two chips joined by a stray period and read as if user.name were the Cloud key.
  */
 export const LEGEND_MD = CSS_NAV + `
 ### How to read this suite
 
-**Noise gate is ON** unless a title says *all traffic*: health pings, query internals, page loads, bulk sign-in events and this suite's own views and installs are left out; unfiltered totals are on **📊 Platform Volume**.
+**Noise gate is ON** unless a title says *all traffic*: health pings, query internals, API key lookups, page loads, bulk sign-in events and this suite's own traffic are left out; unfiltered totals are on **📊 Platform Volume**.
 
-**Identity is resolved** as email, then API key name, then the numeric \`user.name\`. \`_4KEO… · Cloud API key\` is an organization-level Cloud key, recorded by id only.
+**Identity** is the email, else the API key name, else the numeric \`user.name\`; a Cloud API key has only an id and reads \`_4KEO… · Cloud API key\` everywhere.
 
 **Client IPs are real**: geography comes from \`network.forwarded_ip\`; \`source.ip\` is only the proxy. *Hover a panel title for detail.*`;
 

@@ -260,3 +260,32 @@ test('privileged ops leave out only Kibana\'s own key clean-up, and say how much
   // The short, digit-grouped second line ("excl. 2,285 cleanups"), so it never outweighs the number under it.
   assert.match(privilegedKpi('Privileged ops'), /CONCAT\("excl\. ", CASE\(LENGTH\(TO_STRING\(cleanups\)\) <= 3/);
 });
+
+test('round 6: API key reads are query internals; key changes stay signal', async () => {
+  const { NOISE, BAND } = await import('../../scripts/lib/panels.mjs');
+  for (const a of ['cluster:admin/xpack/security/api_key/get', 'cluster:admin/xpack/security/api_key/query']) {
+    assert.ok(NOISE.includes(`"${a}"`) && BAND.includes(`"${a}"`), a);
+  }
+  for (const a of ['create', 'grant', 'update', 'invalidate']) assert.ok(!NOISE.includes(`security/api_key/${a}`), a);
+});
+
+test('round 6: Kibana\'s key clean-up scores 0 in RISK, through a boolean key RISK_KEYS groups', async () => {
+  const { RISK, RISK_KEYS, HOUSEKEEPING } = await import('../../scripts/lib/panels.mjs');
+  assert.match(RISK, /^EVAL risk = CASE\(housekeeping, 0, /);
+  assert.ok(RISK_KEYS.endsWith(`housekeeping = ${HOUSEKEEPING}`));
+});
+
+test('round 6: every dashboard range ends at now-1m', () => {
+  for (const [name, d] of Object.entries(buildAll())) assert.equal(d.time_range.to, 'now-1m', name);
+});
+
+test('round 6: one failed sign-in counts once on 01 and 04 (no per-realm traces)', async () => {
+  const { FAILED_OR_DENIED } = await import('../../scripts/lib/panels.mjs');
+  assert.match(FAILED_OR_DENIED, /attributes\.event\.action != "realm_authentication_failed"/);
+  const all = buildAll();
+  for (const name of Object.keys(all).filter((n) => /^0[14]-/.test(n))) {
+    const qs = JSON.stringify(all[name].panels);
+    assert.ok(qs.includes(JSON.stringify(FAILED_OR_DENIED).slice(1, -1)), name);
+    assert.ok(!/IN \(\\"authentication_failed\\",\\"realm_authentication_failed\\"/.test(qs), name);
+  }
+});

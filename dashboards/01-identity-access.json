@@ -3,7 +3,7 @@
   "description": "Who authenticated, how, from where, and what failed. Resolves the numeric user.name into real identities.",
   "time_range": {
     "from": "now-1h",
-    "to": "now"
+    "to": "now-1m"
   },
   "refresh_interval": {
     "pause": true,

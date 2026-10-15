@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { ROOT } from '../env.mjs';
 import {
   IDX, TIME, INDEX_FAMILY, IP_GEO, indexFamily, dash, kpi, table, vega, search, md, section, row, stack, resetIds, sized, filterable, grouped,
-  SYS_INDEX, fitRows
+  SYS_INDEX, fitRows, EDGE_NOTE
 } from '../panels.mjs';
 import { riskScored, CHANGED, CHANGED_KEYS, CHANGED_DERIVE } from './shared.mjs';
 
@@ -97,11 +97,11 @@ const ORIENTATION = `👤 **Pick a person in the control bar** and every panel b
  * 30 seconds later returned 521,480 for both, tile and table alike. So the receipt is complete and the
  * two queries are equal; what moves is the stream itself — a closed two-minute window kept growing for
  * 5–7 seconds after it closed (3,005 → 3,025 Elasticsearch events) — and a 30 is one delete landing in
- * that gap. The fix is to end both windows short of the live edge, which is the suite-wide "trim to
- * now-1m" question left to the human; until then the table's TITLE says the Sum can trail the tile, so
- * the explanation is on the surface rather than only in a tooltip.
+ * that gap. Round 6 ended every dashboard's range at now-1m (TIME_TO, panels.mjs), so nothing in range is
+ * still arriving; what is left is the sub-second spread between the two panels' `now` at both ends of the
+ * range, which EDGE_NOTE states.
  */
-const RACE_NOTE = "Kibana reads 'now' separately for each panel when it fetches (about a second apart here), and the newest seconds of the stream are still arriving, so on a relative range the Risk tile and the scoring table can differ by the events that landed or aged out in between: usually none or one, more during a burst of activity. Over the same window the two queries agree to the event; an absolute range that ends a minute or more in the past makes them identical.";
+const RACE_NOTE = EDGE_NOTE;
 
 export function build() {
   resetIds();
@@ -140,14 +140,13 @@ export function build() {
     ]),
 
     // Directly under the KPI row rather than at the foot of section ②, so the tile and its receipt are
-    // read together; the Sum footer is what a reader compares with the tile. See RACE_NOTE for why the
-    // two can differ by the events that arrive between their fetches.
+    // read together; the Sum footer is what a reader compares with the tile (RACE_NOTE: EDGE_NOTE).
     // EVERY row, scrollable, rather than a top-N: the Risk tile above counts these rows and sums their
     // Risk column, and a top 8 under "43 actions" is a receipt that cannot add up (round-3 review). The
     // set is closed — one row per scoring action and weight, bounded by Kibana's and Elasticsearch's
     // action vocabulary (43 over 24h at today's volume; volume adds events, not rows) — so the LIMIT is
     // a guard, not a cut, and the title says "every" instead of a count (the description says "scroll").
-    row(11, [[48, (x, y, w, h) => drillTo('cloud-audit-04-security-anomalies', table(x, y, w, h, 'Every scoring action and its weight, largest first · its Sum is the Risk tile, give or take events landing as the page loads',
+    row(11, [[48, (x, y, w, h) => drillTo('cloud-audit-04-security-anomalies', table(x, y, w, h, 'Every scoring action and its weight, largest first · its Sum is the Risk tile',
       `FROM ${IDX} | ${TIME} | ${riskScored({ aggs: 'last_ts = MAX(@timestamp)' })} | STATS events = SUM(n), severity = SUM(risk * n), last_seen = MAX(last_ts) BY attributes.event.action, weight = risk | EVAL why = ${weightWords('weight')} | SORT severity DESC | LIMIT 500`,
       // weight is a number, so it reads as one (right-aligned, beside the other numbers); it stays in the
       // BY clause, so the grouping is unchanged. The action stays the raw event.action because it is the
@@ -156,7 +155,7 @@ export function build() {
       // The Sum footer is the tile's number computed from THESE rows in the same fetch, so the receipt
       // reconciles on screen whatever is scrolled; 130px holds "Sum: 4,360,050" at 10x today's 24h.
       ['weight', 'events', { column: 'severity', label: 'Risk', width: 130, summary: { type: 'sum' } }, 'last_seen'],
-      'The receipts for the Risk tile: the Sum under Risk totals every row, scrolled into view or not, and is the tile\'s number over the same window — on a live stream the two can differ by the events that arrive between the two panels\' fetches (below). One row per scoring action and weight, largest first; Risk here is weight × events, and the tile\'s subtitle counts the rows. ' + RACE_NOTE + ' Click an action to pin it, then "Open in Security & Anomalies" to see who else does it — the pinned person and action combine, so clear the person pill first to compare.', { scroll: true, cut: false }))]]),
+      'The receipts for the Risk tile: the Sum under Risk totals every row, scrolled into view or not, and is the tile\'s number over the same window. One row per scoring action and weight, largest first; Risk here is weight × events, and the tile\'s subtitle counts the rows. ' + RACE_NOTE + ' Click an action to pin it, then "Open in Security & Anomalies" to see who else does it — the pinned person and action combine, so clear the person pill first to compare.', { scroll: true, cut: false }))]]),
 
     row(2, [[48, (x, y, w, h) => section(x, y, w, h, '① Is this normal?', 'fixed 7-day window in UTC — ignores the time picker')]]),
     row(14, [

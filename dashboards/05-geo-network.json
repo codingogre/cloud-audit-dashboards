@@ -3,7 +3,7 @@
   "description": "Real client geography from forwarded_ip, geo-resolved at ingest. Impossible-travel detection.",
   "time_range": {
     "from": "now-1h",
-    "to": "now"
+    "to": "now-1m"
   },
   "refresh_interval": {
     "pause": true,

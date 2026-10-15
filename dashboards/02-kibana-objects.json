@@ -3,7 +3,7 @@
   "description": "Every Kibana saved-object read and change, by type, name, space and actor.",
   "time_range": {
     "from": "now-1h",
-    "to": "now"
+    "to": "now-1m"
   },
   "refresh_interval": {
     "pause": true,

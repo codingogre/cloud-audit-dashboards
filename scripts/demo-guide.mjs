@@ -17,7 +17,8 @@ import { join } from 'node:path';
 import { cfg, ROOT, nsId } from './lib/env.mjs';
 import { es } from './lib/http.mjs';
 import { success, info, detail, warn } from './lib/log.mjs';
-import { IDX, NOISE, BAND, BAND_KEYS, ACTOR, RISK, RISK_PREFILTER, CHANGE } from './lib/panels.mjs';
+import { IDX, NOISE, BAND, BAND_KEYS, ACTOR, ACTOR_RESOLVE, CHANGE, TIME_TO } from './lib/panels.mjs';
+import { riskScored, ACTOR_KEYS } from './lib/dashboards/shared.mjs';
 import {
   CSS, COPY_JS, esc, rich, fmt, codeblock, talk, check, callout, a, rows, useCase,
   stepper, minutesIn, stepsIn,
@@ -46,11 +47,11 @@ const DASHBOARDS = [
   ['07-actor-360', 'Actor 360'],
 ];
 
-const link = (id) => `${cfg.kbs}/app/dashboards#/view/${nsId(`cloud-audit-${id}`)}?_g=(time:(from:${WINDOW},to:now))`;
+const link = (id) => `${cfg.kbs}/app/dashboards#/view/${nsId(`cloud-audit-${id}`)}?_g=(time:(from:${WINDOW},to:${TIME_TO}))`;
 
 /** Discover, with an ES|QL query already applied — the "show me this identity's hour" path. */
 const discover = (query) =>
-  `${cfg.kbs}/app/discover#/?_g=(time:(from:${WINDOW},to:now))&_a=(dataSource:(type:esql),query:(esql:'${
+  `${cfg.kbs}/app/discover#/?_g=(time:(from:${WINDOW},to:${TIME_TO}))&_a=(dataSource:(type:esql),query:(esql:'${
     query.replace(/'/g, "''")}'))`;
 
 const W = `WHERE @timestamp <= NOW() AND @timestamp > NOW() - ${HOURS} hours`;
@@ -123,7 +124,7 @@ export async function run(argv = []) {
     q('config changes (24h)', `FROM ${IDX} | ${EV} | WHERE attributes.elasticsearch.audit.security_config_change IS NOT NULL | ${ACTOR} | STATS n = COUNT(*) BY actor, action = attributes.event.action | SORT n DESC | LIMIT 6`),
     q('mutations', `FROM ${IDX} | ${W} | ${CHANGE} | STATS n = COUNT(*)`),
     q('geo coverage', `FROM ${IDX} | ${W} | EVAL g = CASE(client.geo.country_iso_code IS NOT NULL, "resolved", client.ip IS NOT NULL, "ip, no geo", "no client ip") | STATS n = COUNT(*) BY g | SORT n DESC`),
-    q('risk leaderboard (24h)', `FROM ${IDX} | ${EV} | ${RISK_PREFILTER} | ${RISK} | WHERE risk > 0 | ${ACTOR} | STATS severity = SUM(risk), events = COUNT(*) BY actor, action = attributes.event.action | SORT severity DESC | LIMIT 8`),
+    q('risk leaderboard (24h)', `FROM ${IDX} | ${EV} | ${riskScored({ by: ACTOR_KEYS })} | ${ACTOR_RESOLVE} | STATS severity = SUM(risk * n), events = SUM(n) BY actor, action = attributes.event.action | SORT severity DESC | LIMIT 8`),
   ]);
 
   const docs = one(span, 2);

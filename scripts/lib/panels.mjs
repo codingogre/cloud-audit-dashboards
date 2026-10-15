@@ -249,6 +249,31 @@ export const OUTCOME =
   'EVAL result = CASE(attributes.event.outcome == "unknown", "attempted", attributes.event.outcome)';
 
 /**
+ * A failed sign-in is one REQUEST that could not prove who it was: authentication_failed, or
+ * anonymous_access_denied for a request that presented nothing. Elasticsearch also writes one
+ * realm_authentication_failed per realm it tried on the way, so with two realms one bad password was
+ * three events — 'admin' read 60 realm failures beside 30 authentication_failed at the same millisecond,
+ * and the tile counted 90 "failed sign-ins" for 30 attempts. Measured by attributes.http.request.id over
+ * the stream's whole span: 62 requests wrote 2 realm failures + 1 authentication_failed, 24 wrote the
+ * authentication_failed alone, 327 one anonymous_access_denied, and 4 a realm failure with NO overall
+ * failure (a later realm let them in). So realm_authentication_failed is a per-realm trace of an attempt
+ * already counted, or of one that succeeded; it is left out of every panel here, outcome or not, and each
+ * attempt counts once. Shared by 01 (Failed or denied, the failure table, searches/02) and 04 (Failures,
+ * Top failures and denials), so the two pages count one bad password the same way.
+ *
+ * Everything else this page counts as a failure (access_denied, and any action whose outcome is failure)
+ * is an AUTHENTICATED identity being refused — access_denied alone outnumbers the sign-in failures. The
+ * panels therefore say "failed or denied", and the KPI splits the two so neither reads as the other.
+ * The IS NULL guard keeps a failed event with no action in (a bare != drops it as null); it is written
+ * as a boolean, not COALESCE(action, ""), so it pushes down to Lucene: the COALESCE form cost the
+ * failure session ~90ms more over 7 days on the replica.
+ */
+export const SIGNIN_FAILED = '"authentication_failed","anonymous_access_denied"';
+export const REALM_TRACE = '(attributes.event.action IS NULL OR attributes.event.action != "realm_authentication_failed")';
+export const FAILED_OR_DENIED = `WHERE attributes.event.action IN (${SIGNIN_FAILED}) OR (attributes.event.outcome == "failure" AND ${REALM_TRACE})`;
+export const SIGNIN_WORDS = 'authentication_failed or anonymous_access_denied, one per request; the realm_authentication_failed events Elasticsearch writes for each realm an attempt tried are left out, so an attempt counts once';
+
+/**
  * Severity weights. Routine activity scores 0 on purpose: with a baseline of 1 the
  * "total risk" figure was just an event count wearing a hat (the two figures tracked each
  * other almost exactly).
@@ -280,9 +305,18 @@ export const RISK_MAX = 50;
  *
  * Every change branch is gated on CHANGE_PRED — the same characters CHANGE uses — so the scorer
  * and the change panels can never disagree about what counts as a change.
+ *
+ * HOUSEKEEPING SCORES 0, and it is tested first (round 6, the human's decision). Kibana's own API-key
+ * clean-up — invalidate_apikeys by a PLATFORM_ACTORS principal through no named key, every few seconds —
+ * is the same rule 00's Privileged ops and 04's Config changes leave out, so every risk panel now agrees
+ * with them: before, the treemap painted elastic/kibana the hottest identity on the page (267 of its 268
+ * events in an hour were this clean-up) beside a tile calling the same events routine. A deliberate
+ * invalidation by a person, a named key or a Cloud API key still weighs 45. `housekeeping` is the
+ * boolean RISK_KEYS groups (HOUSEKEEPING reads user.name and api_key.name, which a scoring panel does not
+ * otherwise group on), so RISK runs only after RISK_KEYS, as it always has.
  */
 export const RISK =
-  'EVAL risk = CASE(attributes.event.action == "invalidate_apikeys", 45, ' +
+  'EVAL risk = CASE(housekeeping, 0, attributes.event.action == "invalidate_apikeys", 45, ' +
   'attributes.event.action == "anonymous_access_denied", 35, ' +
   'attributes.elasticsearch.audit.security_config_change IS NOT NULL, 50, ' +
   'attributes.event.outcome == "failure", 40, ' +
@@ -348,8 +382,9 @@ export const KIND_REFINE =
  *
  * PRIVILEGED selects the rest. Use it wherever a panel promises privileged operations (00 Privileged
  * ops, 04 Config changes and its table) and say what it leaves out; privilegedKpi() puts the excluded
- * count in the tile's secondary line, so the housekeeping is never silently gone. RISK still scores
- * every invalidation (45): the leaderboard splits platform identities by `actor_scope` instead.
+ * count in the tile's secondary line, so the housekeeping is never silently gone. RISK scores the same
+ * housekeeping 0 (its first branch reads the `housekeeping` key RISK_KEYS groups), so the risk panels —
+ * treemap, leaderboard, Why these identities scored, the scatter, Actor 360's Risk — agree with these tiles.
  */
 export const HOUSEKEEPING =
   '(attributes.event.action IS NOT NULL AND attributes.event.action == "invalidate_apikeys" ' +
@@ -460,10 +495,15 @@ export const RISK_PREFILTER =
  *   a CASE costs per ROW after a STATS as well as before it. So it is grouped as the boolean `scc`, and
  *   restored as the placeholder "present" or null: after RISK_RESTORE that field answers IS NOT NULL
  *   correctly and nothing else — a panel that shows the payload must not read it from these rows.
+ *
+ * `housekeeping` is HOUSEKEEPING as a boolean key (the kib_internal trick): RISK's first branch reads it,
+ * so Kibana's key clean-up scores 0 without every scoring panel grouping on user.name and api_key.name.
+ * Never null (every term guarded), so it never splits a group three ways.
  */
 export const RISK_KEYS =
   'attributes.event.action, scc = attributes.elasticsearch.audit.security_config_change IS NOT NULL, ' +
-  'attributes.event.outcome, resource.attributes.service.name, et = MV_CONCAT(attributes.event.type, ",")';
+  'attributes.event.outcome, resource.attributes.service.name, et = MV_CONCAT(attributes.event.type, ","), ' +
+  `housekeeping = ${HOUSEKEEPING}`;
 export const RISK_RESTORE =
   'EVAL attributes.event.type = SPLIT(et, ","), attributes.elasticsearch.audit.security_config_change = CASE(scc, "present")';
 
@@ -488,8 +528,10 @@ export const RISK_RESTORE =
  *                   xpack/esql/*: list_queries, get_query). And the two cluster reads Kibana makes on
  *                   every page load — cluster:monitor/project/tags and xpack/inference/get, 1,707 and
  *                   1,704 in 24h against 1,666 page shells — which led the Live signal feed once the
- *                   Kibana half of the page load was gated (round 4). A read of a system index is NOT
- *                   lost: SYS_INDEX selects on the index, not through this gate.
+ *                   Kibana half of the page load was gated (round 4). And reads of API key metadata
+ *                   (security/api_key/get and /query, API_KEY_READS below — round 6): a client polling
+ *                   its own key; creating, granting, updating or invalidating a key stays signal. A
+ *                   read of a system index is NOT lost: SYS_INDEX selects on the index, not this gate.
  *   Kibana          http_request to an /internal/ route (with or without the /s/<space> prefix) —
  *                   what the browser calls to draw a page: /internal/search/esql_async, feature
  *                   flags, controls options, session checks — and the content-management READS the
@@ -537,6 +579,16 @@ export const RISK_RESTORE =
  */
 const NOISE_ES_ACTIONS = '"cluster:monitor/main", "elastic.maintenance"';
 const A_ = 'attributes.elasticsearch.audit.action';
+/**
+ * Reads of API key METADATA: `GET /_security/api_key` (api_key/get) and the query/list form
+ * (api_key/query). Query internals by the human's decision (round 6): a client polling its own key — on
+ * this project the Cloud API key the suite's tooling runs as, ~12,600 a day, several a second while a
+ * render or deploy runs — was 1,369 of 1,805 Signal events in a 1h Command Center render and filled the
+ * Live signal feed. A read of key metadata grants nothing. Key create, grant, update and invalidate stay
+ * signal (and stay scored: they carry security_config_change). Action-based like every other query
+ * internal, so a DENIED read is gated too; the failure panels do not take the noise gate and still list it.
+ */
+const API_KEY_READS = '"cluster:admin/xpack/security/api_key/get", "cluster:admin/xpack/security/api_key/query"';
 const NOISE_ES_QUERY_INTERNALS =
   `${A_} LIKE "indices:data/read/search*" OR ${A_} LIKE "indices:data/read/msearch*" ` +
   `OR ${A_} LIKE "indices:data/read/scroll*" ` +
@@ -545,7 +597,7 @@ const NOISE_ES_QUERY_INTERNALS =
   `OR ${A_} LIKE "indices:data/read/field_caps*" OR ${A_} LIKE "indices:data/read/async_search/*" ` +
   `OR ${A_} LIKE "indices:admin/resolve/*" OR ${A_} == "indices:admin/shards/search_shards" ` +
   `OR ${A_} LIKE "cluster:monitor/xpack/esql/*" ` +
-  `OR ${A_} IN ("cluster:monitor/project/tags", "cluster:monitor/xpack/inference/get")`;
+  `OR ${A_} IN ("cluster:monitor/project/tags", "cluster:monitor/xpack/inference/get", ${API_KEY_READS})`;
 const NOISE_EVENT_ACTIONS = '"authentication_success","connection_granted"';
 
 /**
@@ -1428,10 +1480,23 @@ export const NAV_H = 3;
  * ~0.3s over 7 days. 1h stays the default because it is the readable view of "right now"; what makes
  * a wide window expensive is query shape, not width — see QUERY SHAPE above.
  * `./audit --lint` times every query, so this claim is checked rather than asserted.
+ *
+ * THE RANGE ENDS AT now-1m (TIME_TO), on every dashboard — the human's decision, round 6. Ending at `now`
+ * put the live edge inside every panel: audit events become searchable seconds after they happen (a
+ * closed two-minute window kept growing for 5–7s after it closed, measured on 07), each panel reads
+ * `now` for itself about a second apart, and this suite's own queries are audited reads, so two numbers
+ * side by side differed by whatever landed in between, and a description had to say so. A minute back,
+ * nothing in range is still arriving. What is left is the sub-second spread between panels' `now`, at
+ * BOTH ends of the range — a few events at most on an all-traffic count, none on anything quieter — which
+ * EDGE_NOTE states for the panels that sit a total beside its parts. Not rounded (`now-1m/m`): rounding
+ * `to` up lands on the minute boundary, which can be under a second behind the clock, inside the window
+ * events are still arriving in. verify.mjs renders with the same end, so a render is what viewers see.
  */
+export const TIME_TO = 'now-1m';
+export const EDGE_NOTE = 'The range ends a minute ago, so nothing in it is still arriving; each panel reads the clock for itself, up to a second apart, so two panels side by side can differ by the events of that second at either end of the range: usually none, a few on a busy all-traffic count or during a burst.';
 export const dash = (id, title, description, panels, timeFrom = 'now-1h') => ({
   title, description,
-  time_range: { from: timeFrom, to: 'now' },
+  time_range: { from: timeFrom, to: TIME_TO },
   refresh_interval: { pause: true, value: 60000 },
   panels: [links(0, 0, 48, NAV_H, id),
            ...panels.map((p) => ({ ...p, grid: { ...p.grid, y: p.grid.y + NAV_H } }))],

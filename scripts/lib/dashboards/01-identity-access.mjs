@@ -1,33 +1,11 @@
 /** 01 Identity & Access — see scripts/lib/definitions.mjs for how the suite is assembled. */
 import {
   IDX, ACTOR_RESOLVE, ORG, CRED_TYPE_LABEL, CRED_TYPE_COLORS, TIME, BUCKET, dash, kpi, xy, table, sized,
-  vega, search, resetIds, bar, cloudKeyLabel, grouped
+  vega, search, resetIds, bar, cloudKeyLabel, grouped, FAILED_OR_DENIED, SIGNIN_FAILED, SIGNIN_WORDS
 } from '../panels.mjs';
 import { WHO } from './shared.mjs';
 
-/**
- * A failed sign-in is one REQUEST that could not prove who it was: authentication_failed, or
- * anonymous_access_denied for a request that presented nothing. Elasticsearch also writes one
- * realm_authentication_failed per realm it tried on the way, so with two realms one bad password was
- * three events — 'admin' read 60 realm failures beside 30 authentication_failed at the same millisecond,
- * and the tile counted 90 "failed sign-ins" for 30 attempts. Measured by attributes.http.request.id over
- * the stream's whole span: 62 requests wrote 2 realm failures + 1 authentication_failed, 24 wrote the
- * authentication_failed alone, 327 one anonymous_access_denied, and 4 a realm failure with NO overall
- * failure (a later realm let them in). So realm_authentication_failed is a per-realm trace of an attempt
- * already counted, or of one that succeeded; it is left out of every panel here, outcome or not, and each
- * attempt counts once.
- *
- * Everything else this page counts as a failure (access_denied, and any action whose outcome is failure)
- * is an AUTHENTICATED identity being refused — access_denied alone outnumbers the sign-in failures. The
- * panels therefore say "failed or denied", and the KPI splits the two so neither reads as the other.
- * The IS NULL guard keeps a failed event with no action in (a bare != drops it as null); it is written
- * as a boolean, not COALESCE(action, ""), so it pushes down to Lucene: the COALESCE form cost the
- * failure session ~90ms more over 7 days on the replica.
- */
-const SIGNIN_FAILED = '"authentication_failed","anonymous_access_denied"';
-const REALM_TRACE = '(attributes.event.action IS NULL OR attributes.event.action != "realm_authentication_failed")';
-const FAILED_OR_DENIED = `WHERE attributes.event.action IN (${SIGNIN_FAILED}) OR (attributes.event.outcome == "failure" AND ${REALM_TRACE})`;
-const SIGNIN_WORDS = 'authentication_failed or anonymous_access_denied, one per request; the realm_authentication_failed events Elasticsearch writes for each realm an attempt tried are left out, so an attempt counts once';
+// FAILED_OR_DENIED, SIGNIN_FAILED and SIGNIN_WORDS live in panels.mjs: 04's failure panels count the same way.
 
 /** Credential types in words and colours, shared with vega/02 (panels.mjs CRED_TYPE_LABEL). */
 const AUTH_LABEL = `EVAL ${CRED_TYPE_LABEL}`;

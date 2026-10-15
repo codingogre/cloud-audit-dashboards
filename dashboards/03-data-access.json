@@ -3,7 +3,7 @@
   "description": "What data was read, by whom, through which transport action — including system indices.",
   "time_range": {
     "from": "now-1h",
-    "to": "now"
+    "to": "now-1m"
   },
   "refresh_interval": {
     "pause": true,
@@ -204,7 +204,7 @@
       },
       "config": {
         "title": "",
-        "description": "ES|QL queries submitted — one per query, not per shard or sub-step. Includes the queries these dashboards run to draw themselves. Equals the indices:data/read/esql row in Top transport actions. At a range ending now, panels beside each other can differ by a few: audit events land a few seconds after they happen (this page's own queries among them), and each panel is read at a slightly different moment.",
+        "description": "ES|QL queries submitted — one per query, not per shard or sub-step. Includes the queries these dashboards run to draw themselves. Equals the indices:data/read/esql row in Top transport actions. The range ends a minute ago, so nothing in it is still arriving; each panel reads the clock for itself, up to a second apart, so two panels side by side can differ by the events of that second at either end of the range: usually none, a few on a busy all-traffic count or during a burst.",
         "type": "metric",
         "data_source": {
           "type": "esql",
@@ -291,7 +291,7 @@
       },
       "config": {
         "title": "Data access over time by action family",
-        "description": "Every Elasticsearch request that names a transport action, by kind of action — all traffic, the searches and ES|QL these dashboards run among the reads. Shard-level copies, ES|QL sub-steps and the search an async search runs for itself are folded away so a request counts once, and authentication and connection events (which name no action) are left out, so it sums to less than the Elasticsearch events tile. The legend gives each family's total, so a family too small to see as a bar is still counted; Lens leaves the bucket still filling at the right edge out of those totals (up to half an hour at 24h), so they run behind the bars and the tiles. A stretch with no bars means no audited Elasticsearch request in that span — on a wide range that includes the time before the project's audit stream began.",
+        "description": "Every Elasticsearch request that names a transport action, by kind of action — all traffic, the searches and ES|QL these dashboards run among the reads. Shard-level copies, ES|QL sub-steps and the search an async search runs for itself are folded away so a request counts once, and authentication and connection events (which name no action) are left out, so it sums to less than the Elasticsearch events tile. The legend gives each family's total, so a family too small to see as a bar is still counted; Lens leaves the partial bucket at the right edge, the one the range's end cuts through, out of those totals (up to half an hour at 24h), so they run behind the bars and the tiles. A stretch with no bars means no audited Elasticsearch request in that span — on a wide range that includes the time before the project's audit stream began.",
         "type": "xy",
         "axis": {
           "x": {
@@ -489,7 +489,7 @@
       },
       "config": {
         "title": "Top transport actions · 13 at most",
-        "description": "The busiest Elasticsearch transport actions with their request class, all traffic — the searches and ES|QL reads these dashboards run included, since reads are what this page is about. The Distinct actions tile counts every action; the rest are beyond this list, and an action sent with two request classes is two rows. Shard-level copies, ES|QL sub-steps and the search an async search runs for itself are folded away, so a request counts once. Identities is how many distinct identities sent the action; Request \"—\" means the event named no request class. At a range ending now, panels beside each other can differ by a few: audit events land a few seconds after they happen (this page's own queries among them), and each panel is read at a slightly different moment.",
+        "description": "The busiest Elasticsearch transport actions with their request class, all traffic — the searches and ES|QL reads these dashboards run included, since reads are what this page is about. The Distinct actions tile counts every action; the rest are beyond this list, and an action sent with two request classes is two rows. Shard-level copies, ES|QL sub-steps and the search an async search runs for itself are folded away, so a request counts once. Identities is how many distinct identities sent the action; Request \"—\" means the event named no request class. The range ends a minute ago, so nothing in it is still arriving; each panel reads the clock for itself, up to a second apart, so two panels side by side can differ by the events of that second at either end of the range: usually none, a few on a busy all-traffic count or during a burst.",
         "type": "data_table",
         "data_source": {
           "type": "esql",

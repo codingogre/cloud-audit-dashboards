@@ -1,7 +1,7 @@
 /** 04 Security & Anomalies — see scripts/lib/definitions.mjs for how the suite is assembled. */
 import {
-  IDX, ACTOR_RESOLVE, RISK_INDEX_STATS, RISK_INDEX_EVAL, NOISE, TIME, BUCKET, SCOPE, PALETTE, PRIVILEGED, HOUSEKEEPING,
-  privilegedKpi, dash, kpi, xy, table, vega, search, sized, resetIds
+  IDX, ACTOR_RESOLVE, RISK_INDEX_STATS, RISK_INDEX_EVAL, NOISE, TIME, BUCKET, SCOPE, PALETTE, PRIVILEGED,
+  privilegedKpi, FAILED_OR_DENIED, SIGNIN_WORDS, EDGE_NOTE, dash, kpi, xy, table, vega, search, sized, resetIds
 } from '../panels.mjs';
 import {
   ACTOR_KEYS, riskScored
@@ -54,9 +54,10 @@ const TARGET_SHOW =
  * was left out on their second line. Round 4 found this page's tiles, table and feed contradicting each
  * other by 4 events in one 1h render (676 against 680): every one of the 680 was that clean-up,
  * arriving every few seconds while the panels below the fold were still mounting. With it gone, what
- * these panels count is a few events an hour rather than a few a second.
+ * these panels count is a few events an hour rather than a few a second, and since round 6 the range
+ * ends at now-1m, so LIVE_NOTE is the shared EDGE_NOTE.
  */
-const LIVE_NOTE = 'On a range that ends now, each panel runs its query as it scrolls into view, so an event that arrives during the page load can be in one panel and not yet in another; Refresh reconciles them.';
+const LIVE_NOTE = EDGE_NOTE;
 const CLEANUP = 'Kibana\'s own API-key clean-up (invalidate_apikeys by the elastic/kibana service account through no named key, every few seconds) is left out, as on Command Center\'s Privileged ops';
 const CLEANUP_NOTE = `${CLEANUP}; the second line says how many such events the range held.`;
 /**
@@ -80,9 +81,9 @@ export function build() {
       `Security configuration changes recorded by Elasticsearch (API keys created, changed or invalidated, roles and user profiles written) — the total that the Config changes table and the event feed below draw from. ${CLEANUP_NOTE} ${LIVE_NOTE}`,
       { secondary: 'housekeeping_note' }),
     kpi(16, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE attributes.event.action == "invalidate_apikeys" | ${privilegedKpi('Key invalidations')}`, 'Key invalidations',
-      `invalidate_apikeys requests in range (one request can name several keys) — legitimate rotation, or a credential being revoked in a hurry; a subset of Config changes. ${CLEANUP_NOTE} The risk scoring still weighs every invalidation, the clean-up included: it is elastic/kibana's invalidate_apikeys row in Why these identities scored.`,
+      `invalidate_apikeys requests in range (one request can name several keys) — legitimate rotation, or a credential being revoked in a hurry; a subset of Config changes. ${CLEANUP_NOTE} Risk scoring leaves the same clean-up out (it scores 0), so the invalidations it weighs are these.`,
       { secondary: 'housekeeping_note' }),
-    kpi(24, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE attributes.event.outcome == "failure" | STATS \`Failures\` = COUNT(*)`, 'Failures', 'Events with a failure outcome.'),
+    kpi(24, 0, 8, 5, `FROM ${IDX} | ${TIME} | ${FAILED_OR_DENIED} | STATS \`Failures\` = COUNT(*)`, 'Failures', `Events with a failure outcome: failed sign-ins (${SIGNIN_WORDS}), denials and any other failed action. Counted as on Identity & Access's Failed or denied tile, so the two agree.`),
     kpi(32, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE attributes.event.action == "anonymous_access_denied" | STATS \`Anonymous denials\` = COUNT(*)`, 'Anonymous denials', 'Unauthenticated requests that were rejected.'),
     kpi(40, 0, 8, 5, `FROM ${IDX} | ${TIME} | ${riskScored()} | STATS scoring = SUM(n) | EVAL \`Scoring events\` = COALESCE(scoring, 0) | KEEP \`Scoring events\``, 'Scoring events', 'Number of events that carried any risk weight at all — the denominator of Mean severity, and the volume that severity is averaged over.'),
     // One row per identity and action, not per payload: grouped by the raw payload, every API key id
@@ -96,7 +97,7 @@ export function build() {
       `Security configuration changes grouped by identity and action, the most recently active first; in a busy range the quieter pairs are beyond the rows shown, so Events here add up to the Config changes tile only when every pair fits. ${CLEANUP}. Latest target is what the newest of those changes named (the API key, the key ids of an invalidation, the role, or the user profile), and Targets counts the different ones named across all of them: hundreds of invalidations over hundreds of keys is rotation, hundreds over one key is a loop. A profile activation names no target (it is the signed-in user's own profile), so it reads "(none named in the payload)" and 0. A key named "TaskManager: … - <id>" is one Kibana created to run a task on that identity's behalf: the id at its end is its owner's, not a name for it. The full JSON payload of every change is in the Config-change event feed at the foot of the page.`,
       { empty: 'quiet' }),
     vega(0, 16, 24, 13, '05-rare-event-scatter', 'Highest-severity actions, by how rare',
-      'The highest-severity scoring actions in range, one row per action and weight, placed by how often each happened: rarer is further left, so the top-left is rare and high-severity — look there first. Shows the top 12 by severity, rarest first within a weight; the subtitle says how many actions scored in all. On a quiet range the top 12 reach down to routine Kibana changes (weight 25), which can be frequent: rare is a position on this chart, not a filter. Each row ends with its severity weight, which the colour repeats: one colour per weight, blue for 10 up to deep red for 50, keyed below the chart. A failed change scores 40 whatever it changed, so it gets its own row, marked (failed). Hover a point for how many identities did it and when. Routine activity scores 0 and is not shown. Counts are what risk scoring weighs, Kibana\'s own API-key clean-up included, so invalidate_apikeys here can be far above the Key invalidations tile, which leaves that clean-up out.'),
+      'The highest-severity scoring actions in range, one row per action and weight, placed by how often each happened: rarer is further left, so the top-left is rare and high-severity — look there first. Shows the top 12 by severity, rarest first within a weight; the subtitle says how many actions scored in all. On a quiet range the top 12 reach down to routine Kibana changes (weight 25), which can be frequent: rare is a position on this chart, not a filter. Each row ends with its severity weight, which the colour repeats: one colour per weight, blue for 10 up to deep red for 50, keyed below the chart. A failed change scores 40 whatever it changed, so it gets its own row, marked (failed). Hover a point for how many identities did it and when. Routine activity scores 0 and is not shown. Kibana\'s own API-key clean-up scores 0, as it is left out of the Key invalidations tile, so invalidate_apikeys here counts the same invalidations that tile does.'),
     // Bars, not an area: an area interpolates straight across empty buckets and draws minutes of
     // rising risk that never happened. Split by scope so a spike says whose it was before anyone
     // has to open the leaderboard. The scope EVALs run on the scored subset only (measured: 0.2s vs
@@ -118,10 +119,10 @@ export function build() {
     // (<unauthenticated-cloud-access-token>, a long persona name) was cut. One decimal on
     // the mean throughout, since "40" beside "26.4" reads as two kinds of number.
     table(0, 39, 48, 12, 'Risk leaderboard — top identities by total severity',
-      `FROM ${IDX} | ${TIME} | ${riskScored({ by: ACTOR_KEYS })} | ${ACTOR_RESOLVE} | ${SCOPE} | EVAL housekeeping = ${HOUSEKEEPING} | STATS ${RISK_INDEX_STATS}, privileged = SUM(CASE(scc AND NOT housekeeping, n, 0)) BY actor, actor_scope | ${RISK_INDEX_EVAL} | SORT risk_total DESC | LIMIT 15`,
+      `FROM ${IDX} | ${TIME} | ${riskScored({ by: ACTOR_KEYS })} | ${ACTOR_RESOLVE} | ${SCOPE} | STATS ${RISK_INDEX_STATS}, privileged = SUM(CASE(scc, n, 0)) BY actor, actor_scope | ${RISK_INDEX_EVAL} | SORT risk_total DESC | LIMIT 15`,
       ['actor', 'actor_scope'],
       ['risk_total', 'scoring_events', { column: 'mean_severity', format: { type: 'number', decimals: 1 } }, 'privileged'],
-      `Identities ranked by total accumulated severity, so sustained behaviour outranks a single high-severity event; only the top of the ranking fits the panel. Scope separates tenant identities from Elastic platform automation and unauthenticated requests — without it elastic.maintenance can top this table, because Elastic platform automation performs routine security config changes itself. Privileged counts the identity's security config changes the way the Config changes tile does, Kibana's own API-key clean-up left out; Risk total still includes that clean-up. Identity is the email for a person and the key name for a named API key. ${PIN_HINT}`),
+      `Identities ranked by total accumulated severity, so sustained behaviour outranks a single high-severity event; only the top of the ranking fits the panel. Scope separates tenant identities from Elastic platform automation and unauthenticated requests — without it elastic.maintenance can top this table, because Elastic platform automation performs routine security config changes itself. Privileged counts the identity's security config changes the way the Config changes tile does. Kibana's own API-key clean-up is left out of both columns: it scores 0, so the elastic/kibana service account appears here only for something else it did. Identity is the email for a person and the key name for a named API key. ${PIN_HINT}`),
     table(0, 51, 48, 12, 'Why these identities scored — top risky actions, with their weight',
       `FROM ${IDX} | ${TIME} | ${riskScored({ by: ACTOR_KEYS, aggs: 'last_ts = MAX(@timestamp)' })} | ${ACTOR_RESOLVE} | ${SCOPE} | STATS events = SUM(n), risk_total = SUM(risk * n), last_seen = MAX(last_ts) BY actor, actor_scope, action = attributes.event.action, weight = risk | SORT risk_total DESC | LIMIT 30`,
       // weight is a group key, but listed as a metric so it right-aligns with the numbers it multiplies.
@@ -136,7 +137,7 @@ export function build() {
     // The platform hop is tagged "(internal)" as 05 does, on the grouped rows (one condition, after the STATS);
     // the newest anonymous denial came through it, so untagged it read as the prober's address.
     table(0, 63, 48, 10, 'Top failures and denials by identity and action',
-      `FROM ${IDX} | ${TIME} | WHERE attributes.event.outcome == "failure" OR attributes.event.action IN ("authentication_failed","realm_authentication_failed","anonymous_access_denied") | ${ACTOR_RESOLVE} | STATS events = COUNT(*), ips = COUNT_DISTINCT(client.ip), ip = LAST(client.ip, @timestamp), last_seen = MAX(@timestamp) BY actor, action = attributes.event.action | SORT events DESC | ${SCOPE} | EVAL ip = CASE(CIDR_MATCH(ip, "100.64.0.0/10"), CONCAT(TO_STRING(ip), " (internal)"), TO_STRING(ip)) | LIMIT 8`,
+      `FROM ${IDX} | ${TIME} | ${FAILED_OR_DENIED} | ${ACTOR_RESOLVE} | STATS events = COUNT(*), ips = COUNT_DISTINCT(client.ip), ip = LAST(client.ip, @timestamp), last_seen = MAX(@timestamp) BY actor, action = attributes.event.action | SORT events DESC | ${SCOPE} | EVAL ip = CASE(CIDR_MATCH(ip, "100.64.0.0/10"), CONCAT(TO_STRING(ip), " (internal)"), TO_STRING(ip)) | LIMIT 8`,
       ['actor', 'actor_scope', 'action', { column: 'ip', label: 'Latest IP', width: 200 }], [{ column: 'ips', label: 'Client IPs' }, 'events', 'last_seen'],
       `Failed and denied operations, one row per identity and action, the most frequent first; only the top rows fit the panel. These are the events the Failures tile counts (every denial and failed sign-in carries a failure outcome), and the Anonymous denials tile is their anonymous_access_denied rows. A failure is scored on a row of its own in Why these identities scored, so where a pair appears in both, Events is the same number. Latest IP is the client address of the newest of those events and Client IPs counts the different addresses they came from: many addresses behind one identity is a spray, one address behind many identities is one source trying names. An address tagged (internal) is the platform-internal hop (100.64/10), as on Geo & Network: the platform calling on the client's behalf, not the client, and Client IPs counts it too. Scope separates unauthenticated probes from tenant identities and Elastic platform automation. API keys and native users (elastic, admin) carry no email, so an Identity that is not an email does not mean an external probe — read Scope. ${PIN_HINT}`, { empty: 'good' }),
     // Discover in ES|QL mode returns at most 1,000 rows and prints that as "1,000 results", which on a

@@ -69,7 +69,7 @@ one of them is the bulk:
 | Class | What | Why it is noise |
 | --- | --- | --- |
 | Infra health | `cluster:monitor/main`, `elastic.maintenance` | pings and platform housekeeping |
-| Query internals, Elasticsearch | search phases, `msearch`, `scroll`, PIT and reader contexts; **ES\|QL and every sub-request** (`esql/compute`, `esql/data`, `esql/search_shards`, `esql/resolve_fields`, `esql/async/get`, `indices:admin/esql/*`); `field_caps` and `field_caps[n]`; `async_search/*`; `indices:admin/resolve/*`; `indices:admin/shards/search_shards`; ES\|QL's query listing (`cluster:monitor/xpack/esql/*`); and the two cluster reads Kibana makes on every page load, `cluster:monitor/project/tags` and `cluster:monitor/xpack/inference/get` (24h: 1,707 and 1,704 against 1,666 page shells) | the machinery every dashboard, Discover tab and client runs to read data. With many viewers, each viewer's own panel queries were the top "signal" |
+| Query internals, Elasticsearch | search phases, `msearch`, `scroll`, PIT and reader contexts; **ES\|QL and every sub-request** (`esql/compute`, `esql/data`, `esql/search_shards`, `esql/resolve_fields`, `esql/async/get`, `indices:admin/esql/*`); `field_caps` and `field_caps[n]`; `async_search/*`; `indices:admin/resolve/*`; `indices:admin/shards/search_shards`; ES\|QL's query listing (`cluster:monitor/xpack/esql/*`); and the two cluster reads Kibana makes on every page load, `cluster:monitor/project/tags` and `cluster:monitor/xpack/inference/get` (24h: 1,707 and 1,704 against 1,666 page shells); **reads of API key metadata**, `cluster:admin/xpack/security/api_key/get` and `…/api_key/query` (`API_KEY_READS`, round 6: a client polling its own key, 12,595 a day live, 1,369 of 1,805 Signal events in one hour) | the machinery every dashboard, Discover tab and client runs to read data. With many viewers, each viewer's own panel queries were the top "signal" |
 | Query internals, Kibana | `http_request` to an `/internal/` route (with or without `/s/<space>`): `/internal/search/esql_async`, feature flags, controls options, session checks; the dashboard app's content-management reads (`/api/content_management/rpc/get`, `search`, `mget`, `bulkGet`); **page-load plumbing** — `/bootstrap.js`, `/bootstrap-anonymous.js`, `/translations/…`, the `/app/<app>` page shell, `/api/core/…`, `/api/licensing/…`, `/api/banners/…`, `/api/ui_counters/…` and the space picker's `/api/spaces/space` list; `saved_object_open/close_point_in_time`; `space_get` / `space_find` ("User has accessed space", once per page load) | what the browser calls to draw a page. A content-management read is also audited as its own `saved_object_*` event, and a change through a public route is audited again as its own event (`space_create`, `saved_object_create` …). Every other public `/api/` route, `/api/spaces/space/<id>`, an rpc create/update/delete, and a space create/update/delete stay signal |
 | Page-load lookups | `saved_object_get` of the `config` / `config-global` settings object; `saved_object_find` of `index-pattern` (the logs-\* / metrics-\* default data-view check, the workflows data views) | what every Kibana page load reads before it draws (24h: 2,021 each, one per page load, by every viewer and by the verify renderer). Resolving, creating or changing a particular data view stays signal |
 | The suite itself (`SUITE_SELF`) | on a `cloud-audit-*` object: a **read** (`saved_object_get` / `_resolve` / `_find`) by anyone; **any** event with no Kibana browser session (`attributes.kibana.session.id IS NULL`). And an `http_request` to `/api/saved_objects/_import` or `_export`, or to a public route that names a suite id (`PUT /api/dashboards/cloud-audit-…`) — `SUITE_INSTALL_URL`, session-blind | a read is the suite watching itself be watched, one per panel load per viewer. A session-less event is the automated install: `./audit --objects/--dashboards` imports, exports, creates, updates and deletes the suite's objects with an API key, and after a redeploy that was every row of the Live signal feed (24h: 10,368 events). Each object an import or export touches is audited again as its own `saved_object_*` event, so gating the request line loses no object. A person **editing** a suite dashboard does it in a browser session and stays signal; it is a test of the channel, never of a key. Every change, the install's included, stays in `CHANGE_PRED` (02 Mutations, 04 Mutation feed, 07 What they changed), and views stay on 02's all-traffic tiles, heatmap and Busiest object types |
@@ -77,6 +77,16 @@ one of them is the bulk:
 
 A read of a system index is not lost to the gate: `SYS_INDEX` selects on the index name and never
 passes through it.
+
+**API key reads are query internals; key changes are not.** Gated by the human's decision (round 6):
+`api_key/get` and `api_key/query` read a key's metadata and grant nothing. Live, 24h: 12,595 `get` and 41
+`query` against 300 `create`, 74 `invalidate` and 24 `update`; on this project nearly every `get` is the
+Cloud API key this repo's own tooling runs as, polling while it deploys and renders, and it was most of
+Command Center's Signal and every row of its Live signal feed. Creating, granting, updating and
+invalidating a key stay signal (and scored, through `security_config_change`). The test is on the action,
+never on a key, so a denied read is gated like a denied search; the failure panels take no gate and still
+list it. 7-day replica: signal 333,360 → 309,810; no gated query moved (gated count ~210ms, band charts
+~0.65–0.8s, treemap ~310ms, before and after, alternating runs).
 
 ```esql
 | WHERE (attributes.elasticsearch.audit.action IS NULL OR NOT (
@@ -93,7 +103,8 @@ passes through it.
       OR attributes.elasticsearch.audit.action LIKE "indices:admin/resolve/*"
       OR attributes.elasticsearch.audit.action == "indices:admin/shards/search_shards"
       OR attributes.elasticsearch.audit.action LIKE "cluster:monitor/xpack/esql/*"
-      OR attributes.elasticsearch.audit.action IN ("cluster:monitor/project/tags", "cluster:monitor/xpack/inference/get")))
+      OR attributes.elasticsearch.audit.action IN ("cluster:monitor/project/tags", "cluster:monitor/xpack/inference/get",
+           "cluster:admin/xpack/security/api_key/get", "cluster:admin/xpack/security/api_key/query")))
     AND (attributes.event.action IS NULL OR NOT (
       attributes.event.action IN ("authentication_success","connection_granted")
       OR <KIBANA_INTERNALS>))
@@ -192,8 +203,10 @@ the tiles that say "any non-zero deserves review" leave exactly that out, and sa
 Every term is guarded, so `NOT HOUSEKEEPING` never drops a row. A key Kibana *creates* on a user's behalf
 (`create_apikey` by `elastic/kibana` when a rule is saved) and any invalidation by a tenant identity still
 count. `privilegedKpi(col)` is the KPI form: `COUNT(*) WHERE NOT housekeeping` plus a `housekeeping_note`
-for the secondary line (7 days: 157ms against 134ms for the bare count). `RISK` is unchanged — it still
-scores every invalidation 45, and the leaderboard separates platform identities by `actor_scope`.
+for the secondary line (7 days: 157ms against 134ms for the bare count). `RISK` scores the same
+housekeeping **0** (round 6, the human's decision; see *Risk scoring*), so the treemap, the leaderboard,
+*Why these identities scored*, the scatter and Actor 360's Risk agree with these tiles. A deliberate
+invalidation by a person, a named key or a Cloud API key still scores 45.
 
 ## Source split
 
@@ -209,6 +222,15 @@ all of the forensic value.
 
 Kibana injects `?_tstart` / `?_tend`. Reference the full `BUCKET(...)` expression verbatim as the
 column name, and set `axis.x.scale = "temporal"`.
+
+Every dashboard's saved range **ends at `now-1m`** (`TIME_TO`, set by `dash()`; `--verify` and the demo
+guide links use it too). Audit events become searchable seconds after they happen (on 07 a closed window
+kept growing for 5–7s), and each panel resolves `now` for itself about a second apart, so with a range
+ending at `now` two numbers side by side differed by whatever landed in between. A minute back nothing is
+still arriving; what is left is the sub-second spread between panels at both ends of the range, which
+`EDGE_NOTE` states where a page sets a total beside its parts. The last bucket still covers only part of
+its interval (the range ends part-way through it), so it is usually short — say "covers part of its
+interval", not "still filling".
 
 ```esql
 | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart
@@ -230,6 +252,7 @@ the scorer and the change panels can never disagree.
 
 ```esql
 | EVAL risk = CASE(
+    housekeeping, 0,                                   -- Kibana's own key clean-up; a key of RISK_KEYS
     attributes.event.action == "invalidate_apikeys", 45,
     attributes.event.action == "anonymous_access_denied", 35,
     attributes.elasticsearch.audit.security_config_change IS NOT NULL, 50,
@@ -240,6 +263,14 @@ the scorer and the change panels can never disagree.
     0)
 | WHERE risk > 0
 ```
+
+**Housekeeping scores 0, first.** `housekeeping` is `HOUSEKEEPING` (see *Privileged operations*) grouped
+as a boolean key of `RISK_KEYS`, so it needs no `user.name` / `api_key.name` group keys: Kibana's own
+`invalidate_apikeys` through no named key used to make `elastic/kibana` the hottest tile on the treemap
+(267 of its 268 events in an hour) beside a Privileged ops tile calling the same events routine. Live,
+24h: 2,710 such events now score 0; `elastic/kibana` still scores for the keys it creates on a user's
+behalf (`create_apikey`, 325) and its profile writes. 7-day replica: every scoring panel within ±15ms
+(04 Mean severity 64 → 77ms, the leaderboard 84 → 90ms, the treemap 304 → 313ms, the scatter 87 → 92ms).
 
 Three things about the change branches, each of which the order encodes:
 
@@ -278,7 +309,8 @@ every count downstream is then `SUM(n)` and every severity `SUM(risk * n)`:
 | <RISK_PREFILTER>
 | STATS n = COUNT(*) BY <panel keys>,
     attributes.event.action, scc = attributes.elasticsearch.audit.security_config_change IS NOT NULL,
-    attributes.event.outcome, resource.attributes.service.name, et = MV_CONCAT(attributes.event.type, ",")
+    attributes.event.outcome, resource.attributes.service.name, et = MV_CONCAT(attributes.event.type, ","),
+    housekeeping = <HOUSEKEEPING>
 | EVAL attributes.event.type = SPLIT(et, ","),
        attributes.elasticsearch.audit.security_config_change = CASE(scc, "present")
 | <RISK>
@@ -396,6 +428,23 @@ Message shapes these patterns exist for (object names are illustrative):
 
 `body.text` is last in the ladder and is groupable in ES|QL, which is what guarantees the column is
 never null.
+
+## Failed sign-ins — one attempt counts once
+
+Elasticsearch writes one `realm_authentication_failed` per realm an attempt tried, beside the one
+`authentication_failed` for the request, so with two realms one bad password was three events. Every
+failure count — 01's *Failed or denied* tile, its failure table and `searches/02`, 04's *Failures* tile and
+*Top failures and denials* — uses `FAILED_OR_DENIED` (`panels.mjs`; `SIGNIN_WORDS` says it in a
+description), and the drift check pins it in `searches/02`:
+
+```esql
+| WHERE attributes.event.action IN ("authentication_failed","anonymous_access_denied")
+     OR (attributes.event.outcome == "failure"
+         AND (attributes.event.action IS NULL OR attributes.event.action != "realm_authentication_failed"))
+```
+
+Live, 24h: 04's old `outcome == "failure"` count 1,182 → 1,052 (130 realm traces), now equal to 01's tile.
+`RISK` still scores a realm trace as a failure (40); only the counts above drop it.
 
 ## Credential, across both audit sources
 

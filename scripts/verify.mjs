@@ -17,6 +17,7 @@ import { cfg, ROOT, nsId } from './lib/env.mjs';
 import { success, fail, detail, info, warn } from './lib/log.mjs';
 import { buildAll } from './lib/definitions.mjs';
 import { CONTROLS } from './lib/controls.mjs';
+import { TIME_TO } from './lib/panels.mjs';
 
 /**
  * Kibana emits exactly six console errors on every FULL page load of any dashboard in this space.
@@ -60,6 +61,8 @@ export async function run(argv = []) {
    * default now-1h is what a viewer opens, but when synthetic traffic is idle it renders half the suite
    * empty: AUDIT_VERIFY_RANGE=now-24h shows the panels populated. And Lens column widths are absolute
    * pixels, so truncation that a 1920px pass never sees appears at AUDIT_VERIFY_WIDTH=1440.
+   * The range ends where every dashboard's saved range ends (TIME_TO, now-1m), so a render shows what a
+   * viewer opening the dashboard sees, and two panels side by side reconcile the way they do for them.
    */
   const range = process.env.AUDIT_VERIFY_RANGE || 'now-1h';
   if (!/^now-\d+[smhdwMy]$/.test(range)) throw new Error(`AUDIT_VERIFY_RANGE "${range}" is not a relative range like now-24h`);
@@ -77,7 +80,7 @@ export async function run(argv = []) {
   if (!ids.length) throw new Error(`AUDIT_VERIFY_ONLY "${process.env.AUDIT_VERIFY_ONLY}" matches no dashboard`);
   const browser = await chromium.launch({ args: ['--no-sandbox', '--disable-dev-shm-usage'] });
   const ctx = await browser.newContext({ viewport: { width, height: 1400 }, colorScheme: theme });
-  info(`colour scheme: ${theme} · window: ${range} → now · viewport: ${width}px`);
+  info(`colour scheme: ${theme} · window: ${range} → ${TIME_TO} · viewport: ${width}px`);
 
   const origin = new URL(cfg.kibana).origin;
   await ctx.route('**/*', async (route) => {
@@ -99,7 +102,7 @@ export async function run(argv = []) {
     });
     page.on('pageerror', (e) => errs.push({ text: `uncaught: ${String(e).slice(0, 300)}`, url: '' }));
     try {
-      await page.goto(`${cfg.kbs}/app/dashboards#/view/${id}?_g=(time:(from:${range},to:now))`,
+      await page.goto(`${cfg.kbs}/app/dashboards#/view/${id}?_g=(time:(from:${range},to:${TIME_TO}))`,
         { waitUntil: 'domcontentloaded', timeout: 90000 });
       await page.waitForTimeout(20000);
       // Kibana scrolls an INNER container, so document.body.scrollHeight is only the viewport

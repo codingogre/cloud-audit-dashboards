@@ -21,7 +21,7 @@ import { CONTROLS } from './controls.mjs';
 import {
   NAV_H, NOISE, BAND, BAND_KEYS, RISK, RISK_KEYS, RISK_RESTORE, VERB, ACTOR_RESOLVE, OBJ, OBJ_ID, OBJ_TYPE, CHANGE_PRED, CRED, OBJ_PRESENT,
   CRED_TYPE_LABEL, INDEX_FAMILY, CONCRETE, SYS_INDEX, ACTOR_LABEL, MAGNITUDE_RAMP, SEVERITY_RAMP, fitRows, tableLimit,
-  KIBANA_INTERNALS, BOUNDED, BARE_COUNT, grouped,
+  KIBANA_INTERNALS, BOUNDED, BARE_COUNT, grouped, FAILED_OR_DENIED,
 } from './panels.mjs';
 
 export const GRID_W = 48;
@@ -50,7 +50,8 @@ const FRAGMENT_USES = {
   'vega/10-actor-geography.json': {},
   'vega/11-actor-object-flow.json': { OBJ_PRESENT, CRED, VERB, OBJ_TYPE },
   'searches/01-all-mutations.json': { CHANGE_PRED, ACTOR_RESOLVE, VERB, OBJ, ACTOR_LABEL },
-  'searches/02-failed-authentications.json': { ACTOR_RESOLVE, ACTOR_LABEL },
+  // FAILED_OR_DENIED: one failed sign-in counts once (no per-realm traces), as on 01's and 04's tiles.
+  'searches/02-failed-authentications.json': { ACTOR_RESOLVE, FAILED_OR_DENIED, ACTOR_LABEL },
   'searches/03-security-config-changes.json': { ACTOR_RESOLVE, ACTOR_LABEL },
   'searches/04-kibana-object-changes.json': { ACTOR_RESOLVE, VERB, OBJ, OBJ_PRESENT, KIBANA_INTERNALS, ACTOR_LABEL },
   'searches/05-system-index-access.json': { ACTOR_RESOLVE, SYS_INDEX, ACTOR_LABEL },

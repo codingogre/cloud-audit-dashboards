@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ROOT } from '../env.mjs';
 import {
-  IDX, ACTOR_RESOLVE, TIME, BUCKET, ESS, INDEX_FAMILY, CONCRETE, SYS_INDEX, cloudKeyLabel, dash, kpi, xy, table, vega, search, sized, fitRows, resetIds
+  IDX, ACTOR_RESOLVE, TIME, BUCKET, ESS, INDEX_FAMILY, CONCRETE, SYS_INDEX, cloudKeyLabel, EDGE_NOTE, dash, kpi, xy, table, vega, search, sized, fitRows, resetIds
 } from '../panels.mjs';
 
 /**
@@ -84,13 +84,14 @@ const FAMILY_COLORS = {
 
 /**
  * THE LIVE EDGE. Audit events become searchable a few seconds after they happen, and this page's own
- * queries are audited reads, so the last seconds of the range are still filling while the panels load.
+ * queries are audited reads, so at a range ending now the last seconds were still filling as panels loaded.
  * Measured on the live stream: one fixed 1h range read 5,266 ES|QL queries and, 4s later, 5,270 —
  * then held. Each panel is queried at its own moment, so the ES|QL queries tile and its row in Top
  * transport actions can differ by a few at the default "now" range (round 3 saw 17,012 vs 17,011) and
- * agree once the range ends a minute in the past. Said on both panels, since no query can remove it.
+ * agree once the range ends a minute in the past — which, since round 6, every dashboard's range does
+ * (TIME_TO). What is left is the sub-second spread between panels' `now`, which EDGE_NOTE states.
  */
-const LIVE_EDGE = 'At a range ending now, panels beside each other can differ by a few: audit events land a few seconds after they happen (this page\'s own queries among them), and each panel is read at a slightly different moment.';
+const LIVE_EDGE = EDGE_NOTE;
 
 /**
  * "Busiest" from rows already grouped by (key, actor): the largest n per key, carried as a string so
@@ -154,7 +155,7 @@ export function build() {
     kpi(40, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE attributes.event.action == "access_denied" OR attributes.event.action == "anonymous_access_denied" | STATS \`Access denied\` = COUNT(*)`, 'Access denied', 'Authorization denials. Sustained non-zero values mean a misconfigured client or a probe.'),
     withTotals(xy(0, 5, 24, 15, 'Data access over time by action family',
       `FROM ${IDX} | ${TIME} | WHERE attributes.elasticsearch.audit.action IS NOT NULL | STATS n = COUNT(*) BY time = ${BUCKET}, attributes.elasticsearch.audit.action, request = attributes.elasticsearch.audit.request.name | WHERE NOT ${FANOUT} AND NOT ${ASYNC_INNER} | ${FAMILY} | STATS events = SUM(n) BY time, family | SORT family`,
-      'events', 'Every Elasticsearch request that names a transport action, by kind of action — all traffic, the searches and ES|QL these dashboards run among the reads. Shard-level copies, ES|QL sub-steps and the search an async search runs for itself are folded away so a request counts once, and authentication and connection events (which name no action) are left out, so it sums to less than the Elasticsearch events tile. The legend gives each family\'s total, so a family too small to see as a bar is still counted; Lens leaves the bucket still filling at the right edge out of those totals (up to half an hour at 24h), so they run behind the bars and the tiles. A stretch with no bars means no audited Elasticsearch request in that span — on a wide range that includes the time before the project\'s audit stream began.',
+      'events', 'Every Elasticsearch request that names a transport action, by kind of action — all traffic, the searches and ES|QL these dashboards run among the reads. Shard-level copies, ES|QL sub-steps and the search an async search runs for itself are folded away so a request counts once, and authentication and connection events (which name no action) are left out, so it sums to less than the Elasticsearch events tile. The legend gives each family\'s total, so a family too small to see as a bar is still counted; Lens leaves the partial bucket at the right edge, the one the range\'s end cuts through, out of those totals (up to half an hour at 24h), so they run behind the bars and the tiles. A stretch with no bars means no audited Elasticsearch request in that span — on a wide range that includes the time before the project\'s audit stream began.',
       { breakdown: 'family', xcol: 'time', colors: FAMILY_COLORS, legend: 'right' })),
     // The matrix (vega/04) packs to the top left: each band scale's range is min(panel, cells × step),
     // with the cell count read from a no-op `opacity` / `strokeWidth` scale over the same field — a

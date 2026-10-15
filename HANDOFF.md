@@ -3,6 +3,32 @@
 `CLAUDE.md`-style durable context lives in `README.md` and `esql/fragments.md` and wins on
 conflict. This file is "where we are right now" and should be assumed stale.
 
+## Round 6 — the human's decisions, applied in shared code, 2026-10-15
+
+Per-dashboard fixers apply these; rules in `README.md` → *Presentation conventions*, fragments in
+`esql/fragments.md`.
+
+- **API key metadata reads are query internals** (`API_KEY_READS` in `NOISE_ES_QUERY_INTERNALS`, so NOISE
+  and BAND both): `cluster:admin/xpack/security/api_key/get` and `…/query`. Create, grant, update and
+  invalidate stay signal. Action-based, no key named. 7-day replica: signal 333,360 → 309,810; every
+  changed query within noise of before (alternating A/B, medians: gated count ~210ms, band charts
+  0.65–0.8s, treemap ~310ms). Static copies re-synced: vega/01, vega/07, searches/06, searches/10.
+- **Kibana's key clean-up scores 0** in `RISK` (first branch `housekeeping, 0`; `housekeeping =
+  <HOUSEKEEPING>` is now a key of `RISK_KEYS`), so treemap, leaderboard, Why these identities scored, the
+  scatter and Actor 360's Risk agree with Privileged ops / Config changes. 04's tooltips that explained the
+  mismatch are reworded; its leaderboard's Privileged column is now `SUM(CASE(scc, n, 0))`. Static copies:
+  vega/01, vega/05. demo-guide's risk query now counts first (`riskScored`).
+- **Every saved range ends at `now-1m`** (`TIME_TO` in `dash()`); `--verify` and demo-guide links use it.
+  `EDGE_NOTE` replaces 03's LIVE_EDGE, 04's LIVE_NOTE and 07's RACE_NOTE (the sub-second spread between
+  panels' `now` is all that is left); "still filling" wording removed on 00 and 03; 07's receipt title no
+  longer says "give or take". 06's QUIET_BUCKETS is unaffected (59-min / 1,439-min ranges pick the same
+  1-minute / 30-minute spans).
+- **`FAILED_OR_DENIED`, `SIGNIN_FAILED`, `SIGNIN_WORDS`** moved to `panels.mjs`; 04's Failures tile and Top
+  failures table use it, so 04 Failures = 01 Failed or denied. Drift-pinned in searches/02.
+- **LEGEND_MD**: no punctuation between two code chips; the noise sentence names API key lookups.
+- Still open: naming the Cloud API key (label stays `_4KEO… · Cloud API key`), the Geo coverage
+  denominator, and whether RISK should also drop realm_authentication_failed traces (still scored 40).
+
 ## Round 5 — cross-cutting fixes from the round-4 production review, 2026-10-15
 
 Shared code only; per-dashboard fixers apply the conventions. Rules in `README.md` → *Presentation
@@ -473,9 +499,9 @@ groups a `kib_internal` boolean; band queries cost ~450ms at 7 days instead of ~
 `space_find` and the dashboard app's `/api/content_management/rpc/{get,search,mget,bulkGet}` reads are
 in it too (one per page load per viewer). The page-load plumbing (`/bootstrap.js`, `/app/<app>`, `/api/core`, `/api/licensing`, `/api/banners`,
 `/api/ui_counters`, `/translations`, the `/api/spaces/space` list) joined it in round 4 (`KIBANA_PLUMBING_URL`),
-after it led Command Center's Live signal feed. Still signal: `cluster:admin/xpack/security/api_key/get`
-by the Cloud API key (9,230 a day, access_granted from an internal address) — a security read, left for
-a decision rather than gated on a guess. How much the gate removes is a property of the stream, not of the
+after it led Command Center's Live signal feed. Reads of API key metadata (`security/api_key/get` and
+`/query`) joined it in round 6 by the human's decision (12,595 a day live, nearly all the Cloud API key the
+suite's tooling runs as); key create, grant, update and invalidate stay signal. How much the gate removes is a property of the stream, not of the
 gate, so the legend panel quotes no number; `--demo-guide` reads the share live. The vocabulary has
 been validated against a limited set of workloads — revisit it when the bulk of a project's stream
 is something else.
