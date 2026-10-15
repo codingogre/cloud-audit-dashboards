@@ -63,6 +63,10 @@
     },
     {
       "filter": "datum.rank <= 12"
+    },
+    {
+      "calculate": "'' + datum.risk",
+      "as": "weight"
     }
   ],
   "mark": {
@@ -120,17 +124,17 @@
       }
     },
     "color": {
-      "field": "risk",
-      "type": "ordinal",
+      "field": "weight",
+      "type": "nominal",
       "scale": {
         "domain": [
-          50,
-          45,
-          40,
-          35,
-          30,
-          25,
-          10
+          "50",
+          "45",
+          "40",
+          "35",
+          "30",
+          "25",
+          "10"
         ],
         "range": [
           "#BD271E",
@@ -153,7 +157,10 @@
         "columnPadding": 10,
         "labelFontSize": 11,
         "titleFontSize": 11,
-        "titleOrient": "left"
+        "titleOrient": "left",
+        "values": {
+          "expr": "length(data('actions')) ? split(trim((indexof('|' + join(pluck(slice(data('actions'), 0, 12), 'risk'), '|') + '|', '|50|') >= 0 ? '50 ' : '') + (indexof('|' + join(pluck(slice(data('actions'), 0, 12), 'risk'), '|') + '|', '|45|') >= 0 ? '45 ' : '') + (indexof('|' + join(pluck(slice(data('actions'), 0, 12), 'risk'), '|') + '|', '|40|') >= 0 ? '40 ' : '') + (indexof('|' + join(pluck(slice(data('actions'), 0, 12), 'risk'), '|') + '|', '|35|') >= 0 ? '35 ' : '') + (indexof('|' + join(pluck(slice(data('actions'), 0, 12), 'risk'), '|') + '|', '|30|') >= 0 ? '30 ' : '') + (indexof('|' + join(pluck(slice(data('actions'), 0, 12), 'risk'), '|') + '|', '|25|') >= 0 ? '25 ' : '') + (indexof('|' + join(pluck(slice(data('actions'), 0, 12), 'risk'), '|') + '|', '|10|') >= 0 ? '10 ' : '')), ' ') : []"
+        }
       }
     },
     "tooltip": [
