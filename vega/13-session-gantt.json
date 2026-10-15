@@ -1,6 +1,6 @@
 {
   "$schema": "https://vega.github.io/schema/vega/v5.json",
-  "description": "One bar per Kibana browser session in the last 24 hours, newest first — its length runs from the first to the last thing they did in it and its strength is how much it did, which are independent: a short session can carry far more activity than a long one left open and idle. Click a bar to set the dashboard's time range to that session (plus a minute either side); use the time picker's back arrow to return. Shift-click pins that identity across the suite. What an open browser tab does on its own — internal page requests, usage counters, point-in-time paging — is left out, exactly as in the Session records below, so a tab left open does not stretch a bar past the person's last action and every bar has records under it. Only Kibana audit carries a session id, so an identity that works through the Elasticsearch API has no sessions, and an empty panel for it is the correct answer. Twelve most recent sessions, each labelled with who and when it started. Times are in your browser's timezone, like the rest of Kibana. Fixed 24-hour window: does not follow the time picker.",
+  "description": "One bar per Kibana browser session in the last 24 hours, newest first — its length runs from the first to the last thing they did in it and its strength is how much it did, which are independent: a short session can carry far more activity than a long one left open and idle. Click a bar to set the dashboard's time range to that session (plus a minute either side); use the time picker's back arrow to return. Shift-click pins that identity across the suite. What an open browser tab does on its own — internal page requests, usage counters, point-in-time paging — is left out, exactly as in the Session records below, so a tab left open does not stretch a bar past the person's last action and every bar has records under it. Only Kibana browser sign-ins carry a session id: work through an API key or the Elasticsearch API has no session and draws no bar, so the dashed line marks the latest such event in the same 24 hours — activity after the last bar is real, it is just not a session. An identity that only works through the API has no bars, and that is the correct answer. Twelve most recent sessions, each labelled with who and when it started. Times are in your browser's timezone, like the rest of Kibana. Fixed 24-hour window: does not follow the time picker.",
   "autosize": {
     "type": "fit",
     "contains": "padding"
@@ -36,6 +36,10 @@
           "update": "datum.actor === 'no email recorded' ? null : kibanaAddFilter({match_phrase: {'attributes.user.email': datum.actor}}, 'logs-elastic_cloud.serverless_audit.otel-default', 'actor: ' + datum.actor)"
         }
       ]
+    },
+    {
+      "name": "noSess",
+      "update": "length(data('nosession')) ? data('nosession')[0].t : null"
     }
   ],
   "data": [
@@ -240,6 +244,62 @@
           "expr": "join(pluck(datum.spaces.buckets, 'key'), ', ')"
         }
       ]
+    },
+    {
+      "name": "nosession",
+      "url": {
+        "index": "logs-elastic_cloud.serverless_audit.otel-default",
+        "body": {
+          "size": 0,
+          "query": {
+            "bool": {
+              "must": [
+                "%dashboard_context-must_clause%",
+                {
+                  "range": {
+                    "@timestamp": {
+                      "gte": "now-24h",
+                      "lte": "now"
+                    }
+                  }
+                }
+              ],
+              "must_not": [
+                "%dashboard_context-must_not_clause%",
+                {
+                  "exists": {
+                    "field": "attributes.kibana.session.id"
+                  }
+                }
+              ],
+              "filter": [
+                "%dashboard_context-filter_clause%"
+              ]
+            }
+          },
+          "aggs": {
+            "last": {
+              "max": {
+                "field": "@timestamp"
+              }
+            }
+          }
+        }
+      },
+      "format": {
+        "property": "aggregations"
+      },
+      "transform": [
+        {
+          "type": "formula",
+          "as": "t",
+          "expr": "datum.last.value"
+        },
+        {
+          "type": "filter",
+          "expr": "isValid(datum.t) && datum.t > now() - 86400000"
+        }
+      ]
     }
   ],
   "scales": [
@@ -376,6 +436,68 @@
           },
           "opacity": {
             "signal": "length(data('sessions')) === 0 ? 1 : 0"
+          }
+        }
+      }
+    },
+    {
+      "type": "rule",
+      "interactive": false,
+      "encode": {
+        "update": {
+          "x": {
+            "signal": "noSess ? scale('x', noSess) : -10"
+          },
+          "y": {
+            "value": 0
+          },
+          "y2": {
+            "signal": "height"
+          },
+          "stroke": {
+            "value": "#98A2B3"
+          },
+          "strokeWidth": {
+            "value": 1.5
+          },
+          "strokeDash": {
+            "value": [
+              4,
+              3
+            ]
+          },
+          "opacity": {
+            "signal": "noSess ? 1 : 0"
+          }
+        }
+      }
+    },
+    {
+      "type": "text",
+      "style": "guide-label",
+      "interactive": false,
+      "encode": {
+        "update": {
+          "x": {
+            "signal": "noSess ? scale('x', noSess) + (scale('x', noSess) > width / 2 ? -6 : 6) : 0"
+          },
+          "y": {
+            "signal": "height - 6"
+          },
+          "baseline": {
+            "value": "bottom"
+          },
+          "align": {
+            "signal": "noSess && scale('x', noSess) > width / 2 ? 'right' : 'left'"
+          },
+          "fontSize": {
+            "value": 12
+          },
+          "text": {
+            "signal": "noSess ? 'latest activity with no session (API key or Elasticsearch API) · ' + timeFormat(noSess, '%H:%M') : ''"
+          },
+          "opacity": {
+            "signal": "noSess ? 1 : 0"
           }
         }
       }

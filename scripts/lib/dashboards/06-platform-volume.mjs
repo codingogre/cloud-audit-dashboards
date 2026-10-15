@@ -1,7 +1,7 @@
 /** 06 Platform Volume — see scripts/lib/definitions.mjs for how the suite is assembled. */
 import {
-  IDX, ACTOR, NOISE, BAND, BAND_KEYS, TIME, BUCKET, KIND_REFINE, SOURCE_LABEL, SOURCE_COLORS, PALETTE,
-  dash, kpi, xy, table, vega, md, filterable, resetIds
+  IDX, ACTOR, ACTOR_RESOLVE, NOISE, BAND, BAND_KEYS, TIME, BUCKET, KIND_REFINE, SOURCE_LABEL, SOURCE_COLORS, PALETTE,
+  dash, kpi, xy, table, vega, md, filterable, resetIds, cloudKeyLabel, isCloudKeyId
 } from '../panels.mjs';
 
 /**
@@ -35,22 +35,33 @@ const BAND_COLORS = { 'Signal': PALETTE[0], 'Auth success': PALETTE[1], 'Query i
 /**
  * Band share shows each bucket as 100%, so a bucket of six events stood exactly as tall as one of 7,000
  * (rendered: six minutes of solid "Query internals" during a lull). QUIET_BUCKETS drops a bucket whose
- * total is under a tenth of the window's median bucket AND under QUIET_MAX events. The ratio alone
- * moved with the window: a 1h window that was quiet for 25 minutes then busy had a median of ~8,000, so
- * the quiet stretch's alternating ~500 / ~1,000-event minutes rendered as a picket fence of bars and
- * gaps (rendered at 1440px). 50 events is enough for a share to mean something; the ratio keeps a
- * low-volume project, whose every bucket is small, from blanking entirely. That needs a window-wide figure beside per-bucket
- * rows, and INLINE STATS re-runs the scan (measured 0.5s → 2.2s at 7d), so it is done by hand over the
- * already-aggregated rows: one row per bucket (total + its band counts packed into a multi-value), one
- * row for the window (the median + every bucket packed), then expanded back. It runs over at most
- * 75 × 4 rows, so the 7-day cost is unchanged (~0.58s either way, alternating runs on the perf replica).
- * The bucket comes back under the column name xy() plots, as a datetime.
+ * total is under a THIRD of the window's median bucket (QUIET_RATIO).
+ *
+ * History, because each earlier rule failed on a render. Round 2 dropped a bucket under a tenth of the
+ * median; a 1h window quiet for 25 minutes then busy (median ~8,000) rendered its quiet stretch of
+ * alternating ~500 / ~1,000-event minutes as a picket fence of bars and gaps. Round 3 kept anything
+ * of 50 events or more to stop that, and the round-4 review found the opposite defect: a one-minute
+ * lull of a few dozen events (live: 58 events between minutes of 3,700 and 5,600) drawn at 80% Signal,
+ * the tallest-looking mark on the page, and the 24h window's opening half-bucket (628 events against a
+ * median of ~38,000) drawn as full as the busiest half hour. An absolute floor cannot be right at
+ * every volume — at 5–10× today's traffic a lull is hundreds or thousands of events — so the rule is a
+ * ratio alone, and a third rather than a tenth: the picket-fence stretch (500 / 1,000 against 8,000)
+ * now blanks as a whole, a lull blanks, and a low-volume project, whose buckets are all small together,
+ * keeps them. Measured on the live stream: 1h (median 1,457) drops 13 of 57 minutes, the lull's
+ * (2–448 events), and keeps the ~550–1,000-event stretch that follows; 24h drops only the partial
+ * first bucket. On the 7-day replica it drops 6 of 48 buckets (a quarter would drop 5, a tenth 4).
+ *
+ * The rule needs a window-wide figure beside per-bucket rows, and INLINE STATS re-runs the scan
+ * (measured 0.5s → 2.2s at 7d), so it is done by hand over the already-aggregated rows: one row per
+ * bucket (total + its band counts packed into a multi-value), one row for the window (the median +
+ * every bucket packed), then expanded back. It runs over at most 75 × 4 rows, so the 7-day cost is
+ * unchanged. The bucket comes back under the column name xy() plots, as a datetime.
  */
-const QUIET_MAX = 50;
+const QUIET_RATIO = 3;
 const QUIET_BUCKETS =
   'STATS total = SUM(events), parts = VALUES(CONCAT(band, "=", TO_STRING(events))) BY ts ' +
   '| STATS typical = MEDIAN(total), b = VALUES(CONCAT(TO_STRING(ts), "#", TO_STRING(total), "#", MV_CONCAT(parts, ";"))) ' +
-  `| MV_EXPAND b | DISSECT b "%{ts}#%{total}#%{parts}" | WHERE TO_LONG(total) * 10 >= typical OR TO_LONG(total) >= ${QUIET_MAX} ` +
+  `| MV_EXPAND b | DISSECT b "%{ts}#%{total}#%{parts}" | WHERE TO_LONG(total) * ${QUIET_RATIO} >= typical ` +
   '| EVAL part = SPLIT(parts, ";") | MV_EXPAND part | DISSECT part "%{band}=%{events}" ' +
   `| EVAL \`${BUCKET}\` = TO_DATETIME(ts), events = TO_LONG(events) | KEEP \`${BUCKET}\`, band, events`;
 
@@ -61,11 +72,11 @@ const QUIET_BUCKETS =
  */
 const VOL_NOTE = `### The quarantine dashboard
 
-Every other dashboard applies a **noise gate**; this one does not, so the whole firehose stays measurable. Every event lands in exactly one band:
+Every other dashboard applies a **noise gate**; this one does not, so the whole firehose stays measurable. Every event lands in exactly one band, so the four band tiles add up to **All events** (on a live window, give or take the few events that arrive while the tiles load):
 **Signal** — what the other dashboards read · **Auth success** — Elasticsearch's \`authentication_success\`, one per authenticated request
-**Query internals** — search, ES|QL, Kibana \`/internal/\`, suite self-views, \`connection_granted\` · **Infra health** — \`cluster:monitor/main\`, \`elastic.maintenance\`
+**Query internals** — search, \`ES|QL\`, Kibana \`/internal/\`, suite self-views, \`connection_granted\` · **Infra health** — \`cluster:monitor/main\`, \`elastic.maintenance\`
 
-An API key's events carry its **creator's** email, so a busy key can read as a person: **Via API key** in *Highest-volume identities* shows how much of a name is a key.`;
+An API key's events carry its **creator's** email, so a busy key can read as a person: **Via named key** in *Highest-volume identities* shows how much of a name is a key.`;
 
 export function build() {
   resetIds();
@@ -111,14 +122,14 @@ export function build() {
     table(30, 12, 18, 13, 'Busiest named API keys',
       `FROM ${IDX} | ${TIME} | WHERE attributes.api_key.name IS NOT NULL | STATS events = COUNT(*) BY attributes.api_key.name | SORT events DESC | LIMIT 10`,
       [filterable('attributes.api_key.name')], ['events'],
-      'The 10 busiest API keys that have a name, by events. Click a key to pin it across the suite. A Cloud API key has no name in the audit stream, so it is not listed here; it appears by id, marked "· Cloud API key", in Highest-volume identities. These counts are the same events as that table\'s Via API key column.',
+      'The 10 busiest API keys that have a name, by events. Click a key to pin it across the suite. A Cloud API key has no name in the audit stream, so it is not listed here; it appears by id in Highest-volume identities, as “_4KEO… · Cloud API key” (its first five characters). These counts are the same events as that table\'s Via named key column.',
       { empty: 'empty without named-key traffic' }),
     // The share view, not a second copy of the stream above: both ran the same BAND × BUCKET query,
     // so the stacked-volume reading appeared twice. Percentages show what the volume chart cannot —
     // whether a spike was more noise or more signal.
     xy(0, 25, 24, 12, 'Band share over time',
       `FROM ${IDX} | ${TIME} | STATS n = COUNT(*) BY ts = ${BUCKET}, ${BAND_KEYS} | ${BAND} | STATS events = SUM(n) BY ts, band | ${QUIET_BUCKETS} | ${BAND_ORDER} | ${BAND_LABEL}`,
-      'events', 'Each bucket’s events as 100%, split by band. A rising Signal share means activity, not housekeeping, is driving the volume. A bucket with fewer than 50 events and under a tenth of the window’s typical (median) volume is left blank: a percentage of a handful of events would stand as tall as a busy minute. Signal vs noise over time shows every bucket’s volume.',
+      'events', 'Each bucket’s events as 100%, split by band. A rising Signal share means activity, not housekeeping, is driving the volume. A bucket with under a third of the window’s typical (median) volume is left blank: as a percentage, a lull of a few dozen events would stand as tall as the busiest minute. Signal vs noise over time shows every bucket’s volume.',
       { kind: 'bar_percentage', breakdown: 'band', colors: BAND_COLORS }),
     // Grouped on the raw keyword, relabelled after: the two-condition CASE runs on the grouped rows,
     // not on every event (panels.mjs QUERY SHAPE rules 1–2). Same labels, colours and order as 00's.
@@ -126,21 +137,35 @@ export function build() {
       `FROM ${IDX} | ${TIME} | STATS events = COUNT(*) BY ${BUCKET}, source = resource.attributes.service.name | ${SOURCE_LABEL}`,
       'events', 'Elasticsearch versus Kibana audit volume over time. Elasticsearch audits every transport action, so it usually dwarfs Kibana.',
       { breakdown: 'source', colors: SOURCE_COLORS }),
+    // Busiest identity replaces an Identities count that read 1 on every row at 1h (one machine identity
+    // drives the whole firehose in a short window) and told the reader nothing; who is behind the noise
+    // does, in every window, and "+ N more" keeps the count. Counted by action and the ACTOR_RESOLVE
+    // COALESCE (Same resolution as Highest-volume identities beside it), then folded per action: the
+    // busiest identity is the MAX of "<count, zero-padded by adding 1e12><identity>", whose first 13
+    // characters are the count. The label runs on the grouped rows, before the SORT/LIMIT that table()
+    // lowers; the name breaks ties, which otherwise swapped two equal rows between refreshes. Measured on
+    // the 7-day replica: 111–158ms against 101–113ms for the count it replaces.
     table(0, 37, 24, 12, 'Noisiest transport actions',
-      `FROM ${IDX} | ${TIME} | WHERE attributes.elasticsearch.audit.action IS NOT NULL | STATS events = COUNT(*), actors = COUNT_DISTINCT(COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name)) BY attributes.elasticsearch.audit.action | SORT events DESC | LIMIT 15`,
-      ['attributes.elasticsearch.audit.action'], ['events', 'actors'],
-      'Highest-volume Elasticsearch transport actions, unfiltered, with the number of identities behind each. ES|QL’s own fan-out (esql/compute, search_shards, field_caps[n]) is in Query internals, and much of it is dashboards querying this stream.'),
+      `FROM ${IDX} | ${TIME} | WHERE attributes.elasticsearch.audit.action IS NOT NULL | ${ACTOR_RESOLVE} ` +
+      '| STATS n = COUNT(*) BY attributes.elasticsearch.audit.action, actor ' +
+      '| STATS events = SUM(n), actors = COUNT(*), top = MAX(CONCAT(TO_STRING(1000000000000 + n), actor)) BY attributes.elasticsearch.audit.action ' +
+      `| EVAL top_identity = SUBSTRING(top, 14) | EVAL top_identity = CONCAT(${cloudKeyLabel('top_identity')}, CASE(actors > 1, CONCAT(" + ", TO_STRING(actors - 1), " more"), "")) ` +
+      '| KEEP attributes.elasticsearch.audit.action, top_identity, events | SORT events DESC, attributes.elasticsearch.audit.action | LIMIT 15',
+      ['attributes.elasticsearch.audit.action', { column: 'top_identity', label: 'Busiest identity' }], ['events'],
+      'Highest-volume Elasticsearch transport actions, unfiltered. Busiest identity is the identity behind most of each action’s events (resolved as in Highest-volume identities), followed by how many others also called it. ES|QL’s own fan-out (esql/compute, search_shards, field_caps[n]) is in Query internals, and much of it is dashboards querying this stream — often the Cloud API key running this suite, shown as “_4KEO… · Cloud API key” (its first five characters).'),
     // Kind is refined after the STATS (KIND_REFINE), where it costs nothing: ACTOR's two-way CASE calls
     // an unauthenticated principal and Elastic's own service accounts "service", which contradicts
     // SCOPE's vocabulary on every other dashboard. via_key is COUNT(field) — non-null values — so it is the share of a row's volume that
     // came through a named key, which is what the note's creator-stamping caveat asks the reader to
-    // check, without splitting a person's row by key (measured: same cost as without it).
+    // check, without splitting a person's row by key (measured: same cost as without it). On a Cloud API
+    // key row it is null, printed "-": a 0 there read as "this API key's traffic came through no API key"
+    // (round-4 review). The one-condition CASE runs on the grouped rows.
     table(24, 37, 24, 12, 'Highest-volume identities',
-      `FROM ${IDX} | ${TIME} | ${ACTOR} | STATS events = COUNT(*), via_key = COUNT(attributes.api_key.name), actions = COUNT_DISTINCT(attributes.event.action) BY actor, actor_kind | ${KIND_REFINE} | SORT events DESC | LIMIT 15`,
+      `FROM ${IDX} | ${TIME} | ${ACTOR} | STATS events = COUNT(*), via_key = COUNT(attributes.api_key.name), actions = COUNT_DISTINCT(attributes.event.action) BY actor, actor_kind | ${KIND_REFINE} | EVAL via_key = CASE(${isCloudKeyId('actor')}, null, via_key) | SORT events DESC, actor | LIMIT 15`,
       // Via API key and Actions are narrowed (90 / 72px still hold their headers) so that at a 1440px
       // viewport the Identity column keeps ~280px: "_4KEOq… · Cloud API key" ran into Kind at 248px.
       ['actor', 'actor_kind'], ['events', { column: 'via_key', label: 'Via named key', width: 100 }, { column: 'actions', width: 72 }],
-      'Unfiltered volume leaderboard, top identities by events — this is where the machine traffic shows up (often the Cloud API key running this suite). Via named key: how many of the row’s events came through a NAMED (Elasticsearch) API key, the same events Busiest named API keys counts — 0 on a Cloud API key row, whose events carry no key name.'),
+      'Unfiltered volume leaderboard, top identities by events — this is where the machine traffic shows up (often the Cloud API key running this suite). Only the busiest rows fit, so quieter identities — including the smaller keys in Busiest named API keys — are beyond the rows shown. Via named key: how many of the row’s events came through a NAMED (Elasticsearch) API key, the same events Busiest named API keys counts. It reads “-” on a Cloud API key row: that key is itself the credential, and its events carry no key name, so the question does not apply.'),
   ];
   return dash('cloud-audit-06-platform-volume', '[Audit] 📊 Platform Volume & API Keys',
     'The unfiltered firehose, quarantined so the forensic dashboards stay readable.', P);

@@ -94,6 +94,7 @@
           },
           "legend": {
             "title": "Events",
+            "titlePadding": 10,
             "orient": "right",
             "direction": "vertical",
             "gradientLength": 140,

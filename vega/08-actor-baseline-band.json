@@ -1,6 +1,6 @@
 {
   "$schema": "https://vega.github.io/schema/vega/v5.json",
-  "description": "Hourly activity for the current selection against its OWN pattern for that hour of day. The shaded band is their typical range for the hour — the middle half of the seven observations in the window — and a point marks an hour beyond 1.5× that range, which is unusual for them. Seven observations per hour slot is thin, so read it as a sanity check rather than a detector: an identity with a steady background process plus human bursts will sit outside often, and correctly. The headline reads the last complete hour; the current partial hour is left off so it cannot read as a drop. Hours are UTC. Fixed 7-day window: does not follow the time picker. No noise gate, so it will not reconcile with Signal events.",
+  "description": "Hourly activity for the current selection against its OWN pattern for that hour of day. The shaded band is their typical range for the hour (\"typical range\" in the legend, which lists only what is drawn) — the middle half of the seven observations in the window — and a point marks an hour beyond 1.5× that range, which is unusual for them. Seven observations per hour slot is thin, so read it as a sanity check rather than a detector: an identity with a steady background process plus human bursts will sit outside often, and correctly. The headline reads the last complete hour; the current partial hour is left off so it cannot read as a drop. Hours are UTC. Fixed 7-day window: does not follow the time picker. No noise gate, so it will not reconcile with Signal events. With less than three days of history the band has nothing to stand on: the second line then says when their history starts and no hour is marked unusual, because every busy hour would read as unusual against a week of zeros.",
   "autosize": {
     "type": "fit",
     "contains": "padding"
@@ -88,6 +88,31 @@
         },
         {
           "type": "formula",
+          "as": "activeKey",
+          "expr": "datum.events > 0 ? datum.key : null"
+        },
+        {
+          "type": "joinaggregate",
+          "fields": [
+            "activeKey",
+            "key"
+          ],
+          "ops": [
+            "min",
+            "max"
+          ],
+          "as": [
+            "firstActive",
+            "lastKey"
+          ]
+        },
+        {
+          "type": "formula",
+          "as": "short",
+          "expr": "datum.lastKey - datum.firstActive < 3 * 86400000"
+        },
+        {
+          "type": "formula",
           "as": "slot",
           "expr": "utchours(datum.key)"
         },
@@ -125,7 +150,7 @@
         {
           "type": "formula",
           "as": "flag",
-          "expr": "datum.events > datum.hi ? 'unusually busy' : datum.events < datum.lo ? 'unusually quiet' : 'typical'"
+          "expr": "datum.short ? 'typical' : datum.events > datum.hi ? 'unusually busy' : datum.events < datum.lo ? 'unusually quiet' : 'typical'"
         },
         {
           "type": "formula",
@@ -192,12 +217,53 @@
         {
           "type": "formula",
           "as": "line1",
-          "expr": "datum.total === 0 ? 'No activity for this selection in the last 7 days' : utcFormat(datum.key, '%H:00') + ' UTC (last full hour): ' + format(datum.events, ',') + ' events, ' + (datum.med > 0 ? format(datum.events / datum.med, '.1f') + '× their median' : 'usually an idle hour')"
+          "expr": "datum.total === 0 ? 'No activity for this selection in the last 7 days' : utcFormat(datum.key, '%H:00') + ' UTC (last full hour): ' + format(datum.events, ',') + ' events' + (datum.short ? '' : ', ' + (datum.med > 0 ? format(datum.events / datum.med, '.1f') + '× their median' : 'usually an idle hour'))"
         },
         {
           "type": "formula",
           "as": "line2",
-          "expr": "datum.total === 0 ? '' : datum.n_out + ' of ' + datum.n_hours + ' hours unusual for the time of day'"
+          "expr": "datum.total === 0 ? '' : datum.short ? 'History only since ' + utcFormat(datum.firstActive, '%a %H:00') + ' UTC: too short to judge, so no hour is marked unusual' : datum.n_out + ' of ' + datum.n_hours + ' hours unusual for the time of day'"
+        }
+      ]
+    },
+    {
+      "name": "bandKey",
+      "source": "series",
+      "transform": [
+        {
+          "type": "filter",
+          "expr": "datum.q3 > datum.q1"
+        },
+        {
+          "type": "aggregate",
+          "ops": [
+            "count"
+          ],
+          "as": [
+            "n"
+          ]
+        },
+        {
+          "type": "formula",
+          "as": "k",
+          "expr": "'typical range'"
+        }
+      ]
+    },
+    {
+      "name": "flagKeys",
+      "source": "outside",
+      "transform": [
+        {
+          "type": "aggregate",
+          "groupby": [
+            "flag"
+          ]
+        },
+        {
+          "type": "formula",
+          "as": "k",
+          "expr": "datum.flag"
         }
       ]
     }
@@ -241,6 +307,28 @@
         "unusually busy",
         "unusually quiet"
       ],
+      "range": [
+        "#5082B1",
+        "#d95926",
+        "#9085e9"
+      ]
+    },
+    {
+      "name": "drawn",
+      "type": "ordinal",
+      "domain": {
+        "fields": [
+          {
+            "data": "bandKey",
+            "field": "k"
+          },
+          {
+            "data": "flagKeys",
+            "field": "k"
+          }
+        ],
+        "sort": true
+      },
       "range": [
         "#5082B1",
         "#d95926",
@@ -303,10 +391,10 @@
   ],
   "legends": [
     {
-      "fill": "key",
+      "fill": "drawn",
       "orient": "none",
       "legendX": {
-        "signal": "width - 250"
+        "signal": "width - 10 - 100 * length(domain('drawn'))"
       },
       "legendY": 20,
       "direction": "horizontal",
@@ -332,6 +420,18 @@
           "update": {
             "opacity": {
               "signal": "quiet ? 0 : 1"
+            },
+            "fill": {
+              "signal": "datum.value === 'unusually busy' ? '#d95926' : datum.value === 'unusually quiet' ? '#9085e9' : '#5082B1'"
+            },
+            "fillOpacity": {
+              "signal": "datum.value === 'typical range' ? 0.45 : 1"
+            },
+            "shape": {
+              "signal": "datum.value === 'typical range' ? 'square' : 'circle'"
+            },
+            "strokeWidth": {
+              "value": 0
             }
           }
         }
@@ -513,7 +613,7 @@
             "field": "line2"
           },
           "limit": {
-            "signal": "width - 260"
+            "signal": "width - 20 - 100 * length(domain('drawn'))"
           }
         }
       }
