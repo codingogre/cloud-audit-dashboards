@@ -1,11 +1,13 @@
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
-  "description": "The 10 busiest identities across the top, and the 25 index families they read most down the side; cell colour is requests on a log scale, teal (fewest) through blue and purple to pink (most). A data stream and its backing indices are one family, as is a run of dated daily indices; wildcard and date-math expressions are left out. A blank cell means that identity did not touch that family in range — or touched it too little to be among the 500 busiest identity/family pairs. A request naming several indices counts once per index. An identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organization-level Elastic Cloud API key, which the audit stream records only by its id; one the audit names as such is labelled \"· Cloud API key\". Cells keep a heatmap's size when only a few identities or families are in range, so a sparse window draws a few cells, not solid blocks.",
+  "description": "The 10 busiest identities across the top, and the 25 index families they read most down the side; cell colour is requests on a log scale, teal (fewest) through blue and purple to pink (most). A data stream and its backing indices are one family, as is a run of dated daily indices; wildcard and date-math expressions are left out. A blank cell means that identity did not touch that family in range — or touched it too little to be among the 500 busiest identity/family pairs. A request naming several indices counts once per index. An identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organization-level Elastic Cloud API key, which the audit stream records only by its id; one the audit names as such is labelled \"· Cloud API key\". Cells keep a heatmap's size and pack to the top left when only a few identities or families are in range, so a sparse window draws a small matrix with its legend under it, not a few cells adrift in the panel.",
   "title": {
     "text": {
       "expr": "length(data('rows')) ? '' : 'No activity for this selection in this time range'"
     }
   },
+  "width": "container",
+  "height": "container",
   "autosize": {
     "type": "fit",
     "contains": "padding"
@@ -125,7 +127,13 @@
         "order": "descending"
       },
       "scale": {
-        "paddingInner": 0.1
+        "paddingInner": 0.1,
+        "range": [
+          0,
+          {
+            "expr": "min(height - 48, 34 * length(domain('strokeWidth')))"
+          }
+        ]
       },
       "axis": {
         "title": null,
@@ -147,7 +155,13 @@
         "order": "descending"
       },
       "scale": {
-        "paddingInner": 0.1
+        "paddingInner": 0.1,
+        "range": [
+          0,
+          {
+            "expr": "min(width, 76 * length(domain('opacity')))"
+          }
+        ]
       },
       "axis": {
         "title": "Identity",
@@ -155,8 +169,8 @@
           "expr": "length(data('rows')) ? 1 : 0"
         },
         "orient": "top",
-        "labelAngle": 35,
-        "labelAlign": "right",
+        "labelAngle": -90,
+        "labelAlign": "left",
         "labelBaseline": "middle",
         "labelLimit": 230,
         "labelPadding": 4,
@@ -198,7 +212,7 @@
       },
       "legend": {
         "title": "Requests",
-        "orient": "bottom",
+        "orient": "none",
         "direction": "horizontal",
         "gradientLength": 220,
         "gradientThickness": 10,
@@ -214,8 +228,34 @@
         },
         "gradientOpacity": {
           "expr": "length(data('rows')) ? 1 : 0"
+        },
+        "legendX": 0,
+        "legendY": {
+          "expr": "min(height - 48, 34 * length(domain('strokeWidth'))) + 14"
         }
       }
+    },
+    "opacity": {
+      "field": "actor",
+      "type": "ordinal",
+      "scale": {
+        "range": [
+          1,
+          1
+        ]
+      },
+      "legend": null
+    },
+    "strokeWidth": {
+      "field": "idx",
+      "type": "ordinal",
+      "scale": {
+        "range": [
+          0,
+          0
+        ]
+      },
+      "legend": null
     }
   }
 }
