@@ -160,7 +160,7 @@ const INTRO = {
   heading: "What data was read or written in Elasticsearch, and by whom",
   paragraphs: [
     "See which indices each identity uses, the kinds of requests they made, any denied requests, and every touch of system or hidden indices.",
-    "Related indices are grouped into one family, so a data stream and its daily backing indices read as a single row. Use it to confirm sensitive data is only reached by the people and keys you expect.",
+    "Related indices are grouped into one family, so a data stream and its daily backing indices read as a single row. Use it to confirm that sensitive data is reached only by the people and keys you expect.",
     "**How to use it:** choose a Project, Person (email) or Client IP in the controls and set the time picker. Empty denied and system-index panels usually mean all is well.",
   ],
 };

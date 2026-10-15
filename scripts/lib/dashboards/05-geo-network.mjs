@@ -132,7 +132,7 @@ const INTRO = {
   h: 6,
   heading: "Where your users and API keys connect from",
   paragraphs: [
-    "See activity by country and city, your busiest client addresses, and anyone seen in more than one country in the same period, a common sign of a shared or stolen credential.",
+    "See activity by country and city, your busiest client addresses, and anyone seen in more than one country in the same period (a common sign of a shared or stolen credential).",
     "Locations come from each client's real address, not Elastic's own network hops. Country is reliable; city is often your internet provider's nearest hub. Private network addresses cannot be placed on a map.",
     "**How to use it:** choose a Project, Person (email) or Client IP in the controls and set the time picker. Click an address or email in a table to filter the whole suite to it.",
   ],

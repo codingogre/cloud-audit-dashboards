@@ -106,7 +106,7 @@
         "h": 6
       },
       "config": {
-        "content": "### The activity most worth a second look\n\nEach sensitive action earns a risk weight, from 10 for a workflow run up to 50 for a security setting change, while routine work scores zero.\n\nPanels rank identities by that risk, show newly seen identities, and list every security configuration change. Elastic's own routine API key clean-up is counted separately so it never hides real changes.\n\n**How to use it:** choose a Project, Person (email) or Client IP in the controls and set the time picker. Hover the ⓘ beside a panel title to see how it is scored.\n"
+        "content": "### The activity most worth a second look\n\nEach sensitive action earns a risk weight, from 10 for a workflow run up to 50 for a security setting change, while routine work scores zero.\n\nPanels rank identities by that risk, show newly seen identities, and list every security configuration change. Elastic's own routine API key clean-up is counted separately, so it never hides real changes.\n\n**How to use it:** choose a Project, Person (email) or Client IP in the controls and set the time picker. Hover the ⓘ beside a panel title to see how it is scored.\n"
       }
     },
     {

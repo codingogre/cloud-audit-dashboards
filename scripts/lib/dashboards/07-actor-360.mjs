@@ -110,7 +110,7 @@ const INTRO = {
   h: 6,
   heading: 'Everything one person did, on one page',
   paragraphs: [
-    'Use it to answer "is this normal for them?", to see what they changed and read, and to gather evidence for a review or investigation.',
+    'Use it to check whether their activity is normal, see what they changed and read, and gather evidence for a review or investigation.',
     '**How to use it:** pick someone in the Person (email) control, or click an email in a table; with nobody selected, the page covers everyone. ① *Is this normal?* always looks at the last 7 days in UTC, ② *What they did* follows the time picker, and ③ *Evidence* ends in the raw records. Table times are in your time zone.',
   ],
 };

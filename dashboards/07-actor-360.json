@@ -106,7 +106,7 @@
         "h": 6
       },
       "config": {
-        "content": "### Everything one person did, on one page\n\nUse it to answer \"is this normal for them?\", to see what they changed and read, and to gather evidence for a review or investigation.\n\n**How to use it:** pick someone in the Person (email) control, or click an email in a table; with nobody selected, the page covers everyone. ① *Is this normal?* always looks at the last 7 days in UTC, ② *What they did* follows the time picker, and ③ *Evidence* ends in the raw records. Table times are in your time zone.\n"
+        "content": "### Everything one person did, on one page\n\nUse it to check whether their activity is normal, see what they changed and read, and gather evidence for a review or investigation.\n\n**How to use it:** pick someone in the Person (email) control, or click an email in a table; with nobody selected, the page covers everyone. ① *Is this normal?* always looks at the last 7 days in UTC, ② *What they did* follows the time picker, and ③ *Evidence* ends in the raw records. Table times are in your time zone.\n"
       }
     },
     {

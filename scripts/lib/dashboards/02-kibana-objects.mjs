@@ -114,8 +114,8 @@ const INTRO = {
   heading: "Every change to your Kibana content, and who made it",
   paragraphs: [
     "Dashboards, visualizations, data views, alert rules, SLOs, workflows and other saved objects: what was created, edited, deleted or opened, in which space, and by whom.",
-    "Use it to answer \"who deleted that dashboard?\" or \"what changed before the alert stopped firing?\". Panels marked *noise gate applied* skip these audit dashboards' own activity, so you see your team's work.",
-    "**How to use it:** choose a Project, Person (email) or Client IP in the controls and set the time picker. The session view at the bottom replays one browser session step by step. Click a session bar or a session id to see exactly what happened in that browser session.",
+    "Use it to answer questions such as \"Who deleted that dashboard?\" or \"What changed before the alert stopped firing?\" Panels marked *noise gate applied* skip these audit dashboards' own activity, so you see your team's work.",
+    "**How to use it:** choose a Project, Person (email) or Client IP in the controls and set the time picker. The session view at the bottom replays one browser session step by step. Click a session bar or a session ID to see exactly what happened in that browser session.",
   ],
 };
 
