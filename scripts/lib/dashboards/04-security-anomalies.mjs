@@ -60,15 +60,6 @@ const LIVE_NOTE = 'On a range that ends now, each panel runs its query as it scr
 const CLEANUP = 'Kibana\'s own API-key clean-up (invalidate_apikeys by the elastic/kibana service account through no named key, every few seconds) is left out, as on Command Center\'s Privileged ops';
 const CLEANUP_NOTE = `${CLEANUP}; the second line says how many such events the range held.`;
 /**
- * privilegedKpi()'s second line, shortened and digit-grouped for this row's tiles: at a 1440px viewport
- * an 8-column tile shows ~22 characters, and "2152 key cleanups left out" was cut at "left". One row,
- * after the STATS, so the CASE costs nothing.
- */
-const CLEANUP_SHORT =
-  'EVAL housekeeping_note = CASE(cleanups == 0, "no cleanups in range", cleanups < 1000, CONCAT("excl. ", TO_STRING(cleanups), " cleanups"), ' +
-  'CONCAT("excl. ", TO_STRING(FLOOR(cleanups / 1000)), ",", RIGHT(CONCAT("00", TO_STRING(cleanups % 1000)), 3), " cleanups"))';
-
-/**
  * No Email column on this page's identity tables. On every render (1h and 24h) it held only dashes:
  * the identities that score are API keys, service accounts and unauthenticated principals, and
  * Identity already IS the email for a person. The README rule for a click-to-filter column of dashes
@@ -85,10 +76,10 @@ export function build() {
     // push this tile's number off the baseline its five siblings share.
     kpi(0, 0, 8, 5, `FROM ${IDX} | ${TIME} | ${riskScored()} | STATS ${RISK_INDEX_STATS} | ${RISK_INDEX_EVAL} | EVAL \`Mean severity (of 50)\` = mean_severity | KEEP \`Mean severity (of 50)\``, 'Mean severity (of 50)',
       'Average severity weight across scoring events, on the same 0–50 scale as the weights: config change 50, key invalidation 45, failure 40, anonymous denial 35, destructive change 30, other Kibana change 25, workflow execution 10. Executions weigh least on purpose — they are the one class with unbounded cadence, and a scheduled workflow firing every minute would otherwise turn total risk back into an event count. Routine activity scores 0 and is excluded, so this is not a disguised event count — read it with Scoring events beside it.', { dec: 1 }),
-    kpi(8, 0, 8, 5, `FROM ${IDX} | ${TIME} | ${privilegedKpi('Config changes')} | ${CLEANUP_SHORT}`, 'Config changes',
+    kpi(8, 0, 8, 5, `FROM ${IDX} | ${TIME} | ${privilegedKpi('Config changes')}`, 'Config changes',
       `Security configuration changes recorded by Elasticsearch (API keys created, changed or invalidated, roles and user profiles written) — the total that the Config changes table and the event feed below draw from. ${CLEANUP_NOTE} ${LIVE_NOTE}`,
       { secondary: 'housekeeping_note' }),
-    kpi(16, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE attributes.event.action == "invalidate_apikeys" | ${privilegedKpi('Key invalidations')} | ${CLEANUP_SHORT}`, 'Key invalidations',
+    kpi(16, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE attributes.event.action == "invalidate_apikeys" | ${privilegedKpi('Key invalidations')}`, 'Key invalidations',
       `invalidate_apikeys requests in range (one request can name several keys) — legitimate rotation, or a credential being revoked in a hurry; a subset of Config changes. ${CLEANUP_NOTE} The risk scoring still weighs every invalidation, the clean-up included: it is elastic/kibana's invalidate_apikeys row in Why these identities scored.`,
       { secondary: 'housekeeping_note' }),
     kpi(24, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE attributes.event.outcome == "failure" | STATS \`Failures\` = COUNT(*)`, 'Failures', 'Events with a failure outcome.'),

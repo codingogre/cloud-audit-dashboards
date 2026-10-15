@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ROOT } from '../env.mjs';
 import {
-  IDX, TIME, INDEX_FAMILY, IP_GEO, indexFamily, dash, kpi, table, vega, search, md, section, row, stack, resetIds, sized, filterable,
+  IDX, TIME, INDEX_FAMILY, IP_GEO, indexFamily, dash, kpi, table, vega, search, md, section, row, stack, resetIds, sized, filterable, grouped
 } from '../panels.mjs';
 import { riskScored, CHANGED, CHANGED_KEYS, CHANGED_DERIVE } from './shared.mjs';
 
@@ -91,11 +91,11 @@ export function build() {
         [filterable('attributes.user.email')], ['events', { column: 'keys', label: 'Own API keys' }],
         'Counts only events that carry a user email, so with nobody selected these rows add up to far less than the Events tile: API-key and service traffic with no email behind it has nothing to group on here, and is counted in the tile. The people in range, busiest first — click an email to pin that identity across the suite. `Own API keys` counts the named API keys acting under that email: Elasticsearch stamps a key\'s CREATOR on every event the key emits, so a person with keys may be carrying a machine\'s traffic. It reads 0 beside API-key credentials in the flow below when that key traffic carries no email — an organization-level Cloud API key (`_4KEO… · Cloud API key`) belongs to no person, so it is not theirs.')],
       [8, (x, y, w, h) => kpi(x, y, w, h,
-        `FROM ${IDX} | ${TIME} | STATS Events = COUNT(*), actions = COUNT_DISTINCT(attributes.event.action, 100), last_ts = MAX(@timestamp) | EVAL mins = DATE_DIFF("minutes", last_ts, NOW()) | EVAL detail = CASE(Events == 0, "no activity", CONCAT(TO_STRING(actions), CASE(actions == 1, " action", " actions"), " · ", CASE(mins < 1, "just now", mins < 60, CONCAT(TO_STRING(mins), "m ago"), CONCAT(TO_STRING(mins / 60), "h ago")))) | KEEP Events, detail`,
+        `FROM ${IDX} | ${TIME} | STATS Events = COUNT(*), actions = COUNT_DISTINCT(attributes.event.action, 100), last_ts = MAX(@timestamp) | EVAL mins = DATE_DIFF("minutes", last_ts, NOW()) | EVAL detail = CASE(Events == 0, "no activity", CONCAT(${grouped('actions')}, CASE(actions == 1, " action", " actions"), " · ", CASE(mins < 1, "just now", mins < 60, CONCAT(${grouped('mins')}, "m ago"), CONCAT(TO_STRING(mins / 60), "h ago")))) | KEEP Events, detail`,
         'Events', 'Every audited event for the selection, how many different things that was, and how recently they were last seen. Unfiltered by the noise gate, so it includes connection housekeeping.',
         { secondary: 'detail' })],
       [8, (x, y, w, h) => kpi(x, y, w, h,
-        `FROM ${IDX} | ${TIME} | ${riskScored()} | STATS sev = SUM(risk * n) BY attributes.event.action, risk | STATS Risk = SUM(sev), worst = MAX(risk), kinds = COUNT(*) | EVAL detail = CASE(worst IS NULL, "nothing scored", CONCAT(TO_STRING(kinds), CASE(kinds == 1, " action · worst ", " actions · worst "), TO_STRING(worst))), Risk = COALESCE(Risk, 0) | KEEP Risk, detail`,
+        `FROM ${IDX} | ${TIME} | ${riskScored()} | STATS sev = SUM(risk * n) BY attributes.event.action, risk | STATS Risk = SUM(sev), worst = MAX(risk), kinds = COUNT(*) | EVAL detail = CASE(worst IS NULL, "nothing scored", CONCAT(${grouped('kinds')}, CASE(kinds == 1, " action · worst ", " actions · worst "), ${grouped('worst')})), Risk = COALESCE(Risk, 0) | KEEP Risk, detail`,
         'Risk', 'Summed severity (weight × events) of everything that scored, how many scoring actions that was, and the highest weight among them (50 is a security config change; the table below names every weight in words). Routine activity scores zero, so this is not an event count in disguise. The receipts are in "Every scoring action" below: one row per action and weight, scrollable, and the Sum under its Risk column is this number; the count here is its number of rows. An action that scored at two weights (a create that succeeded, and one that failed) counts twice, as it is two rows there. ' + RACE_NOTE,
         { secondary: 'detail' })],
       // Families, not raw names, so the tile counts the same thing as "What they read, by index family"
@@ -104,11 +104,11 @@ export function build() {
       // single keyword aggregation — the fold runs over the handful of distinct names, not documents.
       // Measured against the raw COUNT_DISTINCT it replaced: 55ms vs 50ms at 1h, 57ms vs 52ms at 24h.
       [8, (x, y, w, h) => kpi(x, y, w, h,
-        `FROM ${IDX} | ${TIME} | STATS idx = VALUES(attributes.elasticsearch.audit.indices) | MV_EXPAND idx | EVAL name = CASE(${isPattern('idx')}, null, idx) | EVAL family = ${indexFamily('name')} | STATS \`Index families\` = COUNT_DISTINCT(family), names = COUNT_DISTINCT(name) | EVAL detail = CASE(names == 0, "no index named", CONCAT("from ", TO_STRING(names), CASE(names == 1, " index", " indices"))) | KEEP \`Index families\`, detail`,
+        `FROM ${IDX} | ${TIME} | STATS idx = VALUES(attributes.elasticsearch.audit.indices) | MV_EXPAND idx | EVAL name = CASE(${isPattern('idx')}, null, idx) | EVAL family = ${indexFamily('name')} | STATS \`Index families\` = COUNT_DISTINCT(family), names = COUNT_DISTINCT(name) | EVAL detail = CASE(names == 0, "no index named", CONCAT("from ", ${grouped('names')}, CASE(names == 1, " index", " indices"))) | KEEP \`Index families\`, detail`,
         'Index families', 'The width of their reach in Elasticsearch: index families named in their requests, and how many distinct indices those families hold. A family folds dated daily indices and data-stream backing indices together, as "What they read, by index family" does, so one dashboard reading thirty days of a daily index is one family. Request patterns such as * and date-math names are not counted.',
         { secondary: 'detail' })],
       [8, (x, y, w, h) => kpi(x, y, w, h,
-        `FROM ${IDX} | ${TIME} | WHERE client.ip IS NOT NULL | STATS events = COUNT(*), ${IP_GEO} BY client.ip | STATS \`Client IPs\` = COUNT(*), countries = COUNT_DISTINCT(country), unplaced = SUM(CASE(placed == 0, 1, 0)) | EVAL detail = CASE(\`Client IPs\` == 0, "no client address", CONCAT(TO_STRING(countries), CASE(countries == 1, " country · ", " countries · "), TO_STRING(unplaced), " unplaced")) | KEEP \`Client IPs\`, detail`,
+        `FROM ${IDX} | ${TIME} | WHERE client.ip IS NOT NULL | STATS events = COUNT(*), ${IP_GEO} BY client.ip | STATS \`Client IPs\` = COUNT(*), countries = COUNT_DISTINCT(country), unplaced = SUM(CASE(placed == 0, 1, 0)) | EVAL detail = CASE(\`Client IPs\` == 0, "no client address", CONCAT(${grouped('countries')}, CASE(countries == 1, " country · ", " countries · "), ${grouped('unplaced')}, " unplaced")) | KEEP \`Client IPs\`, detail`,
         'Client IPs', 'Distinct real client addresses — the rows of "Busiest addresses they used" below — how many countries they resolve to, and how many cannot be placed at all, which is always the case for a private or CGNAT address. Many addresses for one named person is the shared-credential signal.',
         { secondary: 'detail' })],
     ]),
@@ -120,8 +120,8 @@ export function build() {
     // Risk column, and a top 8 under "43 actions" is a receipt that cannot add up (round-3 review). The
     // set is closed — one row per scoring action and weight, bounded by Kibana's and Elasticsearch's
     // action vocabulary (43 over 24h at today's volume; volume adds events, not rows) — so the LIMIT is
-    // a guard, not a cut, and the title says "every" and "scroll" instead of a count.
-    row(11, [[48, (x, y, w, h) => drillTo('cloud-audit-04-security-anomalies', table(x, y, w, h, 'Every scoring action and its weight, largest first · scroll',
+    // a guard, not a cut, and the title says "every" instead of a count (the description says "scroll").
+    row(11, [[48, (x, y, w, h) => drillTo('cloud-audit-04-security-anomalies', table(x, y, w, h, 'Every scoring action and its weight, largest first',
       `FROM ${IDX} | ${TIME} | ${riskScored({ aggs: 'last_ts = MAX(@timestamp)' })} | STATS events = SUM(n), severity = SUM(risk * n), last_seen = MAX(last_ts) BY attributes.event.action, weight = risk | EVAL why = ${weightWords('weight')} | SORT severity DESC | LIMIT 500`,
       // weight is a number, so it reads as one (right-aligned, beside the other numbers); it stays in the
       // BY clause, so the grouping is unchanged. The action stays the raw event.action because it is the
@@ -146,7 +146,7 @@ export function build() {
     // review). A delete is the change an investigator looks for first and the one RISK weighs highest
     // here, so it leads; the rest follow newest first, and the list scrolls to the guard of 100 rows.
     // `gone` is a one-condition EVAL on the grouped rows, so it costs nothing per event.
-    row(12, [[48, (x, y, w, h) => table(x, y, w, h, '⚠️ What they changed — deletes first, then newest · first 100 · scroll',
+    row(12, [[48, (x, y, w, h) => table(x, y, w, h, '⚠️ What they changed — deletes first, then newest · up to 100',
       `FROM ${IDX} | ${TIME} | ${CHANGED} | STATS n = COUNT(*), last_ts = MAX(@timestamp) BY ${CHANGED_KEYS}, obj_name, execution, space = attributes.kibana.space.id, result | ${CHANGED_DERIVE} | STATS events = SUM(n), last_seen = MAX(last_ts) BY verb, type = obj_type, name = obj_name, execution, space, result | EVAL name = CASE(execution == "—", name, CONCAT(name, " · run ", execution)), type = REPLACE(type, "-", " "), gone = verb == "delete" | DROP execution | SORT gone DESC, last_seen DESC | DROP gone | LIMIT 100`,
       // Space is a free-form id, so it gets room for one ('syn-marketing' filled 110px edge to edge).
       // No Execution column: it read "—" on every row that is not a workflow run, which is nearly all of

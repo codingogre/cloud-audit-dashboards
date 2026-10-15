@@ -1,7 +1,7 @@
 /** 06 Platform Volume — see scripts/lib/definitions.mjs for how the suite is assembled. */
 import {
   IDX, ACTOR, ACTOR_RESOLVE, NOISE, BAND, BAND_KEYS, TIME, BUCKET, KIND_REFINE, SOURCE_LABEL, SOURCE_COLORS, PALETTE,
-  dash, kpi, xy, table, vega, md, filterable, resetIds, cloudKeyLabel, isCloudKeyId
+  dash, kpi, xy, table, vega, md, filterable, resetIds, cloudKeyLabel, isCloudKeyId, grouped
 } from '../panels.mjs';
 
 /**
@@ -74,7 +74,7 @@ const VOL_NOTE = `### The quarantine dashboard
 
 Every other dashboard applies a **noise gate**; this one does not, so the whole firehose stays measurable. Every event lands in exactly one band, so the four band tiles add up to **All events** (on a live window, give or take the few events that arrive while the tiles load):
 **Signal** — what the other dashboards read · **Auth success** — Elasticsearch's \`authentication_success\`, one per authenticated request
-**Query internals** — search, \`ES|QL\`, Kibana \`/internal/\`, suite self-views, \`connection_granted\` · **Infra health** — \`cluster:monitor/main\`, \`elastic.maintenance\`
+**Query internals** — search, \`ES|QL\`, Kibana \`/internal/\`, the suite's own traffic, \`connection_granted\` · **Infra health** — \`cluster:monitor/main\`, \`elastic.maintenance\`
 
 An API key's events carry its **creator's** email, so a busy key can read as a person: **Via named key** in *Highest-volume identities* shows how much of a name is a key.`;
 
@@ -85,8 +85,9 @@ export function build() {
     // that follow add up to the headline: Signal + Auth success + Query internals + Infra health =
     // All events. One pass computes both (60ms, the same as the separate tile it replaces). The
     // secondary is a string because the metric shows a bare secondary number with no label; ES|QL
-    // has no thousands separator, so large counts read as "52.1k" rather than an unpunctuated 52113.
-    kpi(0, 0, 8, 5, `FROM ${IDX} | ${TIME} | STATS \`All events\` = COUNT(*), requests = COUNT_DISTINCT(attributes.http.request.id) | EVAL detail = CONCAT(CASE(requests < 1000, TO_STRING(requests), CONCAT(TO_STRING(ROUND(requests / 1000.0, 1)), "k")), " HTTP requests") | KEEP \`All events\`, detail`, 'All events',
+    // has no thousands separator, so grouped() writes "52,113" the way Lens prints the number above it.
+    // "requests", not "HTTP requests": "728,436 HTTP requests" was cut at an 8-column tile's edge at 1440px.
+    kpi(0, 0, 8, 5, `FROM ${IDX} | ${TIME} | STATS \`All events\` = COUNT(*), requests = COUNT_DISTINCT(attributes.http.request.id) | EVAL detail = CONCAT(${grouped('requests')}, " requests") | KEEP \`All events\`, detail`, 'All events',
       'Total audited events, unfiltered. Beneath it, the distinct HTTP requests behind them — one request often emits several audit records.', { secondary: 'detail' }),
     kpi(8, 0, 8, 5, `FROM ${IDX} | ${TIME} | ${NOISE} | STATS \`Signal\` = COUNT(*)`, 'Signal', 'Events that survive the noise gate: what every other dashboard reads.'),
     kpi(16, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE attributes.event.action == "authentication_success" | STATS \`Auth success\` = COUNT(*)`, 'Auth success',
@@ -116,14 +117,16 @@ export function build() {
       'Audit events per time bucket, stacked by band, so the top edge is the whole firehose and Signal sits on the baseline. Hover a segment for its band and the bucket total.'),
     // Named keys only, which is why it can be empty while the stream is busy: an organization-level Cloud
     // API key — very often the one running this suite — carries no name, and the stream records it by id
-    // alone, so it is on Highest-volume identities, marked, and never here. LIMIT 10, not fitRows(13) = 12:
-    // a twelfth row sat on the panel's bottom edge with no sign whether more followed, and "busiest" with
-    // the count in the description is the honest promise.
-    table(30, 12, 18, 13, 'Busiest named API keys',
-      `FROM ${IDX} | ${TIME} | WHERE attributes.api_key.name IS NOT NULL | STATS events = COUNT(*) BY attributes.api_key.name | SORT events DESC | LIMIT 10`,
+    // alone, so it is on Highest-volume identities, marked, and never here. The LIMIT is fitRows(13) = 12,
+    // set by table(): round 4 held it at 10 because a twelfth row on the panel's bottom edge gave no sign
+    // whether more followed, and the title's bound ("· top 12 at most") is now that sign.
+    table(30, 12, 18, 13, 'Named API keys',
+      `FROM ${IDX} | ${TIME} | WHERE attributes.api_key.name IS NOT NULL | STATS events = COUNT(*) BY attributes.api_key.name | SORT events DESC | LIMIT 12`,
       [filterable('attributes.api_key.name')], ['events'],
-      'The 10 busiest API keys that have a name, by events. Click a key to pin it across the suite. A Cloud API key has no name in the audit stream, so it is not listed here; it appears by id in Highest-volume identities, as “_4KEO… · Cloud API key” (its first five characters). These counts are the same events as that table\'s Via named key column.',
-      { empty: 'empty without named-key traffic' }),
+      'The busiest API keys that have a name, by events, as many as the panel holds. Click a key to pin it across the suite. A Cloud API key has no name in the audit stream, so it is not listed here; it appears by id in Highest-volume identities, as “_4KEO… · Cloud API key” (its first five characters). These counts are the same events as that table\'s Via named key column.',
+      // 'quiet', not "(empty without named-key traffic)": with the "top 12 at most" bound the longer
+      // words ran past the edge of an 18-column panel at 1440px.
+      { empty: 'quiet' }),
     // The share view, not a second copy of the stream above: both ran the same BAND × BUCKET query,
     // so the stacked-volume reading appeared twice. Percentages show what the volume chart cannot —
     // whether a spike was more noise or more signal.
@@ -165,7 +168,7 @@ export function build() {
       // Via API key and Actions are narrowed (90 / 72px still hold their headers) so that at a 1440px
       // viewport the Identity column keeps ~280px: "_4KEOq… · Cloud API key" ran into Kind at 248px.
       ['actor', 'actor_kind'], ['events', { column: 'via_key', label: 'Via named key', width: 100 }, { column: 'actions', width: 72 }],
-      'Unfiltered volume leaderboard, top identities by events — this is where the machine traffic shows up (often the Cloud API key running this suite). Only the busiest rows fit, so quieter identities — including the smaller keys in Busiest named API keys — are beyond the rows shown. Via named key: how many of the row’s events came through a NAMED (Elasticsearch) API key, the same events Busiest named API keys counts. It reads “-” on a Cloud API key row: that key is itself the credential, and its events carry no key name, so the question does not apply.'),
+      'Unfiltered volume leaderboard, top identities by events — this is where the machine traffic shows up (often the Cloud API key running this suite). Only the busiest rows fit, so quieter identities — including the smaller keys in Named API keys — are beyond the rows shown. Via named key: how many of the row’s events came through a NAMED (Elasticsearch) API key, the same events Named API keys counts. It reads “-” on a Cloud API key row: that key is itself the credential, and its events carry no key name, so the question does not apply.'),
   ];
   return dash('cloud-audit-06-platform-volume', '[Audit] 📊 Platform Volume & API Keys',
     'The unfiltered firehose, quarantined so the forensic dashboards stay readable.', P);

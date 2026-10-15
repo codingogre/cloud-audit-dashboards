@@ -357,18 +357,35 @@ export const HOUSEKEEPING =
 export const PRIVILEGED =
   `WHERE attributes.elasticsearch.audit.security_config_change IS NOT NULL AND NOT ${HOUSEKEEPING}`;
 /**
- * (The note is short on purpose: a metric tile's secondary line is clipped without an ellipsis, and an
- * 8-column tile holds ~30 characters at 1920px.)
+ * A count as text with thousands separators ("1,618,996"), the form Lens prints every number beside it
+ * in: a KPI's secondary line, a category label that carries its count. TO_STRING alone gave "2326 key
+ * cleanups left out" under tiles reading "1,728,070". ES|QL has no number formatting, so the digits are
+ * grouped by hand, up to 12 of them. A multi-branch CASE, so use it only on rows a STATS already
+ * produced (a KPI's single row, a bar chart's few categories), never per event (QUERY SHAPE rule 1).
  *
+ *   EVAL detail = CONCAT(${grouped('signin')}, " failed sign-ins")
+ */
+export const grouped = (x) => {
+  const s = `TO_STRING(${x})`, n = `LENGTH(${s})`;
+  return `CASE(${n} <= 3, ${s}, ${n} <= 6, CONCAT(LEFT(${s}, ${n} - 3), ",", RIGHT(${s}, 3)), ${n} <= 9, CONCAT(LEFT(${s}, ${n} - 6), ",", SUBSTRING(${s}, ${n} - 5, 3), ",", RIGHT(${s}, 3)), CONCAT(LEFT(${s}, ${n} - 9), ",", SUBSTRING(${s}, ${n} - 8, 3), ",", SUBSTRING(${s}, ${n} - 5, 3), ",", RIGHT(${s}, 3)))`;
+};
+
+/**
  * The tail of a privileged-ops KPI: `FROM … | TIME | ${privilegedKpi('Privileged ops')}` gives the
  * count in `col` and, in `housekeeping_note`, how many routine Kibana key cleanups it left out — pass
  * `secondary: 'housekeeping_note'` to kpi(). Measured on the 7-day replica: 157ms against 134ms for the
  * bare COUNT(security_config_change) it replaces.
+ *
+ * The note is SHORT and quiet on purpose — "excl. 2,285 cleanups", digit-grouped. A metric tile's
+ * secondary line is clipped without an ellipsis (an 8-column tile shows ~22 characters at 1440px), and
+ * Lens right-aligns it directly above the main number, so "284 key cleanups left out" over a "1" read as
+ * the tile's headline (round-4 review of 00): the eye landed on 284. A leading "excl." makes it read as a
+ * qualifier of the number below it. One row, after the STATS, so the CASE costs nothing.
  */
 export const privilegedKpi = (col) =>
   `WHERE attributes.elasticsearch.audit.security_config_change IS NOT NULL | EVAL housekeeping = ${HOUSEKEEPING} ` +
   `| STATS \`${col}\` = COUNT(*) WHERE NOT housekeeping, cleanups = COUNT(*) WHERE housekeeping ` +
-  '| EVAL housekeeping_note = CASE(cleanups > 0, CONCAT(TO_STRING(cleanups), " key cleanups left out"), "no key cleanups in range")';
+  `| EVAL housekeeping_note = CASE(cleanups == 0, "no cleanups in range", CONCAT("excl. ", ${grouped('cleanups')}, " cleanups"))`;
 
 /**
  * CLOUD API KEYS, AS AN IDENTITY. ACTOR_RESOLVE ends at attributes.user.name, and for an
@@ -484,19 +501,39 @@ export const RISK_RESTORE =
  *                   every Kibana page load emits for the active space — with the rest gated it was the
  *                   top "signal" action on Command Center. Creating, changing or deleting a space
  *                   stays signal.
- *   The suite       a read (get, resolve, find) of the suite's own saved objects — `cloud-audit-*`,
- *                   which covers every AUDIT_ID_NS namespace too. "User has accessed dashboard
- *                   [id=cloud-audit-…]" is the suite watching itself be watched, one per panel load
- *                   per viewer. A CHANGE to a suite object is not a read, and stays signal (and in
- *                   CHANGE_PRED, which this gate never touches): someone editing the audit dashboards
- *                   is exactly what an auditor wants to see. Who viewed them is still on 02's object
- *                   panels, which read all traffic.
+ *                   And the two lookups every Kibana page load makes before it draws anything —
+ *                   saved_object_get of the `config` / `config-global` settings object, and
+ *                   saved_object_find of `index-pattern` (the logs-* / metrics-* default data-view check,
+ *                   the workflows data views): 2,021 each in 24h, one per page load, by every viewer and
+ *                   by the verify renderer. Reading, creating or changing a particular data view stays.
+ *   The suite       (SUITE_SELF) what the suite does to its own saved objects — `cloud-audit-*`, which
+ *                   covers every AUDIT_ID_NS namespace too:
+ *                     · a READ (get, resolve, find) by anyone: "User has accessed dashboard
+ *                       [id=cloud-audit-…]" is the suite watching itself be watched, one per panel
+ *                       load per viewer;
+ *                     · ANY event on a suite object with no Kibana browser session: the automated
+ *                       install. `./audit --objects/--dashboards` imports, exports, creates, updates and
+ *                       deletes the suite's objects through the public API with an API key, and on a
+ *                       redeploy that was every row of Command Center's Live signal feed and 8 of 10 of
+ *                       02's Most-accessed objects (10,368 events in 24h);
+ *                     · the request lines of an install: an http_request to /api/saved_objects/_import
+ *                       or _export, or to a public route that names a suite id (PUT /api/dashboards/
+ *                       cloud-audit-…). Each object an import or export touches is audited again as its
+ *                       own saved_object_* event (verified: an _export of one dashboard is followed by
+ *                       its saved_object_get), so an export of OTHER objects, by a script or a person,
+ *                       still shows object by object; only the request line is gated.
+ *                   A person editing a suite dashboard in Kibana does so in a browser session, so that
+ *                   stays signal. It is a test of the channel, not of a key: no key id is named, and an
+ *                   API-key write to anything that is not a suite object stays signal. Every CHANGE —
+ *                   the install's included — is still in CHANGE_PRED, which this gate never touches, so
+ *                   02's Mutations, 04's Mutation feed and 07's What they changed list it. Who VIEWED
+ *                   the suite is still on 02's tiles, heatmap and Busiest object types (all traffic).
  *
  * KIBANA_INTERNALS is evaluated only where event.action is known to be non-null (inside NOISE's
- * `IS NULL OR NOT (…)` and as a BAND_KEYS boolean), and the two fields it reads beyond the action are
- * each `IS NOT NULL AND …` — `false AND null` is false, so it never yields null and never drops a row.
- * url.original is a `wildcard` field: RLIKE on it measured the same as a LIKE (36ms vs 34ms, 7d) and is
- * exact where `LIKE "*\/internal/*"` also matched /api/internal/….
+ * `IS NULL OR NOT (…)` and as a BAND_KEYS boolean), and every other field it reads is either tested
+ * `IS NULL` (never null itself) or guarded `IS NOT NULL AND …` — `false AND null` is false, so it never
+ * yields null and never drops a row. url.original is a `wildcard` field: RLIKE on it measured the same
+ * as a LIKE (36ms vs 34ms, 7d) and is exact where `LIKE "*\/internal/*"` also matched /api/internal/….
  */
 const NOISE_ES_ACTIONS = '"cluster:monitor/main", "elastic.maintenance"';
 const A_ = 'attributes.elasticsearch.audit.action';
@@ -536,12 +573,31 @@ export const KIBANA_PLUMBING_URL =
   'https?://[^/]+(/s/[^/]+)?/((internal|translations|app)/.*|api/content_management/rpc/(get|search|mget|bulkGet).*' +
   '|bootstrap(-anonymous)?[.]js.*|api/(core|licensing|banners|ui_counters)/.*|api/spaces/space([?].*)?)';
 
+/**
+ * The suite's own install requests (see "The suite" above): an import or export, or a public route
+ * naming a suite id. An alternative of the same RLIKE as KIBANA_PLUMBING_URL — a second RLIKE behind a
+ * session test measured slower on the band charts — and session-blind, which loses nothing: every object
+ * an import or export touches is audited again as its own saved_object_* event, and that is where the
+ * session test applies.
+ */
+export const SUITE_INSTALL_URL = 'https?://[^/]+(/s/[^/]+)?/api/(saved_objects/(_import|_export)|[^?]*/cloud-audit-).*';
+
+/**
+ * SUITE_SELF: the suite's own saved objects, read by anyone or touched with no browser session. The
+ * session test is `IS NULL`, so it never yields null.
+ */
+export const SUITE_SELF =
+  '(attributes.kibana.saved_object.id IS NOT NULL AND attributes.kibana.saved_object.id LIKE "cloud-audit-*" ' +
+  'AND (attributes.event.action IN ("saved_object_get","saved_object_resolve","saved_object_find") OR attributes.kibana.session.id IS NULL))';
+
 export const KIBANA_INTERNALS =
   'attributes.event.action IN ("saved_object_open_point_in_time","saved_object_close_point_in_time","space_get","space_find") ' +
   'OR (attributes.event.action == "http_request" AND attributes.url.original IS NOT NULL ' +
-  `AND attributes.url.original RLIKE "${KIBANA_PLUMBING_URL}") ` +
-  'OR (attributes.event.action IN ("saved_object_get","saved_object_resolve","saved_object_find") ' +
-  'AND attributes.kibana.saved_object.id IS NOT NULL AND attributes.kibana.saved_object.id LIKE "cloud-audit-*")';
+  `AND attributes.url.original RLIKE "${KIBANA_PLUMBING_URL}|${SUITE_INSTALL_URL}") ` +
+  'OR (attributes.kibana.saved_object.type IS NOT NULL AND (' +
+  '(attributes.event.action == "saved_object_get" AND attributes.kibana.saved_object.type IN ("config","config-global")) ' +
+  'OR (attributes.event.action == "saved_object_find" AND attributes.kibana.saved_object.type == "index-pattern"))) ' +
+  `OR ${SUITE_SELF}`;
 
 export const NOISE =
   `WHERE (${A_} IS NULL OR NOT (` +
@@ -947,15 +1003,24 @@ export const label = (column) => COLUMNS[column]?.label || humanise(column);
 export const fitRows = (h) => Math.max(1, Math.floor((28 * h - 76) / 24));
 
 /**
- * CUT. Every LIMITed table says in its title how many rows it holds: table() appends " · top N" (or
- * " · latest N" when the LIMIT follows a SORT on a time column, DESC), unless the title already names N
- * as a word ("the 30 most recent"); a title that already says "top" gets the number there instead
- * ("Top transport actions" → "Top 9 transport actions"). A table that holds more rows than fit — `{ scroll: true }` with a
- * LIMIT above fitRows(h), or `{ wrap: true }`, whose auto-height rows make the visible count unknowable —
- * adds " · scroll", the only cue a reader gets that the list goes on below the edge. `{ cut: false }`
- * opts out for a table whose rows are a closed set (a breakdown with a fixed number of classes).
- * layout.mjs fails a table whose LIMIT exceeds its visible rows without " · scroll", and a LIMITed table
- * whose title does not state its N.
+ * CUT. Every LIMITed table says in its title that the list is cut, as an UPPER BOUND that is true at any
+ * row count: " · top 10 at most", or " · newest 10 at most" when the LIMIT follows a SORT on a time column
+ * DESC (the Discover sessions already say "newest 1,000 at most"). A title that already names the order
+ * ("Top transport actions", "Latest high-value object access", "… most recent …") gets only the bound:
+ * "Top transport actions · 13 at most". A title that names its own bound ("· up to 100", "10 at most")
+ * is left alone.
+ *
+ * Round 4 wrote the bare count instead ("Top 13 transport actions", "Busiest object types · top 9"), and
+ * a count is a promise: the 1h render had 11 actions and 8 types under those titles, and "Top 14 index
+ * families" sat over 2 rows (three blockers in the round-5 review). A bare count is now rejected here at
+ * build and by --lint (layout.mjs BOUNDED): a number in a title must read as a bound.
+ *
+ * No instructions and no window-specific caveats in a title: it is shown at every time range and row
+ * count, so "· scroll" over a table with nothing to scroll, or "(may be empty at 1h)" over 774 rows at
+ * 24h, is false there. A table that holds more rows than fit — `{ scroll: true }` with a LIMIT above
+ * fitRows(h), or `{ wrap: true }` — says so in its DESCRIPTION (SCROLL_NOTE, appended by table()).
+ * `{ cut: false }` opts out for a table whose rows are a closed set (a breakdown with a fixed number of
+ * classes, or a guard LIMIT the title already words as "every …").
  */
 const TIME_COLS = 'last_seen|last_ts|last_change|first_seen|latest|@timestamp|time|ts';
 /** The row cap a table's output carries: the last LIMIT with no STATS after it. */
@@ -972,18 +1037,30 @@ export const cutWord = (q) => {
   const last = sorts[sorts.length - 1];
   return last && new RegExp(`^(${TIME_COLS})$`, 'i').test(last[1]) && /desc/i.test(last[2] || '') ? 'latest' : 'top';
 };
-export const withCut = (title, q, h, { scroll = false, wrap = false, cut = true } = {}) => {
+/** 1000 -> "1,000", the form the titles and Lens print counts in. */
+const fmtN = (n) => Number(n).toLocaleString('en-US');
+/**
+ * A number in a title read as an upper bound — "up to 10", "10 at most", "1,000 at most" — rather than a
+ * count. BOUNDED(n) tests for that bound on n; BARE_COUNT finds a count stated after an order word
+ * ("top 10", "latest 9", "newest 1,000", "first 100", "the 30 most recent"), which is a promise the
+ * rows break whenever the window holds fewer.
+ */
+export const BOUNDED = (n) => new RegExp(`(\\bup to ${fmtN(n)}(?![\\d,])|(^|[^\\d,.])${fmtN(n)} at most\\b)`, 'i');
+export const BARE_COUNT = /\b(top|latest|newest|first|busiest|the)\s+(\d(?:[\d,]*\d)?)(?![\d,])(?!\s+at most)/i;
+const ORDER_WORDS = { top: /\btop\b/i, latest: /\b(latest|newest|most recent)\b/i };
+export const withCut = (title, q, { cut = true } = {}) => {
   const n = tableLimit(q);
   if (!n || cut === false) return title;
-  let t;
-  if (new RegExp(`(^|[^\\d,.])${n}(?![\\d,])`).test(title)) t = title;
-  // A title that already says "top" (or "latest", for a time-sorted cut) gets the number there ("Top 9
-  // transport actions", "Latest 10 high-value object access") rather than a second "· top 9" at the end.
-  else if (new RegExp(`\\b${cutWord(q)} (?!\\d|first\\b)`, 'i').test(title)) t = title.replace(new RegExp(`\\b(${cutWord(q)}) (?!\\d|first\\b)`, 'i'), `$1 ${n} `);
-  else t = `${title} · ${cutWord(q)} ${n}`;
-  if ((wrap || (scroll && n > fitRows(h))) && !/\bscroll\b/i.test(t)) t += ' · scroll';
-  return t;
+  if (BOUNDED(n).test(title)) return title;
+  if (BARE_COUNT.test(title)) {
+    throw new Error(`table "${title}": a count in a title is a promise the rows break when the window holds fewer — drop it and let table() append "· ${n} at most", or write "up to ${n}"`);
+  }
+  const word = cutWord(q);
+  return ORDER_WORDS[word].test(title) ? `${title} · ${fmtN(n)} at most` : `${title} · ${word === 'latest' ? 'newest' : 'top'} ${fmtN(n)} at most`;
 };
+/** The description sentence a table that holds more rows than it shows ends with. */
+export const SCROLL_NOTE = 'The table holds more rows than the panel shows: scroll it for the rest.';
+const withScrollNote = (desc, scrolls) => (scrolls && !/\bscroll\b/i.test(desc || '') ? `${desc || ''} ${SCROLL_NOTE}`.trim() : desc);
 
 /**
  * The table's density and row height. Compact (12px, 24px rows) rather than Lens' default (14px,
@@ -1008,11 +1085,12 @@ const column = (c) => {
 };
 
 /**
- * `scroll` keeps the authored LIMIT even when it exceeds the visible rows — for a feed whose title
- * promises a count ("the 30 most recent"), where scrolling is the point. Otherwise a trailing
- * `| LIMIT n` is lowered to fitRows(h), so the query never fetches rows nobody can see. Only ever
- * lowered: a LIMIT already within the panel is left alone. `wrap` implies scroll, since auto-height
- * rows make the count unknowable.
+ * `scroll` keeps the authored LIMIT even when it exceeds the visible rows — for a feed whose bound is
+ * the point ("· 30 at most", scroll for the rest; the description says so). Otherwise a trailing
+ * `| LIMIT n` is SET to fitRows(h), raised or lowered, so the LIMIT is always exactly the rows the panel
+ * shows: the query never fetches rows nobody can see, and the title's bound is never smaller than the
+ * room the panel has. Author the LIMIT as fitRows(h) so the source reads true. `wrap` implies scroll,
+ * since auto-height rows make the count unknowable.
  */
 /**
  * NARROW VIEWPORTS. A Lens column width is absolute pixels, the same at every viewport, while the
@@ -1095,17 +1173,22 @@ export const blankNull = (...cols) => `EVAL ${cols.map((c) => `${c} = COALESCE($
  * whenever the table was full ("Failures by identity · none is good" over eight failures). The words are
  * now a parenthetical CONDITION, which a full table does not contradict:
  *
- *   { empty: 'good' }    "Denied requests · top 7 (empty = good)"
- *   { empty: 'quiet' }   "… (may be empty at 1h)"
+ *   { empty: 'good' }    "Denied requests · top 7 at most (empty = good)"
  *   { empty: 'empty when no browser sessions' }   your own words, which must start "empty when",
  *                        "empty if", "empty without" or "empty unless" — a condition, never a status
+ *   { empty: 'quiet' }   "(empty when none in range)", and "Often empty over the default hour …" in the
+ *                        description. Its old title words, "(may be empty at 1h)", named one window and
+ *                        so read as wrong on every other: over 774 rows at 24h, and over 1 row at 1h
+ *                        (round-5 review of 03, 04 and 07). Dropping them altogether left 03's two
+ *                        system-index panels a bare "No results found" at 1h, so the condition stays,
+ *                        worded for every window.
  *
  * The description gains the matching sentence. Use it on every table or session that a verify render
  * at the default 1h shows empty on a healthy project. Keep the words short: they share the title line.
  */
 export const EMPTY = {
   good: { title: '(empty = good)', desc: 'An empty panel means nothing matched in the time range, which is the healthy state; any row here is worth reading.' },
-  quiet: { title: '(may be empty at 1h)', desc: 'Often empty over the default hour on a healthy project; widen the time range to see older rows.' },
+  quiet: { title: '(empty when none in range)', desc: 'Often empty over the default hour on a healthy project; widen the time range to see older rows.' },
 };
 export const EMPTY_CONDITION = /^empty (when|if|without|unless) \S/;
 const emptyOf = (empty) => {
@@ -1115,7 +1198,7 @@ const emptyOf = (empty) => {
   }
   return { title: `(${empty})`, desc: `This panel is ${empty}.` };
 };
-const withEmptyTitle = (title, empty) => (empty ? `${title} ${emptyOf(empty).title}` : title);
+const withEmptyTitle = (title, empty) => (empty && emptyOf(empty).title ? `${title} ${emptyOf(empty).title}` : title);
 const withEmptyDesc = (desc, empty) => (empty ? `${desc || ''} ${emptyOf(empty).desc}`.trim() : desc);
 
 /**
@@ -1128,7 +1211,9 @@ const withEmptyDesc = (desc, empty) => (empty ? `${desc || ''} ${emptyOf(empty).
 export const table = (x, y, w, h, title, q, rows, metrics, desc, { scroll = false, wrap = false, empty, cut = true } = {}) => {
   let query = q;
   if (!scroll && !wrap) {
-    query = q.replace(/\|\s*LIMIT\s+(\d+)\s*$/i, (m, n) => `| LIMIT ${Math.min(Number(n), fitRows(h))}`);
+    // Exactly the rows that fit, in both directions: above it rows hide with no cue, below it the title's
+    // bound ("top 10 at most") sits over a panel that had room for 12 (06 Busiest named API keys).
+    query = q.replace(/\|\s*LIMIT\s+(\d+)\s*$/i, () => `| LIMIT ${fitRows(h)}`);
   }
   const r = rows.map(column);
   const m = metrics.map(column);
@@ -1147,8 +1232,9 @@ export const table = (x, y, w, h, title, q, rows, metrics, desc, { scroll = fals
     type: 'vis', id: nid('tbl'), grid: { x, y, w, h }, ...(fits ? {} : { narrow1440: true }),
     lint: { limit, scroll: scroll || wrap, wrap, cut, ...(empty ? { empty } : {}) },
     config: {
-      title: withEmptyTitle(withCut(title, query, h, { scroll, wrap, cut }), empty),
-      description: withEmptyDesc(withIdNote(desc, r), empty), type: 'data_table',
+      title: withEmptyTitle(withCut(title, query, { cut }), empty),
+      description: withScrollNote(withEmptyDesc(withIdNote(desc, r), empty), wrap || (scroll && limit > fitRows(h))),
+      type: 'data_table',
       data_source: { type: 'esql', query },
       styling: { density: wrap ? DENSITY_WRAP : DENSITY },
       rows: r, metrics: m,

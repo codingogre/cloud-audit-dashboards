@@ -71,7 +71,8 @@ one of them is the bulk:
 | Infra health | `cluster:monitor/main`, `elastic.maintenance` | pings and platform housekeeping |
 | Query internals, Elasticsearch | search phases, `msearch`, `scroll`, PIT and reader contexts; **ES\|QL and every sub-request** (`esql/compute`, `esql/data`, `esql/search_shards`, `esql/resolve_fields`, `esql/async/get`, `indices:admin/esql/*`); `field_caps` and `field_caps[n]`; `async_search/*`; `indices:admin/resolve/*`; `indices:admin/shards/search_shards`; ES\|QL's query listing (`cluster:monitor/xpack/esql/*`); and the two cluster reads Kibana makes on every page load, `cluster:monitor/project/tags` and `cluster:monitor/xpack/inference/get` (24h: 1,707 and 1,704 against 1,666 page shells) | the machinery every dashboard, Discover tab and client runs to read data. With many viewers, each viewer's own panel queries were the top "signal" |
 | Query internals, Kibana | `http_request` to an `/internal/` route (with or without `/s/<space>`): `/internal/search/esql_async`, feature flags, controls options, session checks; the dashboard app's content-management reads (`/api/content_management/rpc/get`, `search`, `mget`, `bulkGet`); **page-load plumbing** — `/bootstrap.js`, `/bootstrap-anonymous.js`, `/translations/…`, the `/app/<app>` page shell, `/api/core/…`, `/api/licensing/…`, `/api/banners/…`, `/api/ui_counters/…` and the space picker's `/api/spaces/space` list; `saved_object_open/close_point_in_time`; `space_get` / `space_find` ("User has accessed space", once per page load) | what the browser calls to draw a page. A content-management read is also audited as its own `saved_object_*` event, and a change through a public route is audited again as its own event (`space_create`, `saved_object_create` …). Every other public `/api/` route, `/api/spaces/space/<id>`, an rpc create/update/delete, and a space create/update/delete stay signal |
-| The suite itself | `saved_object_get` / `_resolve` / `_find` of a `cloud-audit-*` object — "User has accessed dashboard [id=cloud-audit-…]" | one per panel load per viewer. A **change** to a suite object is not a read and stays signal: editing the audit dashboards is what an auditor wants to see. Views remain visible on 02's object panels, which read all traffic |
+| Page-load lookups | `saved_object_get` of the `config` / `config-global` settings object; `saved_object_find` of `index-pattern` (the logs-\* / metrics-\* default data-view check, the workflows data views) | what every Kibana page load reads before it draws (24h: 2,021 each, one per page load, by every viewer and by the verify renderer). Resolving, creating or changing a particular data view stays signal |
+| The suite itself (`SUITE_SELF`) | on a `cloud-audit-*` object: a **read** (`saved_object_get` / `_resolve` / `_find`) by anyone; **any** event with no Kibana browser session (`attributes.kibana.session.id IS NULL`). And an `http_request` to `/api/saved_objects/_import` or `_export`, or to a public route that names a suite id (`PUT /api/dashboards/cloud-audit-…`) — `SUITE_INSTALL_URL`, session-blind | a read is the suite watching itself be watched, one per panel load per viewer. A session-less event is the automated install: `./audit --objects/--dashboards` imports, exports, creates, updates and deletes the suite's objects with an API key, and after a redeploy that was every row of the Live signal feed (24h: 10,368 events). Each object an import or export touches is audited again as its own `saved_object_*` event, so gating the request line loses no object. A person **editing** a suite dashboard does it in a browser session and stays signal; it is a test of the channel, never of a key. Every change, the install's included, stays in `CHANGE_PRED` (02 Mutations, 04 Mutation feed, 07 What they changed), and views stay on 02's all-traffic tiles, heatmap and Busiest object types |
 | Connection / authn volume | `connection_granted`, `authentication_success` | one per transport connection / authenticated request |
 
 A read of a system index is not lost to the gate: `SYS_INDEX` selects on the index name and never
@@ -103,9 +104,21 @@ passes through it.
 ```esql
 attributes.event.action IN ("saved_object_open_point_in_time","saved_object_close_point_in_time","space_get","space_find")
   OR (attributes.event.action == "http_request" AND attributes.url.original IS NOT NULL
-      AND attributes.url.original RLIKE "<KIBANA_PLUMBING_URL>")
-  OR (attributes.event.action IN ("saved_object_get","saved_object_resolve","saved_object_find")
-      AND attributes.kibana.saved_object.id IS NOT NULL AND attributes.kibana.saved_object.id LIKE "cloud-audit-*")
+      AND attributes.url.original RLIKE "<KIBANA_PLUMBING_URL>|<SUITE_INSTALL_URL>")
+  OR (attributes.kibana.saved_object.type IS NOT NULL AND (
+      (attributes.event.action == "saved_object_get" AND attributes.kibana.saved_object.type IN ("config","config-global"))
+      OR (attributes.event.action == "saved_object_find" AND attributes.kibana.saved_object.type == "index-pattern")))
+  OR <SUITE_SELF>
+```
+
+`SUITE_INSTALL_URL` is `https?://[^/]+(/s/[^/]+)?/api/(saved_objects/(_import|_export)|[^?]*/cloud-audit-).*`, an alternative
+of the plumbing RLIKE (a second RLIKE behind a session test measured slower on the band charts), and
+`SUITE_SELF`:
+
+```esql
+(attributes.kibana.saved_object.id IS NOT NULL AND attributes.kibana.saved_object.id LIKE "cloud-audit-*"
+  AND (attributes.event.action IN ("saved_object_get","saved_object_resolve","saved_object_find")
+       OR attributes.kibana.session.id IS NULL))
 ```
 
 `KIBANA_PLUMBING_URL` — each alternative carries its own tail, so `api/spaces/space` matches the list a

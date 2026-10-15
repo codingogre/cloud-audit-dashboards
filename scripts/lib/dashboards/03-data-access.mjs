@@ -122,7 +122,7 @@ export function build() {
     // (orient "none"). Identity labels stand at -90° with labelAlign "left": each stays inside its own
     // column at any count, where the 35° diagonal crossed neighbouring lanes and ran the first label
     // off the top-left. Round 3 showed one 1h identity as two cells adrift in a 900×800 panel.
-    vega(24, 5, 24, 30, '04-actor-index-matrix', 'Who reads which index family · top 10 identities', specDescription('04-actor-index-matrix')),
+    vega(24, 5, 24, 30, '04-actor-index-matrix', 'Who reads which index family · up to 10 identities', specDescription('04-actor-index-matrix')),
     // Busiest identity per family, so a quiet hour that is only these dashboards reading the audit
     // stream says so on the row (Identities 1, Busiest the Cloud key) instead of reading as two
     // unexplained rows. Two STATS over grouped rows; BUSIEST_KEY picks the largest pair per family.
@@ -153,7 +153,7 @@ export function build() {
       ['actor', { column: 'groups', label: 'Index groups' }, sized('kinds', 240, { label: 'Kind of access' })], ['indices', 'events', 'last_seen'],
       'Who touched system and hidden indices — Kibana internals, the security index, alerting and SLO data — one row per identity, newest first: the index groups it touched (.alerts*, .slo*, .kibana*…), the kinds of transport action (read, write, index admin, monitor…), how many real indices, and its requests in range, which add up to the System index access tile when every identity is in view. The Discover session below names each index and action. Backing indices of ordinary data streams (.ds-logs-…) and shard-level copies of a request are left out. Expected from Kibana and platform automation; unexpected from anyone else, and a write from anyone else is worth a look. An identity that touched many groups wraps onto a second line rather than cutting the list short.',
       { empty: 'quiet', wrap: true }),
-    search(0, 71, 48, 12, '05-system-index-access', 'Raw system index requests, newest 1,000',
+    search(0, 71, 48, 12, '05-system-index-access', 'Raw system index requests · newest 1,000 at most',
       'The raw events behind the table above: the newest 1,000 requests against a system or hidden index, one row per index named, newest first. It stops at 1,000, so it can hold fewer rows than the System index access tile counts — the "1,000 results" above the grid is that cap, not the total.',
       { empty: 'quiet' }),
   ];

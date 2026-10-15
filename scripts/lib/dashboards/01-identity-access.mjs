@@ -1,7 +1,7 @@
 /** 01 Identity & Access — see scripts/lib/definitions.mjs for how the suite is assembled. */
 import {
   IDX, ACTOR_RESOLVE, ORG, CRED_TYPE_LABEL, CRED_TYPE_COLORS, TIME, BUCKET, dash, kpi, xy, table, sized,
-  vega, search, resetIds, bar, cloudKeyLabel
+  vega, search, resetIds, bar, cloudKeyLabel, grouped
 } from '../panels.mjs';
 import { WHO } from './shared.mjs';
 
@@ -38,17 +38,6 @@ const KEY_DERIVE = 'EVAL key_id = COALESCE(attributes.api_key.id, attributes.use
   'kind = CASE(attributes.api_key.id IS NULL, "Cloud", "Elasticsearch")';
 
 /**
- * A count as text with thousands separators ("1,618,996"), the form Lens prints every number beside it
- * in. TO_STRING alone gave "5390 failed sign-ins" under a "5,390"-style metric at 10x volume. ES|QL has
- * no number formatting, so the digits are grouped by hand. Up to 12 digits. Use it only on a row a
- * STATS already produced (a KPI's single row, a bar chart's few categories), never per event.
- */
-const grouped = (x) => {
-  const s = `TO_STRING(${x})`, n = `LENGTH(${s})`;
-  return `CASE(${n} <= 3, ${s}, ${n} <= 6, CONCAT(LEFT(${s}, ${n} - 3), ",", RIGHT(${s}, 3)), ${n} <= 9, CONCAT(LEFT(${s}, ${n} - 6), ",", SUBSTRING(${s}, ${n} - 5, 3), ",", RIGHT(${s}, 3)), CONCAT(LEFT(${s}, ${n} - 9), ",", SUBSTRING(${s}, ${n} - 8, 3), ",", SUBSTRING(${s}, ${n} - 5, 3), ",", RIGHT(${s}, 3)))`;
-};
-
-/**
  * "N things" for a KPI's secondary line, in words when N is 0 or 1. A digit zero renders slashed in the
  * metric font, which read as a different typeface from the words beside it, so zero is spelt out.
  * A multi-branch CASE, but it runs once, on the single row a STATS without BY returns.
@@ -74,7 +63,7 @@ export function build() {
     kpi(0, 0, 8, 5, `FROM ${IDX} | ${TIME} | ${ACTOR_RESOLVE} | STATS \`Identities\` = COUNT_DISTINCT(actor), human = COUNT_DISTINCT(attributes.user.email), machine = COUNT_DISTINCT(actor) WHERE attributes.user.email IS NULL | EVAL detail = CONCAT(${count('human', 'human', 'humans', 'no humans')}, " · ", ${count('machine', 'machine', 'machine', 'no machine')}) | KEEP \`Identities\`, detail`,
       'Identities', 'Distinct identities in all traffic, resolved as email, then API key name, then user.name — one per row of Identity first and last seen. The line under the number splits them: humans have an email on their events (the Humans tile), machines do not (service accounts, API keys, internal and anonymous principals).',
       { secondary: 'detail' }),
-    kpi(8, 0, 8, 5, `FROM ${IDX} | ${TIME} | STATS \`Humans\` = COUNT_DISTINCT(attributes.user.email), sso = COUNT_DISTINCT(attributes.user.email) WHERE attributes.user.domain == "cloud-saml-kibana" | EVAL detail = CASE(sso == 0, "none signed in by SSO", CONCAT(TO_STRING(sso), " signed in by SSO")) | KEEP \`Humans\`, detail`,
+    kpi(8, 0, 8, 5, `FROM ${IDX} | ${TIME} | STATS \`Humans\` = COUNT_DISTINCT(attributes.user.email), sso = COUNT_DISTINCT(attributes.user.email) WHERE attributes.user.domain == "cloud-saml-kibana" | EVAL detail = CASE(sso == 0, "none signed in by SSO", CONCAT(${grouped('sso')}, " signed in by SSO")) | KEEP \`Humans\`, detail`,
       'Humans', 'Distinct email addresses in all traffic — the people Busiest human identities ranks. An Elasticsearch API key carries its creator\'s email, so a person can count here through a key they made without signing in; the line under the number says how many signed in through SAML SSO.',
       { secondary: 'detail' }),
     kpi(16, 0, 8, 5, `FROM ${IDX} | ${TIME} | ${KEYED} | STATS es = COUNT_DISTINCT(attributes.api_key.id), cloud = COUNT_DISTINCT(attributes.user.name) WHERE attributes.api_key.id IS NULL | EVAL \`API keys\` = es + cloud, detail = CASE(es + cloud == 0, "none in range", CONCAT(${count('cloud', 'Cloud', 'Cloud', 'no Cloud')}, " · ", ${count('es', 'ES', 'ES', 'no ES')})) | KEEP \`API keys\`, detail`,
@@ -160,7 +149,7 @@ export function build() {
     // The sessions run full width. Side by side at 24 columns, seven and eight columns shared ~800px:
     // timestamps wrapped onto three lines and the last column was cut off at the panel edge. These are
     // the record-level evidence, so every column has to be readable without opening Discover.
-    search(0, 40, 48, 12, '02-failed-authentications', 'Failed sign-ins and denied access, newest 1,000',
+    search(0, 40, 48, 12, '02-failed-authentications', 'Failed sign-ins and denied access · newest 1,000 at most',
       'The newest failed sign-ins and refused requests, record by record. Discover stops at 1,000 rows, so on a busy range its result count is that cap and the Failed or denied tile is the total. Result names the kind: failed sign-in, denied (access_denied), or failed (any other failed outcome). Credential is the credential type, or the realm on a Kibana event, and reads “not authenticated” on a failed sign-in; Country reads “internal” for a private or carrier-NAT address, which is Kibana or the platform calling on someone\'s behalf.',
       { empty: 'good' }),
     search(0, 52, 48, 12, '07-api-key-activity', 'API key inventory',

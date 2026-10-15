@@ -19,7 +19,7 @@ export function build() {
     kpi(0, 0, 8, 5, `FROM ${IDX} | ${TIME} | STATS \`Total events${ALL}\` = COUNT(*)`, `Total events${ALL}`,
       'Every audited event in range, including machine noise. Compare with Signal to see how much the noise gate removes.'),
     kpi(8, 0, 7, 5, `FROM ${IDX} | ${TIME} | ${NOISE} | STATS \`Signal events\` = COUNT(*)`, 'Signal events',
-      'Events left after the noise gate removes health checks (cluster:monitor/main, elastic.maintenance), query internals (search, ES|QL, field_caps and async-search sub-requests, Kibana /internal/ page requests, and this suite reading its own saved objects), connection_granted and bulk authentication_success.'),
+      'Events left after the noise gate removes health checks (cluster:monitor/main, elastic.maintenance), query internals (search, ES|QL, field_caps and async-search sub-requests, Kibana /internal/ page requests and page-load lookups, and this suite reading and automatically installing its own saved objects), connection_granted and bulk authentication_success.'),
     // Gated, and resolved the same way as Busiest identities below, so the tile counts exactly the
     // identities that table ranks (an ungated count included people whose only traffic was the noise
     // gate's: 4 here over a 3-row table). Counted first by the raw identity fields, resolved after.
@@ -28,12 +28,12 @@ export function build() {
     kpi(22, 0, 7, 5, `FROM ${IDX} | ${TIME} | ${NOISE} | WHERE attributes.user.email IS NOT NULL | STATS \`Human actors\` = COUNT_DISTINCT(attributes.user.email)`, 'Human actors',
       'Distinct email addresses with signal traffic, behind the same noise gate as Signal events. Includes an API key whose events carry its creator’s email: such a row in Busiest identities reads “email · via key name”.'),
     // Widths follow the titles at a 1440px viewport, where a metric tile clips its secondary line and
-    // wraps its title: the two "· all traffic" tiles need 9 columns, and Privileged ops' "N key cleanups
-    // left out" line 10. The three short titles give up a column each.
+    // wraps its title: the two "· all traffic" tiles need 9 columns, and Privileged ops' title 10. The
+    // three short titles give up a column each.
     // PRIVILEGED (panels.mjs): Kibana's own API-key cleanup by elastic/kibana kept this tile permanently
     // non-zero (670 of 671 in an hour). It is left out and counted in the line under the number instead.
     kpi(29, 0, 10, 5, `FROM ${IDX} | ${TIME} | ${privilegedKpi(`Privileged ops${ALL}`)}`, `Privileged ops${ALL}`,
-      'Security configuration changes — API keys created, changed or invalidated, roles and user profiles written — by any identity, over all traffic (the noise gate removes none of these, so gated and ungated counts are the same). Kibana’s own routine clean-up of API keys (invalidate_apikeys by the elastic/kibana service account) is not counted here; the line under the number (“N key cleanups left out”) says how many there were. Any other non-zero value deserves review.',
+      'Security configuration changes — API keys created, changed or invalidated, roles and user profiles written — by any identity, over all traffic (the noise gate removes none of these, so gated and ungated counts are the same). Kibana’s own routine clean-up of API keys (invalidate_apikeys by the elastic/kibana service account) is not counted here; the line under the number (“excl. N cleanups”) says how many there were. Any other non-zero value deserves review.',
       { secondary: 'housekeeping_note' }),
     kpi(39, 0, 9, 5, `FROM ${IDX} | ${TIME} | WHERE attributes.event.outcome == "failure" OR attributes.event.action == "anonymous_access_denied" | STATS \`Failed events${ALL}\` = COUNT(*)`, `Failed events${ALL}`,
       'Failed outcomes plus anonymous access denials over all traffic, not only signal: a failure is worth seeing even when it is a health check or a query internal. The first place to look during an incident.'),

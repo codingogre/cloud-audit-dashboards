@@ -22,12 +22,16 @@ export const WHO = filterable('attributes.user.email');
  * hard-wrapped paragraph breaks mid-sentence wherever the source did. A code chip cannot break either,
  * so each paragraph ends on plain words — `authentication_success` used to land alone on a line of its
  * own. The first sentence states the exception, because three panels on that page read all traffic and
- * say so in their titles.
+ * say so in their titles. The noise sentence names every class NOISE gates (panels.mjs), in the reader's
+ * words — infra health, query internals, page loads and their lookups, bulk sign-in events
+ * (connection_granted, authentication_success), and SUITE_SELF (the suite's views and its automated
+ * install) — so a change to the gate changes this sentence too. It must leave the closing paragraph
+ * visible at 1440px: round 5's longer version, with a code chip, pushed it under the panel edge.
  */
 export const LEGEND_MD = CSS_NAV + `
 ### How to read this suite
 
-**Noise gate is ON** unless a title says *all traffic*: health pings, query internals and page loads (this suite's own too) and bulk \`authentication_success\` are left out; unfiltered totals are on **📊 Platform Volume**.
+**Noise gate is ON** unless a title says *all traffic*: health pings, query internals, page loads, bulk sign-in events and this suite's own views and installs are left out; unfiltered totals are on **📊 Platform Volume**.
 
 **Identity is resolved** as email, then API key name, then the numeric \`user.name\`. \`_4KEO… · Cloud API key\` is an organization-level Cloud key, recorded by id only.
 

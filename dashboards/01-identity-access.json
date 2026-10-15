@@ -154,7 +154,7 @@
         "type": "metric",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS `Humans` = COUNT_DISTINCT(attributes.user.email), sso = COUNT_DISTINCT(attributes.user.email) WHERE attributes.user.domain == \"cloud-saml-kibana\" | EVAL detail = CASE(sso == 0, \"none signed in by SSO\", CONCAT(TO_STRING(sso), \" signed in by SSO\")) | KEEP `Humans`, detail"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS `Humans` = COUNT_DISTINCT(attributes.user.email), sso = COUNT_DISTINCT(attributes.user.email) WHERE attributes.user.domain == \"cloud-saml-kibana\" | EVAL detail = CASE(sso == 0, \"none signed in by SSO\", CONCAT(CASE(LENGTH(TO_STRING(sso)) <= 3, TO_STRING(sso), LENGTH(TO_STRING(sso)) <= 6, CONCAT(LEFT(TO_STRING(sso), LENGTH(TO_STRING(sso)) - 3), \",\", RIGHT(TO_STRING(sso), 3)), LENGTH(TO_STRING(sso)) <= 9, CONCAT(LEFT(TO_STRING(sso), LENGTH(TO_STRING(sso)) - 6), \",\", SUBSTRING(TO_STRING(sso), LENGTH(TO_STRING(sso)) - 5, 3), \",\", RIGHT(TO_STRING(sso), 3)), CONCAT(LEFT(TO_STRING(sso), LENGTH(TO_STRING(sso)) - 9), \",\", SUBSTRING(TO_STRING(sso), LENGTH(TO_STRING(sso)) - 8, 3), \",\", SUBSTRING(TO_STRING(sso), LENGTH(TO_STRING(sso)) - 5, 3), \",\", RIGHT(TO_STRING(sso), 3))), \" signed in by SSO\")) | KEEP `Humans`, detail"
         },
         "metrics": [
           {
@@ -566,7 +566,7 @@
         "h": 11
       },
       "config": {
-        "title": "Busiest API keys · top 9",
+        "title": "Busiest API keys · top 9 at most",
         "description": "The busiest API keys of both kinds, one row per key, with request volume and how many distinct client IPs used it. Kind is Cloud (an Elastic Cloud API key: it has no name and is recorded by its id, so it reads “_4KEO… · Cloud API key”, the first five characters of the id in Key ID) or Elasticsearch (an Elasticsearch API key: id and name). A key used from many IPs is worth investigating. A re-issued key keeps its name under a new id, so a name can appear twice. The full list, with owner and first and last use, is API key inventory below.",
         "type": "data_table",
         "data_source": {
@@ -624,7 +624,7 @@
         "h": 12
       },
       "config": {
-        "title": "Busiest human identities · top 10",
+        "title": "Busiest human identities · top 10 at most",
         "description": "People by email, busiest first: the people the Humans tile counts, over all traffic, with the same event counts as Identity first and last seen, which also has when each was first and last seen and from how many IPs. The panel shows the top rows; the rest are in that session. Click an email to pin that person across the suite.",
         "type": "data_table",
         "data_source": {
@@ -668,7 +668,7 @@
         "h": 12
       },
       "config": {
-        "title": "Most frequent failed or denied access · top 10 (empty = good)",
+        "title": "Most frequent failed or denied access · top 10 at most (empty = good)",
         "description": "Failed sign-ins and refused requests grouped by identity, action and source IP, most frequent first; the top rows of what the Failed or denied tile counts. Result names the kind, as in the session below: failed sign-in (authentication_failed, realm_authentication_failed, anonymous_access_denied), denied (access_denied: an authenticated identity refused an action), or failed (any other action, here because its outcome was failure). An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email. An empty panel means nothing matched in the time range, which is the healthy state; any row here is worth reading.",
         "type": "data_table",
         "data_source": {
@@ -732,7 +732,7 @@
       },
       "config": {
         "ref_id": "cloud-audit-search-02-failed-authentications",
-        "title": "Failed sign-ins and denied access, newest 1,000 (empty = good)",
+        "title": "Failed sign-ins and denied access · newest 1,000 at most (empty = good)",
         "description": "The newest failed sign-ins and refused requests, record by record. Discover stops at 1,000 rows, so on a busy range its result count is that cap and the Failed or denied tile is the total. Result names the kind: failed sign-in, denied (access_denied), or failed (any other failed outcome). Credential is the credential type, or the realm on a Kibana event, and reads “not authenticated” on a failed sign-in; Country reads “internal” for a private or carrier-NAT address, which is Kibana or the platform calling on someone's behalf. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email. An empty panel means nothing matched in the time range, which is the healthy state; any row here is worth reading."
       }
     },

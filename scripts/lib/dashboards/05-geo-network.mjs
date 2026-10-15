@@ -1,6 +1,6 @@
 /** 05 Geo & Network — see scripts/lib/definitions.mjs for how the suite is assembled. */
 import {
-  IDX, ACTOR_RESOLVE, IP_GEO, TIME, BUCKET, dash, kpi, xy, table, vega, filterable, sized, resetIds
+  IDX, ACTOR_RESOLVE, IP_GEO, TIME, BUCKET, dash, kpi, xy, table, vega, filterable, sized, resetIds, grouped
 } from '../panels.mjs';
 
 /**
@@ -111,12 +111,12 @@ export function build() {
     // reconciles with Busiest client IPs, which lists them under that label.
     // Grouped by the address first, then counted: exact, and as fast as the bare COUNT_DISTINCT
     // (164–188ms at 7d against 181–195ms), where two COUNT_DISTINCTs took 406–429ms.
-    kpi(24, 0, 8, 5, `FROM ${IDX} | ${TIME} | STATS BY client.ip | STATS \`Client IPs\` = COUNT(client.ip), internal = COUNT(client.ip) WHERE ${INTERNAL_NET} | EVAL detail = CASE(internal > 0, CONCAT(TO_STRING(internal), " platform-internal"), "none internal") | KEEP \`Client IPs\`, detail`, 'Client IPs',
+    kpi(24, 0, 8, 5, `FROM ${IDX} | ${TIME} | STATS BY client.ip | STATS \`Client IPs\` = COUNT(client.ip), internal = COUNT(client.ip) WHERE ${INTERNAL_NET} | EVAL detail = CASE(internal > 0, CONCAT(${grouped('internal')}, " platform-internal"), "none internal") | KEEP \`Client IPs\`, detail`, 'Client IPs',
       'Distinct forwarded client IPs, taken from network.forwarded_ip. The line beneath counts those in the platform-internal 100.64/10 range: not clients but a hop inside Elastic Cloud — on this project, Kibana\'s server calling Elasticsearch for a user whose real address is on the Kibana event. Busiest client IPs lists them as "Platform-internal (100.64/10)".',
       { secondary: 'detail' }),
     // The secondary reconciles this tile with "Proxy vs real client IP", which has one row per proxy
     // that forwarded a client address: without it the tile said 7 and the table showed 4.
-    kpi(32, 0, 8, 5, `FROM ${IDX} | ${TIME} | STATS \`Proxy IPs\` = COUNT_DISTINCT(attributes.source.ip), fwd = COUNT_DISTINCT(attributes.source.ip) WHERE client.ip IS NOT NULL | EVAL detail = CONCAT(TO_STRING(fwd), " forwarded a client IP") | KEEP \`Proxy IPs\`, detail`, 'Proxy IPs',
+    kpi(32, 0, 8, 5, `FROM ${IDX} | ${TIME} | STATS \`Proxy IPs\` = COUNT_DISTINCT(attributes.source.ip), fwd = COUNT_DISTINCT(attributes.source.ip) WHERE client.ip IS NOT NULL | EVAL detail = CONCAT(${grouped('fwd')}, " forwarded a client IP") | KEEP \`Proxy IPs\`, detail`, 'Proxy IPs',
       'Distinct source.ip values — these are internal proxies, not clients. Shown to make the difference explicit. The line beneath counts the ones that forwarded a real client IP: the rows of "Proxy vs real client IP, by proxy".',
       { secondary: 'detail' }),
     // A bare 0 here meant either "nobody travelled" or "only one country is visible at all", and those

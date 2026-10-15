@@ -12,7 +12,7 @@ import { makeClient, matches, Ledger } from '../../scripts/synth/client.mjs';
 import { rng } from '../../scripts/synth/rng.mjs';
 import { seedDocs, bulkBody, SEED_INDICES } from '../../scripts/synth/context.mjs';
 import { sloOwned } from '../../scripts/synth/scenarios/kibana-features.mjs';
-import { RISK } from '../../scripts/lib/panels.mjs';
+import { RISK, KIBANA_INTERNALS } from '../../scripts/lib/panels.mjs';
 import { parseStream } from '../../scripts/lib/env.mjs';
 
 const RISK_WEIGHTS = [0, 10, 25, 30, 35, 40, 45, 50];
@@ -118,7 +118,9 @@ test('every scenario expectation builds a query over mapped-style paths only', (
     for (const e of exps) {
       assert.equal(typeof e.name, 'string', `${s.id}: expectation without name`);
       assert.equal(typeof e.where, 'string', `${s.id}/${e.name}: where must be a string`);
-      assert.ok(!/attributes\.user\.email|kibana\.session\.id/.test(e.where), `${s.id}/${e.name}: references a field the stream does not map`);
+      // The noise gate's own `kibana.session.id IS NULL` test is exempt: it holds on every synthetic event
+      // (synth signs in with keys, never a browser), which is what the claim relies on.
+      assert.ok(!/attributes\.user\.email|kibana\.session\.id/.test(e.where.replaceAll(KIBANA_INTERNALS, '')), `${s.id}/${e.name}: references a field the stream does not map`);
       if (e.kind) assert.ok(['must', 'finding'].includes(e.kind), `${s.id}/${e.name}: bad kind`);
     }
   }

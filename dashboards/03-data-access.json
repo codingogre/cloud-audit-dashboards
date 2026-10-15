@@ -421,7 +421,7 @@
       },
       "config": {
         "ref_id": "cloud-audit-vega-04-actor-index-matrix",
-        "title": "Who reads which index family · top 10 identities",
+        "title": "Who reads which index family · up to 10 identities",
         "description": "The 10 busiest identities across the top, and the 25 index families they read most down the side; cell colour is audit events on a log scale, teal (fewest) through blue and purple to pink (most). A data stream and its backing indices are one family, as is a run of dated daily indices; wildcard and date-math expressions are left out. A blank cell means that identity did not touch that family in range — or touched it too little to be among the 500 busiest identity/family pairs. A request naming several indices counts once per index, and a search's shard-level copies count too — they are the events that name the concrete indices behind a wildcard — so a cell runs above the request counts in Data access over time; it is the same count as Top index families. An identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organization-level Elastic Cloud API key, which the audit stream records only by its id; one the audit names as such is labelled \"· Cloud API key\". Cells keep a heatmap's size and pack to the top left when only a few identities or families are in range, so a sparse window draws a small matrix with its legend under it, not a few cells adrift in the panel."
       }
     },
@@ -435,7 +435,7 @@
         "h": 15
       },
       "config": {
-        "title": "Top 14 index families by events",
+        "title": "Top index families by events · 14 at most",
         "description": "The busiest index families, all traffic; the Index families tile counts every one, so the rest are beyond this list. Identities is how many distinct identities touched the family, and Busiest identity is the one with the most requests against it — over a quiet hour the list is often only the audit stream itself, read by the identity these dashboards run as. A data stream and its backing indices are one row, as is a run of dated daily indices. Wildcard and date-math expressions are left out. A request naming several indices counts once per index, and a search's shard-level copies count too (they are the events that name the concrete indices behind a wildcard), so Events runs above the request counts in Data access over time and Top transport actions; it is the same count the matrix beside it colours. A Busiest identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key, which the audit stream records only by its opaque id.",
         "type": "data_table",
         "data_source": {
@@ -488,7 +488,7 @@
         "h": 14
       },
       "config": {
-        "title": "Top 13 transport actions",
+        "title": "Top transport actions · 13 at most",
         "description": "The busiest Elasticsearch transport actions with their request class, all traffic — the searches and ES|QL reads these dashboards run included, since reads are what this page is about. The Distinct actions tile counts every action; the rest are beyond this list, and an action sent with two request classes is two rows. Shard-level copies, ES|QL sub-steps and the search an async search runs for itself are folded away, so a request counts once. Identities is how many distinct identities sent the action; Request \"—\" means the event named no request class. At a range ending now, panels beside each other can differ by a few: audit events land a few seconds after they happen (this page's own queries among them), and each panel is read at a slightly different moment.",
         "type": "data_table",
         "data_source": {
@@ -546,7 +546,7 @@
         "h": 12
       },
       "config": {
-        "title": "Denied requests by identity · latest 10 (empty = good)",
+        "title": "Denied requests by identity · newest 10 at most (empty = good)",
         "description": "Who was refused, newest first: one row per identity, with the action and index of its most recent denial, how many distinct actions and indices it was refused on, and its denials in range — the rows add up to the Access denied tile when every identity is in view. On index \"—\" is a cluster-level request; <anonymous> with action \"—\" is an HTTP call that carried no credentials. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email. An empty panel means nothing matched in the time range, which is the healthy state; any row here is worth reading.",
         "type": "data_table",
         "data_source": {
@@ -612,8 +612,8 @@
         "h": 10
       },
       "config": {
-        "title": "⚠️ Who touched system and hidden indices · latest 25 · scroll (may be empty at 1h)",
-        "description": "Who touched system and hidden indices — Kibana internals, the security index, alerting and SLO data — one row per identity, newest first: the index groups it touched (.alerts*, .slo*, .kibana*…), the kinds of transport action (read, write, index admin, monitor…), how many real indices, and its requests in range, which add up to the System index access tile when every identity is in view. The Discover session below names each index and action. Backing indices of ordinary data streams (.ds-logs-…) and shard-level copies of a request are left out. Expected from Kibana and platform automation; unexpected from anyone else, and a write from anyone else is worth a look. An identity that touched many groups wraps onto a second line rather than cutting the list short. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email. Often empty over the default hour on a healthy project; widen the time range to see older rows.",
+        "title": "⚠️ Who touched system and hidden indices · newest 25 at most (empty when none in range)",
+        "description": "Who touched system and hidden indices — Kibana internals, the security index, alerting and SLO data — one row per identity, newest first: the index groups it touched (.alerts*, .slo*, .kibana*…), the kinds of transport action (read, write, index admin, monitor…), how many real indices, and its requests in range, which add up to the System index access tile when every identity is in view. The Discover session below names each index and action. Backing indices of ordinary data streams (.ds-logs-…) and shard-level copies of a request are left out. Expected from Kibana and platform automation; unexpected from anyone else, and a write from anyone else is worth a look. An identity that touched many groups wraps onto a second line rather than cutting the list short. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email. Often empty over the default hour on a healthy project; widen the time range to see older rows. The table holds more rows than the panel shows: scroll it for the rest.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
@@ -674,7 +674,7 @@
       },
       "config": {
         "ref_id": "cloud-audit-search-05-system-index-access",
-        "title": "Raw system index requests, newest 1,000 (may be empty at 1h)",
+        "title": "Raw system index requests · newest 1,000 at most (empty when none in range)",
         "description": "The raw events behind the table above: the newest 1,000 requests against a system or hidden index, one row per index named, newest first. It stops at 1,000, so it can hold fewer rows than the System index access tile counts — the \"1,000 results\" above the grid is that cap, not the total. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email. Often empty over the default hour on a healthy project; widen the time range to see older rows."
       }
     }

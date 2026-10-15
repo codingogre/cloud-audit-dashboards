@@ -27,7 +27,7 @@ design decision that follows.
 | **A single high-volume API key can dominate the stream**, and Elasticsearch stamps that key's **creator** on every event it emits | A noise gate is ON by default everywhere except the Platform Volume dashboard. Actor-facing panels also carry the `api_key` column, so an automated workload is never mistaken for the person who minted its credential. |
 | The gate's old `NOT (field IN (...))` form was **null for every Kibana event**, and `WHERE null` drops the row | Both halves are explicitly null-guarded. Before the fix the "Signal events" KPI excluded 100% of Kibana audit. |
 | Composition depends on the workload, so no single noise class can be assumed to be the bulk — health checks (`cluster:monitor/main`), **search-phase internals** and transport **`connection_granted`** are all targeted | The gate and the volume bands share one vocabulary (`NOISE_ES_ACTIONS`, `NOISE_ES_QUERY_INTERNALS`, `NOISE_EVENT_ACTIONS`) so they cannot disagree. |
-| **Reading the audit stream is audited.** Every dashboard panel, Discover tab and API client that queries data emits ES\|QL sub-requests (`esql/compute`, `esql/data`, `esql/search_shards`, `resolve_fields`), `field_caps`, `async_search`, Kibana `/internal/*`, content-management and page-load requests (`bootstrap.js`, `/app/…`, capabilities, licensing), "User has accessed space" and "User has accessed dashboard" reads — with thousands of viewers, the viewers' own queries were the top "signal" | All of it is **Query internals**, gated out with search phases (`KIBANA_INTERNALS` covers the Kibana half). The suite's own views — a get/resolve/find of a `cloud-audit-*` object — are noise; a *change* to a suite object stays signal. Unfiltered counts stay on Platform Volume and on 02's object panels. 7-day replica: signal 1.54M → 0.38M of 2.6M events. |
+| **Reading the audit stream is audited.** Every dashboard panel, Discover tab and API client that queries data emits ES\|QL sub-requests (`esql/compute`, `esql/data`, `esql/search_shards`, `resolve_fields`), `field_caps`, `async_search`, Kibana `/internal/*`, content-management and page-load requests (`bootstrap.js`, `/app/…`, capabilities, licensing), "User has accessed space" and "User has accessed dashboard" reads — with thousands of viewers, the viewers' own queries were the top "signal" | All of it is **Query internals**, gated out with search phases (`KIBANA_INTERNALS` covers the Kibana half). The two lookups every page load makes (`config-global` get, `index-pattern` find) are noise. So is the suite's own traffic (`SUITE_SELF`): a get/resolve/find of a `cloud-audit-*` object by anyone, and any event on one with no Kibana browser session — the automated install, with its `_import` / `_export` request lines. A person editing a suite dashboard in a browser stays signal, and every change, the install's included, stays in `CHANGE_PRED`. Unfiltered counts stay on Platform Volume and on 02's object panels. 7-day replica: signal 1.54M → 0.38M of 2.6M events. |
 | Wide time windows once looked unservable — "2h, 3h and 4h all exceed 60s" | Those readings were taken back to back, and a synchronous ES\|QL query outlives the client that gave up on it and **cannot be cancelled** on serverless. Every query this repo runs now goes through a cancellable, budgeted call, and `--lint` reports its timings. What actually costs is query *shape* — see [`esql/fragments.md`](esql/fragments.md). Measured with `./audit --perf` on a 2.6M-event, 7-day replica, every panel query now returns in under 0.7s at 7 days and every dashboard loads in under 3.5s (see *Performance*). Dashboards still default to `now-1h` as the readable view of right now. |
 | `attributes.source.ip` is the **internal proxy** (`100.64.x.x` CGNAT, `10.x.x.x` mesh) | All geography uses `attributes.network.forwarded_ip`, the real public client IP. Using the obvious field would place every user in the datacentre. |
 | `attributes.event.category` / `.type` are **arrays** | `MV_EXPAND` before any `STATS ... BY`. |
@@ -256,22 +256,30 @@ in shared code rather than at call sites.
   to 70%, or its own `min`). A table that cannot give its text columns ~120px even at its floors is listed as
   an advisory by the layout check: it needs a wider panel or fewer columns. Render with
   `AUDIT_VERIFY_WIDTH=1440` to see it.
-- *Visible rows.* Tables are compact density with one-line rows, and a trailing `| LIMIT n` is lowered
-  to `fitRows(h)` (h=8 → 6, h=11 → 9, h=12 → 10, h=14 → 13) because a Lens table gives no cue that rows
-  continue. Only a LIMIT that is the query's very last step is lowered, so per-row EVALs go before
-  the SORT/LIMIT. `{ scroll: true }` keeps the LIMIT when the title promises a count; `{ wrap: true }`
-  gives auto-height rows for a column whose whole value matters. The model was re-measured on the
-  production renders (rows start 57px below the panel top; at h=12 ten 24px rows end 22px above the
-  grid's bottom rule): every deployed LIMIT already equals the rows that fit, and the blank strip under
-  the last row is that remainder, not a hidden row.
-- *Say where the list is cut.* What made readers take a partial list for a complete one was the title,
-  not the LIMIT: "Top transport actions" over 9 rows beside a tile reading 12. So `table()` appends the
-  cut to every LIMITed title — *"· top 10"*, or *"· latest 10"* when the LIMIT follows a `SORT` on a time
-  column `DESC` — unless the title already names the number ("the 30 most recent"). A table that holds
-  more rows than it shows (`{ scroll: true }` above `fitRows(h)`, or `{ wrap: true }`) adds *"· scroll"*,
-  the only cue a reader gets. `{ cut: false }` opts a closed set out. `--lint` fails a LIMIT above the
-  visible rows without `scroll`, a scrollable table whose title does not say *scroll*, and a LIMITed
-  table whose title does not state its N.
+- *Visible rows.* Tables are compact density with one-line rows, and a trailing `| LIMIT n` is **set** to
+  `fitRows(h)` (h=8 → 6, h=11 → 9, h=12 → 10, h=13 → 12, h=14 → 13), raised or lowered, so the LIMIT is
+  always exactly the rows the panel shows: above it rows hide with no cue, below it the title's bound
+  sits over room for more. Author the LIMIT as `fitRows(h)` so the source reads true. Only a LIMIT that is
+  the query's very last step is set, so per-row EVALs go before the SORT/LIMIT; `--lint` fails a LIMIT
+  that is not the rows that fit (either way) unless `{ scroll: true }`. `{ scroll: true }` keeps a larger
+  LIMIT for a feed whose bound is the point; `{ wrap: true }` gives auto-height rows for a column whose
+  whole value matters. Rows start 57px below the panel top; at h=12 ten 24px rows end 22px above the
+  grid's bottom rule, and that remainder is the blank strip under the last row, not a hidden row.
+- *Say where the list is cut — as a bound.* A partial list read as complete when its title did not say it
+  was cut ("Top transport actions" over 9 rows beside a tile reading 12), and a cut stated as a count was
+  false whenever the window held fewer ("Top 14 index families" over 2 rows at 1h, "Busiest object types ·
+  top 9" over 8). So `table()` appends an **upper bound**, true at any row count: *"· top 10 at most"*, or
+  *"· newest 10 at most"* when the LIMIT follows a `SORT` on a time column `DESC` (the sessions already say
+  *"newest 1,000 at most"*); a title that already names the order (*Top …*, *Latest …*, *… most recent …*)
+  gets only *"· 13 at most"*; a title may write its own bound as *"up to 100"*. A bare count after an order
+  word (*top 10*, *latest 9*, *newest 1,000*, *the 30 most recent*) throws at build and fails `--lint` on
+  every panel type, charts and Vega included. `{ cut: false }` opts a closed set out.
+- *Titles carry no instructions and no window caveats.* A title is shown at every time range and every row
+  count, so *"· scroll"* over a table with nothing to scroll and *"(may be empty at 1h)"* over 774 rows at
+  24h were false there. A table that holds more rows than it shows (`{ scroll: true }` above `fitRows(h)`,
+  or `{ wrap: true }`) says so in its **description** (`SCROLL_NOTE`, appended by `table()`), and
+  `{ empty: 'quiet' }` reads *"(empty when none in range)"*. `--lint` fails *scroll*, *(may be empty …)* and *at 1h* in any
+  panel title, and a scrollable table whose description does not say *scroll*.
 - *Empty cells.* A null prints as `-`. On a display column, end the query with `blankNull(col)` after
   the `STATS` and it prints nothing. Never on a click-to-filter column: Lens refuses to filter on any
   column the query assigns ("created at query time"), so a null there stays an underlined `-`. Where
@@ -281,15 +289,17 @@ in shared code rather than at call sites.
   without making every row column "created at query time" (no click-to-filter, no drilldown). So the
   meaning goes in the title — and since the title shows whether or not there are rows, its words must be
   true either way: a parenthetical *condition*, never a status. `table(…, { empty: 'good' })` →
-  *"Denied requests · top 7 (empty = good)"*; `'quiet'` → *"(may be empty at 1h)"*; your own words must
-  start *empty when / if / without / unless* → *"(empty when no browser sessions)"* (anything else
-  throws at build). Round 3's *"· none is good"* and *"· empty without X"* read as a verdict on the rows
+  *"Denied requests · top 7 at most (empty = good)"*; your own words must start *empty when / if /
+  without / unless* → *"(empty when no browser sessions)"* (anything else throws at build). `'quiet'` →
+  *"(empty when none in range)"*: its old words, *"(may be empty at 1h)"*, named one window and read as
+  wrong at every other. Round 3's *"· none is good"* and *"· empty without X"* read as a verdict on the rows
   whenever the table was full; `--lint` rejects that form. `search()` takes the same option, and the
   description gains the matching sentence. Use it on every panel a default 1h render shows empty on a
   healthy project.
 - *Completeness.* A title must not promise more than the panel shows. A LIMITed table whose title says
   *every*, *everything* or *all* fails `--lint` (`layout.mjs` `PROMISES_ALL`): say *top*, *busiest* or
-  *most recent*, or pass `{ scroll: true }` when the LIMIT is itself the promise ("the 30 most recent").
+  *most recent*, or pass `{ scroll: true }` when the LIMIT is a guard on a closed set (07's *Every scoring
+  action*).
 - *Opaque identities — one form.* An Identity that resolves to a 20-character id is an organisation-level
   Elastic Cloud API key: the stream records no name and no owner for it. It is shown the same way
   everywhere an identity is shown — **`_4KEO… · Cloud API key`** (first five characters, then the tag) —
@@ -304,9 +314,18 @@ in shared code rather than at call sites.
   Kibana's own clean-up — `invalidate_apikeys` by `elastic/kibana`, every few milliseconds — kept every
   "any non-zero deserves review" tile permanently non-zero (670 of 671 in an hour). `PRIVILEGED` leaves
   out exactly that (`HOUSEKEEPING`: `invalidate_apikeys` by a platform principal through no named key);
-  `privilegedKpi(col)` puts the excluded count in the tile's secondary line. A key Kibana creates on a
+  `privilegedKpi(col)` puts the excluded count in the tile's secondary line in the short form
+  *"excl. 2,285 cleanups"*: Lens right-aligns that line directly above the number, and the longer
+  *"284 key cleanups left out"* over a *1* read as the tile's headline. A key Kibana creates on a
   user's behalf, and any tenant invalidation, still count. The risk model still scores every
   invalidation; the leaderboard's `actor_scope` separates platform identities.
+
+**KPI secondary lines — grouped digits.** A metric tile's secondary line is a string the query builds,
+and ES\|QL's `TO_STRING` prints *"2326"* beside tiles Lens prints as *"1,728,070"*. Every count in it goes
+through `grouped(col)` in `panels.mjs` — `CONCAT(${grouped('signin')}, " failed sign-ins")` — on the
+single row the STATS returns (a multi-branch CASE, so never per event). Keep the line short (an 8-column
+tile shows ~22 characters at 1440px) and quiet, a qualifier of the number under it. `--lint` fails a
+secondary line that stringifies a column without `grouped()`.
 
 **Numbers that sit together must reconcile.** A KPI and the table beside or below it, two tables
 counting "the same" identities or events, or a tile and the chart under it must agree, or say on the
@@ -379,6 +398,12 @@ background (dark panels are ~`#111C2C`, light are white).
 - *Categories*: `PALETTE` in `panels.mjs` (`#54B399, #6092C0, #D36086, #9170B8, #CA8EAE, #D6BF57,
   #B9A888, #DA8B45, #AA6556, #E7664C`) — the same ten Lens draws breakdowns with, so a category
   pinned with `xy({ colors })` and the same category in Vega can match.
+- *Categorical legends list the whole domain.* A legend whose entries come from the categories present
+  (`values: indexof(pluck(data('rows'), …))`) changes with the window — 00's Signal vs noise lost *Infra
+  health* at 1h while its help text said the entry stays. List the scale's domain, gated only on whether
+  there are rows: `"values": {"expr": "length(data('rows')) ? ['Signal', …, 'Infra health'] : []"}`. An absent
+  band then keeps its swatch and reads as zero. `--lint` rejects a legend `values` expression built from
+  the rows present.
 - Legends sit outside the plot (`"orient": "bottom"` or `"right"`), never `bottom-right` inside it.
 - Rotated labels on a TOP axis use a positive `labelAngle` with `labelAlign: "right"`, so each ends at
   its own column and runs inward: a negative angle runs the last label off the panel's right edge,

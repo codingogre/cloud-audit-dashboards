@@ -21,6 +21,7 @@ import { CONTROLS } from './controls.mjs';
 import {
   NAV_H, NOISE, BAND, BAND_KEYS, RISK, RISK_KEYS, RISK_RESTORE, VERB, ACTOR_RESOLVE, OBJ, OBJ_ID, OBJ_TYPE, CHANGE_PRED, CRED, OBJ_PRESENT,
   CRED_TYPE_LABEL, INDEX_FAMILY, CONCRETE, SYS_INDEX, ACTOR_LABEL, MAGNITUDE_RAMP, SEVERITY_RAMP, fitRows, tableLimit,
+  KIBANA_INTERNALS, BOUNDED, BARE_COUNT, grouped,
 } from './panels.mjs';
 
 export const GRID_W = 48;
@@ -51,7 +52,7 @@ const FRAGMENT_USES = {
   'searches/01-all-mutations.json': { CHANGE_PRED, ACTOR_RESOLVE, VERB, OBJ, ACTOR_LABEL },
   'searches/02-failed-authentications.json': { ACTOR_RESOLVE, ACTOR_LABEL },
   'searches/03-security-config-changes.json': { ACTOR_RESOLVE, ACTOR_LABEL },
-  'searches/04-kibana-object-changes.json': { ACTOR_RESOLVE, VERB, OBJ, OBJ_PRESENT, ACTOR_LABEL },
+  'searches/04-kibana-object-changes.json': { ACTOR_RESOLVE, VERB, OBJ, OBJ_PRESENT, KIBANA_INTERNALS, ACTOR_LABEL },
   'searches/05-system-index-access.json': { ACTOR_RESOLVE, SYS_INDEX, ACTOR_LABEL },
   // 06 and 10 previously carried a bare `NOT (... IN ...)` gate. That is null on Kibana events —
   // where the Elasticsearch action field does not exist — and `WHERE null` drops the row, so both
@@ -186,6 +187,18 @@ function dataEntries(node, out = []) {
   return out;
 }
 
+/** Every legend `values` expression in a spec (Vega-Lite `legend.values.expr`, or a Vega legend's `values.signal`). */
+function legendValueExprs(node, inLegend = false, out = []) {
+  if (Array.isArray(node)) { node.forEach((n) => legendValueExprs(n, inLegend, out)); return out; }
+  if (!node || typeof node !== 'object') return out;
+  if (inLegend && node.values && typeof node.values === 'object') {
+    const e = node.values.expr ?? node.values.signal;
+    if (typeof e === 'string') out.push(e);
+  }
+  for (const [k, v] of Object.entries(node)) legendValueExprs(v, k === 'legend' || k === 'legends', out);
+  return out;
+}
+
 function textMarks(node, isVL, out = []) {
   if (Array.isArray(node)) { node.forEach((n) => textMarks(n, isVL, out)); return out; }
   if (!node || typeof node !== 'object') return out;
@@ -250,6 +263,12 @@ function checkVega(problems) {
       problems.push(`vega: ${file} is in neither FRAGMENT_USES nor DSL_SPECS in scripts/lib/layout.mjs — nothing checks it`);
     }
     if (dsl.length && !DSL_SPECS.has(file)) problems.push(`vega: ${file} has a DSL data source but is not listed in DSL_SPECS`);
+    // LEGEND STABILITY (README, Vega colour): a categorical legend lists its scale's whole domain, so the
+    // key does not change with the window. One built from the categories present (pluck(data(…))) lost
+    // "Infra health" from 00's Signal vs noise at 1h while the help text said the entry stays.
+    for (const v of legendValueExprs(spec)) {
+      if (/indexof\s*\(\s*pluck\s*\(\s*data\s*\(/.test(v)) problems.push(`vega: ${file} builds a legend's values from the rows present — list the scale's whole domain (gated only on whether there are rows), so the key is the same in every window`);
+    }
     if (DSL_SPECS.has(file) && !dsl.length) problems.push(`vega: ${file} is listed in DSL_SPECS but has no url.index + url.body data`);
 
     // Kibana's DSL parser matches responses back to requests by name, and for UNNAMED requests it
@@ -364,10 +383,12 @@ function checkCompleteness(name, panels, problems) {
 
 /**
  * ROWS (panels.mjs, ROWS THAT FIT and CUT). A Lens table shows no cue that rows continue, so:
- *   - a LIMIT above fitRows(h) needs { scroll: true } — and its title must say "scroll";
- *   - a { wrap: true } table's visible count is unknowable, so it is scrollable and says so;
- *   - a LIMITed table names its N in the title ("· top 10", "the 30 most recent"), because a list cut
- *     at N beside a tile counting more reads as complete otherwise.
+ *   - a LIMIT above fitRows(h) needs { scroll: true } (and table() then says "scroll" in the
+ *     description, never the title: a title is shown at every window, including those with nothing to
+ *     scroll);
+ *   - a LIMITed table states its cut as an UPPER BOUND ("· top 10 at most", "up to 100"), because a list
+ *     cut at N beside a tile counting more reads as complete otherwise — and a bare "top 10" over the 3
+ *     rows a short window holds is false.
  * Checked on the final query, so a LIMIT that is not the trailing step (which table() cannot clamp) is
  * caught too.
  */
@@ -382,12 +403,35 @@ function checkRows(name, panels, problems) {
     if (n > fit && !p.lint?.scroll) {
       problems.push(`${name}: table ${p.id} "${t}" is LIMIT ${n} but h=${p.grid.h} shows ${fit} rows — rows would be hidden with no cue; lower the LIMIT, grow the panel, or pass { scroll: true }`);
     }
-    if ((p.lint?.wrap || n > fit) && !/\bscroll\b/i.test(t)) {
-      problems.push(`${name}: table ${p.id} "${t}" holds more rows than it shows but its title does not say "scroll"`);
+    if (n < fit && !p.lint?.scroll) {
+      problems.push(`${name}: table ${p.id} "${t}" is LIMIT ${n} but h=${p.grid.h} has room for ${fit} rows — the LIMIT must equal the rows that fit (end the query with the LIMIT so table() sets it, or shorten the panel)`);
     }
-    if (p.lint?.cut !== false && !new RegExp(`(^|[^\\d,.])${n}(?![\\d,])`).test(t)) {
-      problems.push(`${name}: table ${p.id} "${t}" is cut at ${n} rows but its title does not say so — build it with table(), which appends "· top ${n}"`);
+    if ((p.lint?.wrap || n > fit) && !/\bscroll\b/i.test(p.config.description || '')) {
+      problems.push(`${name}: table ${p.id} "${t}" holds more rows than it shows but its description does not say "scroll"`);
     }
+    if (p.lint?.cut !== false && !BOUNDED(n).test(t)) {
+      problems.push(`${name}: table ${p.id} "${t}" is cut at ${n} rows but its title does not say so as a bound — build it with table(), which appends "· top ${n} at most"`);
+    }
+  }
+}
+
+/**
+ * TITLES (panels.mjs, CUT). Every panel title is shown at every time range and every row count, so it
+ * may state only what is true at all of them. Three forms were false at some window in the round-5
+ * review, and are rejected on every panel type (tables, charts, Vega, Discover sessions):
+ *   - a bare count after an order word ("top 10", "latest 9", "newest 1,000", "the 30 most recent"),
+ *     over the 1 to 3 rows a short window holds: write the bound ("10 at most", "up to 10");
+ *   - an instruction, "scroll", over a table with nothing to scroll: say it in the description;
+ *   - a window caveat, "(may be empty at 1h)", over 774 rows at 24h: { empty: 'quiet' } now reads
+ *     "(empty when none in range)".
+ */
+function checkTitles(name, panels, problems) {
+  for (const p of panels) {
+    const t = p.config?.title || '';
+    const bare = BARE_COUNT.exec(t);
+    if (bare) problems.push(`${name}: panel ${p.id} "${t}" states a count ("${bare[0]}") that is false whenever the window holds fewer — word it as a bound ("${bare[2]} at most", "up to ${bare[2]}")`);
+    if (/\bscroll\b/i.test(t)) problems.push(`${name}: panel ${p.id} "${t}" carries an instruction ("scroll") that is false when every row fits — put it in the description`);
+    if (/\(may be empty\b|\bat 1h\b/i.test(t)) problems.push(`${name}: panel ${p.id} "${t}" carries a caveat for one time window — use { empty: 'quiet' } ("(empty when none in range)")`);
   }
 }
 
@@ -406,6 +450,24 @@ function checkEmptyWording(name, panels, problems) {
   }
 }
 
+/**
+ * DIGITS (panels.mjs, grouped()). A KPI's secondary line is text, so a count in it prints as ES|QL's
+ * TO_STRING writes it — "2326" under tiles that Lens prints as "1,728,070". Every count there goes
+ * through grouped() (a value that cannot reach 1,000 too: the rule is cheaper to keep than the
+ * exceptions). Fails --lint: returns the tiles whose secondary line stringifies a column without grouping it.
+ */
+export function ungroupedSecondaries(panels) {
+  const out = [];
+  for (const p of panels) {
+    if (p.config?.type !== 'metric' || !p.config.metrics?.some((m) => m.type === 'secondary')) continue;
+    const q = p.config.data_source?.query || '';
+    const tail = q.slice(q.lastIndexOf('| STATS'));
+    const bare = [...tail.matchAll(/TO_STRING\((\w+)\)/g)].map((m) => m[1]).filter((c) => !tail.includes(grouped(c)));
+    if (bare.length) out.push({ id: p.id, cols: [...new Set(bare)] });
+  }
+  return out;
+}
+
 /** Returns an array of human-readable problems; empty means clean. */
 export function checkLayout(all) {
   const problems = [];
@@ -420,10 +482,12 @@ export function checkLayout(all) {
     checkMarkdown(name, panels, problems);
     checkCompleteness(name, panels, problems);
     checkRows(name, panels, problems);
+    checkTitles(name, panels, problems);
     checkEmptyWording(name, panels, problems);
     rows.push(`${name}: panels=${panels.length} rows=${maxY}`);
     // Advisory, not a failure: a table whose columns cannot fit a 1440px viewport needs a layout
     // decision (a wider panel or fewer columns), which no width arithmetic can make. See fitWidths().
+    for (const u of ungroupedSecondaries(panels)) problems.push(`${name}: KPI ${u.id} prints ${u.cols.join(', ')} in its secondary line without grouped() digits (panels.mjs) — "2326" beside tiles Lens prints as "1,728,070"`);
     for (const p of panels.filter((q) => q.narrow1440)) rows.push(`${name}: advisory — "${p.config.title}" (w=${p.grid.w}) clips its text columns at a 1440px viewport`);
   }
   checkFragmentDrift(problems);

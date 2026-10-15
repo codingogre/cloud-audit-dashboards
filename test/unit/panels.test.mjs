@@ -93,7 +93,7 @@ test('fitRows() and the LIMIT clamp', () => {
   assert.deepEqual([8, 12, 14].map(fitRows), [6, 10, 13]);
   const q = (t) => t.config.data_source.query;
   assert.match(q(table(0, 0, 16, 12, 't', 'FROM x | SORT a | LIMIT 30', ['a'], ['b'], 'd')), /\| LIMIT 10$/);
-  assert.match(q(table(0, 0, 16, 12, 't', 'FROM x | LIMIT 5', ['a'], ['b'], 'd')), /\| LIMIT 5$/, 'never raised');
+  assert.match(q(table(0, 0, 16, 12, 't', 'FROM x | LIMIT 5', ['a'], ['b'], 'd')), /\| LIMIT 10$/, 'raised too: the LIMIT is exactly the rows that fit');
   assert.match(q(table(0, 0, 16, 12, 't', 'FROM x | LIMIT 30', ['a'], ['b'], 'd', { scroll: true })), /\| LIMIT 30$/);
   assert.match(q(table(0, 0, 16, 12, 't', 'FROM x | LIMIT 30', ['a'], ['b'], 'd', { wrap: true })), /\| LIMIT 30$/);
 });
@@ -155,7 +155,11 @@ test('empty states live in the title; completeness is a lint failure on a LIMITe
   const { EMPTY } = await import('../../scripts/lib/panels.mjs');
   const { PROMISES_ALL, checkLayout } = await import('../../scripts/lib/layout.mjs');
   const good = table(0, 0, 24, 12, '⚠️ System index reads', 'FROM x | LIMIT 30', ['a'], ['b'], 'Reads.', { empty: 'good' });
-  assert.equal(good.config.title, `⚠️ System index reads · top 10 ${EMPTY.good.title}`);
+  assert.equal(good.config.title, `⚠️ System index reads · top 10 at most ${EMPTY.good.title}`);
+  // 'quiet' named one window ("(may be empty at 1h)") and read as wrong at every other: now a condition.
+  const quiet = table(0, 0, 24, 12, 'Config changes', 'FROM x | LIMIT 30', ['a'], ['b'], 'Changes.', { empty: 'quiet' });
+  assert.equal(quiet.config.title, 'Config changes · top 10 at most (empty when none in range)');
+  assert.ok(quiet.config.description.endsWith(EMPTY.quiet.desc));
   assert.equal(EMPTY.good.title, '(empty = good)', 'a condition, true whether or not there are rows');
   assert.ok(good.config.description.startsWith('Reads. ') && good.config.description.endsWith(EMPTY.good.desc));
   const own = table(0, 0, 24, 12, 'API key throughput', 'q', ['a'], ['b'], 'Keys.', { empty: 'empty without API-key traffic' });
@@ -186,32 +190,53 @@ test('NOISE and BAND share one vocabulary; BAND reads the kib_internal key BAND_
     assert.ok(NOISE.includes(`"${a}"`) && BAND.includes(`"${a}"`), a);
   }
   // Every non-action field KIBANA_INTERNALS reads is IS NOT NULL-guarded, so the gate never yields null.
-  for (const f of ['attributes.url.original', 'attributes.kibana.saved_object.id']) assert.ok(KIBANA_INTERNALS.includes(`${f} IS NOT NULL AND ${f}`), f);
+  for (const f of ['attributes.url.original', 'attributes.kibana.saved_object.id', 'attributes.kibana.saved_object.type']) assert.ok(KIBANA_INTERNALS.includes(`${f} IS NOT NULL AND`), f);
+  // The browser-session test is IS NULL, which is never null itself.
+  assert.ok(!/attributes\.kibana\.session\.id (?!IS NULL)/.test(KIBANA_INTERNALS));
   assert.doesNotMatch(IP_GEO, /\bBY\b/);
   assert.match(IP_GEO, /placed = COUNT\(client\.geo\.country_iso_code\)/);
 });
 
-test('a LIMITed table says where it is cut, and a scrollable one says scroll', async () => {
+test('a LIMITed table states its cut as a bound, and a scrollable one says scroll in its description', async () => {
   const { checkLayout } = await import('../../scripts/lib/layout.mjs');
-  const t = (title, q, h, o) => table(0, 0, 24, h, title, q, ['a'], ['b'], 'd', o).config.title;
-  assert.equal(t('Busiest', 'FROM x | SORT events DESC | LIMIT 30', 12), 'Busiest · top 10');
-  assert.equal(t('Changes', 'FROM x | SORT last_seen DESC | LIMIT 30', 12), 'Changes · latest 10');
-  assert.equal(t('Mutations — the 30 most recent', 'FROM x | SORT @timestamp DESC | LIMIT 30 | EVAL a = 1', 14, { scroll: true }),
-    'Mutations — the 30 most recent · scroll', 'N already in the title; LIMIT above the visible rows');
-  assert.equal(t('High value', 'FROM x | SORT last_seen DESC | LIMIT 10', 12, { wrap: true }), 'High value · latest 10 · scroll');
+  const { SCROLL_NOTE, BARE_COUNT, BOUNDED } = await import('../../scripts/lib/panels.mjs');
+  const mk = (title, q, h, o) => table(0, 0, 24, h, title, q, ['a'], ['b'], 'd', o);
+  const t = (...a) => mk(...a).config.title;
+  assert.equal(t('Busiest', 'FROM x | SORT events DESC | LIMIT 30', 12), 'Busiest · top 10 at most');
+  assert.equal(t('Changes', 'FROM x | SORT last_seen DESC | LIMIT 30', 12), 'Changes · newest 10 at most');
+  assert.equal(t('Top transport actions', 'FROM x | SORT events DESC | LIMIT 30', 14), 'Top transport actions · 13 at most', 'the order word is already there');
+  assert.equal(t('Mutations — most recent changes', 'FROM x | SORT @timestamp DESC | LIMIT 30 | EVAL a = 1', 14, { scroll: true }),
+    'Mutations — most recent changes · 30 at most', 'LIMIT above the visible rows: the bound, no "scroll" in the title');
+  assert.equal(t('What changed · up to 100', 'FROM x | SORT d DESC | LIMIT 100', 12, { scroll: true }), 'What changed · up to 100');
+  assert.equal(t('High value', 'FROM x | SORT last_seen DESC | LIMIT 10', 12, { wrap: true }), 'High value · newest 10 at most');
+  assert.ok(mk('High value', 'FROM x | SORT last_seen DESC | LIMIT 10', 12, { wrap: true }).config.description.endsWith(SCROLL_NOTE));
+  assert.ok(!mk('Busiest', 'FROM x | LIMIT 30', 12).config.description.includes(SCROLL_NOTE));
   assert.equal(t('Classes', 'FROM x | STATS n = COUNT(*) BY c', 9), 'Classes', 'no LIMIT, no cut');
   assert.equal(t('Fixed', 'FROM x | LIMIT 5', 9, { cut: false }), 'Fixed');
-  // Wired into checkLayout: a hidden-row table and an unannounced cut both fail.
+  assert.throws(() => t('the 30 most recent', 'FROM x | SORT ts DESC | LIMIT 30', 14, { scroll: true }), /a count in a title/);
+  assert.throws(() => t('Top 9 types', 'FROM x | LIMIT 9', 11), /a count in a title/);
+  assert.ok(BARE_COUNT.test('Top 10 spaces') && BARE_COUNT.test('· top 10 identities') && BARE_COUNT.test('newest 1,000'));
+  assert.ok(!BARE_COUNT.test('newest 1,000 at most') && !BARE_COUNT.test('· up to 10') && !BARE_COUNT.test('top 10 at most'));
+  assert.ok(BOUNDED(1000).test('newest 1,000 at most') && BOUNDED(10).test('up to 10') && !BOUNDED(10).test('top 10'));
+  // Wired into checkLayout: a hidden-row table, a short LIMIT, an unannounced cut and title caveats all fail.
   const all = buildAll();
   const [name, def] = Object.entries(all).find(([, d]) => d.panels.some((p) => p.lint?.limit && !p.lint.scroll));
   const p = def.panels.find((x) => x.lint?.limit && !x.lint.scroll);
   const saved = { title: p.config.title, q: p.config.data_source.query };
-  p.config.title = 'Unannounced';
+  p.config.title = 'Unannounced · scroll (may be empty at 1h)';
   p.config.data_source.query = saved.q.replace(/LIMIT \d+/g, 'LIMIT 99');
-  const problems = checkLayout(all).problems.filter((m) => m.includes(p.id));
+  let problems = checkLayout(all).problems.filter((m) => m.includes(p.id));
   assert.ok(problems.some((m) => /rows would be hidden/.test(m)), problems.join('\n'));
-  assert.ok(problems.some((m) => /does not say "scroll"/.test(m)));
-  assert.ok(problems.some((m) => /does not say so/.test(m)));
+  assert.ok(problems.some((m) => /description does not say "scroll"/.test(m)));
+  assert.ok(problems.some((m) => /does not say so as a bound/.test(m)));
+  assert.ok(problems.some((m) => /instruction \("scroll"\)/.test(m)));
+  assert.ok(problems.some((m) => /caveat for one time window/.test(m)));
+  p.config.title = 'Busiest · top 2 at most';
+  p.config.data_source.query = saved.q.replace(/LIMIT \d+/g, 'LIMIT 2');
+  problems = checkLayout(all).problems.filter((m) => m.includes(p.id));
+  assert.ok(problems.some((m) => /must equal the rows that fit/.test(m)), problems.join('\n'));
+  p.config.title = 'Top 10 things';
+  assert.ok(checkLayout(all).problems.some((m) => m.includes(p.id) && /states a count/.test(m)));
   Object.assign(p.config, { title: saved.title }); p.config.data_source.query = saved.q;
 });
 
@@ -232,4 +257,6 @@ test('privileged ops leave out only Kibana\'s own key clean-up, and say how much
   for (const f of ['attributes.event.action', 'attributes.user.name']) assert.ok(HOUSEKEEPING.includes(`${f} IS NOT NULL AND ${f}`), f);
   assert.ok(PRIVILEGED.endsWith(`AND NOT ${HOUSEKEEPING}`));
   assert.match(privilegedKpi('Privileged ops'), /COUNT\(\*\) WHERE NOT housekeeping.*housekeeping_note/);
+  // The short, digit-grouped second line ("excl. 2,285 cleanups"), so it never outweighs the number under it.
+  assert.match(privilegedKpi('Privileged ops'), /CONCAT\("excl\. ", CASE\(LENGTH\(TO_STRING\(cleanups\)\) <= 3/);
 });

@@ -208,7 +208,7 @@
         "type": "metric",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS BY client.ip | STATS `Client IPs` = COUNT(client.ip), internal = COUNT(client.ip) WHERE CIDR_MATCH(client.ip, \"100.64.0.0/10\") | EVAL detail = CASE(internal > 0, CONCAT(TO_STRING(internal), \" platform-internal\"), \"none internal\") | KEEP `Client IPs`, detail"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS BY client.ip | STATS `Client IPs` = COUNT(client.ip), internal = COUNT(client.ip) WHERE CIDR_MATCH(client.ip, \"100.64.0.0/10\") | EVAL detail = CASE(internal > 0, CONCAT(CASE(LENGTH(TO_STRING(internal)) <= 3, TO_STRING(internal), LENGTH(TO_STRING(internal)) <= 6, CONCAT(LEFT(TO_STRING(internal), LENGTH(TO_STRING(internal)) - 3), \",\", RIGHT(TO_STRING(internal), 3)), LENGTH(TO_STRING(internal)) <= 9, CONCAT(LEFT(TO_STRING(internal), LENGTH(TO_STRING(internal)) - 6), \",\", SUBSTRING(TO_STRING(internal), LENGTH(TO_STRING(internal)) - 5, 3), \",\", RIGHT(TO_STRING(internal), 3)), CONCAT(LEFT(TO_STRING(internal), LENGTH(TO_STRING(internal)) - 9), \",\", SUBSTRING(TO_STRING(internal), LENGTH(TO_STRING(internal)) - 8, 3), \",\", SUBSTRING(TO_STRING(internal), LENGTH(TO_STRING(internal)) - 5, 3), \",\", RIGHT(TO_STRING(internal), 3))), \" platform-internal\"), \"none internal\") | KEEP `Client IPs`, detail"
         },
         "metrics": [
           {
@@ -241,7 +241,7 @@
         "type": "metric",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS `Proxy IPs` = COUNT_DISTINCT(attributes.source.ip), fwd = COUNT_DISTINCT(attributes.source.ip) WHERE client.ip IS NOT NULL | EVAL detail = CONCAT(TO_STRING(fwd), \" forwarded a client IP\") | KEEP `Proxy IPs`, detail"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS `Proxy IPs` = COUNT_DISTINCT(attributes.source.ip), fwd = COUNT_DISTINCT(attributes.source.ip) WHERE client.ip IS NOT NULL | EVAL detail = CONCAT(CASE(LENGTH(TO_STRING(fwd)) <= 3, TO_STRING(fwd), LENGTH(TO_STRING(fwd)) <= 6, CONCAT(LEFT(TO_STRING(fwd), LENGTH(TO_STRING(fwd)) - 3), \",\", RIGHT(TO_STRING(fwd), 3)), LENGTH(TO_STRING(fwd)) <= 9, CONCAT(LEFT(TO_STRING(fwd), LENGTH(TO_STRING(fwd)) - 6), \",\", SUBSTRING(TO_STRING(fwd), LENGTH(TO_STRING(fwd)) - 5, 3), \",\", RIGHT(TO_STRING(fwd), 3)), CONCAT(LEFT(TO_STRING(fwd), LENGTH(TO_STRING(fwd)) - 9), \",\", SUBSTRING(TO_STRING(fwd), LENGTH(TO_STRING(fwd)) - 8, 3), \",\", SUBSTRING(TO_STRING(fwd), LENGTH(TO_STRING(fwd)) - 5, 3), \",\", RIGHT(TO_STRING(fwd), 3))), \" forwarded a client IP\") | KEEP `Proxy IPs`, detail"
         },
         "metrics": [
           {
@@ -317,7 +317,7 @@
         "h": 7
       },
       "config": {
-        "title": "Top 5 client locations",
+        "title": "Top client locations · 5 at most",
         "description": "The busiest resolved client locations in range, counting placed events only — the events the map shades. They sum to the Geo-resolved events tile when every location fits. An address's events from before geo enrichment are not here; Busiest client IPs counts them at the address's place, so its Events can be higher by the \"Predates geo enrichment\" row, and its \"Placed\" column is this one. City is often the ISP's point of presence rather than where the person sits; country is reliable.",
         "type": "data_table",
         "data_source": {
@@ -428,7 +428,7 @@
         "h": 8
       },
       "config": {
-        "title": "Countries per person (impossible travel) · top 6",
+        "title": "Countries per person (impossible travel) · top 6 at most",
         "description": "People (identities with an email) whose traffic resolved to a country in range, most countries first. Two or more countries inside one window is the classic impossible-travel indicator — compare \"Countries seen\" with where the person actually is. \"One country\" on every row is the clean state. Service credentials are excluded, since multi-region is normal for machines, and a person whose every address is unplaceable (private egress) cannot appear here — see Geo coverage. Click an email to scope the suite to that person.",
         "type": "data_table",
         "data_source": {
@@ -486,7 +486,7 @@
         "h": 8
       },
       "config": {
-        "title": "Busiest client IPs · top 6",
+        "title": "Busiest client IPs · top 6 at most",
         "description": "Forwarded client IPs, busiest first, with where each resolved; the Client IPs tile counts every one. Events is every event from the address; Placed is the ones geoip resolved, which is what Top client locations and the map count — the difference is the address's events from before geo enrichment. An IP shared by many identities is usually a NAT gateway or CI runner. \"Platform-internal (100.64/10)\" is not a client: it is a hop inside Elastic Cloud — on this project, Kibana's server calling Elasticsearch for a user whose real address is on the Kibana event. \"Not placeable\" means no event from the address ever resolved: a private address no geoip database can place, not an enrichment error. \"Geo resolution of audited events\" accounts for every one. Click an IP to scope the suite to it.",
         "type": "data_table",
         "data_source": {
@@ -618,7 +618,7 @@
         "h": 13
       },
       "config": {
-        "title": "Proxy vs real client IP, by proxy · top 12",
+        "title": "Proxy vs real client IP, by proxy · top 12 at most",
         "description": "Side-by-side proof that source.ip is the internal proxy and client.ip (from network.forwarded_ip) is the real origin: one row per proxy that forwarded a client address — the proxies the Proxy IPs tile's line counts — with the client addresses it carried (in address order, up to three, then \"+N more\"). Analysing the wrong field would put every user in the datacentre. An address marked \"(internal)\" is a platform-internal 100.64/10 hop, not a client: on this project, Kibana's server calling Elasticsearch. Click a proxy to scope the suite to it; Busiest client IPs filters by client.",
         "type": "data_table",
         "data_source": {

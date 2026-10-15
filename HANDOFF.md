@@ -3,6 +3,29 @@
 `CLAUDE.md`-style durable context lives in `README.md` and `esql/fragments.md` and wins on
 conflict. This file is "where we are right now" and should be assumed stale.
 
+## Round 5 — cross-cutting fixes from the round-4 production review, 2026-10-15
+
+Shared code only; per-dashboard fixers apply the conventions. Rules in `README.md` → *Presentation
+conventions*, fragments in `esql/fragments.md`.
+
+- **Cuts are bounds, not counts.** `table()` appends "· top N at most" / "· newest N at most" (or "· N at
+  most" after a title that already says Top/Latest/most recent); a bare "top 10", "latest 9", "the 30 most
+  recent" throws at build and fails `--lint` on every panel type (`BARE_COUNT`, `BOUNDED`). A trailing LIMIT
+  is SET to `fitRows(h)` (raised as well as lowered); `--lint` fails a non-scroll LIMIT that is not the rows
+  that fit. "· scroll" and "(may be empty at 1h)" are banned from titles: `SCROLL_NOTE` goes in the
+  description, and `{ empty: 'quiet' }` now reads "(empty when none in range)". "(empty = good)" and "(empty when …)" stay.
+- **The suite's own install is noise** (`SUITE_SELF`, `SUITE_INSTALL_URL` inside `KIBANA_INTERNALS`): any
+  event on a `cloud-audit-*` object with no Kibana browser session, the `_import`/`_export`/suite-id request
+  lines, plus the page-load lookups (`config`/`config-global` get, `index-pattern` find). A browser edit
+  of a suite dashboard stays signal; every change stays in `CHANGE_PRED`. No key id named. 7-day replica:
+  gated count ~80 → ~95ms (signal 356,190 → 333,360); the BAND charts ~0.55 → ~0.75s (max 849ms).
+- **`grouped(col)`** is in `panels.mjs`; every KPI secondary line uses it (`--lint` fails one that does
+  not). `privilegedKpi()` prints "excl. 2,285 cleanups".
+- **Categorical Vega legends list their whole domain** (vega/07 now always shows four bands); `--lint`
+  rejects a legend `values` built with `indexof(pluck(data(…)))`.
+- Open decisions left alone: naming the Cloud API key, gating api_key/get reads, risk scoring of the key
+  cleanup, now-1m trimming, the Geo coverage denominator.
+
 ## Round 4 — cross-cutting fixes from the production review, 2026-10-15
 
 Six causes behind most round-4 findings, fixed in shared code; rules in `README.md` → *Presentation
