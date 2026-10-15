@@ -1,6 +1,6 @@
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
-  "description": "The highest-severity scoring actions in range (the top 12 by severity, rarest first within a weight), one row per action and weight, placed by how often each happened. Each row ends with its severity weight (· 45), which the colour repeats. Rarest is on the left, so the top-left corner is rare and high-severity: where to look first. A failed change scores 40 whatever it changed, so it gets its own row, marked (failed). Hover a point for how many identities did it and when.",
+  "description": "The highest-severity scoring actions in range (the top 12 by severity, rarest first within a weight), one row per action and weight, placed by how often each happened. Each row ends with its severity weight (· 45), which the colour repeats: one colour per weight, from blue for 10 to deep red for 50, listed in the key below the chart. Rarest is on the left, so the top-left corner is rare and high-severity: where to look first. A failed change scores 40 whatever it changed, so it gets its own row, marked (failed). Hover a point for how many identities did it and when.",
   "title": {
     "text": {
       "expr": "length(data('actions')) > 12 ? 'Top 12 of ' + length(data('actions')) + ' scoring actions, by severity, rarest first within a weight' : length(data('actions')) ? (length(data('actions')) == 1 ? '1 scoring action' : length(data('actions')) + ' scoring actions') + ', by severity, rarest first within a weight' : 'No scoring actions for this selection in this time range'"
@@ -121,16 +121,25 @@
     },
     "color": {
       "field": "risk",
-      "type": "quantitative",
+      "type": "ordinal",
       "scale": {
         "domain": [
-          0,
-          50
+          50,
+          45,
+          40,
+          35,
+          30,
+          25,
+          10
         ],
         "range": [
-          "#54B399",
+          "#BD271E",
+          "#E7664C",
+          "#DA8B45",
           "#D6BF57",
-          "#E7664C"
+          "#A0A65A",
+          "#54B399",
+          "#6092C0"
         ]
       },
       "legend": {
@@ -138,16 +147,13 @@
         "orient": "bottom",
         "direction": "horizontal",
         "offset": 6,
-        "gradientLength": 200,
-        "gradientThickness": 8,
-        "values": [
-          0,
-          10,
-          20,
-          30,
-          40,
-          50
-        ]
+        "symbolType": "circle",
+        "symbolSize": 90,
+        "columns": 7,
+        "columnPadding": 10,
+        "labelFontSize": 11,
+        "titleFontSize": 11,
+        "titleOrient": "left"
       }
     },
     "tooltip": [

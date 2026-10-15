@@ -129,8 +129,8 @@
         "h": 7
       },
       "config": {
-        "title": "Who this is — events with an email · top 5 at most",
-        "description": "Counts only events that carry a user email, so with nobody selected these rows add up to far less than the Events tile: API-key and service traffic with no email behind it has nothing to group on here, and is counted in the tile. The people in range, busiest first — click an email to pin that identity across the suite. `Own API keys` counts the named API keys acting under that email: Elasticsearch stamps a key's CREATOR on every event the key emits, so a person with keys may be carrying a machine's traffic. It reads 0 beside API-key credentials in the flow below when that key traffic carries no email — an organization-level Cloud API key (`_4KEO… · Cloud API key`) belongs to no person, so it is not theirs.",
+        "title": "Who this is — people, by email · top 5 at most",
+        "description": "People only: counts only events that carry a user email, so an organization-level Cloud API key (`_4KEO… · Cloud API key`), which belongs to no person, is never a row here even when it is the busiest credential in the flow below; and with nobody selected these rows add up to far less than the Events tile: API-key and service traffic with no email behind it has nothing to group on here, and is counted in the tile. The people in range, busiest first — click an email to pin that identity across the suite. `Own API keys` counts the named API keys acting under that email: Elasticsearch stamps a key's CREATOR on every event the key emits, so a person with keys may be carrying a machine's traffic. It reads 0 beside API-key credentials in the flow below when that key traffic carries no email.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
@@ -245,11 +245,11 @@
       },
       "config": {
         "title": "",
-        "description": "The width of their reach in Elasticsearch: index families named in their requests, and how many distinct indices those families hold. A family folds dated daily indices and data-stream backing indices together, as \"What they read, by index family\" does, so one dashboard reading thirty days of a daily index is one family. Request patterns such as * and date-math names are not counted.",
+        "description": "The width of their reach in Elasticsearch: index families named in their requests, and how many distinct indices those families hold. A family folds dated daily indices and data-stream backing indices together, as \"What they read, by index family\" does, so one dashboard reading thirty days of a daily index is one family. Request patterns such as * and date-math names are not counted, and neither are shard-level repeats of a request (search[phase/query]), so `from N indices` is the sum of the Indices column of that table when every family fits in it.",
         "type": "metric",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS idx = VALUES(attributes.elasticsearch.audit.indices) | MV_EXPAND idx | EVAL name = CASE(LOCATE(idx, \"*\") > 0 OR STARTS_WITH(idx, \"<\"), null, idx) | EVAL family = REPLACE(REPLACE(name, \"\"\"^\\.ds-\"\"\", \"\"), \"\"\"[-.]?\\d{4}[.-]\\d{2}[.-]\\d{2}(-\\d+)?$\"\"\", \"\") | STATS `Index families` = COUNT_DISTINCT(family), names = COUNT_DISTINCT(name) | EVAL detail = CASE(names == 0, \"no index named\", CONCAT(\"from \", CASE(LENGTH(TO_STRING(names)) <= 3, TO_STRING(names), LENGTH(TO_STRING(names)) <= 6, CONCAT(LEFT(TO_STRING(names), LENGTH(TO_STRING(names)) - 3), \",\", RIGHT(TO_STRING(names), 3)), LENGTH(TO_STRING(names)) <= 9, CONCAT(LEFT(TO_STRING(names), LENGTH(TO_STRING(names)) - 6), \",\", SUBSTRING(TO_STRING(names), LENGTH(TO_STRING(names)) - 5, 3), \",\", RIGHT(TO_STRING(names), 3)), CONCAT(LEFT(TO_STRING(names), LENGTH(TO_STRING(names)) - 9), \",\", SUBSTRING(TO_STRING(names), LENGTH(TO_STRING(names)) - 8, 3), \",\", SUBSTRING(TO_STRING(names), LENGTH(TO_STRING(names)) - 5, 3), \",\", RIGHT(TO_STRING(names), 3))), CASE(names == 1, \" index\", \" indices\"))) | KEEP `Index families`, detail"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE (attributes.elasticsearch.audit.action IS NULL OR NOT attributes.elasticsearch.audit.action LIKE \"*[*\") | STATS idx = VALUES(attributes.elasticsearch.audit.indices) | MV_EXPAND idx | EVAL name = CASE(LOCATE(idx, \"*\") > 0 OR STARTS_WITH(idx, \"<\"), null, idx) | EVAL family = REPLACE(REPLACE(name, \"\"\"^\\.ds-\"\"\", \"\"), \"\"\"[-.]?\\d{4}[.-]\\d{2}[.-]\\d{2}(-\\d+)?$\"\"\", \"\") | STATS `Index families` = COUNT_DISTINCT(family), names = COUNT_DISTINCT(name) | EVAL detail = CASE(names == 0, \"no index named\", CONCAT(\"from \", CASE(LENGTH(TO_STRING(names)) <= 3, TO_STRING(names), LENGTH(TO_STRING(names)) <= 6, CONCAT(LEFT(TO_STRING(names), LENGTH(TO_STRING(names)) - 3), \",\", RIGHT(TO_STRING(names), 3)), LENGTH(TO_STRING(names)) <= 9, CONCAT(LEFT(TO_STRING(names), LENGTH(TO_STRING(names)) - 6), \",\", SUBSTRING(TO_STRING(names), LENGTH(TO_STRING(names)) - 5, 3), \",\", RIGHT(TO_STRING(names), 3)), CONCAT(LEFT(TO_STRING(names), LENGTH(TO_STRING(names)) - 9), \",\", SUBSTRING(TO_STRING(names), LENGTH(TO_STRING(names)) - 8, 3), \",\", SUBSTRING(TO_STRING(names), LENGTH(TO_STRING(names)) - 5, 3), \",\", RIGHT(TO_STRING(names), 3))), CASE(names == 1, \" index\", \" indices\"))) | KEEP `Index families`, detail"
         },
         "metrics": [
           {
@@ -310,7 +310,7 @@
         "h": 11
       },
       "config": {
-        "title": "Every scoring action and its weight, largest first",
+        "title": "Every scoring action and its weight, largest first · its Sum is the Risk tile, give or take events landing as the page loads",
         "description": "The receipts for the Risk tile: the Sum under Risk totals every row, scrolled into view or not, and is the tile's number over the same window — on a live stream the two can differ by the events that arrive between the two panels' fetches (below). One row per scoring action and weight, largest first; Risk here is weight × events, and the tile's subtitle counts the rows. Kibana reads 'now' separately for each panel when it fetches (about a second apart here), and the newest seconds of the stream are still arriving, so on a relative range the Risk tile and the scoring table can differ by the events that landed or aged out in between: usually none or one, more during a burst of activity. Over the same window the two queries agree to the event; an absolute range that ends a minute or more in the past makes them identical. Click an action to pin it, then \"Open in Security & Anomalies\" to see who else does it — the pinned person and action combine, so clear the person pill first to compare. The table holds more rows than the panel shows: scroll it for the rest.",
         "type": "data_table",
         "data_source": {
@@ -392,7 +392,7 @@
       "config": {
         "ref_id": "cloud-audit-vega-08-actor-baseline-band",
         "title": "Is this normal for them? — hourly, last 7 days (UTC)",
-        "description": "Hourly activity for the current selection against its OWN pattern for that hour of day. The shaded band is their typical range for the hour (\"typical range\" in the legend, which lists only what is drawn) — the middle half of the seven observations in the window — and a point marks an hour beyond 1.5× that range, which is unusual for them. Seven observations per hour slot is thin, so read it as a sanity check rather than a detector: an identity with a steady background process plus human bursts will sit outside often, and correctly. The headline reads the last complete hour; the current partial hour is left off so it cannot read as a drop. Hours are UTC. Fixed 7-day window: does not follow the time picker. No noise gate, so it will not reconcile with Signal events. With less than three days of history the band has nothing to stand on: the second line then says when their history starts and no hour is marked unusual, because every busy hour would read as unusual against a week of zeros."
+        "description": "Hourly activity for the current selection against its OWN pattern for that hour of day. The shaded band is their typical range for the hour (\"typical range\" in the legend, which lists only what is drawn) — the middle half of the seven observations in the window — and a point marks an hour beyond 1.5× that range, which is unusual for them. Seven observations per hour slot is thin, so read it as a sanity check rather than a detector: an identity with a steady background process plus human bursts will sit outside often, and correctly. The headline reads the last complete hour; the current partial hour is left off so it cannot read as a drop. Hours are UTC. Fixed 7-day window: does not follow the time picker. No noise gate, so it will not reconcile with Signal events. With less than three days of history the band has nothing to stand on: the second line then says when their history starts, no hour is marked unusual (every busy hour would read as unusual against a week of zeros), and the time axis starts three hours before that history instead of seven days back, so the chart is not a week of empty floor with the data in a sliver at the right edge."
       }
     },
     {
@@ -407,7 +407,7 @@
       "config": {
         "ref_id": "cloud-audit-vega-12-actor-cohort",
         "title": "Where they rank — last 7 days",
-        "description": "The 40 busiest identities by user email over the last 7 days, placed by percentile rank on three measures: how much they did, how many different things they did, and how many kinds of Kibana object they touched. The cohort follows the Project control and nothing else: the people it ranks against are everyone active in the projects in scope, so a Person or Client IP selection highlights that identity (an orange diamond, drawn only when exactly one identity is in scope) instead of shrinking the cohort to one. The projects in scope are the projects the current selection is active in. When that is every project the ranks are exact; when it is one project they are exact for that project; when it is several, events are summed across them and the two distinct counts take the largest per-project value, which can undercount, so the title says approximate. Rank rather than raw value so all three measures share one honest axis: a person can be busier than 90% of the cohort while touching fewer kinds of object than most. Hover any point for its raw numbers. With fewer than two identities there is no rank to draw, and the panel says so in its centre instead of plotting one; with exactly one it shows that identity's raw numbers instead. Fixed 7-day window: does not follow the time picker."
+        "description": "The 40 busiest people by user email over the last 7 days (an organization-level Cloud API key belongs to no person, so it is never ranked here however busy it is), placed by percentile rank on three measures: how much they did, how many different things they did, and how many kinds of Kibana object they touched. The cohort follows the Project control and nothing else: the people it ranks against are everyone active in the projects in scope, so a Person or Client IP selection highlights that identity (an orange diamond, drawn only when exactly one identity is in scope) instead of shrinking the cohort to one. The projects in scope are the projects the current selection is active in. When that is every project the ranks are exact; when it is one project they are exact for that project; when it is several, events are summed across them and the two distinct counts take the largest per-project value, which can undercount, so the title says approximate. Rank rather than raw value so all three measures share one honest axis: a person can be busier than 90% of the cohort while touching fewer kinds of object than most. Hover any point for its raw numbers. With fewer than two identities there is no rank to draw, and the panel says so in its centre instead of plotting one; with exactly one it shows that identity's raw numbers instead. Fixed 7-day window: does not follow the time picker."
       }
     },
     {
@@ -464,11 +464,11 @@
       },
       "config": {
         "title": "⚠️ What they changed — deletes first, then newest · up to 100",
-        "description": "What they changed, ran or deleted in Kibana — deletes first, then everything else newest first; scroll for the rest, up to the first 100 rows. `type` and `name` are the real saved-object fields where Kibana records them, and are otherwise recovered from the event message: workflows, agent-builder agents and tools, ML jobs and secrets carry no saved_object fields at all. A workflow run, test or cancel carries its run on the name (\"· run\" and the first 8 characters of the run id) — a cancel and the run it cancelled share that id; the full id is in the session records at the bottom of the page. `result` reads \"attempted\" where Kibana logged the attempt rather than the outcome; \"failure\" is a change that was denied.",
+        "description": "What they changed, ran or deleted in Kibana — deletes first, then everything else newest first; scroll for the rest, up to the first 100 rows. `type` and `name` are the real saved-object fields where Kibana records them, and are otherwise recovered from the event message: workflows, agent-builder agents and tools, ML jobs and secrets carry no saved_object fields at all. A workflow run, test or cancel carries its run on the name (\"· run\" and the first 8 characters of the run id) — a cancel and the run it cancelled share that id; the full id is in the session records at the bottom of the page. An operation marked \"(failed)\" was denied; every other row is a change Kibana recorded as attempted or completed (most saved-object changes are logged as the attempt, before the outcome is known).",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) | GROK body.text \"\"\"\\[(?:id|workflowId)=%{DATA:g_id}(?:,|\\])\"\"\" | GROK body.text \"\"\"\\[name=%{GREEDYDATA:g_name}\\]\"\"\" | GROK body.text \"\"\"\\[executionId=%{DATA:g_exec}\\]\"\"\" | GROK body.text \"\"\"case id: %{NOTSPACE:g_case}\"\"\" | GROK body.text \"\"\"(?:job|datafeed) %{NOTSPACE:g_ml}\"\"\" | EVAL obj_name = COALESCE(attributes.kibana.saved_object.name, g_name, g_id, attributes.kibana.saved_object.id, g_case, g_ml, g_exec, body.text) | EVAL result = CASE(attributes.event.outcome == \"unknown\", \"attempted\", attributes.event.outcome) | EVAL execution = COALESCE(LEFT(g_exec, 8), \"—\") | STATS n = COUNT(*), last_ts = MAX(@timestamp) BY attributes.event.action, attributes.kibana.saved_object.type, obj_name, execution, space = attributes.kibana.space.id, result | EVAL verb = CASE(attributes.event.action LIKE \"*_execution_cancel\", \"cancel\", attributes.event.action LIKE \"*_run_soon\", \"run\", attributes.event.action LIKE \"*_run\", \"run\", attributes.event.action LIKE \"*_test\", \"test\", attributes.event.action LIKE \"*_enable\", \"enable\", attributes.event.action LIKE \"*_disable\", \"disable\", attributes.event.action LIKE \"ml_put_*\", \"create\", attributes.event.action LIKE \"ml_open_*\", \"open\", attributes.event.action LIKE \"ml_start_*\", \"start\", attributes.event.action LIKE \"*point_in_time\", \"pit\", attributes.event.action LIKE \"*_create*\", \"create\", attributes.event.action LIKE \"*_update*\", \"update\", attributes.event.action LIKE \"*_delete\", \"delete\", attributes.event.action LIKE \"*_find\", \"find\", attributes.event.action LIKE \"*_get\", \"get\", attributes.event.action LIKE \"*_resolve\", \"resolve\", \"other\") | EVAL obj_type = CASE(attributes.kibana.saved_object.type IS NOT NULL, attributes.kibana.saved_object.type, attributes.event.action LIKE \"ml_*ad_job\", \"ml-job\", attributes.event.action LIKE \"ml_*ad_datafeed\", \"ml-datafeed\", attributes.event.action LIKE \"workflow_execution_*\", \"workflow-execution\", attributes.event.action LIKE \"workflow_*\", \"workflow\", attributes.event.action LIKE \"agent_builder_agent_*\", \"agent-builder-agent\", attributes.event.action LIKE \"agent_builder_tool_*\", \"agent-builder-tool\", attributes.event.action LIKE \"product_documentation_*\", \"product-documentation\", attributes.event.action == \"secret_create\", \"secret\", attributes.event.action IS NULL, \"unclassified\", REPLACE(attributes.event.action, \"_(create|update|delete|enable|disable|run|run_soon|test|cancel)$\", \"\")) | STATS events = SUM(n), last_seen = MAX(last_ts) BY verb, type = obj_type, name = obj_name, execution, space, result | EVAL name = CASE(execution == \"—\", name, CONCAT(name, \" · run \", execution)), type = REPLACE(type, \"-\", \" \"), gone = verb == \"delete\" | DROP execution | SORT gone DESC, last_seen DESC | DROP gone | LIMIT 100"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE (resource.attributes.service.name == \"serverless-kibana\" AND ((attributes.event.type IN (\"change\",\"creation\",\"deletion\") AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR attributes.event.action IN (\"rule_run_soon\",\"secret_create\"))) | GROK body.text \"\"\"\\[(?:id|workflowId)=%{DATA:g_id}(?:,|\\])\"\"\" | GROK body.text \"\"\"\\[name=%{GREEDYDATA:g_name}\\]\"\"\" | GROK body.text \"\"\"\\[executionId=%{DATA:g_exec}\\]\"\"\" | GROK body.text \"\"\"case id: %{NOTSPACE:g_case}\"\"\" | GROK body.text \"\"\"(?:job|datafeed) %{NOTSPACE:g_ml}\"\"\" | EVAL obj_name = COALESCE(attributes.kibana.saved_object.name, g_name, g_id, attributes.kibana.saved_object.id, g_case, g_ml, g_exec, body.text) | EVAL result = CASE(attributes.event.outcome == \"unknown\", \"attempted\", attributes.event.outcome) | EVAL execution = COALESCE(LEFT(g_exec, 8), \"—\") | STATS n = COUNT(*), last_ts = MAX(@timestamp) BY attributes.event.action, attributes.kibana.saved_object.type, obj_name, execution, space = attributes.kibana.space.id, result | EVAL verb = CASE(attributes.event.action LIKE \"*_execution_cancel\", \"cancel\", attributes.event.action LIKE \"*_run_soon\", \"run\", attributes.event.action LIKE \"*_run\", \"run\", attributes.event.action LIKE \"*_test\", \"test\", attributes.event.action LIKE \"*_enable\", \"enable\", attributes.event.action LIKE \"*_disable\", \"disable\", attributes.event.action LIKE \"ml_put_*\", \"create\", attributes.event.action LIKE \"ml_open_*\", \"open\", attributes.event.action LIKE \"ml_start_*\", \"start\", attributes.event.action LIKE \"*point_in_time\", \"pit\", attributes.event.action LIKE \"*_create*\", \"create\", attributes.event.action LIKE \"*_update*\", \"update\", attributes.event.action LIKE \"*_delete\", \"delete\", attributes.event.action LIKE \"*_find\", \"find\", attributes.event.action LIKE \"*_get\", \"get\", attributes.event.action LIKE \"*_resolve\", \"resolve\", \"other\") | EVAL obj_type = CASE(attributes.kibana.saved_object.type IS NOT NULL, attributes.kibana.saved_object.type, attributes.event.action LIKE \"ml_*ad_job\", \"ml-job\", attributes.event.action LIKE \"ml_*ad_datafeed\", \"ml-datafeed\", attributes.event.action LIKE \"workflow_execution_*\", \"workflow-execution\", attributes.event.action LIKE \"workflow_*\", \"workflow\", attributes.event.action LIKE \"agent_builder_agent_*\", \"agent-builder-agent\", attributes.event.action LIKE \"agent_builder_tool_*\", \"agent-builder-tool\", attributes.event.action LIKE \"product_documentation_*\", \"product-documentation\", attributes.event.action == \"secret_create\", \"secret\", attributes.event.action IS NULL, \"unclassified\", REPLACE(attributes.event.action, \"_(create|update|delete|enable|disable|run|run_soon|test|cancel)$\", \"\")) | STATS events = SUM(n), last_seen = MAX(last_ts) BY verb, type = obj_type, name = obj_name, execution, space, result | EVAL name = CASE(execution == \"—\", name, CONCAT(name, \" · run \", execution)), type = REPLACE(type, \"-\", \" \"), gone = verb == \"delete\" | EVAL verb = CASE(result == \"failure\", CONCAT(verb, \" (failed)\"), verb) | DROP execution, result | SORT gone DESC, last_seen DESC | DROP gone | LIMIT 100"
         },
         "styling": {
           "density": {
@@ -500,11 +500,6 @@
             "label": "Space",
             "width": 170,
             "column": "space"
-          },
-          {
-            "label": "Result",
-            "width": 120,
-            "column": "result"
           }
         ],
         "metrics": [
@@ -532,11 +527,11 @@
       },
       "config": {
         "title": "What they read, by index family · top 9 at most",
-        "description": "Where their reads concentrate, busiest first. Dated daily indices and data-stream backing indices are folded into the family they belong to, so a date-suffixed series is one row and `Indices` says how many of its members were read. A request naming several indices counts once per index; request patterns such as * and date-math names are left out. The audit stream itself usually tops the list, because every dashboard on this page reads it. This is the busiest few; the Index families tile above counts every family.",
+        "description": "Where their reads concentrate, busiest first. Dated daily indices and data-stream backing indices are folded into the family they belong to, so a date-suffixed series is one row and `Indices` says how many of its members were read. A request naming several indices counts once per index; request patterns such as * and date-math names are left out, and so are shard- and node-level repeats of a request (search[phase/query], bulk[s][p]), which Elasticsearch audits with the same index as the request itself. Every dot-prefixed family here is also a row of \"System and hidden index reads\", with the same counts. The audit stream itself usually tops the list, because every dashboard on this page reads it. This is the busiest few; the Index families tile above counts every family.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.indices IS NOT NULL | MV_EXPAND attributes.elasticsearch.audit.indices | STATS n = COUNT(*) BY attributes.elasticsearch.audit.indices | WHERE NOT (LOCATE(attributes.elasticsearch.audit.indices, \"*\") > 0 OR STARTS_WITH(attributes.elasticsearch.audit.indices, \"<\")) | EVAL family = REPLACE(REPLACE(attributes.elasticsearch.audit.indices, \"\"\"^\\.ds-\"\"\", \"\"), \"\"\"[-.]?\\d{4}[.-]\\d{2}[.-]\\d{2}(-\\d+)?$\"\"\", \"\") | STATS events = SUM(n), indices = COUNT(*) BY family | SORT events DESC | LIMIT 9"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.indices IS NOT NULL AND (attributes.elasticsearch.audit.action IS NULL OR NOT attributes.elasticsearch.audit.action LIKE \"*[*\") | MV_EXPAND attributes.elasticsearch.audit.indices | STATS n = COUNT(*) BY attributes.elasticsearch.audit.indices | WHERE NOT (LOCATE(attributes.elasticsearch.audit.indices, \"*\") > 0 OR STARTS_WITH(attributes.elasticsearch.audit.indices, \"<\")) | EVAL family = REPLACE(REPLACE(attributes.elasticsearch.audit.indices, \"\"\"^\\.ds-\"\"\", \"\"), \"\"\"[-.]?\\d{4}[.-]\\d{2}[.-]\\d{2}(-\\d+)?$\"\"\", \"\") | STATS events = SUM(n), indices = COUNT(*) BY family | SORT events DESC, family | LIMIT 9"
         },
         "styling": {
           "density": {
@@ -580,11 +575,11 @@
       },
       "config": {
         "title": "⚠️ System and hidden index reads · top 9 at most (empty = good)",
-        "description": "Dot-prefixed indices — system and hidden — that their requests named, one row per index family: daily indices of the same stream are folded together and `Indices` says how many were touched. The index shown is one real member of the family — the row counts the whole family — and it is what a click pins; then \"Open in Elasticsearch Data Access\" to see who else reads it. Data-stream backing indices (.ds-*) are left out; they are ordinary data. An empty panel means nothing matched in the time range, which is the healthy state; any row here is worth reading.",
+        "description": "The dot-prefixed families of \"What they read, by index family\" beside it — system and hidden indices — counted the same way, so a family reads the same Events and Indices in both: daily indices and a dot-named stream's backing indices (.ds-.alerts-…) are folded into their family, and request patterns and shard-level repeats are left out. A backing index of an ordinary stream (.ds-logs-…) is ordinary data and is not here, as on Elasticsearch Data Access. The index shown is one real member of the family, never a backing index when the family has another — the row counts the whole family — and it is what a click pins; then \"Open in Elasticsearch Data Access\" to see who else reads it. An empty panel means nothing matched in the time range, which is the healthy state; any row here is worth reading.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.indices IS NOT NULL | MV_EXPAND attributes.elasticsearch.audit.indices | WHERE attributes.elasticsearch.audit.indices LIKE \".*\" AND NOT attributes.elasticsearch.audit.indices LIKE \".ds-*\" | STATS n = COUNT(*), seen = MAX(@timestamp) BY attributes.elasticsearch.audit.indices, action = attributes.elasticsearch.audit.action | EVAL family = REPLACE(REPLACE(attributes.elasticsearch.audit.indices, \"\"\"^\\.ds-\"\"\", \"\"), \"\"\"[-.]?\\d{4}[.-]\\d{2}[.-]\\d{2}(-\\d+)?$\"\"\", \"\") | STATS events = SUM(n), indices = COUNT_DISTINCT(attributes.elasticsearch.audit.indices), actions = COUNT_DISTINCT(action), last_seen = MAX(seen), `attributes.elasticsearch.audit.indices` = MIN(attributes.elasticsearch.audit.indices) BY family | SORT events DESC | LIMIT 9"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.indices IS NOT NULL | MV_EXPAND attributes.elasticsearch.audit.indices | WHERE ((attributes.elasticsearch.audit.indices LIKE \".*\" AND NOT attributes.elasticsearch.audit.indices LIKE \".ds-*\") OR attributes.elasticsearch.audit.indices LIKE \".ds-.*\") AND (attributes.elasticsearch.audit.action IS NULL OR NOT attributes.elasticsearch.audit.action LIKE \"*[*\") | STATS n = COUNT(*), seen = MAX(@timestamp) BY attributes.elasticsearch.audit.indices, action = attributes.elasticsearch.audit.action | WHERE NOT (LOCATE(attributes.elasticsearch.audit.indices, \"*\") > 0 OR STARTS_WITH(attributes.elasticsearch.audit.indices, \"<\")) | EVAL family = REPLACE(REPLACE(attributes.elasticsearch.audit.indices, \"\"\"^\\.ds-\"\"\", \"\"), \"\"\"[-.]?\\d{4}[.-]\\d{2}[.-]\\d{2}(-\\d+)?$\"\"\", \"\") | STATS events = SUM(n), indices = COUNT_DISTINCT(attributes.elasticsearch.audit.indices), actions = COUNT_DISTINCT(action), last_seen = MAX(seen), named_idx = MIN(attributes.elasticsearch.audit.indices) WHERE NOT attributes.elasticsearch.audit.indices LIKE \".ds-*\", any_idx = MIN(attributes.elasticsearch.audit.indices) BY family | EVAL `attributes.elasticsearch.audit.indices` = COALESCE(named_idx, any_idx) | DROP named_idx, any_idx | SORT events DESC, family | LIMIT 9"
         },
         "styling": {
           "density": {
@@ -634,7 +629,7 @@
       "grid": {
         "x": 0,
         "y": 76,
-        "w": 24,
+        "w": 18,
         "h": 12
       },
       "config": {
@@ -647,9 +642,9 @@
       "type": "vis",
       "id": "tbl-18",
       "grid": {
-        "x": 24,
+        "x": 18,
         "y": 76,
-        "w": 24,
+        "w": 30,
         "h": 12
       },
       "config": {
@@ -674,7 +669,7 @@
         "rows": [
           {
             "label": "Client IP",
-            "width": 120,
+            "width": 125,
             "column": "client.ip",
             "click_filter": true
           },
@@ -684,14 +679,14 @@
           },
           {
             "label": "Country",
-            "width": 97,
+            "width": 105,
             "column": "country"
           }
         ],
         "metrics": [
           {
             "label": "Events",
-            "width": 79,
+            "width": 90,
             "column": "events"
           },
           {

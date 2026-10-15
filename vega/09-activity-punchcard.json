@@ -189,7 +189,7 @@
             "gradientLength": 140,
             "gradientThickness": 10,
             "values": {
-              "expr": "!(extent(pluck(data('hours'), 'doc_count'))[1] > 0) ? [] : floor(log(domain('color')[1]) / LN10 + 1e-9) - ceil(log(domain('color')[0]) / LN10 - 1e-9) >= 1 ? slice([1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000], ceil(log(domain('color')[0]) / LN10 - 1e-9), 1 + floor(log(domain('color')[1]) / LN10 + 1e-9)) : domain('color')[1] > domain('color')[0] ? domain('color') : [domain('color')[0]]"
+              "expr": "!(extent(pluck(data('hours'), 'doc_count'))[1] > 0) ? [] : floor(log(domain('color')[1]) / LN10 + 1e-9) - ceil(log(domain('color')[0]) / LN10 - 1e-9) >= 1 ? slice([1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000], ceil(log(domain('color')[0]) / LN10 - 1e-9), 1 + floor(log(domain('color')[1]) / LN10 + 1e-9)) : domain('color')[1] > 3 * domain('color')[0] ? [domain('color')[0], sqrt(domain('color')[0] * domain('color')[1]), domain('color')[1]] : domain('color')[1] > domain('color')[0] ? domain('color') : [domain('color')[0]]"
             },
             "labelExpr": "format(datum.value, '.2~s')",
             "titleOpacity": {

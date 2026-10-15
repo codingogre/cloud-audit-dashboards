@@ -368,7 +368,7 @@
       "config": {
         "ref_id": "cloud-audit-vega-05-rare-event-scatter",
         "title": "Highest-severity actions, by how rare",
-        "description": "The highest-severity scoring actions in range, one row per action and weight, placed by how often each happened: rarer is further left, so the top-left is rare and high-severity — look there first. Shows the top 12 by severity, rarest first within a weight; the subtitle says how many actions scored in all. On a quiet range the top 12 reach down to routine Kibana changes (weight 25), which can be frequent: rare is a position on this chart, not a filter. Each row ends with its severity weight, which the colour repeats. A failed change scores 40 whatever it changed, so it gets its own row, marked (failed). Hover a point for how many identities did it and when. Routine activity scores 0 and is not shown. Counts are what risk scoring weighs, Kibana's own API-key clean-up included, so invalidate_apikeys here can be far above the Key invalidations tile, which leaves that clean-up out."
+        "description": "The highest-severity scoring actions in range, one row per action and weight, placed by how often each happened: rarer is further left, so the top-left is rare and high-severity — look there first. Shows the top 12 by severity, rarest first within a weight; the subtitle says how many actions scored in all. On a quiet range the top 12 reach down to routine Kibana changes (weight 25), which can be frequent: rare is a position on this chart, not a filter. Each row ends with its severity weight, which the colour repeats: one colour per weight, blue for 10 up to deep red for 50, keyed below the chart. A failed change scores 40 whatever it changed, so it gets its own row, marked (failed). Hover a point for how many identities did it and when. Routine activity scores 0 and is not shown. Counts are what risk scoring weighs, Kibana's own API-key clean-up included, so invalidate_apikeys here can be far above the Key invalidations tile, which leaves that clean-up out."
       }
     },
     {
@@ -677,12 +677,12 @@
         "h": 10
       },
       "config": {
-        "title": "Top failures and denials by identity · 8 at most (empty = good)",
-        "description": "Failed and denied operations grouped by identity, action and source IP, the most frequent first; only the top rows fit the panel. These are the events the Failures tile counts (every denial and failed sign-in carries a failure outcome), and the Anonymous denials tile is their anonymous_access_denied rows. Scope separates unauthenticated probes from tenant identities and Elastic platform automation. API keys and native users (elastic, admin) carry no email, so an Identity that is not an email does not mean an external probe — read Scope. To follow one person, pick them in the Person (email) control; the pin carries to Actor 360. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email. An empty panel means nothing matched in the time range, which is the healthy state; any row here is worth reading.",
+        "title": "Top failures and denials by identity and action · 8 at most (empty = good)",
+        "description": "Failed and denied operations, one row per identity and action, the most frequent first; only the top rows fit the panel. These are the events the Failures tile counts (every denial and failed sign-in carries a failure outcome), and the Anonymous denials tile is their anonymous_access_denied rows. A failure is scored on a row of its own in Why these identities scored, so where a pair appears in both, Events is the same number. Latest IP is the client address of the newest of those events and Client IPs counts the different addresses they came from: many addresses behind one identity is a spray, one address behind many identities is one source trying names. An address tagged (internal) is the platform-internal hop (100.64/10), as on Geo & Network: the platform calling on the client's behalf, not the client, and Client IPs counts it too. Scope separates unauthenticated probes from tenant identities and Elastic platform automation. API keys and native users (elastic, admin) carry no email, so an Identity that is not an email does not mean an external probe — read Scope. To follow one person, pick them in the Person (email) control; the pin carries to Actor 360. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email. An empty panel means nothing matched in the time range, which is the healthy state; any row here is worth reading.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.event.outcome == \"failure\" OR attributes.event.action IN (\"authentication_failed\",\"realm_authentication_failed\",\"anonymous_access_denied\") | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | STATS events = COUNT(*), last_seen = MAX(@timestamp) BY actor, action = attributes.event.action, ip = client.ip | SORT events DESC | EVAL actor_scope = CASE(actor IN (\"elastic.maintenance\",\"autoscaling\",\"elasticsearch-controller\",\"elastic/fleet-server\",\"elastic/kibana\"), \"platform\", actor IN (\"<anonymous>\",\"<unauthenticated-cloud-access-token>\",\"<unauthenticated-saml-user>\",\"<unauthenticated-cloud-api-key>\"), \"unauthenticated\", \"tenant\") | LIMIT 8 | EVAL actor = CASE((LENGTH(actor) == 20 AND actor RLIKE \"[-_A-Za-z0-9]{20}\" AND NOT actor RLIKE \"[0-9]{20}\"), CONCAT(LEFT(actor, 5), \"… · Cloud API key\"), actor)"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.event.outcome == \"failure\" OR attributes.event.action IN (\"authentication_failed\",\"realm_authentication_failed\",\"anonymous_access_denied\") | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | STATS events = COUNT(*), ips = COUNT_DISTINCT(client.ip), ip = LAST(client.ip, @timestamp), last_seen = MAX(@timestamp) BY actor, action = attributes.event.action | SORT events DESC | EVAL actor_scope = CASE(actor IN (\"elastic.maintenance\",\"autoscaling\",\"elasticsearch-controller\",\"elastic/fleet-server\",\"elastic/kibana\"), \"platform\", actor IN (\"<anonymous>\",\"<unauthenticated-cloud-access-token>\",\"<unauthenticated-saml-user>\",\"<unauthenticated-cloud-api-key>\"), \"unauthenticated\", \"tenant\") | EVAL ip = CASE(CIDR_MATCH(ip, \"100.64.0.0/10\"), CONCAT(TO_STRING(ip), \" (internal)\"), TO_STRING(ip)) | LIMIT 8 | EVAL actor = CASE((LENGTH(actor) == 20 AND actor RLIKE \"[-_A-Za-z0-9]{20}\" AND NOT actor RLIKE \"[0-9]{20}\"), CONCAT(LEFT(actor, 5), \"… · Cloud API key\"), actor)"
         },
         "styling": {
           "density": {
@@ -710,12 +710,17 @@
             "column": "action"
           },
           {
-            "label": "IP",
-            "width": 125,
+            "label": "Latest IP",
+            "width": 200,
             "column": "ip"
           }
         ],
         "metrics": [
+          {
+            "label": "Client IPs",
+            "width": 90,
+            "column": "ips"
+          },
           {
             "label": "Events",
             "width": 90,
@@ -741,7 +746,7 @@
       "config": {
         "ref_id": "cloud-audit-search-03-security-config-changes",
         "title": "Config-change event feed · newest 1,000 at most (empty when none in range)",
-        "description": "Every security configuration change the Config changes tile counts, as its own event, newest first, with the payload in full; expand a row to read a long one. Kibana's own API-key clean-up (invalidate_apikeys by the elastic/kibana service account through no named key, every few seconds) is left out, as on Command Center's Privileged ops. Discover returns at most the newest 1,000 events, and its result count is that cap rather than the total: when it reads 1,000, the Config changes tile at the top has the total. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email. Often empty over the default hour on a healthy project; widen the time range to see older rows."
+        "description": "Every security configuration change the Config changes tile counts, as its own event, newest first, with the payload in full over two lines; expand a row to read a longer one. Kibana's own API-key clean-up (invalidate_apikeys by the elastic/kibana service account through no named key, every few seconds) is left out, as on Command Center's Privileged ops. Discover returns at most the newest 1,000 events, and its result count is that cap rather than the total: when it reads 1,000, the Config changes tile at the top has the total. Scroll the grid for older rows. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email. Often empty over the default hour on a healthy project; widen the time range to see older rows."
       }
     },
     {
@@ -751,12 +756,12 @@
         "x": 0,
         "y": 88,
         "w": 48,
-        "h": 14
+        "h": 25
       },
       "config": {
         "ref_id": "cloud-audit-search-01-all-mutations",
         "title": "Mutation feed · newest 1,000 at most",
-        "description": "Creates, updates and deletes across Kibana and Elasticsearch security config, newest first. Object is what the change named: the saved object or feature object for a Kibana change; for an Elasticsearch security change, the API key's name, the key ids of an invalidation, the role or the profile, with its full JSON payload under Message. Kibana's own API-key clean-up (invalidate_apikeys by the elastic/kibana service account through no named key, every few seconds) is left out, as on Command Center's Privileged ops. Discover returns at most the newest 1,000 events, and its result count is that cap rather than the total. To reach older events, narrow the time range. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email."
+        "description": "Creates, updates and deletes across Kibana and Elasticsearch security config, newest first. Object is what the change named: the saved object or feature object for a Kibana change; for an Elasticsearch security change, the API key's name, the key ids of an invalidation, the role or the profile, with its full JSON payload under Message. Kibana's own API-key clean-up (invalidate_apikeys by the elastic/kibana service account through no named key, every few seconds) is left out, as on Command Center's Privileged ops. Space id is the space's id, the /s/<id> in its URL: the audit stream records no space display name, not even on a space read. It is empty on an Elasticsearch security change, which belongs to no space. Spaces that tooling creates and deletes (review or test spaces) are real activity, and so is the config object Kibana creates the first time a space is opened. Discover returns at most the newest 1,000 events, and its result count is that cap rather than the total. Scroll the grid for older rows; to reach older events still, narrow the time range. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email."
       }
     }
   ]

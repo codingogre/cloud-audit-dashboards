@@ -22,7 +22,7 @@
   },
   "title": {
     "text": {
-      "expr": "length(data('coverage')) && data('coverage')[0].total > 0 ? 'On the map: ' + data('coverage')[0].on_map + '% of events · address cannot be placed: ' + data('coverage')[0].cannot + '% · no client IP: ' + data('coverage')[0].no_client_ip + '%' + (data('coverage')[0].before_enrichment !== '0' ? ' · before geo enrichment: ' + data('coverage')[0].before_enrichment + '%' : '') : 'No activity for this selection in this time range'"
+      "expr": "length(data('coverage')) && data('coverage')[0].total > 0 ? ['On the map: ' + data('coverage')[0].on_map + '% of events · address cannot be placed: ' + data('coverage')[0].cannot + '%', 'no client IP: ' + data('coverage')[0].no_client_ip + '%' + (data('coverage')[0].before_enrichment !== '0' ? ' · before geo enrichment: ' + data('coverage')[0].before_enrichment + '%' : '')] : 'No activity for this selection in this time range'"
     },
     "subtitle": {
       "expr": "!length(data('places')) ? '' : extent(pluck(data('places'), 'places'))[1] > 1 ? 'Lines join consecutive locations for one identity; color is the travel speed that would imply.' : 'Each identity was seen from one place in this range, so there is no travel to draw.'"
@@ -60,11 +60,11 @@
       ],
       "mark": {
         "type": "geoshape",
-        "fill": "#64A3DE",
-        "fillOpacity": 0.16,
-        "stroke": "#5082B1",
-        "strokeWidth": 0.4,
-        "strokeOpacity": 0.5
+        "fill": "#98A2B3",
+        "fillOpacity": 0.35,
+        "stroke": "#98A2B3",
+        "strokeWidth": 0.5,
+        "strokeOpacity": 0.9
       }
     },
     {

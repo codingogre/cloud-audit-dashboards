@@ -1,6 +1,6 @@
 {
   "$schema": "https://vega.github.io/schema/vega/v5.json",
-  "description": "Hourly activity for the current selection against its OWN pattern for that hour of day. The shaded band is their typical range for the hour (\"typical range\" in the legend, which lists only what is drawn) — the middle half of the seven observations in the window — and a point marks an hour beyond 1.5× that range, which is unusual for them. Seven observations per hour slot is thin, so read it as a sanity check rather than a detector: an identity with a steady background process plus human bursts will sit outside often, and correctly. The headline reads the last complete hour; the current partial hour is left off so it cannot read as a drop. Hours are UTC. Fixed 7-day window: does not follow the time picker. No noise gate, so it will not reconcile with Signal events. With less than three days of history the band has nothing to stand on: the second line then says when their history starts and no hour is marked unusual, because every busy hour would read as unusual against a week of zeros.",
+  "description": "Hourly activity for the current selection against its OWN pattern for that hour of day. The shaded band is their typical range for the hour (\"typical range\" in the legend, which lists only what is drawn) — the middle half of the seven observations in the window — and a point marks an hour beyond 1.5× that range, which is unusual for them. Seven observations per hour slot is thin, so read it as a sanity check rather than a detector: an identity with a steady background process plus human bursts will sit outside often, and correctly. The headline reads the last complete hour; the current partial hour is left off so it cannot read as a drop. Hours are UTC. Fixed 7-day window: does not follow the time picker. No noise gate, so it will not reconcile with Signal events. With less than three days of history the band has nothing to stand on: the second line then says when their history starts, no hour is marked unusual (every busy hour would read as unusual against a week of zeros), and the time axis starts three hours before that history instead of seven days back, so the chart is not a week of empty floor with the data in a sliver at the right edge.",
   "autosize": {
     "type": "fit",
     "contains": "padding"
@@ -23,6 +23,14 @@
     {
       "name": "quiet",
       "update": "length(data('summary')) === 0 || data('summary')[0].total === 0"
+    },
+    {
+      "name": "xlo",
+      "update": "length(data('summary')) ? (data('summary')[0].short && isValid(data('summary')[0].firstActive) ? max(data('summary')[0].firstKey, data('summary')[0].firstActive - 3 * 3600000) : data('summary')[0].firstKey) : 0"
+    },
+    {
+      "name": "xhi",
+      "update": "length(data('summary')) ? data('summary')[0].lastKey : 1"
     }
   ],
   "data": [
@@ -95,15 +103,18 @@
           "type": "joinaggregate",
           "fields": [
             "activeKey",
+            "key",
             "key"
           ],
           "ops": [
             "min",
-            "max"
+            "max",
+            "min"
           ],
           "as": [
             "firstActive",
-            "lastKey"
+            "lastKey",
+            "firstKey"
           ]
         },
         {
@@ -160,8 +171,18 @@
       ]
     },
     {
-      "name": "outside",
+      "name": "shown",
       "source": "series",
+      "transform": [
+        {
+          "type": "filter",
+          "expr": "datum.key >= xlo"
+        }
+      ]
+    },
+    {
+      "name": "outside",
+      "source": "shown",
       "transform": [
         {
           "type": "filter",
@@ -273,8 +294,7 @@
       "name": "x",
       "type": "utc",
       "domain": {
-        "data": "series",
-        "field": "key"
+        "signal": "[xlo, xhi]"
       },
       "range": "width"
     },
@@ -282,7 +302,7 @@
       "name": "y",
       "type": "symlog",
       "domain": {
-        "data": "series",
+        "data": "shown",
         "fields": [
           "events",
           "q1",
@@ -344,7 +364,16 @@
       "labelOverlap": true,
       "grid": false,
       "format": "%a %d",
-      "formatType": "utc"
+      "formatType": "utc",
+      "encode": {
+        "labels": {
+          "update": {
+            "text": {
+              "signal": "xhi - xlo < 2 * 86400000 ? utcFormat(datum.value, '%a %H:00') : utcFormat(datum.value, '%a %d')"
+            }
+          }
+        }
+      }
     },
     {
       "orient": "left",
@@ -442,7 +471,7 @@
     {
       "type": "area",
       "from": {
-        "data": "series"
+        "data": "shown"
       },
       "interactive": false,
       "encode": {
@@ -474,7 +503,7 @@
     {
       "type": "line",
       "from": {
-        "data": "series"
+        "data": "shown"
       },
       "interactive": false,
       "encode": {
@@ -528,7 +557,7 @@
     {
       "type": "symbol",
       "from": {
-        "data": "series"
+        "data": "shown"
       },
       "encode": {
         "update": {

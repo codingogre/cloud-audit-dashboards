@@ -1,6 +1,6 @@
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
-  "description": "Audited events by real client country. Countries are colored by event volume on a log scale, teal (few) through blue and purple to pink (most): the suite’s four mid-tone magnitude hues, so every step stands apart from the grey no-data countries in both themes. The gradient legend sits inside the map, over open ocean at the bottom left, labelled at the decades inside the data, and only once two or more countries are shaded — a single country has no range to read, and a 1-to-max ramp beside it matched nothing on the map. Hover for events, identities, client IPs and share of placed traffic. The title line states how much of the stream could be placed at all, rounded once in ES|QL exactly as the Geo coverage tile is (ROUND(located / total, 3)), so the two always print the same tenth of a percent: platform-internal hops, private addresses and events with no client IP resolve to nothing, so a blank country is not evidence of no traffic.",
+  "description": "Audited events by real client country. Countries are colored by event volume on a log scale (the legend's title says so; the subtitle no longer does, since with one country shaded there is no legend to check it against), teal (few) through blue and purple to pink (most): the suite’s four mid-tone magnitude hues, so every step stands apart from the grey no-data countries in both themes. The gradient legend sits inside the map, over open ocean at the bottom left, labelled at the decades inside the data, and only once two or more countries are shaded — a single country has no range to read, and a 1-to-max ramp beside it matched nothing on the map. Hover for events, identities, client IPs and share of placed traffic. The title line states how much of the stream could be placed at all, rounded once in ES|QL exactly as the Geo coverage tile is (ROUND(located / total, 3)), so the two always print the same tenth of a percent: platform-internal hops, private addresses and events with no client IP resolve to nothing, so a blank country is not evidence of no traffic. Text is 13-14px, the size of the table text beside it: at 11px the subtitle was the smallest text on the page. Unshaded land is #98A2B3 at 0.3 opacity with a 0.75 border, one mid grey that reads on both themes: at 0.14 it all but vanished on the light theme's white panel.",
   "autosize": {
     "type": "fit",
     "contains": "padding"
@@ -10,14 +10,15 @@
       "stroke": null
     },
     "legend": {
-      "labelFontSize": 11,
-      "titleFontSize": 11
+      "labelFontSize": 12,
+      "titleFontSize": 12
     },
     "title": {
-      "fontSize": 12,
+      "fontSize": 14,
       "fontWeight": 500,
       "anchor": "start",
-      "subtitleFontSize": 11
+      "subtitleFontSize": 13,
+      "subtitlePadding": 4
     }
   },
   "title": {
@@ -25,8 +26,8 @@
       "expr": "length(data('coverage')) && data('coverage')[0].total > 0 ? length(data('countries')) + (length(data('countries')) == 1 ? ' country' : ' countries') + ' · placed on the map: ' + format(data('coverage')[0].share, '.1%') + ' of events · could not be placed: ' + format(1 - data('coverage')[0].share, '.1%') : 'No activity for this selection in this time range'"
     },
     "subtitle": [
-      "Location is client.ip, the real client from network.forwarded_ip; source.ip is only the proxy hop.",
-      "Color is event volume, log scale. Where the rest of the stream went is in the table beside the map."
+      "Placed by client.ip, the real client; source.ip is only the proxy hop.",
+      "Where the rest went: Geo resolution of audited events, beside the map."
     ]
   },
   "projection": {
@@ -53,10 +54,10 @@
       "mark": {
         "type": "geoshape",
         "fill": "#98A2B3",
-        "fillOpacity": 0.14,
+        "fillOpacity": 0.3,
         "stroke": "#98A2B3",
-        "strokeWidth": 0.4,
-        "strokeOpacity": 0.45
+        "strokeWidth": 0.5,
+        "strokeOpacity": 0.75
       }
     },
     {
@@ -152,7 +153,7 @@
             "interpolate": "hcl"
           },
           "legend": {
-            "title": "Events",
+            "title": "Events (log scale)",
             "orient": "bottom-left",
             "direction": "horizontal",
             "gradientLength": 140,
