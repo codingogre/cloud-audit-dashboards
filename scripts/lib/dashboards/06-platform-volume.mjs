@@ -43,27 +43,32 @@ const BAND_COLORS = { 'Signal': PALETTE[0], 'Auth success': PALETTE[1], 'Query i
  * fence again (live, 1h, median 4,240: minutes of 1,249 / 1,727 / 1,581 / 1,287 / 2,417 straddle the
  * 1,413 cut, so every other bar vanished). Any single cut fences whatever traffic oscillates around it.
  *
- * So the cut has hysteresis: a bucket is judged with its neighbours (a missing bucket, or one outside
- * the window, counts as 0). With T the window's median bucket total:
+ * So the cut has hysteresis (a Schmitt trigger): with T the window's median bucket total, a bucket is
+ * tiny under T/10 and quiet under T/3, and only a tiny bucket can START a blank. A quiet bucket is blank
+ * only when its run of quiet buckets reaches a tiny one; a stretch that merely swings around T/3, with no
+ * tiny bucket in it, is drawn whole.
  *
- *   tiny   total < T/10        always blank — a lull whose share cannot honestly stand at full height
- *   quiet  T/10 ≤ total < T/3  blank, unless BOTH neighbours are at least T/3: a one-bucket dip inside
- *                              busy traffic is drawn, not left as a hole
- *   loud   total ≥ T/3         drawn, unless it is under T and both neighbours end up blank (tiny, or
- *                              quiet with a quiet bucket on their far side): a lone low bar inside a
- *                              lull. A bucket at or above the median is always drawn.
+ *   tiny                         always blank — its share cannot honestly stand at full height
+ *   quiet, beside a tiny bucket  blank: the shoulder of a lull (looked up to two buckets along the run)
+ *   quiet, otherwise             drawn: a dip, or a quiet stretch, is not a lull
+ *   loud (≥ T/3)                 drawn, unless it is under T and BOTH sides are blank: a lone low bar
+ *                                inside a lull. A bucket at or above T is always drawn.
  *
- * "End up blank" is why the second neighbours are read too. Judging a loud bucket on its neighbours'
- * raw class alone blanked 3,299 events between rescued minutes of 901 and 536 (L q L q L): the quiet
- * minutes drew and the loud one vanished. With it the result is consistent — a drawn quiet bucket has
- * two loud neighbours, and those are never blanked.
+ * Beyond the first or last bucket counts as unknown, not as 0: otherwise a window that opens on a quiet
+ * minute reads the minute before it as a lull and blanks its own opening (it did, at 16:00–17:00: two
+ * ~1,200-event minutes). Inside the data an empty bucket is 0, i.e. tiny.
+ *
+ * Two rules failed before this one, both in round 5. Blanking a quiet bucket unless BOTH neighbours were
+ * loud left a two-bucket hole in steady ~500–1,100 traffic (520 / 812 side by side under an 838 cut);
+ * blanking every quiet run of 3+ moved the hole, not removed it (T 2,935, cut 978: 483 / 978 / 606
+ * blanked, and the 1,152 beside them dropped as a lone bar, mid-stretch). Any rule keyed to T/3 holes a
+ * stretch that sits on T/3; seeding the blank only from T/10 is what ends that.
  *
  * A ratio, not an absolute floor, so it holds at 5–10× today's volume, and a low-volume project whose
- * buckets are all small together keeps them. Simulated against the third-of-median rule on the same
- * totals: the review's 1h (00:12–01:12 UTC) went from ██·█··█··████·█·███ to ████·····██████████ (one
- * blank run, 8 drops against 11); three other live 1h windows and a 3h each lose their one flickering
- * gap and keep only the real lull; 24h still drops only the partial first bucket; the 7-day replica
- * drops 5 of 45 three-hour buckets against 6.
+ * buckets are all small together keeps them. Simulated on thirteen live windows (1h, 4h, 6h, 24h) and the
+ * 7-day replica: real lulls (2–68 events a bucket, and empty buckets) blank as one run each; the steady
+ * stretches the earlier rules holed draw whole, except a single 275-event minute (under T/10) in one
+ * window; 24h still drops only the partial first bucket (628 events against T 39,014).
  *
  * It needs each bucket's neighbours, and ES|QL has no window functions; INLINE STATS re-runs the scan
  * (measured 0.5s → 2.2s at 7d). So it is done by hand over the already-aggregated rows: one row per
@@ -77,26 +82,35 @@ const BAND_COLORS = { 'Signal': PALETTE[0], 'Auth success': PALETTE[1], 'Query i
 const SPANS_S = [1, 5, 10, 30, 60, 300, 600, 1800, 3600, 10800, 43200, 86400, 604800, 2592000, 7776000];
 const SPAN =
   `CASE(${SPANS_S.map((s) => `need <= ${s}, ${s}`).join(', ')}, 31536000)`;
-/** The total of the bucket k spans away, or 0 when there is none (no events, or outside the window). */
+/**
+ * The total of the bucket k spans away: 0 when it is inside the data's range with no events, -1 when it lies
+ * beyond the first or last bucket (outside the window, or before the data starts), which counts as neither
+ * tiny nor quiet — a window that opens mid-stretch must not read the minute before it as a lull.
+ */
 const NB = (name, k) => {
-  const key = `CONCAT(";", TO_STRING(ms + ${k} * span), "=")`;
-  return `${name} = CASE(LOCATE(idx, ${key}) > 0, ` +
-    `TO_LONG(MV_FIRST(SPLIT(SUBSTRING(idx, LOCATE(idx, ${key}) + LENGTH(${key})), ";"))), 0)`;
+  const at = `ms + ${k} * span`;
+  const key = `CONCAT(";", TO_STRING(${at}), "=")`;
+  return `${name} = CASE(${at} < lo OR ${at} > hi, TO_LONG(-1), LOCATE(idx, ${key}) > 0, ` +
+    `TO_LONG(MV_FIRST(SPLIT(SUBSTRING(idx, LOCATE(idx, ${key}) + LENGTH(${key})), ";"))), TO_LONG(0))`;
 };
+const T_ = (v) => `${v} >= 0 AND ${v} * 10 < typical`;
+const Q_ = (v) => `${v} >= 0 AND ${v} * 3 < typical`;
 const QUIET_BUCKETS =
   'STATS total = SUM(events), parts = VALUES(CONCAT(band, "=", TO_STRING(events))) BY ts | EVAL ms = TO_LONG(ts) ' +
   '| STATS typical = MEDIAN(total), b = VALUES(CONCAT(TO_STRING(ms), "#", TO_STRING(total), "#", MV_CONCAT(parts, ";"))), ' +
-  'idx = VALUES(CONCAT(";", TO_STRING(ms), "=", TO_STRING(total))) ' +
+  'idx = VALUES(CONCAT(";", TO_STRING(ms), "=", TO_STRING(total))), lo = MIN(ms), hi = MAX(ms) ' +
   '| EVAL idx = CONCAT(MV_CONCAT(idx, ""), ";"), need = DATE_DIFF("second", TO_DATETIME(?_tstart), TO_DATETIME(?_tend)) / 75.0 ' +
   `| EVAL span = 1000 * TO_LONG(${SPAN}) ` +
   '| MV_EXPAND b | DISSECT b "%{ms}#%{total}#%{parts}" | EVAL ms = TO_LONG(ms), total = TO_LONG(total) ' +
-  `| EVAL ${NB('p1', -1)}, ${NB('n1', 1)}, ${NB('p2', -2)}, ${NB('n2', 2)} ` +
-  // quiet = under T/3, tiny = under T/10 (T = typical). A neighbour is certainly blank when it is tiny, or
-  // quiet beside another quiet bucket — the rescue below needs BOTH its neighbours loud.
-  '| EVAL q = total * 3 < typical, p_blank = p1 * 10 < typical OR (p1 * 3 < typical AND p2 * 3 < typical), ' +
-  'n_blank = n1 * 10 < typical OR (n1 * 3 < typical AND n2 * 3 < typical) ' +
-  '| WHERE total * 10 >= typical AND (NOT q OR (p1 * 3 >= typical AND n1 * 3 >= typical)) ' +
-  'AND (q OR total >= typical OR NOT (p_blank AND n_blank)) ' +
+  `| EVAL ${NB('p1', -1)}, ${NB('n1', 1)}, ${NB('p2', -2)}, ${NB('n2', 2)}, ${NB('p3', -3)}, ${NB('n3', 3)} ` +
+  // t* tiny, q* quiet (a tiny bucket is quiet too); T = typical. Blank: a tiny bucket; a quiet one whose quiet run
+  // reaches a tiny bucket within two steps; a loud one under T whose BOTH sides are blank (a side is blank when it
+  // is beyond the data, tiny, or quiet and running into a tiny bucket within three steps).
+  `| EVAL tp1 = ${T_('p1')}, tp2 = ${T_('p2')}, tp3 = ${T_('p3')}, tn1 = ${T_('n1')}, tn2 = ${T_('n2')}, tn3 = ${T_('n3')}, ` +
+  `qp1 = ${Q_('p1')}, qp2 = ${Q_('p2')}, qn1 = ${Q_('n1')}, qn2 = ${Q_('n2')} ` +
+  '| WHERE CASE(total * 10 < typical, false, ' +
+  'total * 3 < typical, NOT (tp1 OR tn1 OR (qp1 AND tp2) OR (qn1 AND tn2)), ' +
+  'total >= typical OR NOT ((p1 < 0 OR tp1 OR (qp1 AND (tp2 OR (qp2 AND tp3)))) AND (n1 < 0 OR tn1 OR (qn1 AND (tn2 OR (qn2 AND tn3)))))) ' +
   '| EVAL part = SPLIT(parts, ";") | MV_EXPAND part | DISSECT part "%{band}=%{events}" ' +
   `| EVAL \`${BUCKET}\` = TO_DATETIME(ms), events = TO_LONG(events) | KEEP \`${BUCKET}\`, band, events`;
 
@@ -164,14 +178,14 @@ export function build() {
     // Created by is the same column as Highest-volume identities' and reconciles the two: a key made by a
     // person has that person's email on its events (so its traffic is under the person there), any other
     // key has its creator's user.name — for a Cloud API key, its id, shown in the suite's one form.
-    // Created by at 140px and Events at 80px leave the key name ~250px at a 1440px viewport: at 150 / 90
-    // "syn-new-hire-20261014-152111-2820" ran under Created by.
+    // Created by at 140px and Events at 72px leave the key name ~260px at a 1440px viewport: at 150 / 90
+    // "syn-new-hire-20261014-152111-2820" ran under Created by, and at 140 / 80 it touched it.
     table(30, 12, 18, 13, 'Named API keys',
       `FROM ${IDX} | ${TIME} | WHERE attributes.api_key.name IS NOT NULL | STATS events = COUNT(*), emails = VALUES(attributes.user.email), names = VALUES(attributes.user.name) BY attributes.api_key.name ` +
       `| EVAL creator = COALESCE(MV_MIN(emails), MV_MIN(names)), n_creators = COALESCE(MV_COUNT(emails), 0) + COALESCE(MV_COUNT(names), 0) ` +
       `| EVAL created_by = COALESCE(CONCAT(${cloudKeyLabel('creator')}, CASE(n_creators > 1 AND emails IS NULL, CONCAT(" + ", TO_STRING(n_creators - 1), " more"), "")), " ") ` +
       '| KEEP attributes.api_key.name, created_by, events | SORT events DESC, attributes.api_key.name | LIMIT 12',
-      [filterable('attributes.api_key.name'), { column: 'created_by', label: 'Created by', width: 140 }], [{ column: 'events', width: 80 }],
+      [filterable('attributes.api_key.name'), { column: 'created_by', label: 'Created by', width: 140 }], [{ column: 'events', width: 72 }],
       'The busiest API keys that have a name, by events, as many as the panel holds. Click a key to pin it across the suite. Created by is who made the key, which Elasticsearch records on every event the key emits. A key made by a person counts under that person’s email in Highest-volume identities (Kind “human + key”); any other key has its own row there, with the same count as here. A Cloud API key has no name in the audit stream, so it is not listed here; it appears by id, as “_4KEO… · Cloud API key” (its first five characters).',
       // 'quiet', not "(empty without named-key traffic)": with the "top 12 at most" bound the longer
       // words ran past the edge of an 18-column panel at 1440px.
@@ -181,7 +195,7 @@ export function build() {
     // whether a spike was more noise or more signal.
     xy(0, 25, 30, 12, 'Band share over time',
       `FROM ${IDX} | ${TIME} | STATS n = COUNT(*) BY ts = ${BUCKET}, ${BAND_KEYS} | ${BAND} | STATS events = SUM(n) BY ts, band | ${QUIET_BUCKETS} | ${BAND_ORDER} | ${BAND_LABEL}`,
-      'events', 'Each bucket’s events as 100%, split by band. A rising Signal share means activity, not housekeeping, is driving the volume. A lull is left blank, because as a percentage a few dozen events would stand as tall as the busiest minute: a bucket under a tenth of the window’s typical (median) volume, or under a third unless both buckets beside it are busier than that, and a lone low bar between blanks. Signal vs noise over time, directly above, shows every bucket’s volume.',
+      'events', 'Each bucket’s events as 100%, split by band. A rising Signal share means activity, not housekeeping, is driving the volume. A lull is left blank, because as a percentage a few dozen events would stand as tall as the busiest minute: a bucket under a tenth of the window’s typical (median) volume, a bucket under a third of it right beside one of those, and a lone low bar inside such a lull. A stretch that is merely quiet is drawn. Signal vs noise over time, directly above, shows every bucket’s volume.',
       { kind: 'bar_percentage', breakdown: 'band', colors: BAND_COLORS }),
     // Grouped on the raw keyword, relabelled after: the two-condition CASE runs on the grouped rows,
     // not on every event (panels.mjs QUERY SHAPE rules 1–2). Same labels, colours and order as 00's.
@@ -197,13 +211,16 @@ export function build() {
     // characters are the count. The label runs on the grouped rows, before the SORT/LIMIT that table()
     // lowers; the name breaks ties, which otherwise swapped two equal rows between refreshes. Measured on
     // the 7-day replica: 111–158ms against 101–113ms for the count it replaces.
-    table(0, 37, 24, 13, 'Noisiest transport actions',
+    table(0, 37, 22, 13, 'Noisiest transport actions',
       `FROM ${IDX} | ${TIME} | WHERE attributes.elasticsearch.audit.action IS NOT NULL | ${ACTOR_RESOLVE} ` +
       '| STATS n = COUNT(*) BY attributes.elasticsearch.audit.action, actor ' +
       '| STATS events = SUM(n), actors = COUNT(*), top = MAX(CONCAT(TO_STRING(1000000000000 + n), actor)) BY attributes.elasticsearch.audit.action ' +
       `| EVAL top_identity = SUBSTRING(top, 14) | EVAL top_identity = CONCAT(${cloudKeyLabel('top_identity')}, CASE(actors > 1, CONCAT(" + ", TO_STRING(actors - 1), " more"), "")) ` +
       '| KEEP attributes.elasticsearch.audit.action, top_identity, events | SORT events DESC, attributes.elasticsearch.audit.action | LIMIT 12',
-      ['attributes.elasticsearch.audit.action', { column: 'top_identity', label: 'Busiest identity' }], ['events'],
+      // Busiest identity at 210px holds "_4KEO… · Cloud API key + 19 more" and Events at 80px a seven-digit
+      // count, so the action keeps the rest: at 22 columns and even widths, 1440px left
+      // "cluster:admin/xpack/security/api_key/get" 4px short of the identity beside it.
+      ['attributes.elasticsearch.audit.action', { column: 'top_identity', label: 'Busiest identity', width: 210 }], [{ column: 'events', width: 80 }],
       'Highest-volume Elasticsearch transport actions, unfiltered. Busiest identity is the identity behind most of each action’s events (resolved as in Highest-volume identities), followed by how many others also called it. ES|QL’s own fan-out (esql/compute, search_shards, field_caps[n]) is in Query internals, and much of it is dashboards querying this stream — often the Cloud API key running this suite, shown as “_4KEO… · Cloud API key” (its first five characters).'),
     // Kind is refined after the STATS (KIND_REFINE, then the key cases), where it costs nothing: ACTOR's
     // two-way CASE called every key — the Cloud API key and each named key — "service", the same word as
@@ -214,20 +231,29 @@ export function build() {
     // whose keys were all made by the Cloud API key, could only ever read 0 or 100% (round-5 review).
     // Created by is the key's creator, which Elasticsearch stamps as user.name on every event the key
     // emits (HANDOFF.md): VALUES over named-key events only, so a person's row carries nothing extra.
+    // A name that only ever failed to sign in ("admin", 93 events at 24h: realm_authentication_failed and
+    // authentication_failed, nothing else) is a guessed username, not a service account; ACTOR's cut called
+    // it "service" (round-5 skeptic). Tested on the action VALUES after the STATS, not with a per-event
+    // filtered COUNT: 7d replica 375–448ms against 384–402ms before, where VALUES replaces the
+    // COUNT_DISTINCT that Actions was (MV_COUNT of the same set).
     // fitRows(13) = 12 rows exactly; at h=12 the 10 rows left a blank strip under the last one.
-    table(24, 37, 24, 13, 'Highest-volume identities',
+    table(22, 37, 26, 13, 'Highest-volume identities',
       `FROM ${IDX} | ${TIME} | ${ACTOR} | STATS events = COUNT(*), via_key = COUNT(attributes.api_key.name), ` +
       'creators = VALUES(attributes.user.name) WHERE attributes.api_key.name IS NOT NULL, ' +
-      `actions = COUNT_DISTINCT(attributes.event.action) BY actor, actor_kind | ${KIND_REFINE} ` +
+      `acts = VALUES(attributes.event.action) BY actor, actor_kind | ${KIND_REFINE} ` +
+      '| EVAL actions = MV_COUNT(acts), acts = MV_CONCAT(MV_SORT(acts), ",") ' +
       `| EVAL actor_kind = CASE(${isCloudKeyId('actor')}, "API key", actor_kind == "service" AND via_key == events, "API key", ` +
-      'actor_kind == "human" AND via_key > 0, "human + key", actor_kind) ' +
+      'actor_kind == "human" AND via_key > 0, "human + key", ' +
+      'actor_kind == "service" AND acts IN ("authentication_failed", "realm_authentication_failed", "authentication_failed,realm_authentication_failed"), "failed sign-in", actor_kind) ' +
       '| EVAL creator = CASE(actor_kind == "API key" AND via_key == events, MV_MIN(creators)), n_creators = MV_COUNT(creators) ' +
       `| EVAL created_by = COALESCE(CONCAT(${cloudKeyLabel('creator')}, CASE(n_creators > 1, CONCAT(" + ", TO_STRING(n_creators - 1), " more"), "")), " ") ` +
       '| KEEP actor, actor_kind, created_by, events, actions | SORT events DESC, actor | LIMIT 12',
-      // Kind at 120px holds "unauthenticated" (it was cut at 92); Created by holds "_4KEO… · Cloud API key";
-      // Identity keeps ~200px at a 1440px viewport.
+      // Kind at 120px holds "unauthenticated" (it was cut at 92); Created by holds "_4KEO… · Cloud API key".
+      // 26 columns, Noisiest 22: at 24 / 24 the Identity column kept ~215px at a 1440px viewport and
+      // "<unauthenticated-cloud-access-token>" ran into Kind (round-5 skeptic); Noisiest's longest
+      // action and "_4KEO… · Cloud API key + 19 more" still fit at 22.
       ['actor', { column: 'actor_kind', width: 120 }, { column: 'created_by', label: 'Created by', width: 140 }], ['events', { column: 'actions', width: 72 }],
-      'Unfiltered volume leaderboard, top identities by events — this is where the machine traffic shows up (often the Cloud API key running this suite). Only the busiest rows fit, so quieter identities — including the smaller keys in Named API keys — are beyond the rows shown. Kind “API key” is a named (Elasticsearch) API key, listed under its own name, or a Cloud API key; Created by is who made a named key, which Elasticsearch records on every event the key emits. When a PERSON makes a key, its events carry that person’s email, so they count under the person, whose Kind then reads “human + key”.'),
+      'Unfiltered volume leaderboard, top identities by events — this is where the machine traffic shows up (often the Cloud API key running this suite). Only the busiest rows fit, so quieter identities — including the smaller keys in Named API keys — are beyond the rows shown. Kind “API key” is a named (Elasticsearch) API key, listed under its own name, or a Cloud API key; Created by is who made a named key, which Elasticsearch records on every event the key emits. When a PERSON makes a key, its events carry that person’s email, so they count under the person, whose Kind then reads “human + key”. Kind “failed sign-in” is a username that only ever failed to authenticate — usually a guess, not an account.'),
   ];
   return dash('cloud-audit-06-platform-volume', '[Audit] 📊 Platform Volume & API Keys',
     'The unfiltered firehose, quarantined so the forensic dashboards stay readable.', P);
