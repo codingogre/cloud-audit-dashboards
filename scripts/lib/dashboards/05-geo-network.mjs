@@ -179,11 +179,12 @@ export function build() {
       'events', 'Resolved client traffic over time, split by country: events per bar, where each bar is a round interval sized so the range holds at most 75 of them (1 minute at 1h, 30 minutes at 24h, 3 hours at 7d). Countries under 5% of resolved events in range are folded into "Other". Unresolved events are not drawn — see Geo coverage.',
       { breakdown: 'country', xcol: 'ts', legend: 'right', colors: { Other: '#B9A888' }, yTitle: 'Events per bar' }),
     // The proxy column is the raw field, labelled, so it is a click-to-filter link (an ES|QL alias
-    // would cost the pill). See PROXIES for why one row per proxy rather than per pair. h=13 (12 rows)
+    // would cost the pill). See PROXIES for why one row per proxy rather than per pair. The list column
+    // is "Client IPs", not "Real client IPs": it carries the platform-internal hop too, tagged "(internal)". h=13 (12 rows)
     // holds every forwarding proxy seen so far (8 at 24h) with room at volume; it also keeps the page
     // above verify.mjs's 1400px "did the measurement work" floor at a 1920px viewport.
     table(24, 29, 24, 13, 'Proxy vs real client IP, by proxy', PROXIES,
-      [filterable('attributes.source.ip', { label: 'Proxy IP', width: 125 }), { column: 'forwarded_for', label: 'Real client IPs it forwarded' }],
+      [filterable('attributes.source.ip', { label: 'Proxy IP', width: 125 }), { column: 'forwarded_for', label: 'Client IPs it forwarded' }],
       [{ column: 'clients', label: 'Client IPs', width: 90 }, 'events'],
       'Side-by-side proof that source.ip is the internal proxy and client.ip (from network.forwarded_ip) is the real origin: one row per proxy that forwarded a client address — the proxies the Proxy IPs tile\'s line counts — with the client addresses it carried (in address order, up to three, then "+N more"). Analysing the wrong field would put every user in the datacentre. An address marked "(internal)" is a platform-internal 100.64/10 hop, not a client: on this project, Kibana\'s server calling Elasticsearch. Click a proxy to scope the suite to it; Busiest client IPs filters by client.'),
   ];

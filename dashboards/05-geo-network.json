@@ -644,7 +644,7 @@
             "width": 125
           },
           {
-            "label": "Real client IPs it forwarded",
+            "label": "Client IPs it forwarded",
             "column": "forwarded_for"
           }
         ],
