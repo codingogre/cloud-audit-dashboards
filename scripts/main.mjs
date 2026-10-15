@@ -9,8 +9,11 @@
  */
 import { banner, fail, success, info } from './lib/log.mjs';
 import { cfg } from './lib/env.mjs';
+import { optIns, takeWith } from './lib/suite.mjs';
 
-const argv = process.argv.slice(2);
+// --with may sit before or after the command; it is folded into AUDIT_WITH first (see lib/suite.mjs).
+let argv;
+try { argv = takeWith(process.argv.slice(2)); optIns(); } catch (err) { fail(err.message); process.exit(1); }
 const cmd = argv[0];
 const rest = argv.slice(1);
 
@@ -24,7 +27,8 @@ const HELP = `Usage: ./audit <command>
   Kibana as code
     --lint             Execute every ES|QL query in the repo; fails the build on any error
     --objects          Deploy the data view, 13 Vega visualizations and 10 Discover sessions
-    --dashboards       Generate dashboards/*.json and deploy every dashboard
+    --dashboards       Generate dashboards/*.json and deploy every dashboard. Removes a suite
+                       dashboard left from an earlier deploy that is not in this run's set
     --verify           Render every dashboard in Chromium and inspect for broken panels
                        (AUDIT_VERIFY_THEME=light renders light mode; default dark.
                        AUDIT_VERIFY_RANGE=now-24h widens the window; default now-1h.
@@ -48,6 +52,13 @@ const HELP = `Usage: ./audit <command>
 
   Walkthrough
     --demo-guide       Generate the presenter runbook from live data (add --redact to mask identities)
+
+  Optional dashboards
+    --with <name>      Add an opt-in dashboard to any command (comma-separate several). Known:
+                       platform-volume (06 Platform Volume, the unfiltered firehose; off by
+                       default). AUDIT_WITH=platform-volume in the environment or .env does the
+                       same for every command, so --objects, --dashboards, --verify, --perf and
+                       --lint agree on the set. Example: ./audit --dashboards --with platform-volume
 
   Lifecycle
     --deploy           Full pipeline: space -> ingest -> lint -> objects -> dashboards
@@ -90,7 +101,7 @@ banner('Cloud Audit Dashboards');
 if (!cmd || cmd === '--help' || cmd === '-h') { console.log(HELP); process.exit(0); }
 const handler = table[cmd];
 if (!handler) { fail(`Unknown command: ${cmd}`); console.log(HELP); process.exit(1); }
-info(`space=${cfg.space}  kibana=${new URL(cfg.kibana).host}`);
+info(`space=${cfg.space}  kibana=${new URL(cfg.kibana).host}${optIns().size ? `  with=${[...optIns()].join(',')}` : ''}`);
 try {
   await handler();
 } catch (err) {

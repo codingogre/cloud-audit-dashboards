@@ -76,7 +76,7 @@ const weightWords = (col) => `CASE(${WEIGHT_WORDS.map(([w, words]) => `${col} ==
  * the browser's zone like the rest of Kibana. Side by side they disagree by the viewer's UTC offset,
  * and nothing else on the page says which is which.
  */
-const ORIENTATION = `👤 **Pick a person in the control bar** and every panel becomes their story; with nobody selected it is the whole estate. **① Is this normal?** is a fixed 7 days in UTC · **② What they did** follows the time picker · **③ Evidence** ends in the raw records. Table times and the session timeline are in your time zone.`;
+const ORIENTATION = `👤 **Pick a person in the Person (email) control** and every panel becomes their story; with nobody selected it is the whole estate. **① Is this normal?** is a fixed 7 days in UTC · **② What they did** follows the time picker · **③ Evidence** ends in the raw records. Table times and the session timeline are in your time zone.`;
 
 /**
  * Why the Risk tile and the scoring table can disagree on a live stream, measured rather than guessed.
@@ -158,7 +158,7 @@ export function build() {
       ['weight', 'events', { column: 'severity', label: 'Risk', width: 130, summary: { type: 'sum' } }, 'last_seen'],
       'The receipts for the Risk tile: the Sum under Risk totals every row, scrolled into view or not, and is the tile\'s number over the same window — on a live stream the two can differ by the events that arrive between the two panels\' fetches (below). One row per scoring action and weight, largest first; Risk here is weight × events, and the tile\'s subtitle counts the rows. ' + RACE_NOTE + ' Click an action to pin it, then "Open in Security & Anomalies" to see who else does it — the pinned person and action combine, so clear the person pill first to compare.', { scroll: true, cut: false }))]]),
 
-    row(2, [[48, (x, y, w, h) => section(x, y, w, h, '① Is this normal?', 'fixed 7-day window in UTC — ignores the time picker')]]),
+    row(2, [[48, (x, y, w, h) => section(x, y, w, h, '① Is this normal?', 'fixed 7-day window in UTC (ignores the time picker)')]]),
     row(14, [
       [20, vegaPanel('08-actor-baseline-band', 'Is this normal for them? — hourly, last 7 days (UTC)')],
       [12, vegaPanel('12-actor-cohort', 'Where they rank — last 7 days')],

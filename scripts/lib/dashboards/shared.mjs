@@ -3,6 +3,7 @@ import {
   RISK, VERB, CSS_NAV, RISK_PREFILTER, RISK_KEYS, RISK_RESTORE, CHANGE, OBJ_GROK, OBJ_NAME, OBJ_TYPE, OUTCOME,
   filterable
 } from '../panels.mjs';
+import { isDeployed } from '../suite.mjs';
 
 /**
  * The identity column, click-to-filter. Clicking a cell pins a filter pill on the real
@@ -27,11 +28,15 @@ export const WHO = filterable('attributes.user.email');
  * (connection_granted, authentication_success), and SUITE_SELF (the suite's views and its automated
  * install) — so a change to the gate changes this sentence too. It must leave the closing paragraph
  * visible at 1440px: round 5's longer version, with a code chip, pushed it under the panel edge.
+ *
+ * A function, because Platform Volume is opt-in (lib/suite.mjs): the pointer to its unfiltered totals
+ * is there only when it is deployed, so the legend never names a dashboard the nav strip does not have.
  */
-export const LEGEND_MD = CSS_NAV + `
+export const legendMd = () => CSS_NAV + `
 ### How to read this suite
 
-**Noise gate is ON** unless a title says *all traffic*: health pings, query internals, page loads, bulk sign-in events and this suite's own views and installs are left out; unfiltered totals are on **📊 Platform Volume**.
+**Noise gate is ON** unless a title says *all traffic*: health pings, query internals, page loads, bulk sign-in events and this suite's own views and installs are left out${
+  isDeployed('06-platform-volume') ? '; unfiltered totals are on **📊 Platform Volume**' : ''}.
 
 **Identity is resolved** as email, then API key name, then the numeric \`user.name\`. \`_4KEO… · Cloud API key\` is an organization-level Cloud key, recorded by id only.
 

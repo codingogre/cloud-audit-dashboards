@@ -14,16 +14,25 @@ import { build as d05_geo_network } from './dashboards/05-geo-network.mjs';
 import { build as d06_platform_volume } from './dashboards/06-platform-volume.mjs';
 import { build as d07_actor_360 } from './dashboards/07-actor-360.mjs';
 
-/** Insertion order is deploy order and panel-id order; keep it stable. */
+import { isDeployed } from './suite.mjs';
+
+const BUILDERS = {
+  '00-command-center': d00_command_center,
+  '01-identity-access': d01_identity_access,
+  '02-kibana-objects': d02_kibana_objects,
+  '03-data-access': d03_data_access,
+  '04-security-anomalies': d04_security_anomalies,
+  '05-geo-network': d05_geo_network,
+  '06-platform-volume': d06_platform_volume,
+  '07-actor-360': d07_actor_360,
+};
+
+/**
+ * The dashboards this run deploys, keyed by source name. Insertion order is deploy order and
+ * panel-id order; keep it stable. An opt-in dashboard (06 Platform Volume, see lib/suite.mjs) is
+ * left out unless AUDIT_WITH names it, and so is every link, drilldown and sentence that would
+ * point at it: those read the same set while they build.
+ */
 export function buildAll() {
-  return {
-    '00-command-center': d00_command_center(),
-    '01-identity-access': d01_identity_access(),
-    '02-kibana-objects': d02_kibana_objects(),
-    '03-data-access': d03_data_access(),
-    '04-security-anomalies': d04_security_anomalies(),
-    '05-geo-network': d05_geo_network(),
-    '06-platform-volume': d06_platform_volume(),
-    '07-actor-360': d07_actor_360(),
-  };
+  return Object.fromEntries(Object.entries(BUILDERS).filter(([name]) => isDeployed(name)).map(([name, b]) => [name, b()]));
 }

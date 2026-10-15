@@ -13,7 +13,8 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
-import { cfg, ROOT, nsId } from './lib/env.mjs';
+import { cfg, ROOT } from './lib/env.mjs';
+import { dashId } from './lib/suite.mjs';
 import { success, fail, detail, info, warn } from './lib/log.mjs';
 import { buildAll } from './lib/definitions.mjs';
 import { CONTROLS } from './lib/controls.mjs';
@@ -73,7 +74,7 @@ export async function run(argv = []) {
   // so a fix to one page is re-rendered in a minute rather than eight.
   const only = (process.env.AUDIT_VERIFY_ONLY || '').split(',').map((x) => x.trim()).filter(Boolean);
   const ids = Object.keys(buildAll()).filter((n) => !only.length || only.some((o) => n.includes(o)))
-    .map((n) => nsId(`cloud-audit-${n}`));
+    .map(dashId);
   if (!ids.length) throw new Error(`AUDIT_VERIFY_ONLY "${process.env.AUDIT_VERIFY_ONLY}" matches no dashboard`);
   const browser = await chromium.launch({ args: ['--no-sandbox', '--disable-dev-shm-usage'] });
   const ctx = await browser.newContext({ viewport: { width, height: 1400 }, colorScheme: theme });

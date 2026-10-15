@@ -25,8 +25,18 @@
         "links": [
           {
             "type": "dashboardLink",
-            "destination": "cloud-audit-00-command-center",
+            "destination": "elastic_cloud-audit-dashboard",
             "label": "🎛️  Command Center",
+            "options": {
+              "use_filters": true,
+              "use_time_range": true,
+              "open_in_new_tab": false
+            }
+          },
+          {
+            "type": "dashboardLink",
+            "destination": "cloud-audit-07-actor-360",
+            "label": "👤  Actor 360",
             "options": {
               "use_filters": true,
               "use_time_range": true,
@@ -77,26 +87,6 @@
             "type": "dashboardLink",
             "destination": "cloud-audit-05-geo-network",
             "label": "🌍  Geo & Network",
-            "options": {
-              "use_filters": true,
-              "use_time_range": true,
-              "open_in_new_tab": false
-            }
-          },
-          {
-            "type": "dashboardLink",
-            "destination": "cloud-audit-06-platform-volume",
-            "label": "📊  Platform Volume",
-            "options": {
-              "use_filters": true,
-              "use_time_range": true,
-              "open_in_new_tab": false
-            }
-          },
-          {
-            "type": "dashboardLink",
-            "destination": "cloud-audit-07-actor-360",
-            "label": "👤  Actor 360",
             "options": {
               "use_filters": true,
               "use_time_range": true,

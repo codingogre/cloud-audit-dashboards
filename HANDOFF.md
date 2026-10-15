@@ -3,6 +3,33 @@
 `CLAUDE.md`-style durable context lives in `README.md` and `esql/fragments.md` and wins on
 conflict. This file is "where we are right now" and should be assumed stale.
 
+## Release 1.0.2 — product requests on top of 1.0.1, 2026-10-15
+
+Round 6 follows as 1.0.3. Dashboard ids, nav order and the opt-in set now live in `scripts/lib/suite.mjs`.
+
+- **Command Center's id is `elastic_cloud-audit-dashboard`** (the Cloud UI's *Log delivery* page links to
+  it): `<kibana>/s/<space>/app/dashboards#/view/elastic_cloud-audit-dashboard`. The source stays
+  `00-command-center.mjs/.json`; every other id is unchanged. `nsId()` namespaces it as
+  `elastic_cloud-audit-<ns>-dashboard` and is now idempotent. `SUITE_SELF` / `SUITE_INSTALL_URL` also
+  match `elastic_cloud-audit-*`, so views and installs of Command Center stay noise. `--dashboards` reads
+  and removes the pre-1.0.2 `cloud-audit-00-command-center` from the space it deploys to.
+- **Nav order:** Command Center, Actor 360, Identity & Access, Kibana Object Forensics, Elasticsearch
+  Data Access, Security & Anomalies, Geo & Network, then Platform Volume when deployed.
+- **No em dashes in markdown panels** (legend, 06 band note, 07 section headers). Titles, descriptions
+  and other text were not changed. There is no lint rule; a unit test covers the markdown panels.
+- **Platform Volume is opt-in:** `--with platform-volume` on any command, or `AUDIT_WITH=platform-volume`.
+  Without it: no tab, no drilldown, and no legend or tooltip text that mentions it. `dashboards/*.json`
+  is the default seven, and `--dashboards` removes a 06 left in the space.
+- **Control bar is Project, Person (email), Client IP.** The Person (name) control
+  (`attributes.user.full_name`, null for some identities) is gone; chaining stays HIERARCHICAL and
+  `controlId()` is keyed on the field, so the remaining controls keep their ids and selections.
+- **Drilldowns open their target again.** Through 1.0.1 every "Open in …" drilldown landed on an
+  empty `#/create` dashboard (clicked in Playwright on production and on a private deploy): Kibana
+  navigates by a `<panelIndex>:drilldown:DASHBOARD_TO_DASHBOARD_DRILLDOWN:<eventId>:dashboardId`
+  reference, not the inline `dashboardId`. The post-pass now adds it (`drilldownRefs()`).
+  Still open: on Actor 360, clicking a row of *System and hidden index reads* opens no menu at all,
+  so its drilldown to Data Access cannot fire. That panel is unchanged since 1.0.1; left for 1.0.3.
+
 ## Round 5 — cross-cutting fixes from the round-4 production review, 2026-10-15
 
 Shared code only; per-dashboard fixers apply the conventions. Rules in `README.md` → *Presentation

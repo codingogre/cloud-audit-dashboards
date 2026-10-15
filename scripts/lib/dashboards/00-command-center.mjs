@@ -4,8 +4,9 @@ import {
   md, resetIds, privilegedKpi, grouped
 } from '../panels.mjs';
 import {
-  LEGEND_MD, ACTOR_KEYS
+  legendMd, ACTOR_KEYS
 } from './shared.mjs';
+import { isDeployed } from '../suite.mjs';
 
 /**
  * Panels that read the whole stream say so in their title. The legend panel tells the reader the
@@ -15,6 +16,8 @@ const ALL = ' · all traffic';
 
 export function build() {
   resetIds();
+  // Platform Volume is opt-in (lib/suite.mjs): a description may point at it only when it is deployed.
+  const pv = isDeployed('06-platform-volume');
   const P = [
     kpi(0, 0, 8, 5, `FROM ${IDX} | ${TIME} | STATS \`Total events${ALL}\` = COUNT(*)`, `Total events${ALL}`,
       'Every audited event in range, including machine noise. Compare with Signal to see how much the noise gate removes.'),
@@ -24,7 +27,7 @@ export function build() {
     // identities that table ranks (an ungated count included people whose only traffic was the noise
     // gate's: 4 here over a 3-row table). Counted first by the raw identity fields, resolved after.
     kpi(15, 0, 7, 5, `FROM ${IDX} | ${TIME} | ${NOISE} | STATS n = COUNT(*) BY ${ACTOR_KEYS} | ${ACTOR_RESOLVE} | STATS \`Distinct actors\` = COUNT_DISTINCT(actor)`, 'Distinct actors',
-      'Identities with signal traffic, behind the same noise gate and resolved the same way as Busiest identities: email, then API key name, then numeric user id. Someone whose only events are noise (browsing dashboards, health checks) is not counted here; Platform Volume counts all traffic.'),
+      `Identities with signal traffic, behind the same noise gate and resolved the same way as Busiest identities: email, then API key name, then numeric user id. Someone whose only events are noise (browsing dashboards, health checks) is not counted here${pv ? '; Platform Volume counts all traffic' : ''}.`),
     kpi(22, 0, 7, 5, `FROM ${IDX} | ${TIME} | ${NOISE} | WHERE attributes.user.email IS NOT NULL | STATS \`Human actors\` = COUNT_DISTINCT(attributes.user.email)`, 'Human actors',
       'Distinct email addresses with signal traffic, behind the same noise gate as Signal events. Includes an API key whose events carry its creator’s email: such a row in Busiest identities reads “email · via key name”.'),
     // Widths follow the titles at a 1440px viewport, where a metric tile clips its secondary line and
@@ -43,13 +46,13 @@ export function build() {
       `FROM ${IDX} | ${TIME} | STATS events = COUNT(*) BY ${BUCKET}, source = resource.attributes.service.name | ${SOURCE_LABEL}`,
       'events', 'Total audited events over time, split by originating service. Elasticsearch audits every transport action, so its volume usually far exceeds Kibana’s — and the Kibana slice is where most of the forensic value is. The last bar is the bucket still filling, so it is usually short; a bucket with no bar had no audit events delivered for it (the stream arrives in batches).',
       { breakdown: 'source', colors: SOURCE_COLORS, legend: 'right' }),
-    md(32, 5, 16, 13, LEGEND_MD),
+    md(32, 5, 16, 13, legendMd()),
     // Two rows taller than the rest of the page: at 13 the treemap's floor-sized tiles were too short
     // for a two-line name once the legend took its row under the plot.
     vega(0, 18, 24, 15, '01-actor-risk-treemap', 'Actor footprint · area by √events, color by risk total',
       'The top 12 identities by signal volume (fewer on a narrow screen, down to 8), in one block per kind; the rest of each kind is folded into one grey “+N more” tile (just “+N” where the tile is narrow; hover it for the count). Blocks: named API key (labelled by the KEY, with its owner — the principal that created it — on a further line when there is room, and in the tooltip); person (a real email address); cloud API key (an organization-level Cloud key, which the audit stream records only by id and with no owner); platform (Elastic’s own service accounts and automation, such as elastic/kibana, the Kibana service account); user, no email (a user name that signed in but carries no email; absent on most projects); and unattributed (no authenticated principal: <anonymous>, an unauthenticated token, or a user name that only ever failed to sign in, such as elastic or admin in a password-guessing run). An identity is one tile even when its events disagree about its kind; it goes in the most specific block any of them supports. Area grows with the SQUARE ROOT of event volume, so one dominant identity cannot crush the rest into slivers, plus the same small share for every tile, so the quietest identity keeps a readable name but is never drawn larger than a busier one. Each tile prints its event count where it fits (a bare number on a narrow tile): read the number, not the area, for how much more one identity did. A name too long for its tile ends in “…” — the tooltip has the full name and exact counts. Color is Risk total, the quantity the Security Anomalies risk leaderboard ranks by: each scoring event’s risk weight (from 10 for a workflow run to 50 for a security configuration change; 0 for anything that does not score) summed over the identity’s events, on a square-root scale. It is in weight × events, not events, so it runs well above the counts on the tiles. A key that carries its creator’s email is its own tile here, but counts under the person in Busiest identities.'),
     vega(24, 18, 24, 15, '07-noise-ratio-stream', 'Signal vs noise over time',
-      'Audit events per time bucket, stacked by band — Signal on the baseline, then bulk authentication, query internals and infrastructure health — so the top edge is the whole firehose. Shows why the noise gate exists. Hover a segment for its band and the bucket total. Infrastructure health (cluster:monitor/main pings) is usually too thin to see beside the rest, or absent from a short window, although its legend entry stays: Platform Volume counts it. As on Audit volume, the last bucket is still filling and an empty bucket had no audit events delivered.'),
+      `Audit events per time bucket, stacked by band — Signal on the baseline, then bulk authentication, query internals and infrastructure health — so the top edge is the whole firehose. Shows why the noise gate exists. Hover a segment for its band and the bucket total. Infrastructure health (cluster:monitor/main pings) is usually too thin to see beside the rest, or absent from a short window, although its legend entry stays${pv ? ': Platform Volume counts it' : ''}. As on Audit volume, the last bucket is still filling and an empty bucket had no audit events delivered.`),
     table(0, 33, 12, 12, 'Most frequent actions',
       `FROM ${IDX} | ${TIME} | ${NOISE} | STATS events = COUNT(*) BY action = attributes.event.action, source = resource.attributes.service.name | ${SOURCE_LABEL} | SORT events DESC | LIMIT 10`,
       ['action', sized('source', 105, { min: 100 })], ['events'], 'Top audited actions after the noise gate, with the service that emitted them.'),
@@ -87,6 +90,6 @@ export function build() {
     search(0, 45, 48, 25, '10-raw-signal-feed', 'Live signal feed',
       'The newest 200 signal events, newest first, behind the same noise gate as Signal events. Detail is the Kibana message, the transport action on an Elasticsearch event, or for a security change (API key, role) what it changed: “API key <name or id> + N more” for one call that invalidated several keys. A Client IP marked internal is Kibana or the platform calling Elasticsearch on someone’s behalf, not where they are; “none recorded” is an event with no client address, such as Kibana’s own service account working inside the platform. Automation reads as long runs of near-identical rows from one identity: this suite’s own install is left out by the gate, but any other script — a deploy, a scan, a tool polling an API — can fill this feed for minutes. To read past it, pick a Person above, or open the session and filter that identity out. Open the Discover session to page further back or add columns.'),
   ];
-  return dash('cloud-audit-00-command-center', '[Audit] 🎛️ Command Center',
+  return dash('elastic_cloud-audit-dashboard', '[Audit] 🎛️ Command Center',
     'Entry point for Cloud Audit Dashboards. KPIs, volume, actor risk and the live signal feed.', P);
 }
