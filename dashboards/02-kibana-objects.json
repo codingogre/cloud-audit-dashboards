@@ -587,7 +587,7 @@
       },
       "config": {
         "title": "Object types · suite included · up to 9",
-        "description": "All Kibana traffic, the suite's own included, unlike the two tables above: the saved-object types with the most events, busiest first, reads and changes, as in the heatmap above (which splits each type by operation). Objects is how many distinct objects of that type were touched. \"space\" ranks high because every Kibana page load reads the active space.",
+        "description": "All Kibana traffic, the suite's own included, unlike the two tables above: the saved-object types with the most events, busiest first, reads and changes, as in the heatmap above (which splits each type by operation). Objects is how many distinct objects of that type were touched. \"space\" ranks high because every Kibana page load reads the active space. The space row's Objects can run above the Spaces tile: the tile counts spaces something happened in, and a space that was only created, or created and deleted, with nothing done inside it (or a create that was denied) is a space object touched but not a space with activity.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
