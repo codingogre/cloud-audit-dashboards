@@ -421,7 +421,7 @@
       "config": {
         "ref_id": "cloud-audit-vega-04-actor-index-matrix",
         "title": "Who reads which index family",
-        "description": "The 10 busiest identities across the top, and the 25 index families they read most down the side; a more solid cell is more requests, on a log scale. A data stream and its backing indices are one family, as is a run of dated daily indices; wildcard and date-math expressions are left out. A blank cell means that identity did not touch that family in range — or touched it too little to be among the 500 busiest identity/family pairs. A request naming several indices counts once per index. An identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id; one the audit names as such is labelled \"· Cloud API key\". Cells keep a heatmap's size when only a few identities or families are in range, so a sparse window draws a few cells, not solid blocks."
+        "description": "The 10 busiest identities across the top, and the 25 index families they read most down the side; cell colour is requests on a log scale, teal (fewest) through blue and purple to pink (most). A data stream and its backing indices are one family, as is a run of dated daily indices; wildcard and date-math expressions are left out. A blank cell means that identity did not touch that family in range — or touched it too little to be among the 500 busiest identity/family pairs. A request naming several indices counts once per index. An identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organization-level Elastic Cloud API key, which the audit stream records only by its id; one the audit names as such is labelled \"· Cloud API key\". Cells keep a heatmap's size when only a few identities or families are in range, so a sparse window draws a few cells, not solid blocks."
       }
     },
     {
@@ -434,7 +434,7 @@
         "h": 15
       },
       "config": {
-        "title": "Top index families by events",
+        "title": "Top 14 index families by events",
         "description": "The busiest index families, all traffic; the Index families tile counts every one, so the rest are beyond this list. How many distinct identities touch each is beside it. A data stream and its backing indices are one row, as is a run of dated daily indices; `Indices` says how many real indices the row folds together. Wildcard and date-math expressions are left out. A request naming several indices counts once per index.",
         "type": "data_table",
         "data_source": {
@@ -487,7 +487,7 @@
         "h": 11
       },
       "config": {
-        "title": "Top transport actions",
+        "title": "Top 9 transport actions",
         "description": "The busiest Elasticsearch transport actions with their request class, all traffic — the searches and ES|QL reads these dashboards run included, since reads are what this page is about. The Distinct actions tile counts every one; the rest are beyond this list. Shard-level copies, ES|QL sub-steps and the search an async search runs for itself are folded away, so a request counts once. Identities is how many distinct identities sent the action; Request \"—\" means the event named no request class.",
         "type": "data_table",
         "data_source": {
@@ -545,12 +545,12 @@
         "h": 9
       },
       "config": {
-        "title": "Denied requests · none is good",
-        "description": "Who was refused, what they asked for and on which index — newest first, the most recent of what the Access denied tile counts. Index \"—\" is a cluster-level request; <anonymous> with action \"—\" is an HTTP call that carried no credentials. A request naming several indices shows once per index. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id. An empty panel means nothing matched in the time range, which is the healthy state.",
+        "title": "Denied requests · latest 7 (empty = good)",
+        "description": "Who was refused, what they asked for and on which index — newest first, the most recent of what the Access denied tile counts. Index \"—\" is a cluster-level request; <anonymous> with action \"—\" is an HTTP call that carried no credentials. A request naming several indices shows once per index. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email. An empty panel means nothing matched in the time range, which is the healthy state; any row here is worth reading.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.event.action == \"access_denied\" OR attributes.event.action == \"anonymous_access_denied\" | STATS events = COUNT(*), last_seen = MAX(@timestamp) BY attributes.user.email, attributes.api_key.name, attributes.user.name, attributes.elasticsearch.audit.action, index = attributes.elasticsearch.audit.indices | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), index = COALESCE(index, \"—\"), attributes.elasticsearch.audit.action = COALESCE(attributes.elasticsearch.audit.action, \"—\") | KEEP actor, index, attributes.elasticsearch.audit.action, events, last_seen | SORT last_seen DESC | LIMIT 7"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.event.action == \"access_denied\" OR attributes.event.action == \"anonymous_access_denied\" | STATS events = COUNT(*), last_seen = MAX(@timestamp) BY attributes.user.email, attributes.api_key.name, attributes.user.name, attributes.elasticsearch.audit.action, index = attributes.elasticsearch.audit.indices | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), index = COALESCE(index, \"—\"), attributes.elasticsearch.audit.action = COALESCE(attributes.elasticsearch.audit.action, \"—\") | KEEP actor, index, attributes.elasticsearch.audit.action, events, last_seen | SORT last_seen DESC | LIMIT 7 | EVAL actor = CASE((LENGTH(actor) == 20 AND actor RLIKE \"[-_A-Za-z0-9]{20}\" AND NOT actor RLIKE \"[0-9]{20}\"), CONCAT(LEFT(actor, 5), \"… · Cloud API key\"), actor)"
         },
         "styling": {
           "density": {
@@ -602,12 +602,12 @@
         "h": 11
       },
       "config": {
-        "title": "⚠️ Who touched system and hidden indices · often empty at 1h",
-        "description": "Who touched system and hidden indices — Kibana internals, the security index, alerting and SLO data — one row per identity, index group (.alerts*, .slo*, .kibana*…) and action. `Indices` says how many real indices the row covers; the Discover session below names each one. Sorted by most recent, not by volume: sorting by volume buries a one-off read under routine polling. Backing indices of ordinary data streams (.ds-logs-…) and shard-level copies of a request are left out. Expected from Kibana and platform automation; unexpected from anyone else. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id. Often empty over the default hour on a healthy project; widen the time range to see older rows.",
+        "title": "⚠️ Who touched system and hidden indices · latest 9 (may be empty at 1h)",
+        "description": "Who touched system and hidden indices — Kibana internals, the security index, alerting and SLO data — one row per identity, index group (.alerts*, .slo*, .kibana*…) and action. `Indices` says how many real indices the row covers; the Discover session below names each one. Sorted by most recent, not by volume: sorting by volume buries a one-off read under routine polling. Backing indices of ordinary data streams (.ds-logs-…) and shard-level copies of a request are left out. Expected from Kibana and platform automation; unexpected from anyone else. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email. Often empty over the default hour on a healthy project; widen the time range to see older rows.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.indices IS NOT NULL | MV_EXPAND attributes.elasticsearch.audit.indices | WHERE ((attributes.elasticsearch.audit.indices LIKE \".*\" AND NOT attributes.elasticsearch.audit.indices LIKE \".ds-*\") OR attributes.elasticsearch.audit.indices LIKE \".ds-.*\") AND (attributes.elasticsearch.audit.action IS NULL OR NOT attributes.elasticsearch.audit.action LIKE \"*[*\") | STATS n = COUNT(*), seen = MAX(@timestamp) BY attributes.user.email, attributes.api_key.name, attributes.user.name, attributes.elasticsearch.audit.indices, action = attributes.elasticsearch.audit.action | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), area = CONCAT(REPLACE(attributes.elasticsearch.audit.indices, \"\"\"^(?:\\.ds-)?(\\.[^-._]+).*$\"\"\", \"$1\"), \"*\") | STATS events = SUM(n), indices = COUNT_DISTINCT(attributes.elasticsearch.audit.indices), last_seen = MAX(seen) BY actor, area, action | SORT last_seen DESC | LIMIT 9"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.indices IS NOT NULL | MV_EXPAND attributes.elasticsearch.audit.indices | WHERE ((attributes.elasticsearch.audit.indices LIKE \".*\" AND NOT attributes.elasticsearch.audit.indices LIKE \".ds-*\") OR attributes.elasticsearch.audit.indices LIKE \".ds-.*\") AND (attributes.elasticsearch.audit.action IS NULL OR NOT attributes.elasticsearch.audit.action LIKE \"*[*\") | STATS n = COUNT(*), seen = MAX(@timestamp) BY attributes.user.email, attributes.api_key.name, attributes.user.name, attributes.elasticsearch.audit.indices, action = attributes.elasticsearch.audit.action | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), area = CONCAT(REPLACE(attributes.elasticsearch.audit.indices, \"\"\"^(?:\\.ds-)?(\\.[^-._]+).*$\"\"\", \"$1\"), \"*\") | STATS events = SUM(n), indices = COUNT_DISTINCT(attributes.elasticsearch.audit.indices), last_seen = MAX(seen) BY actor, area, action | SORT last_seen DESC | LIMIT 9 | EVAL actor = CASE((LENGTH(actor) == 20 AND actor RLIKE \"[-_A-Za-z0-9]{20}\" AND NOT actor RLIKE \"[0-9]{20}\"), CONCAT(LEFT(actor, 5), \"… · Cloud API key\"), actor)"
         },
         "styling": {
           "density": {
@@ -664,8 +664,8 @@
       },
       "config": {
         "ref_id": "cloud-audit-search-05-system-index-access",
-        "title": "System index requests, newest 1,000 (raw) · often empty at 1h",
-        "description": "The raw events behind the table above: the newest 1,000 requests against a system or hidden index, one row per index named, newest first. It stops at 1,000, so it can hold fewer rows than the System index access tile counts — the \"1,000 results\" above the grid is that cap, not the total. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id. Often empty over the default hour on a healthy project; widen the time range to see older rows."
+        "title": "System index requests, newest 1,000 (raw) (may be empty at 1h)",
+        "description": "The raw events behind the table above: the newest 1,000 requests against a system or hidden index, one row per index named, newest first. It stops at 1,000, so it can hold fewer rows than the System index access tile counts — the \"1,000 results\" above the grid is that cap, not the total. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email. Often empty over the default hour on a healthy project; widen the time range to see older rows."
       }
     }
   ]

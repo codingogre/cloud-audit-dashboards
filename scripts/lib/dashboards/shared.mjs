@@ -27,9 +27,9 @@ export const WHO = filterable('attributes.user.email');
 export const LEGEND_MD = CSS_NAV + `
 ### How to read this suite
 
-**Noise gate is ON** unless a title says *all traffic*: health pings, query internals (this suite's own too) and bulk \`authentication_success\` are left out; unfiltered totals are on **📊 Platform Volume**.
+**Noise gate is ON** unless a title says *all traffic*: health pings, query internals and page loads (this suite's own too) and bulk \`authentication_success\` are left out; unfiltered totals are on **📊 Platform Volume**.
 
-**Identity is resolved** as email, then API key name, then the numeric \`user.name\`. An opaque id is usually an organisation-level Cloud API key.
+**Identity is resolved** as email, then API key name, then the numeric \`user.name\`. \`_4KEO… · Cloud API key\` is an organization-level Cloud key, recorded by id only.
 
 **Client IPs are real**: geography comes from \`network.forwarded_ip\`; \`source.ip\` is only the proxy. *Hover a panel title for detail.*`;
 

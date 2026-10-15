@@ -37,10 +37,24 @@ same reason; a panel that shows the kind refines it on the grouped rows with `SC
                          actor IN (<platform principals>), "platform", actor_kind)
 ```
 
-An identity that resolves to a 20-character opaque id is the end of the ladder, not a defect: a
-principal whose events carry no email and no key name, usually an organisation-level Elastic Cloud API
-key, which the audit stream records only by id. Every table that shows `actor` says so in its
-description (`table()` appends it).
+An identity that resolves to a 20-character opaque id is the end of the ladder, not a defect: an
+organization-level Elastic Cloud API key, which the audit stream records only by id — no name, no owner.
+It is displayed in one form everywhere an identity is shown, `_4KEO… · Cloud API key`, by `ACTOR_LABEL`,
+the last step before display (after the last `STATS … BY actor`, so two keys sharing a prefix never
+merge):
+
+```esql
+| EVAL actor = CASE((LENGTH(actor) == 20 AND actor RLIKE "[-_A-Za-z0-9]{20}" AND NOT actor RLIKE "[0-9]{20}"),
+                    CONCAT(LEFT(actor, 5), "… · Cloud API key"), actor)
+```
+
+A value test, not a realm test: the same key arrives with `user.domain` `_cloud_api_key` on
+Elasticsearch events and sometimes `_es_api_key` on Kibana's (live, 24h: 261,172 and 6,521 events), and
+the realm test it replaces split one key into two rows. `-` leads the character class because Lucene
+reads `_-]` as a range. `table()` appends it to every table showing `actor`; the Discover sessions and
+the treemap and matrix specs embed it verbatim, and the drift check pins it. For a key-name or owner
+column that would print `-`, `0` or `(no name)` for such a key, `cloudKeyLabel(col, otherwise)` gives the
+same form (API key inventory: `COALESCE(attributes.api_key.name, <cloudKeyLabel(user.name, "(no name)")>)`).
 
 ## Noise gate — ON by default
 
@@ -55,8 +69,8 @@ one of them is the bulk:
 | Class | What | Why it is noise |
 | --- | --- | --- |
 | Infra health | `cluster:monitor/main`, `elastic.maintenance` | pings and platform housekeeping |
-| Query internals, Elasticsearch | search phases, `msearch`, `scroll`, PIT and reader contexts; **ES\|QL and every sub-request** (`esql/compute`, `esql/data`, `esql/search_shards`, `esql/resolve_fields`, `esql/async/get`, `indices:admin/esql/*`); `field_caps` and `field_caps[n]`; `async_search/*`; `indices:admin/resolve/*`; `indices:admin/shards/search_shards` | the machinery every dashboard, Discover tab and client runs to read data. With many viewers, each viewer's own panel queries were the top "signal" |
-| Query internals, Kibana | `http_request` to an `/internal/` route (with or without `/s/<space>`): `/internal/search/esql_async`, feature flags, controls options, session checks; the dashboard app's content-management reads (`/api/content_management/rpc/get`, `search`, `mget`, `bulkGet`); `saved_object_open/close_point_in_time`; `space_get` / `space_find` ("User has accessed space", once per page load) | what the browser calls to draw a page. A content-management read is also audited as its own `saved_object_*` event. Every other public `/api/` route, an rpc create/update/delete, and a space create/update/delete stay signal |
+| Query internals, Elasticsearch | search phases, `msearch`, `scroll`, PIT and reader contexts; **ES\|QL and every sub-request** (`esql/compute`, `esql/data`, `esql/search_shards`, `esql/resolve_fields`, `esql/async/get`, `indices:admin/esql/*`); `field_caps` and `field_caps[n]`; `async_search/*`; `indices:admin/resolve/*`; `indices:admin/shards/search_shards`; ES\|QL's query listing (`cluster:monitor/xpack/esql/*`); and the two cluster reads Kibana makes on every page load, `cluster:monitor/project/tags` and `cluster:monitor/xpack/inference/get` (24h: 1,707 and 1,704 against 1,666 page shells) | the machinery every dashboard, Discover tab and client runs to read data. With many viewers, each viewer's own panel queries were the top "signal" |
+| Query internals, Kibana | `http_request` to an `/internal/` route (with or without `/s/<space>`): `/internal/search/esql_async`, feature flags, controls options, session checks; the dashboard app's content-management reads (`/api/content_management/rpc/get`, `search`, `mget`, `bulkGet`); **page-load plumbing** — `/bootstrap.js`, `/bootstrap-anonymous.js`, `/translations/…`, the `/app/<app>` page shell, `/api/core/…`, `/api/licensing/…`, `/api/banners/…`, `/api/ui_counters/…` and the space picker's `/api/spaces/space` list; `saved_object_open/close_point_in_time`; `space_get` / `space_find` ("User has accessed space", once per page load) | what the browser calls to draw a page. A content-management read is also audited as its own `saved_object_*` event, and a change through a public route is audited again as its own event (`space_create`, `saved_object_create` …). Every other public `/api/` route, `/api/spaces/space/<id>`, an rpc create/update/delete, and a space create/update/delete stay signal |
 | The suite itself | `saved_object_get` / `_resolve` / `_find` of a `cloud-audit-*` object — "User has accessed dashboard [id=cloud-audit-…]" | one per panel load per viewer. A **change** to a suite object is not a read and stays signal: editing the audit dashboards is what an auditor wants to see. Views remain visible on 02's object panels, which read all traffic |
 | Connection / authn volume | `connection_granted`, `authentication_success` | one per transport connection / authenticated request |
 
@@ -76,7 +90,9 @@ passes through it.
       OR attributes.elasticsearch.audit.action LIKE "indices:data/read/field_caps*"
       OR attributes.elasticsearch.audit.action LIKE "indices:data/read/async_search/*"
       OR attributes.elasticsearch.audit.action LIKE "indices:admin/resolve/*"
-      OR attributes.elasticsearch.audit.action == "indices:admin/shards/search_shards"))
+      OR attributes.elasticsearch.audit.action == "indices:admin/shards/search_shards"
+      OR attributes.elasticsearch.audit.action LIKE "cluster:monitor/xpack/esql/*"
+      OR attributes.elasticsearch.audit.action IN ("cluster:monitor/project/tags", "cluster:monitor/xpack/inference/get")))
     AND (attributes.event.action IS NULL OR NOT (
       attributes.event.action IN ("authentication_success","connection_granted")
       OR <KIBANA_INTERNALS>))
@@ -87,10 +103,28 @@ passes through it.
 ```esql
 attributes.event.action IN ("saved_object_open_point_in_time","saved_object_close_point_in_time","space_get","space_find")
   OR (attributes.event.action == "http_request" AND attributes.url.original IS NOT NULL
-      AND attributes.url.original RLIKE "https?://[^/]+(/s/[^/]+)?/(internal/|api/content_management/rpc/(get|search|mget|bulkGet)).*")
+      AND attributes.url.original RLIKE "<KIBANA_PLUMBING_URL>")
   OR (attributes.event.action IN ("saved_object_get","saved_object_resolve","saved_object_find")
       AND attributes.kibana.saved_object.id IS NOT NULL AND attributes.kibana.saved_object.id LIKE "cloud-audit-*")
 ```
+
+`KIBANA_PLUMBING_URL` — each alternative carries its own tail, so `api/spaces/space` matches the list a
+page load fetches and not `/api/spaces/space/<id>`; `[.]` rather than `\.` keeps the static copies free
+of escapes:
+
+```
+https?://[^/]+(/s/[^/]+)?/((internal|translations|app)/.*|api/content_management/rpc/(get|search|mget|bulkGet).*
+  |bootstrap(-anonymous)?[.]js.*|api/(core|licensing|banners|ui_counters)/.*|api/spaces/space([?].*)?)
+```
+
+The page-load half was added after the round-4 review found `User is requesting [/s/_audit/bootstrap.js]`
+leading Command Center's Live signal feed. Measured on the live stream over 24h, it newly gates 10,429
+events, one set per page load: the space list 2,021, `bootstrap.js` 1,669, capabilities 1,668, banners
+1,668, `/app/dashboards` 1,666, licensing 1,661, ui_counters 73 — and nothing else (`DELETE
+/api/spaces/space/<id>` stays signal). On the 7-day replica signal goes 377,070 → 359,940 (`http_request`
+72,870 → 55,740). Cost: a cold gated count takes ~200ms at 7 days before and after the change (old
+pattern cold 191–214ms, new 196–212ms) and both settle to ~65–70ms once Elasticsearch caches the
+filter; the band charts are unchanged (~475ms).
 
 It only runs where `event.action` is non-null, and each extra field is `IS NOT NULL AND …`
 (`false AND null` is false), so it never yields null and never drops a row. `url.original` is a
@@ -127,6 +161,26 @@ through, so Kibana events with no internal match land in `signal`.
 `kib_internal` has to be computed per event, and loading `url.original` and `saved_object.id` for every
 event is what that costs: a band query over 7 days went from ~100ms to ~450ms (the share-over-time
 chart 541ms, the vega/07 stream 642ms). A positive prefilter does not help — `BAND` must see every event to share out 100%.
+
+## Privileged operations
+
+`security_config_change` is the stream's word for a privileged write, but Kibana cleans up API keys on
+its own: `elastic/kibana` invalidates keys every few milliseconds (payload ids such as
+`kibana-api-key-service-test`). Live: 670 of 671 privileged ops in one hour, 2,026 of 2,770 in 24h. So
+the tiles that say "any non-zero deserves review" leave exactly that out, and say how much:
+
+```esql
+| WHERE attributes.elasticsearch.audit.security_config_change IS NOT NULL AND NOT <HOUSEKEEPING>
+-- HOUSEKEEPING:
+(attributes.event.action IS NOT NULL AND attributes.event.action == "invalidate_apikeys"
+ AND attributes.user.name IS NOT NULL AND attributes.user.name IN (<PLATFORM_ACTORS>) AND attributes.api_key.name IS NULL)
+```
+
+Every term is guarded, so `NOT HOUSEKEEPING` never drops a row. A key Kibana *creates* on a user's behalf
+(`create_apikey` by `elastic/kibana` when a rule is saved) and any invalidation by a tenant identity still
+count. `privilegedKpi(col)` is the KPI form: `COUNT(*) WHERE NOT housekeeping` plus a `housekeeping_note`
+for the secondary line (7 days: 157ms against 134ms for the bare count). `RISK` is unchanged — it still
+scores every invalidation 45, and the leaderboard separates platform identities by `actor_scope`.
 
 ## Source split
 

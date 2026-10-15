@@ -55,16 +55,6 @@ const QUIET_BUCKETS =
   `| EVAL \`${BUCKET}\` = TO_DATETIME(ts), events = TO_LONG(events) | KEEP \`${BUCKET}\`, band, events`;
 
 /**
- * The top identity is usually an organisation-level Cloud API key, which the stream records by id alone:
- * 93% of all events under a bare "_4KEOq…", with nothing saying what it is. vega/02 marks the same
- * principal the same way. realm = MIN(user.domain) rather than a per-event boolean: "_cloud_api_key"
- * sorts first among the realms, and the MIN measured 0.36 → 0.49s at 7d where the boolean took 0.78s.
- * Only a row with no email and no named-key traffic is marked; the CASE runs on the grouped rows.
- */
-const CLOUD_KEY_MARK =
-  'EVAL actor = CASE(realm == "_cloud_api_key" AND actor_kind == "service" AND via_key == 0, CONCAT(actor, " · Cloud API key"), actor)';
-
-/**
  * The note is a full-width strip rather than a side column: at 10 columns every inline code chip
  * wrapped onto its own line and the API-key caveat — the sentence that matters most — was clipped
  * off the bottom. Bands are bold run-ins named exactly as the legends and KPI tiles name them.
@@ -113,7 +103,7 @@ export function build() {
     // edge on 00 at 1440px ("labelBound" did nothing with labelOverlap off).
     vega(0, 12, 30, 13, '07-noise-ratio-stream', 'Signal vs noise over time',
       'Audit events per time bucket, stacked by band, so the top edge is the whole firehose and Signal sits on the baseline. Hover a segment for its band and the bucket total.'),
-    // Named keys only, which is why it can be empty while the stream is busy: an organisation-level Cloud
+    // Named keys only, which is why it can be empty while the stream is busy: an organization-level Cloud
     // API key — very often the one running this suite — carries no name, and the stream records it by id
     // alone, so it is on Highest-volume identities, marked, and never here. LIMIT 10, not fitRows(13) = 12:
     // a twelfth row sat on the panel's bottom edge with no sign whether more followed, and "busiest" with
@@ -146,11 +136,11 @@ export function build() {
     // came through a named key, which is what the note's creator-stamping caveat asks the reader to
     // check, without splitting a person's row by key (measured: same cost as without it).
     table(24, 37, 24, 12, 'Highest-volume identities',
-      `FROM ${IDX} | ${TIME} | ${ACTOR} | STATS events = COUNT(*), via_key = COUNT(attributes.api_key.name), actions = COUNT_DISTINCT(attributes.event.action), realm = MIN(attributes.user.domain) BY actor, actor_kind | ${KIND_REFINE} | ${CLOUD_KEY_MARK} | SORT events DESC | LIMIT 15`,
+      `FROM ${IDX} | ${TIME} | ${ACTOR} | STATS events = COUNT(*), via_key = COUNT(attributes.api_key.name), actions = COUNT_DISTINCT(attributes.event.action) BY actor, actor_kind | ${KIND_REFINE} | SORT events DESC | LIMIT 15`,
       // Via API key and Actions are narrowed (90 / 72px still hold their headers) so that at a 1440px
       // viewport the Identity column keeps ~280px: "_4KEOq… · Cloud API key" ran into Kind at 248px.
-      ['actor', 'actor_kind'], ['events', { column: 'via_key', label: 'Via API key', width: 90 }, { column: 'actions', width: 72 }],
-      'Unfiltered volume leaderboard, top identities by events — this is where the machine traffic shows up. An id marked "· Cloud API key" is an organisation-level Elastic Cloud API key, which the stream records only by id (often the credential running this suite); any other opaque id is a principal with no email or key name. Via API key: how many of the row’s events came through a named API key, the same events Busiest named API keys counts.'),
+      ['actor', 'actor_kind'], ['events', { column: 'via_key', label: 'Via named key', width: 100 }, { column: 'actions', width: 72 }],
+      'Unfiltered volume leaderboard, top identities by events — this is where the machine traffic shows up (often the Cloud API key running this suite). Via named key: how many of the row’s events came through a NAMED (Elasticsearch) API key, the same events Busiest named API keys counts — 0 on a Cloud API key row, whose events carry no key name.'),
   ];
   return dash('cloud-audit-06-platform-volume', '[Audit] 📊 Platform Volume & API Keys',
     'The unfiltered firehose, quarantined so the forensic dashboards stay readable.', P);

@@ -1,6 +1,6 @@
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
-  "description": "Saved-object type against operation. Writes come first and reads after; cell volume is fill opacity on a log scale inside a solid outline, so a single delete stays visible beside thousands of reads. Past 13 object types the rest fold into one \"N more types\" row so every row stays readable at any volume; types with a write rank first, so a rare change is not the one folded.",
+  "description": "Saved-object type against operation. Writes come first and reads after; cell volume is colour on a log scale, teal (fewest) through blue and purple to pink (most), so a single delete stays visible beside thousands of reads in either theme. Past 13 object types the rest fold into one \"N more types\" row so every row stays readable at any volume; types with a write rank first, so a rare change is not the one folded.",
   "title": {
     "text": {
       "expr": "length(data('rows')) ? '' : 'No activity for this selection in this time range'"
@@ -225,49 +225,43 @@
     {
       "mark": {
         "type": "rect",
-        "cornerRadius": 2,
-        "color": "#3987e5"
+        "cornerRadius": 2
       },
       "encoding": {
-        "opacity": {
+        "color": {
           "field": "events",
           "type": "quantitative",
           "scale": {
             "type": "log",
             "range": [
-              0.35,
-              1
-            ]
+              "#54B399",
+              "#6092C0",
+              "#9170B8",
+              "#D36086"
+            ],
+            "interpolate": "hcl"
           },
           "legend": {
             "title": "Events",
             "orient": "right",
-            "symbolType": "square",
-            "symbolFillColor": "#3987e5",
-            "symbolStrokeWidth": 0,
-            "labelExpr": "format(datum.value, \"~s\")",
-            "tickCount": 4,
+            "direction": "vertical",
+            "gradientLength": 140,
+            "gradientThickness": 10,
+            "values": {
+              "expr": "!(length(data('rows'))) ? [] : floor(log(domain('color')[1]) / LN10 + 1e-9) - ceil(log(domain('color')[0]) / LN10 - 1e-9) >= 1 ? slice([1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000], ceil(log(domain('color')[0]) / LN10 - 1e-9), 1 + floor(log(domain('color')[1]) / LN10 + 1e-9)) : domain('color')[1] > domain('color')[0] ? domain('color') : [domain('color')[0]]"
+            },
+            "labelExpr": "format(datum.value, '.2~s')",
             "titleOpacity": {
               "expr": "length(data('rows')) ? 1 : 0"
             },
             "labelOpacity": {
               "expr": "length(data('rows')) ? 1 : 0"
             },
-            "symbolOpacity": {
+            "gradientOpacity": {
               "expr": "length(data('rows')) ? 1 : 0"
             }
           }
         }
-      }
-    },
-    {
-      "mark": {
-        "type": "rect",
-        "cornerRadius": 2,
-        "filled": false,
-        "stroke": "#3987e5",
-        "strokeWidth": 1,
-        "strokeOpacity": 0.9
       }
     }
   ]

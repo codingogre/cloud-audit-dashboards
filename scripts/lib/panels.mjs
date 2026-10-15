@@ -332,6 +332,78 @@ export const KIND_REFINE =
   `EVAL actor_kind = CASE(actor IN (${UNAUTH_ACTORS}), "unauthenticated", actor IN (${PLATFORM_ACTORS}), "platform", actor_kind)`;
 
 /**
+ * PRIVILEGED OPERATIONS. A security_config_change is the stream's own word for a privileged write — an
+ * API key created or invalidated, a role or user profile written — so "any non-zero value deserves
+ * review" was the reading this KPI was built for. It stopped being true when Kibana started cleaning up
+ * API keys on its own: `elastic/kibana`, the Kibana service account, invalidates keys every few
+ * milliseconds (the ids in the payload are Kibana's own, e.g. `kibana-api-key-service-test`, or keys a
+ * deleted rule left behind). Measured on the live stream: 670 of 671 privileged ops in one hour, 2,026
+ * of 2,770 over 24h, so the tile never read 0 and taught viewers to ignore it.
+ *
+ * HOUSEKEEPING is exactly that: `invalidate_apikeys` by a PLATFORM_ACTORS principal through no named
+ * key. Nothing else is excused — a key Kibana creates on a user's behalf (create_apikey by
+ * elastic/kibana when a rule is saved) is a real grant and stays counted, and an invalidation by any
+ * tenant identity is the event this tile exists for. Every term is guarded (`false AND null` is false),
+ * so it is never null and `NOT HOUSEKEEPING` never drops a row.
+ *
+ * PRIVILEGED selects the rest. Use it wherever a panel promises privileged operations (00 Privileged
+ * ops, 04 Config changes and its table) and say what it leaves out; privilegedKpi() puts the excluded
+ * count in the tile's secondary line, so the housekeeping is never silently gone. RISK still scores
+ * every invalidation (45): the leaderboard splits platform identities by `actor_scope` instead.
+ */
+export const HOUSEKEEPING =
+  '(attributes.event.action IS NOT NULL AND attributes.event.action == "invalidate_apikeys" ' +
+  `AND attributes.user.name IS NOT NULL AND attributes.user.name IN (${PLATFORM_ACTORS}) AND attributes.api_key.name IS NULL)`;
+export const PRIVILEGED =
+  `WHERE attributes.elasticsearch.audit.security_config_change IS NOT NULL AND NOT ${HOUSEKEEPING}`;
+/**
+ * (The note is short on purpose: a metric tile's secondary line is clipped without an ellipsis, and an
+ * 8-column tile holds ~30 characters at 1920px.)
+ *
+ * The tail of a privileged-ops KPI: `FROM … | TIME | ${privilegedKpi('Privileged ops')}` gives the
+ * count in `col` and, in `housekeeping_note`, how many routine Kibana key cleanups it left out — pass
+ * `secondary: 'housekeeping_note'` to kpi(). Measured on the 7-day replica: 157ms against 134ms for the
+ * bare COUNT(security_config_change) it replaces.
+ */
+export const privilegedKpi = (col) =>
+  `WHERE attributes.elasticsearch.audit.security_config_change IS NOT NULL | EVAL housekeeping = ${HOUSEKEEPING} ` +
+  `| STATS \`${col}\` = COUNT(*) WHERE NOT housekeeping, cleanups = COUNT(*) WHERE housekeeping ` +
+  '| EVAL housekeeping_note = CASE(cleanups > 0, CONCAT(TO_STRING(cleanups), " key cleanups left out"), "no key cleanups in range")';
+
+/**
+ * CLOUD API KEYS, AS AN IDENTITY. ACTOR_RESOLVE ends at attributes.user.name, and for an
+ * organization-level Elastic Cloud API key that is the key's 20-character id — the stream records no
+ * name and no owner for it. Shown bare it reads as a broken lookup, and on this project such a key (the
+ * one this repo's own tooling deploys, lints and renders with) is the busiest identity on every page.
+ * Until the key can be named, it is shown in ONE form everywhere an identity is shown:
+ *
+ *   _4KEO… · Cloud API key
+ *
+ * the first five characters of the id (enough to tell two keys apart by eye; the full id is in the
+ * tooltip of the sessions and in API key inventory), then the tag. `isCloudKeyId(col)` is the test: a
+ * 20-character value of the base64url alphabet that is not all digits (a numeric Cloud user id is
+ * shorter, and service accounts, `<anonymous>` and key names never match). It is a value test rather
+ * than a realm test because the same key arrives with user.domain `_cloud_api_key` on Elasticsearch
+ * events and sometimes `_es_api_key` on Kibana's (live, 24h: 261,172 and 6,521 events), and a realm
+ * test split one key into two rows.
+ *
+ *   ACTOR_LABEL                       EVAL actor = <label> — the last step before display, AFTER the
+ *                                     last STATS BY actor (two keys sharing a prefix would merge if it
+ *                                     ran first). table() appends it to every table that shows `actor`.
+ *   cloudKeyLabel(col, otherwise)     the expression, for any other column: a key-name column that is
+ *                                     null for a Cloud key reads `cloudKeyLabel('attributes.user.name',
+ *                                     'attributes.api_key.name')` instead of "-" or "(no name)".
+ *
+ * Per row, on the few rows a panel displays, so it costs nothing measurable.
+ */
+export const CLOUD_KEY_TAG = '… · Cloud API key';
+export const isCloudKeyId = (col) =>
+  `(LENGTH(${col}) == 20 AND ${col} RLIKE "[-_A-Za-z0-9]{20}" AND NOT ${col} RLIKE "[0-9]{20}")`;
+export const cloudKeyLabel = (col, otherwise = col) =>
+  `CASE(${isCloudKeyId(col)}, CONCAT(LEFT(${col}, 5), "${CLOUD_KEY_TAG}"), ${otherwise})`;
+export const ACTOR_LABEL = `EVAL actor = ${cloudKeyLabel('actor')}`;
+
+/**
  * Pushed ahead of the ACTOR/RISK EVALs so scoring runs over the few events that can score
  * instead of the whole window. Without it the leaderboard took 16s because COALESCE/CASE were
  * evaluated on every event before `WHERE risk > 0` pruned anything (re-measured on the perf replica:
@@ -395,8 +467,12 @@ export const RISK_RESTORE =
  *   Elasticsearch   search phases, scroll, msearch, PIT and reader contexts; ES|QL and its
  *                   sub-requests (compute, data, search_shards, resolve_fields, async/get, and
  *                   indices:admin/esql/*); field_caps and its per-node fan-out; async_search; index
- *                   resolution; search_shards. A read of a system index is NOT lost: SYS_INDEX
- *                   selects on the index, not through this gate.
+ *                   resolution; search_shards; ES|QL's query listing and lookup (cluster:monitor/
+ *                   xpack/esql/*: list_queries, get_query). And the two cluster reads Kibana makes on
+ *                   every page load — cluster:monitor/project/tags and xpack/inference/get, 1,707 and
+ *                   1,704 in 24h against 1,666 page shells — which led the Live signal feed once the
+ *                   Kibana half of the page load was gated (round 4). A read of a system index is NOT
+ *                   lost: SYS_INDEX selects on the index, not through this gate.
  *   Kibana          http_request to an /internal/ route (with or without the /s/<space> prefix) —
  *                   what the browser calls to draw a page: /internal/search/esql_async, feature
  *                   flags, controls options, session checks — and the content-management READS the
@@ -430,13 +506,40 @@ const NOISE_ES_QUERY_INTERNALS =
   `OR ${A_} LIKE "indices:data/read/*point_in_time" OR ${A_} == "indices:data/read/open_reader_context" ` +
   `OR ${A_} LIKE "indices:data/read/esql*" OR ${A_} LIKE "indices:admin/esql/*" ` +
   `OR ${A_} LIKE "indices:data/read/field_caps*" OR ${A_} LIKE "indices:data/read/async_search/*" ` +
-  `OR ${A_} LIKE "indices:admin/resolve/*" OR ${A_} == "indices:admin/shards/search_shards"`;
+  `OR ${A_} LIKE "indices:admin/resolve/*" OR ${A_} == "indices:admin/shards/search_shards" ` +
+  `OR ${A_} LIKE "cluster:monitor/xpack/esql/*" ` +
+  `OR ${A_} IN ("cluster:monitor/project/tags", "cluster:monitor/xpack/inference/get")`;
 const NOISE_EVENT_ACTIONS = '"authentication_success","connection_granted"';
+
+/**
+ * The URLs a browser fetches to draw a Kibana page, as one RLIKE over url.original (with or without the
+ * /s/<space> prefix). Each alternative carries its own tail, so `api/spaces/space` matches the space
+ * LIST a page load fetches and not `/api/spaces/space/<id>` (a space read, update or delete by id).
+ *
+ *   internal/…                          every /internal/ route: esql_async, feature flags, controls
+ *   api/content_management/rpc/{get,search,mget,bulkGet}   the dashboard app loading and listing objects
+ *   bootstrap.js, bootstrap-anonymous.js, translations/…, app/<app>   the page shell and its assets
+ *   api/core/…, api/licensing/…, api/banners/…, api/ui_counters/…     capabilities, licence, banner and
+ *                                        usage-counter calls every page makes once
+ *   api/spaces/space                     the space picker's list, once per page load
+ *
+ * Measured on the live stream, 24h: the page-load half (all but the first two lines) newly gates 10,429
+ * events and nothing else — one set per page load (the space list 2,021, bootstrap.js 1,669,
+ * capabilities 1,668, banners 1,668, /app/dashboards 1,666, licensing 1,661, ui_counters 73) — which
+ * led Command Center's Live signal feed. 7-day replica: signal 377,070 → 359,940; a cold gated count
+ * ~200ms before and after, ~70ms once Elasticsearch caches the filter. A change made through a public
+ * route is audited again as its own event (space_create, saved_object_create …), so gating the request
+ * line loses no change. `[.]` rather than a backslash keeps the pattern free of escapes in the static
+ * copies (vega/01, vega/07, searches/06, searches/10 — the drift check pins them).
+ */
+export const KIBANA_PLUMBING_URL =
+  'https?://[^/]+(/s/[^/]+)?/((internal|translations|app)/.*|api/content_management/rpc/(get|search|mget|bulkGet).*' +
+  '|bootstrap(-anonymous)?[.]js.*|api/(core|licensing|banners|ui_counters)/.*|api/spaces/space([?].*)?)';
 
 export const KIBANA_INTERNALS =
   'attributes.event.action IN ("saved_object_open_point_in_time","saved_object_close_point_in_time","space_get","space_find") ' +
   'OR (attributes.event.action == "http_request" AND attributes.url.original IS NOT NULL ' +
-  'AND attributes.url.original RLIKE "https?://[^/]+(/s/[^/]+)?/(internal/|api/content_management/rpc/(get|search|mget|bulkGet)).*") ' +
+  `AND attributes.url.original RLIKE "${KIBANA_PLUMBING_URL}") ` +
   'OR (attributes.event.action IN ("saved_object_get","saved_object_resolve","saved_object_find") ' +
   'AND attributes.kibana.saved_object.id IS NOT NULL AND attributes.kibana.saved_object.id LIKE "cloud-audit-*")';
 
@@ -615,6 +718,25 @@ export const kpi = (x, y, w, h, q, col, desc, { fmt = 'number', dec = 0, seconda
  */
 export const PALETTE_ID = 'eui_amsterdam';
 export const PALETTE = ['#54B399', '#6092C0', '#D36086', '#9170B8', '#CA8EAE', '#D6BF57', '#B9A888', '#DA8B45', '#AA6556', '#E7664C'];
+
+/**
+ * MAGNITUDE in Vega (heatmap, matrix and punchcard cells, gantt bars, choropleth countries): a COLOUR
+ * ramp across four mid-tone suite hues, never a one-hue opacity ramp. The opacity ramp it replaces
+ * (`#3987e5` at 0.35–1) held ≥1.5:1 against both backgrounds, but on the dark theme every step from 10
+ * to 100k sat between 2.0:1 and 4.7:1 of the same blue, and the round-4 review could not tell 1 from
+ * 1k from 100k on 01's credential matrix, 02's object × verb heatmap or 03's index matrix. Hue does not
+ * depend on the background: teal → blue → purple → pink reads in both themes, every stop is ≥2.5:1 on
+ * white and ≥4.3:1 on the dark panel (#111C2C), and no stop is a severity colour's yellow or red.
+ *
+ *   "scale": {"type": "log", "range": MAGNITUDE_RAMP, "interpolate": "hcl"}   — no `nice`, no
+ *   `domainMin`: the domain is the data's own extent, so the ramp spans what is drawn (a 1h matrix of
+ *   100–2k uses all four hues; a domain stretched to 1–10M left real cells two shades apart). A
+ *   gradient legend then covers exactly the drawn range. layout.mjs rejects an opacity/fillOpacity
+ *   magnitude scale and any other hex range on a log colour scale.
+ */
+export const MAGNITUDE_RAMP = ['#54B399', '#6092C0', '#9170B8', '#D36086'];
+/** Severity, a second quantity on the same mark (treemap, rare-event scatter): monotone in meaning. */
+export const SEVERITY_RAMP = ['#54B399', '#D6BF57', '#E7664C'];
 
 /** A pinned colour mapping for a breakdown or slice dimension, in the shape xy() and pie() both emit. */
 const colorMapping = (colors) => ({ mode: 'categorical', palette: PALETTE_ID,
@@ -813,8 +935,55 @@ export const label = (column) => COLUMNS[column]?.label || humanise(column);
  * gutter, the panel title takes ~33px, the header ~26px, and a single-line row is 24px. The 76 is
  * those fixed costs plus a margin that keeps the last row whole when a horizontal scrollbar
  * appears. h=12 → 10 rows, h=14 → 13, h=8 → 6.
+ *
+ * Re-measured 2026-10-14 on the production renders the round-4 review read (06 Noisiest transport
+ * actions, h=12, light 24h, 1920px): rows start 57px below the panel top, ten 24px rows end 22px
+ * above the grid's bottom rule, so an eleventh would be cut by 2px. The model is right, and every
+ * deployed LIMIT already equals fitRows(h). What the review saw as "rows silently hidden" was the
+ * remainder — up to one row-height of blank under the last row — on a list whose TITLE did not say it
+ * was cut: "Top transport actions" over 9 rows beside a tile reading 12 reads as a complete list. So
+ * the cut is now stated in the title (CUT below), and the blank strip reads as the end of a top-N.
  */
 export const fitRows = (h) => Math.max(1, Math.floor((28 * h - 76) / 24));
+
+/**
+ * CUT. Every LIMITed table says in its title how many rows it holds: table() appends " · top N" (or
+ * " · latest N" when the LIMIT follows a SORT on a time column, DESC), unless the title already names N
+ * as a word ("the 30 most recent"); a title that already says "top" gets the number there instead
+ * ("Top transport actions" → "Top 9 transport actions"). A table that holds more rows than fit — `{ scroll: true }` with a
+ * LIMIT above fitRows(h), or `{ wrap: true }`, whose auto-height rows make the visible count unknowable —
+ * adds " · scroll", the only cue a reader gets that the list goes on below the edge. `{ cut: false }`
+ * opts out for a table whose rows are a closed set (a breakdown with a fixed number of classes).
+ * layout.mjs fails a table whose LIMIT exceeds its visible rows without " · scroll", and a LIMITed table
+ * whose title does not state its N.
+ */
+const TIME_COLS = 'last_seen|last_ts|last_change|first_seen|latest|@timestamp|time|ts';
+/** The row cap a table's output carries: the last LIMIT with no STATS after it. */
+export const tableLimit = (q) => {
+  const all = [...q.matchAll(/\|\s*LIMIT\s+(\d+)/gi)];
+  const last = all[all.length - 1];
+  if (!last || /\|\s*STATS\b/i.test(q.slice(last.index))) return undefined;
+  return Number(last[1]);
+};
+/** "latest" when the last SORT before the row cap leads with a time column, DESC; "top" otherwise. */
+export const cutWord = (q) => {
+  const head = q.slice(0, q.search(/\|\s*LIMIT\s+\d+(?![\s\S]*\|\s*LIMIT\s)/i));
+  const sorts = [...head.matchAll(/\|\s*SORT\s+`?([\w@.]+)`?\s+(DESC|ASC)?/gi)];
+  const last = sorts[sorts.length - 1];
+  return last && new RegExp(`^(${TIME_COLS})$`, 'i').test(last[1]) && /desc/i.test(last[2] || '') ? 'latest' : 'top';
+};
+export const withCut = (title, q, h, { scroll = false, wrap = false, cut = true } = {}) => {
+  const n = tableLimit(q);
+  if (!n || cut === false) return title;
+  let t;
+  if (new RegExp(`(^|[^\\d,.])${n}(?![\\d,])`).test(title)) t = title;
+  // A title that already says "top" (or "latest", for a time-sorted cut) gets the number there ("Top 9
+  // transport actions", "Latest 10 high-value object access") rather than a second "· top 9" at the end.
+  else if (new RegExp(`\\b${cutWord(q)} (?!\\d|first\\b)`, 'i').test(title)) t = title.replace(new RegExp(`\\b(${cutWord(q)}) (?!\\d|first\\b)`, 'i'), `$1 ${n} `);
+  else t = `${title} · ${cutWord(q)} ${n}`;
+  if ((wrap || (scroll && n > fitRows(h))) && !/\bscroll\b/i.test(t)) t += ' · scroll';
+  return t;
+};
 
 /**
  * The table's density and row height. Compact (12px, 24px rows) rather than Lens' default (14px,
@@ -893,7 +1062,7 @@ export const narrowOverflow = (p) => p.config?.type === 'data_table' && p.narrow
  * meeting one needs to be told so where they meet it. Appended to the description of every table that
  * shows the resolved identity, unless the description already explains it.
  */
-export const OPAQUE_ID_NOTE = 'An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id.';
+export const OPAQUE_ID_NOTE = 'An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email.';
 const withIdNote = (desc, cols) =>
   (cols.some((c) => c.column === 'actor') && !/opaque/i.test(desc || '') ? `${desc} ${OPAQUE_ID_NOTE}` : desc);
 
@@ -920,19 +1089,33 @@ export const blankNull = (...cols) => `EVAL ${cols.map((c) => `${c} = COALESCE($
  * column "created at query time", which costs the click-to-filter pill and the Actor 360 drilldown,
  * and scans the whole window.
  *
- * So the meaning of an empty panel goes in its TITLE, the one text a reader sees with the panel:
- * `table(…, { empty: 'good' })` titles it "⚠️ System index reads · none is good", and search() takes
- * the same option. `empty` is an EMPTY key ('good': empty is the healthy state; 'quiet': often empty
- * over the default hour) or the reader-facing words themselves ("empty without API-key traffic"); the
- * description gains the matching sentence. Use it on every table or session that a verify render at
- * the default 1h shows empty on a healthy project. Keep the words short: they share the title line.
+ * So the meaning of an empty panel goes in its TITLE, the one text a reader sees with the panel — and
+ * because the title shows whether or not there are rows, its words must be TRUE EITHER WAY. Round 3
+ * appended "· none is good" and "· empty without X", which read as a verdict on the rows beneath them
+ * whenever the table was full ("Failures by identity · none is good" over eight failures). The words are
+ * now a parenthetical CONDITION, which a full table does not contradict:
+ *
+ *   { empty: 'good' }    "Denied requests · top 7 (empty = good)"
+ *   { empty: 'quiet' }   "… (may be empty at 1h)"
+ *   { empty: 'empty when no browser sessions' }   your own words, which must start "empty when",
+ *                        "empty if", "empty without" or "empty unless" — a condition, never a status
+ *
+ * The description gains the matching sentence. Use it on every table or session that a verify render
+ * at the default 1h shows empty on a healthy project. Keep the words short: they share the title line.
  */
 export const EMPTY = {
-  good: { title: 'none is good', desc: 'An empty panel means nothing matched in the time range, which is the healthy state.' },
-  quiet: { title: 'often empty at 1h', desc: 'Often empty over the default hour on a healthy project; widen the time range to see older rows.' },
+  good: { title: '(empty = good)', desc: 'An empty panel means nothing matched in the time range, which is the healthy state; any row here is worth reading.' },
+  quiet: { title: '(may be empty at 1h)', desc: 'Often empty over the default hour on a healthy project; widen the time range to see older rows.' },
 };
-const emptyOf = (empty) => EMPTY[empty] ?? { title: empty, desc: `When this panel is empty: ${empty}.` };
-const withEmptyTitle = (title, empty) => (empty ? `${title} · ${emptyOf(empty).title}` : title);
+export const EMPTY_CONDITION = /^empty (when|if|without|unless) \S/;
+const emptyOf = (empty) => {
+  if (EMPTY[empty]) return EMPTY[empty];
+  if (!EMPTY_CONDITION.test(empty)) {
+    throw new Error(`{ empty: "${empty}" } must be 'good', 'quiet', or a condition starting "empty when/if/without/unless …" — it is shown whether or not the panel has rows`);
+  }
+  return { title: `(${empty})`, desc: `This panel is ${empty}.` };
+};
+const withEmptyTitle = (title, empty) => (empty ? `${title} ${emptyOf(empty).title}` : title);
 const withEmptyDesc = (desc, empty) => (empty ? `${desc || ''} ${emptyOf(empty).desc}`.trim() : desc);
 
 /**
@@ -942,7 +1125,7 @@ const withEmptyDesc = (desc, empty) => (empty ? `${desc || ''} ${emptyOf(empty).
  * everything or all, unless it is { scroll: true } (and then the LIMIT itself is the promise). The
  * in-memory `lint` annotation carries what the check needs; dashboards.mjs strips it from the payload.
  */
-export const table = (x, y, w, h, title, q, rows, metrics, desc, { scroll = false, wrap = false, empty } = {}) => {
+export const table = (x, y, w, h, title, q, rows, metrics, desc, { scroll = false, wrap = false, empty, cut = true } = {}) => {
   let query = q;
   if (!scroll && !wrap) {
     query = q.replace(/\|\s*LIMIT\s+(\d+)\s*$/i, (m, n) => `| LIMIT ${Math.min(Number(n), fitRows(h))}`);
@@ -956,12 +1139,16 @@ export const table = (x, y, w, h, title, q, rows, metrics, desc, { scroll = fals
     delete r.reduce((a, b) => (b.width > a.width ? b : a)).width;
   }
   const fits = fitWidths([...r, ...m], w);
-  const limit = Number(/\|\s*LIMIT\s+(\d+)\s*$/i.exec(query)?.[1]) || undefined;
+  const limit = tableLimit(query);
+  // The Cloud API key display form (ACTOR_LABEL), on the rows the table shows — after the LIMIT, so it
+  // runs on at most a screenful of rows and never before a STATS BY actor.
+  if (r.some((c) => c.column === 'actor')) query = `${query} | ${ACTOR_LABEL}`;
   return {
     type: 'vis', id: nid('tbl'), grid: { x, y, w, h }, ...(fits ? {} : { narrow1440: true }),
-    lint: { limit, scroll: scroll || wrap, ...(empty ? { empty } : {}) },
+    lint: { limit, scroll: scroll || wrap, wrap, cut, ...(empty ? { empty } : {}) },
     config: {
-      title: withEmptyTitle(title, empty), description: withEmptyDesc(withIdNote(desc, r), empty), type: 'data_table',
+      title: withEmptyTitle(withCut(title, query, h, { scroll, wrap, cut }), empty),
+      description: withEmptyDesc(withIdNote(desc, r), empty), type: 'data_table',
       data_source: { type: 'esql', query },
       styling: { density: wrap ? DENSITY_WRAP : DENSITY },
       rows: r, metrics: m,

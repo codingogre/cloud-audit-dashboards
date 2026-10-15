@@ -1,7 +1,7 @@
 /** 00 Command Center — see scripts/lib/definitions.mjs for how the suite is assembled. */
 import {
   IDX, ACTOR, ACTOR_RESOLVE, NOISE, TIME, BUCKET, SOURCE_LABEL, SOURCE_COLORS, dash, kpi, xy, bar, table, sized, vega, search,
-  md, resetIds
+  md, resetIds, privilegedKpi
 } from '../panels.mjs';
 import {
   LEGEND_MD, ACTOR_KEYS
@@ -27,8 +27,11 @@ export function build() {
       'Identities with signal traffic, behind the same noise gate and resolved the same way as Busiest identities: email, then API key name, then numeric user id. Someone whose only events are noise (browsing dashboards, health checks) is not counted here; Platform Volume counts all traffic.'),
     kpi(24, 0, 8, 5, `FROM ${IDX} | ${TIME} | ${NOISE} | WHERE attributes.user.email IS NOT NULL | STATS \`Human actors\` = COUNT_DISTINCT(attributes.user.email)`, 'Human actors',
       'Distinct email addresses with signal traffic, behind the same noise gate as Signal events. Includes an API key whose events carry its creator’s email: such a row in Busiest identities reads “email · via key name”.'),
-    kpi(32, 0, 8, 5, `FROM ${IDX} | ${TIME} | STATS \`Privileged ops\` = COUNT(attributes.elasticsearch.audit.security_config_change)`, 'Privileged ops',
-      'Security configuration changes: API key invalidation, user profile writes, role edits. Any non-zero value deserves review.'),
+    // PRIVILEGED (panels.mjs): Kibana's own API-key cleanup by elastic/kibana kept this tile permanently
+    // non-zero (670 of 671 in an hour). It is left out and counted in the line under the number instead.
+    kpi(32, 0, 8, 5, `FROM ${IDX} | ${TIME} | ${privilegedKpi('Privileged ops')}`, 'Privileged ops',
+      'Security configuration changes — API keys created, changed or invalidated, roles and user profiles written — by any identity, all traffic. Kibana’s own routine clean-up of API keys (invalidate_apikeys by the elastic/kibana service account) is not counted here; the line under the number (“N key cleanups left out”) says how many there were. Any other non-zero value deserves review.',
+      { secondary: 'housekeeping_note' }),
     kpi(40, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE attributes.event.outcome == "failure" OR attributes.event.action == "anonymous_access_denied" | STATS \`Failed events\` = COUNT(*)`, 'Failed events',
       'Failed outcomes plus anonymous access denials — the first place to look during an incident.'),
     // Named, pinned and ordered by the same SOURCE_LABEL / SOURCE_COLORS as 06's chart, so the two
@@ -41,7 +44,7 @@ export function build() {
     // Two rows taller than the rest of the page: at 13 the treemap's floor-sized tiles were too short
     // for a two-line name once the legend took its row under the plot.
     vega(0, 18, 24, 15, '01-actor-risk-treemap', 'Actor footprint sized by volume, coloured by severity',
-      'The top 12 identities by signal volume (fewer on a narrow screen, down to 8), in one block per kind; the rest of each kind is folded into one grey “+N more” tile (hover it for the count). Blocks: named API key (labelled by the KEY, with its owner — the principal that created it — on a further line when there is room, and in the tooltip), person (a real email address), cloud API key (an organisation-level Cloud key, which the audit stream records only by id and with no owner), and unattributed (a token or opaque principal). An identity is one tile even when its events disagree about its kind; it goes in the most specific block any of them supports. Area grows with the SQUARE ROOT of event volume, so one dominant identity cannot crush the rest into slivers, and the smallest identities get a minimum tile so every name stays readable; a name too long for its tile ends in “…” — the tooltip has the full name and exact counts. Colour is accumulated severity, the quantity the risk leaderboard ranks by, on a square-root scale. A key that carries its creator’s email is its own tile here, but counts under the person in Busiest identities.'),
+      'The top 12 identities by signal volume (fewer on a narrow screen, down to 8), in one block per kind; the rest of each kind is folded into one grey “+N more” tile (hover it for the count). Blocks: named API key (labelled by the KEY, with its owner — the principal that created it — on a further line when there is room, and in the tooltip), person (a real email address), cloud API key (an organization-level Cloud key, which the audit stream records only by id and with no owner), and unattributed (a token or opaque principal). An identity is one tile even when its events disagree about its kind; it goes in the most specific block any of them supports. Area grows with the SQUARE ROOT of event volume, so one dominant identity cannot crush the rest into slivers, and the smallest identities get a minimum tile so every name stays readable; a name too long for its tile ends in “…” — the tooltip has the full name and exact counts. Colour is accumulated severity, the quantity the risk leaderboard ranks by, on a square-root scale. A key that carries its creator’s email is its own tile here, but counts under the person in Busiest identities.'),
     vega(24, 18, 24, 15, '07-noise-ratio-stream', 'Signal vs noise over time',
       'Audit events per time bucket, stacked by band — Signal on the baseline, then bulk authentication, query internals and infrastructure health — so the top edge is the whole firehose. Shows why the noise gate exists. Hover a segment for its band and the bucket total.'),
     table(0, 33, 12, 12, 'Most frequent actions',

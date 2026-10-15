@@ -155,10 +155,12 @@ test('empty states live in the title; completeness is a lint failure on a LIMITe
   const { EMPTY } = await import('../../scripts/lib/panels.mjs');
   const { PROMISES_ALL, checkLayout } = await import('../../scripts/lib/layout.mjs');
   const good = table(0, 0, 24, 12, '⚠️ System index reads', 'FROM x | LIMIT 30', ['a'], ['b'], 'Reads.', { empty: 'good' });
-  assert.equal(good.config.title, `⚠️ System index reads · ${EMPTY.good.title}`);
+  assert.equal(good.config.title, `⚠️ System index reads · top 10 ${EMPTY.good.title}`);
+  assert.equal(EMPTY.good.title, '(empty = good)', 'a condition, true whether or not there are rows');
   assert.ok(good.config.description.startsWith('Reads. ') && good.config.description.endsWith(EMPTY.good.desc));
   const own = table(0, 0, 24, 12, 'API key throughput', 'q', ['a'], ['b'], 'Keys.', { empty: 'empty without API-key traffic' });
-  assert.equal(own.config.title, 'API key throughput · empty without API-key traffic');
+  assert.equal(own.config.title, 'API key throughput (empty without API-key traffic)');
+  assert.throws(() => table(0, 0, 24, 12, 't', 'q', ['a'], ['b'], 'd', { empty: 'none is good' }), /condition/);
   assert.equal(table(0, 0, 24, 12, 't', 'q', ['a'], ['b'], 'd').config.title, 't', 'no empty option, title untouched');
   assert.equal(good.lint.limit, 10);
   assert.ok(PROMISES_ALL.test('Every address they used') && PROMISES_ALL.test('all changes'));
@@ -187,4 +189,47 @@ test('NOISE and BAND share one vocabulary; BAND reads the kib_internal key BAND_
   for (const f of ['attributes.url.original', 'attributes.kibana.saved_object.id']) assert.ok(KIBANA_INTERNALS.includes(`${f} IS NOT NULL AND ${f}`), f);
   assert.doesNotMatch(IP_GEO, /\bBY\b/);
   assert.match(IP_GEO, /placed = COUNT\(client\.geo\.country_iso_code\)/);
+});
+
+test('a LIMITed table says where it is cut, and a scrollable one says scroll', async () => {
+  const { checkLayout } = await import('../../scripts/lib/layout.mjs');
+  const t = (title, q, h, o) => table(0, 0, 24, h, title, q, ['a'], ['b'], 'd', o).config.title;
+  assert.equal(t('Busiest', 'FROM x | SORT events DESC | LIMIT 30', 12), 'Busiest · top 10');
+  assert.equal(t('Changes', 'FROM x | SORT last_seen DESC | LIMIT 30', 12), 'Changes · latest 10');
+  assert.equal(t('Mutations — the 30 most recent', 'FROM x | SORT @timestamp DESC | LIMIT 30 | EVAL a = 1', 14, { scroll: true }),
+    'Mutations — the 30 most recent · scroll', 'N already in the title; LIMIT above the visible rows');
+  assert.equal(t('High value', 'FROM x | SORT last_seen DESC | LIMIT 10', 12, { wrap: true }), 'High value · latest 10 · scroll');
+  assert.equal(t('Classes', 'FROM x | STATS n = COUNT(*) BY c', 9), 'Classes', 'no LIMIT, no cut');
+  assert.equal(t('Fixed', 'FROM x | LIMIT 5', 9, { cut: false }), 'Fixed');
+  // Wired into checkLayout: a hidden-row table and an unannounced cut both fail.
+  const all = buildAll();
+  const [name, def] = Object.entries(all).find(([, d]) => d.panels.some((p) => p.lint?.limit && !p.lint.scroll));
+  const p = def.panels.find((x) => x.lint?.limit && !x.lint.scroll);
+  const saved = { title: p.config.title, q: p.config.data_source.query };
+  p.config.title = 'Unannounced';
+  p.config.data_source.query = saved.q.replace(/LIMIT \d+/g, 'LIMIT 99');
+  const problems = checkLayout(all).problems.filter((m) => m.includes(p.id));
+  assert.ok(problems.some((m) => /rows would be hidden/.test(m)), problems.join('\n'));
+  assert.ok(problems.some((m) => /does not say "scroll"/.test(m)));
+  assert.ok(problems.some((m) => /does not say so/.test(m)));
+  Object.assign(p.config, { title: saved.title }); p.config.data_source.query = saved.q;
+});
+
+test('an opaque Cloud API key id has one display form, and table() applies it', async () => {
+  const { ACTOR_LABEL, CLOUD_KEY_TAG, cloudKeyLabel } = await import('../../scripts/lib/panels.mjs');
+  assert.equal(CLOUD_KEY_TAG, '… · Cloud API key');
+  assert.match(ACTOR_LABEL, /^EVAL actor = CASE\(/);
+  assert.match(cloudKeyLabel('attributes.user.name', 'attributes.api_key.name'), /, attributes\.api_key\.name\)$/);
+  const q = table(0, 0, 24, 12, 't', 'FROM x | STATS events = COUNT(*) BY actor | SORT events DESC | LIMIT 30', ['actor'], ['events'], 'd').config.data_source.query;
+  assert.ok(q.endsWith(`| LIMIT 10 | ${ACTOR_LABEL}`), 'after the clamp, on the displayed rows only');
+  assert.ok(!table(0, 0, 24, 12, 't', 'FROM x | LIMIT 3', ['action'], ['events'], 'd').config.data_source.query.includes(ACTOR_LABEL));
+});
+
+test('privileged ops leave out only Kibana\'s own key clean-up, and say how much', async () => {
+  const { HOUSEKEEPING, PRIVILEGED, privilegedKpi, PLATFORM_ACTORS } = await import('../../scripts/lib/panels.mjs');
+  assert.ok(HOUSEKEEPING.includes('"invalidate_apikeys"') && HOUSEKEEPING.includes(PLATFORM_ACTORS));
+  // Every term guarded, so NOT HOUSEKEEPING never evaluates to null and drops a row.
+  for (const f of ['attributes.event.action', 'attributes.user.name']) assert.ok(HOUSEKEEPING.includes(`${f} IS NOT NULL AND ${f}`), f);
+  assert.ok(PRIVILEGED.endsWith(`AND NOT ${HOUSEKEEPING}`));
+  assert.match(privilegedKpi('Privileged ops'), /COUNT\(\*\) WHERE NOT housekeeping.*housekeeping_note/);
 });

@@ -27,7 +27,7 @@ design decision that follows.
 | **A single high-volume API key can dominate the stream**, and Elasticsearch stamps that key's **creator** on every event it emits | A noise gate is ON by default everywhere except the Platform Volume dashboard. Actor-facing panels also carry the `api_key` column, so an automated workload is never mistaken for the person who minted its credential. |
 | The gate's old `NOT (field IN (...))` form was **null for every Kibana event**, and `WHERE null` drops the row | Both halves are explicitly null-guarded. Before the fix the "Signal events" KPI excluded 100% of Kibana audit. |
 | Composition depends on the workload, so no single noise class can be assumed to be the bulk — health checks (`cluster:monitor/main`), **search-phase internals** and transport **`connection_granted`** are all targeted | The gate and the volume bands share one vocabulary (`NOISE_ES_ACTIONS`, `NOISE_ES_QUERY_INTERNALS`, `NOISE_EVENT_ACTIONS`) so they cannot disagree. |
-| **Reading the audit stream is audited.** Every dashboard panel, Discover tab and API client that queries data emits ES\|QL sub-requests (`esql/compute`, `esql/data`, `esql/search_shards`, `resolve_fields`), `field_caps`, `async_search`, Kibana `/internal/*` and content-management page requests, "User has accessed space" and "User has accessed dashboard" reads — with thousands of viewers, the viewers' own queries were the top "signal" | All of it is **Query internals**, gated out with search phases (`KIBANA_INTERNALS` covers the Kibana half). The suite's own views — a get/resolve/find of a `cloud-audit-*` object — are noise; a *change* to a suite object stays signal. Unfiltered counts stay on Platform Volume and on 02's object panels. 7-day replica: signal 1.54M → 0.38M of 2.6M events. |
+| **Reading the audit stream is audited.** Every dashboard panel, Discover tab and API client that queries data emits ES\|QL sub-requests (`esql/compute`, `esql/data`, `esql/search_shards`, `resolve_fields`), `field_caps`, `async_search`, Kibana `/internal/*`, content-management and page-load requests (`bootstrap.js`, `/app/…`, capabilities, licensing), "User has accessed space" and "User has accessed dashboard" reads — with thousands of viewers, the viewers' own queries were the top "signal" | All of it is **Query internals**, gated out with search phases (`KIBANA_INTERNALS` covers the Kibana half). The suite's own views — a get/resolve/find of a `cloud-audit-*` object — are noise; a *change* to a suite object stays signal. Unfiltered counts stay on Platform Volume and on 02's object panels. 7-day replica: signal 1.54M → 0.38M of 2.6M events. |
 | Wide time windows once looked unservable — "2h, 3h and 4h all exceed 60s" | Those readings were taken back to back, and a synchronous ES\|QL query outlives the client that gave up on it and **cannot be cancelled** on serverless. Every query this repo runs now goes through a cancellable, budgeted call, and `--lint` reports its timings. What actually costs is query *shape* — see [`esql/fragments.md`](esql/fragments.md). Measured with `./audit --perf` on a 2.6M-event, 7-day replica, every panel query now returns in under 0.7s at 7 days and every dashboard loads in under 3.5s (see *Performance*). Dashboards still default to `now-1h` as the readable view of right now. |
 | `attributes.source.ip` is the **internal proxy** (`100.64.x.x` CGNAT, `10.x.x.x` mesh) | All geography uses `attributes.network.forwarded_ip`, the real public client IP. Using the obvious field would place every user in the datacentre. |
 | `attributes.event.category` / `.type` are **arrays** | `MV_EXPAND` before any `STATS ... BY`. |
@@ -257,10 +257,21 @@ in shared code rather than at call sites.
   an advisory by the layout check: it needs a wider panel or fewer columns. Render with
   `AUDIT_VERIFY_WIDTH=1440` to see it.
 - *Visible rows.* Tables are compact density with one-line rows, and a trailing `| LIMIT n` is lowered
-  to `fitRows(h)` (h=8 → 6, h=12 → 10, h=14 → 13) because a Lens table gives no cue that rows
+  to `fitRows(h)` (h=8 → 6, h=11 → 9, h=12 → 10, h=14 → 13) because a Lens table gives no cue that rows
   continue. Only a LIMIT that is the query's very last step is lowered, so per-row EVALs go before
   the SORT/LIMIT. `{ scroll: true }` keeps the LIMIT when the title promises a count; `{ wrap: true }`
-  gives auto-height rows for a column whose whole value matters.
+  gives auto-height rows for a column whose whole value matters. The model was re-measured on the
+  production renders (rows start 57px below the panel top; at h=12 ten 24px rows end 22px above the
+  grid's bottom rule): every deployed LIMIT already equals the rows that fit, and the blank strip under
+  the last row is that remainder, not a hidden row.
+- *Say where the list is cut.* What made readers take a partial list for a complete one was the title,
+  not the LIMIT: "Top transport actions" over 9 rows beside a tile reading 12. So `table()` appends the
+  cut to every LIMITed title — *"· top 10"*, or *"· latest 10"* when the LIMIT follows a `SORT` on a time
+  column `DESC` — unless the title already names the number ("the 30 most recent"). A table that holds
+  more rows than it shows (`{ scroll: true }` above `fitRows(h)`, or `{ wrap: true }`) adds *"· scroll"*,
+  the only cue a reader gets. `{ cut: false }` opts a closed set out. `--lint` fails a LIMIT above the
+  visible rows without `scroll`, a scrollable table whose title does not say *scroll*, and a LIMITed
+  table whose title does not state its N.
 - *Empty cells.* A null prints as `-`. On a display column, end the query with `blankNull(col)` after
   the `STATS` and it prints nothing. Never on a click-to-filter column: Lens refuses to filter on any
   column the query assigns ("created at query time"), so a null there stays an underlined `-`. Where
@@ -268,16 +279,34 @@ in shared code rather than at call sites.
 - *Empty states.* Kibana prints a bare "No results found" for an empty ES\|QL table or Discover session,
   no 9.6 setting replaces it, and a description is only a tooltip. A query cannot add a placeholder row
   without making every row column "created at query time" (no click-to-filter, no drilldown). So the
-  meaning goes in the title: `table(…, { empty: 'good' })` → *"⚠️ System index reads · none is good"*;
-  `'quiet'` → *"· often empty at 1h"*; or your own short words. `search()` takes the same option, and the
+  meaning goes in the title — and since the title shows whether or not there are rows, its words must be
+  true either way: a parenthetical *condition*, never a status. `table(…, { empty: 'good' })` →
+  *"Denied requests · top 7 (empty = good)"*; `'quiet'` → *"(may be empty at 1h)"*; your own words must
+  start *empty when / if / without / unless* → *"(empty when no browser sessions)"* (anything else
+  throws at build). Round 3's *"· none is good"* and *"· empty without X"* read as a verdict on the rows
+  whenever the table was full; `--lint` rejects that form. `search()` takes the same option, and the
   description gains the matching sentence. Use it on every panel a default 1h render shows empty on a
   healthy project.
 - *Completeness.* A title must not promise more than the panel shows. A LIMITed table whose title says
   *every*, *everything* or *all* fails `--lint` (`layout.mjs` `PROMISES_ALL`): say *top*, *busiest* or
   *most recent*, or pass `{ scroll: true }` when the LIMIT is itself the promise ("the 30 most recent").
-- *Opaque identities.* An Identity that resolves to a bare id is a principal with no email or key name
-  — usually an organisation-level Cloud API key. `table()` appends that explanation to the description
-  of every table showing `actor`; Discover sessions with an Identity column say it themselves.
+- *Opaque identities — one form.* An Identity that resolves to a 20-character id is an organisation-level
+  Elastic Cloud API key: the stream records no name and no owner for it. It is shown the same way
+  everywhere an identity is shown — **`_4KEO… · Cloud API key`** (first five characters, then the tag) —
+  by `ACTOR_LABEL` in `panels.mjs`: `table()` appends it to every table showing `actor` (after the LIMIT,
+  so after the last `STATS BY actor`), and every Discover session and Vega spec that shows an identity
+  embeds it verbatim (pinned by the drift check). A key-name or owner column that would print `-`,
+  `0` or `(no name)` for such a key uses `cloudKeyLabel(col, otherwise)` instead (API key inventory). The
+  test is on the value, not the realm: the same key arrives as `_cloud_api_key` on Elasticsearch events
+  and sometimes `_es_api_key` on Kibana's. Never gate a specific key out and never hardcode its id: on
+  this project the busiest such key is this repo's own tooling, and that is real audit data.
+- *Privileged operations.* `security_config_change` is the stream's word for a privileged write, but
+  Kibana's own clean-up — `invalidate_apikeys` by `elastic/kibana`, every few milliseconds — kept every
+  "any non-zero deserves review" tile permanently non-zero (670 of 671 in an hour). `PRIVILEGED` leaves
+  out exactly that (`HOUSEKEEPING`: `invalidate_apikeys` by a platform principal through no named key);
+  `privilegedKpi(col)` puts the excluded count in the tile's secondary line. A key Kibana creates on a
+  user's behalf, and any tenant invalidation, still count. The risk model still scores every
+  invalidation; the leaderboard's `actor_scope` separates platform identities.
 
 **Numbers that sit together must reconcile.** A KPI and the table beside or below it, two tables
 counting "the same" identities or events, or a tile and the chart under it must agree, or say on the
@@ -331,18 +360,22 @@ the control bar and the Lens click-to-filter columns, so sessions rename everyth
 
 **Vega colour.** A spec cannot tell which theme it is in, so no colour may sit near either
 background (dark panels are ~`#111C2C`, light are white).
-- *Magnitude* (heatmap cells, matrix cells, bars whose colour repeats their length): one mid-tone
-  hue on the mark, `"color": "#3987e5"`, and encode volume as **opacity**:
-  `"opacity": {"field": …, "type": "quantitative", "scale": {"type": "log", "range": [0.35, 1]}}`
-  (`symlog` only if zeros reach the chart, and never with `nice`). The 0.35 floor is what keeps the
-  rarest cell ≥1.5:1 against both backgrounds — at the old 0.07 it was 1.1:1, invisible, and on the
-  forensic panels the rare cell is the point. Legend: `"values"` at decades
-  (`[1, 10, 100, 1000, 10000]`) with `"labelExpr": "format(datum.value, '~s')"`, filtered to the
-  decades inside the data's range — a `10k` entry when nothing reached 10,000 is a false reading, and
-  `tickCount` on a log scale draws one; symlog places default ticks linearly. Never a light-to-dark ramp, never a stop like `#0B1628` or `#1D2A3A`.
+- *Magnitude* (heatmap, matrix and punchcard cells, gantt bars, choropleth countries): a **colour**
+  ramp over four mid-tone suite hues, `MAGNITUDE_RAMP` in `panels.mjs` —
+  `"color": {"field": …, "type": "quantitative", "scale": {"type": "log", "range": ["#54B399", "#6092C0",
+  "#9170B8", "#D36086"], "interpolate": "hcl"}}`, teal (fewest) → blue → purple → pink (most). The
+  one-hue opacity ramp it replaces (`#3987e5` at 0.35–1) was nearly flat on the dark theme: every step
+  from 10 to 100k sat between 2.0:1 and 4.7:1 of the same blue, and the round-4 review could not tell
+  1 from 1k from 100k on 01's, 02's or 03's matrix. Hue does not depend on the background; every stop is
+  ≥2.5:1 on white and ≥4.3:1 on the dark panel. **Fit the domain to the data** — no `nice`, no
+  `domainMin` — so the four hues span what is drawn: a domain stretched to 1–10M left real cells two
+  shades apart. The gradient legend then covers exactly the drawn range; label it at the decades inside
+  `domain('color')` (the domain's own ends when fewer than two decades fall inside) with
+  `"labelExpr": "format(datum.value, '.2~s')"`. `--lint` rejects an opacity magnitude scale and any other
+  hex list on a log colour scale. Never a light-to-dark ramp, never a stop like `#0B1628` or `#1D2A3A`.
 - *Severity* (a second quantity on the same mark, as on the treemap and the rare-event scatter):
-  `"range": ["#54B399", "#D6BF57", "#E7664C"]` over `[0, RISK_MAX]` — mid-tones only, monotone in
-  meaning. Text drawn over a severity fill uses `#1D1E24` on the yellow and orange stops.
+  `"range": ["#54B399", "#D6BF57", "#E7664C"]` (`SEVERITY_RAMP`) over `[0, RISK_MAX]` — mid-tones only,
+  monotone in meaning. Text drawn over a severity fill uses `#1D1E24` on the yellow and orange stops.
 - *Categories*: `PALETTE` in `panels.mjs` (`#54B399, #6092C0, #D36086, #9170B8, #CA8EAE, #D6BF57,
   #B9A888, #DA8B45, #AA6556, #E7664C`) — the same ten Lens draws breakdowns with, so a category
   pinned with `xy({ colors })` and the same category in Vega can match.
@@ -380,6 +413,7 @@ legends over an empty domain, decade axes, solid placeholder cells, a flat line 
                          AUDIT_VERIFY_THEME=light renders light mode (default: dark)
                          AUDIT_VERIFY_RANGE=now-24h widens the window (default: now-1h)
                          AUDIT_VERIFY_WIDTH=1440 narrows the viewport (default: 1920)
+                         AUDIT_VERIFY_ONLY=00,07 renders only dashboards whose name contains one
 ./audit --perf <sub>     Time every query at production volume on a replica: seed | run | clean
 ./audit --queries        List ES|QL queries registered on the project, and whether each is still
                          scanning. Check it before trusting any timing

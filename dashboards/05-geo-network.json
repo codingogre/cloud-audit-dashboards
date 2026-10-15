@@ -313,7 +313,7 @@
         "h": 13
       },
       "config": {
-        "title": "Top client locations",
+        "title": "Top 12 client locations",
         "description": "The busiest resolved client locations in range; the rest are beyond the panel. Events sum to the Geo-resolved events tile when every location fits. City is often the ISP's point of presence rather than where the person sits; country is reliable.",
         "type": "data_table",
         "data_source": {
@@ -366,7 +366,7 @@
         "h": 12
       },
       "config": {
-        "title": "Countries per person (impossible travel)",
+        "title": "Countries per person (impossible travel) · top 10",
         "description": "People (identities with an email) whose traffic resolved to a country in range, most countries first. Two or more countries inside one window is the classic impossible-travel indicator — compare \"Countries seen\" with where the person actually is. \"One country\" on every row is the clean state. Service credentials are excluded, since multi-region is normal for machines, and a person whose every address is unplaceable (CGNAT, private egress) cannot appear here — see Geo coverage. Click an email to scope the suite to that person.",
         "type": "data_table",
         "data_source": {
@@ -424,7 +424,7 @@
         "h": 12
       },
       "config": {
-        "title": "Busiest client IPs",
+        "title": "Busiest client IPs · top 10",
         "description": "Real client IPs, busiest first, with where each resolved; the Client IPs tile counts every one, and the rest are beyond the panel. An IP shared by many identities is usually a NAT gateway or CI runner. An address that resolved on any event shows that place, even if some of its events predate geo enrichment. \"Not placeable\" means no event from it ever resolved — not an enrichment error: no geoip database can place an address in a private or CGNAT range; \"Why client IPs do not resolve\" accounts for every one. Click an IP to scope the suite to it.",
         "type": "data_table",
         "data_source": {
@@ -530,8 +530,8 @@
         "h": 9
       },
       "config": {
-        "title": "Why client IPs do not resolve · empty when every IP placed",
-        "description": "Every forwarded client IP that never resolved in range, by address class; the events add up to the \"IP not geolocatable\" row beside. Carrier NAT and RFC1918 rows are expected — clients reaching the project through a NAT or private egress, whose addresses no geoip database can place — and are not an enrichment failure. A \"Public, no geoip match\" row WOULD be a geoip problem worth chasing. An address that resolved on any event is not here, even if some of its events predate enrichment. When this panel is empty: empty when every IP placed.",
+        "title": "Why client IPs do not resolve (empty when every IP placed)",
+        "description": "Every forwarded client IP that never resolved in range, by address class; the events add up to the \"IP not geolocatable\" row beside. Carrier NAT and RFC1918 rows are expected — clients reaching the project through a NAT or private egress, whose addresses no geoip database can place — and are not an enrichment failure. A \"Public, no geoip match\" row WOULD be a geoip problem worth chasing. An address that resolved on any event is not here, even if some of its events predate enrichment. This panel is empty when every IP placed.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
@@ -651,7 +651,7 @@
         "h": 12
       },
       "config": {
-        "title": "Proxy vs real client IP · top pairs",
+        "title": "Proxy vs real client IP · top 10 pairs",
         "description": "Side-by-side proof that source.ip is the internal proxy and client.ip (from network.forwarded_ip) is the real origin: the busiest proxy/client pairs, with the rest beyond the panel. Analysing the wrong field would put every user in the datacentre. Only proxies that forwarded a client address appear here, which is why the Proxy IPs tile can count more; the line beneath it counts the ones that did. Click either address to scope the suite to it.",
         "type": "data_table",
         "data_source": {

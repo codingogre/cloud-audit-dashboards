@@ -632,7 +632,7 @@
         "h": 11
       },
       "config": {
-        "title": "Busiest API keys",
+        "title": "Busiest API keys · top 9",
         "description": "The busiest API keys of both kinds, one row per key, with request volume and how many distinct client IPs used it. Kind is Cloud (an Elastic Cloud API key: no name, so its API key cell is \"-\", recorded by its id) or Elasticsearch (an Elasticsearch API key: id and name). A key used from many IPs is worth investigating. A re-issued key keeps its name under a new id, so a name can appear twice. The full list, with owner and first and last use, is API key inventory below.",
         "type": "data_table",
         "data_source": {
@@ -690,7 +690,7 @@
         "h": 12
       },
       "config": {
-        "title": "Busiest human identities",
+        "title": "Busiest human identities · top 10",
         "description": "People by email, busiest first: the people the Humans tile counts, over all traffic, with the same event counts as Identity first and last seen, which also has when each was first and last seen and from how many IPs. The panel shows the top rows; the rest are in that session. Click an email to pin that person across the suite.",
         "type": "data_table",
         "data_source": {
@@ -734,12 +734,12 @@
         "h": 12
       },
       "config": {
-        "title": "Most frequent failed or denied access · none is good",
-        "description": "Failed sign-ins and refused requests grouped by identity, action and source IP, most frequent first; the top rows of what the Failed or denied tile counts. Result names the kind, as in the session below: failed sign-in (authentication_failed, realm_authentication_failed, anonymous_access_denied), denied (access_denied: an authenticated identity refused an action), or failed (any other action, here because its outcome was failure). An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id. An empty panel means nothing matched in the time range, which is the healthy state.",
+        "title": "Most frequent failed or denied access · top 10 (empty = good)",
+        "description": "Failed sign-ins and refused requests grouped by identity, action and source IP, most frequent first; the top rows of what the Failed or denied tile counts. Result names the kind, as in the session below: failed sign-in (authentication_failed, realm_authentication_failed, anonymous_access_denied), denied (access_denied: an authenticated identity refused an action), or failed (any other action, here because its outcome was failure). An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email. An empty panel means nothing matched in the time range, which is the healthy state; any row here is worth reading.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.event.action IN (\"authentication_failed\",\"realm_authentication_failed\",\"anonymous_access_denied\") OR attributes.event.outcome == \"failure\" | STATS events = COUNT(*), last_seen = MAX(@timestamp) BY attributes.user.email, attributes.api_key.name, attributes.user.name, action = attributes.event.action, ip = client.ip | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | STATS events = SUM(events), last_seen = MAX(last_seen) BY actor, action, ip | EVAL result = CASE(action IN (\"authentication_failed\",\"realm_authentication_failed\",\"anonymous_access_denied\"), \"failed sign-in\", action == \"access_denied\", \"denied\", \"failed\") | SORT events DESC | LIMIT 10"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.event.action IN (\"authentication_failed\",\"realm_authentication_failed\",\"anonymous_access_denied\") OR attributes.event.outcome == \"failure\" | STATS events = COUNT(*), last_seen = MAX(@timestamp) BY attributes.user.email, attributes.api_key.name, attributes.user.name, action = attributes.event.action, ip = client.ip | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | STATS events = SUM(events), last_seen = MAX(last_seen) BY actor, action, ip | EVAL result = CASE(action IN (\"authentication_failed\",\"realm_authentication_failed\",\"anonymous_access_denied\"), \"failed sign-in\", action == \"access_denied\", \"denied\", \"failed\") | SORT events DESC | LIMIT 10 | EVAL actor = CASE((LENGTH(actor) == 20 AND actor RLIKE \"[-_A-Za-z0-9]{20}\" AND NOT actor RLIKE \"[0-9]{20}\"), CONCAT(LEFT(actor, 5), \"… · Cloud API key\"), actor)"
         },
         "styling": {
           "density": {
@@ -798,8 +798,8 @@
       },
       "config": {
         "ref_id": "cloud-audit-search-02-failed-authentications",
-        "title": "Failed sign-ins and denied access, newest 1,000 · none is good",
-        "description": "The newest failed sign-ins and refused requests, record by record. Discover stops at 1,000 rows, so on a busy range its result count is that cap and the Failed or denied tile is the total. Result names the kind: failed sign-in, denied (access_denied), or failed (any other failed outcome). An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id. An empty panel means nothing matched in the time range, which is the healthy state."
+        "title": "Failed sign-ins and denied access, newest 1,000 (empty = good)",
+        "description": "The newest failed sign-ins and refused requests, record by record. Discover stops at 1,000 rows, so on a busy range its result count is that cap and the Failed or denied tile is the total. Result names the kind: failed sign-in, denied (access_denied), or failed (any other failed outcome). An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email. An empty panel means nothing matched in the time range, which is the healthy state; any row here is worth reading."
       }
     },
     {
@@ -814,7 +814,7 @@
       "config": {
         "ref_id": "cloud-audit-search-07-api-key-activity",
         "title": "API key inventory",
-        "description": "Every API key seen in range (up to 1,000), Cloud and Elasticsearch, busiest first — one row per key the API keys tile counts — with owner, volume, IP spread, indices touched and first and last use. Owner is the identity that created the key: a person's email, or for a key minted programmatically the id of the Cloud API key that minted it (its own row reads \"(no name)\"); a Cloud API key's own creator is not in the audit stream, so its Owner reads Cloud organisation."
+        "description": "Every API key seen in range (up to 1,000), Cloud and Elasticsearch, busiest first — one row per key the API keys tile counts — with owner, volume, IP spread, indices touched and first and last use. Owner is the identity that created the key: a person's email, or for a key minted programmatically the id of the Cloud API key that minted it (its own row reads \"(no name)\"); a Cloud API key's own creator is not in the audit stream, so its Owner reads Cloud organization."
       }
     },
     {
@@ -829,7 +829,7 @@
       "config": {
         "ref_id": "cloud-audit-search-06-actor-first-seen",
         "title": "Identity first and last seen",
-        "description": "Every identity in range (up to 1,000), all traffic — one row per identity the Identities tile counts — with its first and last appearance, Events (everything it did, the same count as Busiest human identities) and Signal events (what is left after the noise gate, the count the gated panels across the suite use). Newest first appearance on top. Widen the time range to tell a brand-new identity from one that was simply quiet. An Identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id."
+        "description": "Every identity in range (up to 1,000), all traffic — one row per identity the Identities tile counts — with its first and last appearance, Events (everything it did, the same count as Busiest human identities) and Signal events (what is left after the noise gate, the count the gated panels across the suite use). Newest first appearance on top. Widen the time range to tell a brand-new identity from one that was simply quiet. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email."
       }
     }
   ]

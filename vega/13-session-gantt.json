@@ -278,9 +278,12 @@
         "field": "events"
       },
       "range": [
-        0.35,
-        1
-      ]
+        "#54B399",
+        "#6092C0",
+        "#9170B8",
+        "#D36086"
+      ],
+      "interpolate": "hcl"
     }
   ],
   "axes": [
@@ -327,11 +330,11 @@
             "band": 1
           },
           "fill": {
-            "value": "#3987e5"
-          },
-          "fillOpacity": {
             "scale": "strength",
             "field": "events"
+          },
+          "fillOpacity": {
+            "value": 0.85
           },
           "cornerRadius": {
             "value": 2

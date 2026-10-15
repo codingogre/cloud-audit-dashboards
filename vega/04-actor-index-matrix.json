@@ -1,7 +1,11 @@
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
-  "description": "The 10 busiest identities across the top, and the 25 index families they read most down the side; a more solid cell is more requests, on a log scale. A data stream and its backing indices are one family, as is a run of dated daily indices; wildcard and date-math expressions are left out. A blank cell means that identity did not touch that family in range — or touched it too little to be among the 500 busiest identity/family pairs. A request naming several indices counts once per index. An identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organisation-level Elastic Cloud API key, which the audit stream records only by its id; one the audit names as such is labelled \"· Cloud API key\". Cells keep a heatmap's size when only a few identities or families are in range, so a sparse window draws a few cells, not solid blocks.",
-  "title": { "text": { "expr": "length(data('rows')) ? '' : 'No activity for this selection in this time range'" } },
+  "description": "The 10 busiest identities across the top, and the 25 index families they read most down the side; cell colour is requests on a log scale, teal (fewest) through blue and purple to pink (most). A data stream and its backing indices are one family, as is a run of dated daily indices; wildcard and date-math expressions are left out. A blank cell means that identity did not touch that family in range — or touched it too little to be among the 500 busiest identity/family pairs. A request naming several indices counts once per index. An identity that reads as an opaque id is a principal whose events carry no email and no key name — usually an organization-level Elastic Cloud API key, which the audit stream records only by its id; one the audit names as such is labelled \"· Cloud API key\". Cells keep a heatmap's size when only a few identities or families are in range, so a sparse window draws a few cells, not solid blocks.",
+  "title": {
+    "text": {
+      "expr": "length(data('rows')) ? '' : 'No activity for this selection in this time range'"
+    }
+  },
   "autosize": {
     "type": "fit",
     "contains": "padding"
@@ -14,7 +18,11 @@
     "view": {
       "stroke": null
     },
-    "title": { "fontSize": 12, "fontWeight": 500, "anchor": "start" },
+    "title": {
+      "fontSize": 12,
+      "fontWeight": 500,
+      "anchor": "start"
+    },
     "legend": {
       "labelFontSize": 11,
       "titleFontSize": 11
@@ -26,35 +34,86 @@
       "%type%": "esql",
       "%timefield%": "@timestamp",
       "%context%": true,
-      "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.indices IS NOT NULL | STATS n = COUNT(*) BY attributes.user.email, attributes.api_key.name, attributes.user.name, attributes.user.domain, attributes.elasticsearch.audit.indices | WHERE LOCATE(attributes.elasticsearch.audit.indices, \"*\") == 0 AND NOT attributes.elasticsearch.audit.indices LIKE \"<*\" | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | EVAL actor = CASE(attributes.api_key.name IS NULL AND attributes.user.domain == \"_cloud_api_key\", CONCAT(actor, \" · Cloud API key\"), actor) | EVAL idx = REPLACE(REPLACE(attributes.elasticsearch.audit.indices, \"\"\"^\\.ds-\"\"\", \"\"), \"\"\"[-.]?\\d{4}[.-]\\d{2}[.-]\\d{2}(-\\d+)?$\"\"\", \"\") | STATS events = SUM(n) BY actor, idx | SORT events DESC | LIMIT 500"
+      "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.indices IS NOT NULL | STATS n = COUNT(*) BY attributes.user.email, attributes.api_key.name, attributes.user.name, attributes.elasticsearch.audit.indices | WHERE LOCATE(attributes.elasticsearch.audit.indices, \"*\") == 0 AND NOT attributes.elasticsearch.audit.indices LIKE \"<*\" | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | EVAL idx = REPLACE(REPLACE(attributes.elasticsearch.audit.indices, \"\"\"^\\.ds-\"\"\", \"\"), \"\"\"[-.]?\\d{4}[.-]\\d{2}[.-]\\d{2}(-\\d+)?$\"\"\", \"\") | STATS events = SUM(n) BY actor, idx | SORT events DESC | LIMIT 500 | EVAL actor = CASE((LENGTH(actor) == 20 AND actor RLIKE \"[-_A-Za-z0-9]{20}\" AND NOT actor RLIKE \"[0-9]{20}\"), CONCAT(LEFT(actor, 5), \"… · Cloud API key\"), actor)"
     }
   },
   "transform": [
     {
-      "joinaggregate": [{ "op": "sum", "field": "events", "as": "actor_total" }],
-      "groupby": ["actor"]
+      "joinaggregate": [
+        {
+          "op": "sum",
+          "field": "events",
+          "as": "actor_total"
+        }
+      ],
+      "groupby": [
+        "actor"
+      ]
     },
     {
-      "window": [{ "op": "dense_rank", "as": "actor_rank" }],
-      "sort": [{ "field": "actor_total", "order": "descending" }, { "field": "actor", "order": "ascending" }]
+      "window": [
+        {
+          "op": "dense_rank",
+          "as": "actor_rank"
+        }
+      ],
+      "sort": [
+        {
+          "field": "actor_total",
+          "order": "descending"
+        },
+        {
+          "field": "actor",
+          "order": "ascending"
+        }
+      ]
     },
-    { "filter": "datum.actor_rank <= 10" },
     {
-      "joinaggregate": [{ "op": "sum", "field": "events", "as": "idx_total" }],
-      "groupby": ["idx"]
+      "filter": "datum.actor_rank <= 10"
     },
     {
-      "window": [{ "op": "dense_rank", "as": "idx_rank" }],
-      "sort": [{ "field": "idx_total", "order": "descending" }, { "field": "idx", "order": "ascending" }]
+      "joinaggregate": [
+        {
+          "op": "sum",
+          "field": "events",
+          "as": "idx_total"
+        }
+      ],
+      "groupby": [
+        "idx"
+      ]
     },
-    { "filter": "datum.idx_rank <= 25" }
+    {
+      "window": [
+        {
+          "op": "dense_rank",
+          "as": "idx_rank"
+        }
+      ],
+      "sort": [
+        {
+          "field": "idx_total",
+          "order": "descending"
+        },
+        {
+          "field": "idx",
+          "order": "ascending"
+        }
+      ]
+    },
+    {
+      "filter": "datum.idx_rank <= 25"
+    }
   ],
   "mark": {
     "type": "rect",
     "cornerRadius": 2,
-    "color": "#3987e5",
-    "width": { "expr": "min(bandwidth('x'), 64)" },
-    "height": { "expr": "min(bandwidth('y'), 30)" }
+    "width": {
+      "expr": "min(bandwidth('x'), 64)"
+    },
+    "height": {
+      "expr": "min(bandwidth('y'), 30)"
+    }
   },
   "encoding": {
     "y": {
@@ -65,7 +124,9 @@
         "field": "events",
         "order": "descending"
       },
-      "scale": { "paddingInner": 0.1 },
+      "scale": {
+        "paddingInner": 0.1
+      },
       "axis": {
         "title": null,
         "labelLimit": 280,
@@ -85,10 +146,14 @@
         "field": "events",
         "order": "descending"
       },
-      "scale": { "paddingInner": 0.1 },
+      "scale": {
+        "paddingInner": 0.1
+      },
       "axis": {
         "title": "Identity",
-        "titleOpacity": { "expr": "length(data('rows')) ? 1 : 0" },
+        "titleOpacity": {
+          "expr": "length(data('rows')) ? 1 : 0"
+        },
         "orient": "top",
         "labelAngle": 35,
         "labelAlign": "right",
@@ -101,22 +166,6 @@
         "bandPosition": 0.5,
         "gridOpacity": 0.35,
         "zindex": 0
-      }
-    },
-    "opacity": {
-      "field": "events",
-      "type": "quantitative",
-      "scale": {
-        "type": "log",
-        "domainMin": 1,
-        "range": [0.35, 1]
-      },
-      "legend": {
-        "title": "Requests",
-        "orient": "bottom",
-        "values": { "expr": "length(data('rows')) ? slice([1, 10, 100, 1000, 10000, 100000, 1000000], 0, floor(log(max(1, extent(pluck(data('rows'), 'events'))[1])) / LN10 + 1e-9) + 1) : []" },
-        "titleOpacity": { "expr": "length(data('rows')) ? 1 : 0" },
-        "labelExpr": "format(datum.value, '~s')"
       }
     },
     "tooltip": [
@@ -133,6 +182,40 @@
         "title": "Requests",
         "format": ","
       }
-    ]
+    ],
+    "color": {
+      "field": "events",
+      "type": "quantitative",
+      "scale": {
+        "type": "log",
+        "range": [
+          "#54B399",
+          "#6092C0",
+          "#9170B8",
+          "#D36086"
+        ],
+        "interpolate": "hcl"
+      },
+      "legend": {
+        "title": "Requests",
+        "orient": "bottom",
+        "direction": "horizontal",
+        "gradientLength": 220,
+        "gradientThickness": 10,
+        "values": {
+          "expr": "!(length(data('rows'))) ? [] : floor(log(domain('color')[1]) / LN10 + 1e-9) - ceil(log(domain('color')[0]) / LN10 - 1e-9) >= 1 ? slice([1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000], ceil(log(domain('color')[0]) / LN10 - 1e-9), 1 + floor(log(domain('color')[1]) / LN10 + 1e-9)) : domain('color')[1] > domain('color')[0] ? domain('color') : [domain('color')[0]]"
+        },
+        "labelExpr": "format(datum.value, '.2~s')",
+        "titleOpacity": {
+          "expr": "length(data('rows')) ? 1 : 0"
+        },
+        "labelOpacity": {
+          "expr": "length(data('rows')) ? 1 : 0"
+        },
+        "gradientOpacity": {
+          "expr": "length(data('rows')) ? 1 : 0"
+        }
+      }
+    }
   }
 }

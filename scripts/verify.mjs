@@ -69,7 +69,12 @@ export async function run(argv = []) {
   mkdirSync(out, { recursive: true });
   info(`rendering to ${out}`);
 
-  const ids = Object.keys(buildAll()).map((n) => nsId(`cloud-audit-${n}`));
+  // AUDIT_VERIFY_ONLY=00,07-actor renders only the dashboards whose name contains one of the substrings,
+  // so a fix to one page is re-rendered in a minute rather than eight.
+  const only = (process.env.AUDIT_VERIFY_ONLY || '').split(',').map((x) => x.trim()).filter(Boolean);
+  const ids = Object.keys(buildAll()).filter((n) => !only.length || only.some((o) => n.includes(o)))
+    .map((n) => nsId(`cloud-audit-${n}`));
+  if (!ids.length) throw new Error(`AUDIT_VERIFY_ONLY "${process.env.AUDIT_VERIFY_ONLY}" matches no dashboard`);
   const browser = await chromium.launch({ args: ['--no-sandbox', '--disable-dev-shm-usage'] });
   const ctx = await browser.newContext({ viewport: { width, height: 1400 }, colorScheme: theme });
   info(`colour scheme: ${theme} · window: ${range} → now · viewport: ${width}px`);

@@ -32,7 +32,7 @@
     "name": "rows",
     "url": {
       "%type%": "esql",
-      "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.authentication.type IS NOT NULL | STATS events = COUNT(*) BY attributes.user.email, attributes.api_key.name, attributes.user.name, attributes.user.domain, attributes.authentication.type | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | EVAL actor = CASE(attributes.api_key.name IS NULL AND attributes.user.domain == \"_cloud_api_key\", CONCAT(actor, \" · Cloud API key\"), actor), auth = CASE(attributes.authentication.type == \"api_key\", \"API key\", attributes.authentication.type == \"token\", \"Token\", attributes.authentication.type == \"realm\", \"Realm\", attributes.authentication.type == \"saml\", \"SAML\", attributes.authentication.type == \"anonymous\", \"Anonymous\", attributes.authentication.type == \"internal\", \"Internal\", attributes.authentication.type) | STATS events = SUM(events) BY actor, auth | SORT events DESC | LIMIT 2000",
+      "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.authentication.type IS NOT NULL | STATS events = COUNT(*) BY attributes.user.email, attributes.api_key.name, attributes.user.name, attributes.authentication.type | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | EVAL auth = CASE(attributes.authentication.type == \"api_key\", \"API key\", attributes.authentication.type == \"token\", \"Token\", attributes.authentication.type == \"realm\", \"Realm\", attributes.authentication.type == \"saml\", \"SAML\", attributes.authentication.type == \"anonymous\", \"Anonymous\", attributes.authentication.type == \"internal\", \"Internal\", attributes.authentication.type) | STATS events = SUM(events) BY actor, auth | SORT events DESC | LIMIT 2000 | EVAL actor = CASE((LENGTH(actor) == 20 AND actor RLIKE \"[-_A-Za-z0-9]{20}\" AND NOT actor RLIKE \"[0-9]{20}\"), CONCAT(LEFT(actor, 5), \"… · Cloud API key\"), actor)",
       "%timefield%": "@timestamp",
       "%context%": true
     }
@@ -76,46 +76,43 @@
     {
       "mark": {
         "type": "rect",
-        "cornerRadius": 2,
-        "color": "#3987e5"
+        "cornerRadius": 2
       },
       "encoding": {
-        "opacity": {
+        "color": {
           "field": "events",
           "type": "quantitative",
           "scale": {
             "type": "log",
             "range": [
-              0.15,
-              1
+              "#54B399",
+              "#6092C0",
+              "#9170B8",
+              "#D36086"
             ],
-            "nice": true
+            "interpolate": "hcl"
           },
           "legend": {
             "title": "Events",
             "orient": "right",
+            "direction": "vertical",
+            "gradientLength": 140,
+            "gradientThickness": 10,
             "values": {
-              "expr": "!length(data('rows')) ? [] : floor(log(domain('opacity')[1]) / LN10 + 1e-9) - ceil(log(domain('opacity')[0]) / LN10 - 1e-9) >= 1 ? slice([1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000], ceil(log(domain('opacity')[0]) / LN10 - 1e-9), 1 + floor(log(domain('opacity')[1]) / LN10 + 1e-9)) : domain('opacity')"
+              "expr": "!(length(data('rows'))) ? [] : floor(log(domain('color')[1]) / LN10 + 1e-9) - ceil(log(domain('color')[0]) / LN10 - 1e-9) >= 1 ? slice([1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000], ceil(log(domain('color')[0]) / LN10 - 1e-9), 1 + floor(log(domain('color')[1]) / LN10 + 1e-9)) : domain('color')[1] > domain('color')[0] ? domain('color') : [domain('color')[0]]"
             },
+            "labelExpr": "format(datum.value, '.2~s')",
             "titleOpacity": {
               "expr": "length(data('rows')) ? 1 : 0"
             },
-            "labelExpr": "format(datum.value, '.2~s')",
-            "symbolType": "square",
-            "symbolFillColor": "#3987e5",
-            "symbolStrokeWidth": 0
+            "labelOpacity": {
+              "expr": "length(data('rows')) ? 1 : 0"
+            },
+            "gradientOpacity": {
+              "expr": "length(data('rows')) ? 1 : 0"
+            }
           }
         }
-      }
-    },
-    {
-      "mark": {
-        "type": "rect",
-        "cornerRadius": 2,
-        "filled": false,
-        "stroke": "#3987e5",
-        "strokeWidth": 1,
-        "strokeOpacity": 0.85
       }
     }
   ],

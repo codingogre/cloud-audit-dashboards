@@ -3,6 +3,33 @@
 `CLAUDE.md`-style durable context lives in `README.md` and `esql/fragments.md` and wins on
 conflict. This file is "where we are right now" and should be assumed stale.
 
+## Round 4 — cross-cutting fixes from the production review, 2026-10-15
+
+Six causes behind most round-4 findings, fixed in shared code; rules in `README.md` → *Presentation
+conventions*, fragments in `esql/fragments.md`. Facts behind them:
+
+- **Hidden rows were not hidden.** Every deployed LIMIT already equals `fitRows(h)` (checked by GET on the
+  production dashboards: 06's tables are LIMIT 10 at h=12, 07's scoring table LIMIT 8 at h=10); reviewers
+  read the source LIMITs. Re-measured on a production render: rows start 57px below the panel top, and at
+  h=12 ten 24px rows end 22px above the grid's bottom rule — the "blank strip" is that remainder. The real
+  defect was a cut list whose title did not say so, so `table()` now appends "· top N" / "· latest N"
+  (and "· scroll" where it holds more than it shows), and `--lint` enforces all three. Discover sessions
+  are explicitly scrollable ("1,000 results" plus a scrollbar); their half-cut last row is a 27px row pitch
+  against 28px grid units and cannot be snapped by panel height below h=24.
+- **Empty-state words are conditions now** — "(empty = good)", "(may be empty at 1h)", "(empty when …)" —
+  because Kibana 9.6 has no empty-only text and a title shows either way. `emptyOf()` throws on anything
+  else; `--lint` rejects the old "· none is good" form.
+- **Magnitude is a colour ramp** (`MAGNITUDE_RAMP`, teal → blue → purple → pink, log, domain fitted to the
+  data) on vega/02, 03, 04, 06, 09 and 13. The opacity ramp was flat on dark. `--lint` rejects an opacity
+  magnitude scale and any other hex list on a log colour scale.
+- **`_4KEO… · Cloud API key`** is the one display form of an opaque Cloud API key id (`ACTOR_LABEL`,
+  `cloudKeyLabel()`); `table()` applies it to every table showing `actor`, and every static session/spec
+  that shows an identity embeds it (drift-pinned). The id is this repo's own tooling key: never gate it
+  out or hardcode it; the human is still deciding how to NAME it, which is now a one-line change.
+- **Page-load noise** is gated (`KIBANA_PLUMBING_URL` inside `KIBANA_INTERNALS`; static copies re-synced).
+- **Privileged ops** leave out Kibana's own `invalidate_apikeys` (`PRIVILEGED`, `HOUSEKEEPING`,
+  `privilegedKpi()`), applied on 00; 04's Config changes KPI and table still need it.
+
 ## UI polish — shared helpers, 2026-10-14
 
 A rendered review of every panel found the same few causes behind most findings, all in shared code.
@@ -421,9 +448,11 @@ exactly those keys when a spec does not override them. Do not reintroduce them.
 the top "signal" (7-day replica: signal 1.54M → 0.38M of 2.6M). `BAND` now needs `BAND_KEYS`, which
 groups a `kib_internal` boolean; band queries cost ~450ms at 7 days instead of ~100ms. `space_get` /
 `space_find` and the dashboard app's `/api/content_management/rpc/{get,search,mget,bulkGet}` reads are
-in it too (one per page load per viewer). Still signal on purpose: other public `/api/` page plumbing
-(`/api/core`, `/api/licensing`, `/bootstrap.js`, `/api/ui_counters`) — the next candidates if Command
-Center's top actions fill with them. How much the gate removes is a property of the stream, not of the
+in it too (one per page load per viewer). The page-load plumbing (`/bootstrap.js`, `/app/<app>`, `/api/core`, `/api/licensing`, `/api/banners`,
+`/api/ui_counters`, `/translations`, the `/api/spaces/space` list) joined it in round 4 (`KIBANA_PLUMBING_URL`),
+after it led Command Center's Live signal feed. Still signal: `cluster:admin/xpack/security/api_key/get`
+by the Cloud API key (9,230 a day, access_granted from an internal address) — a security read, left for
+a decision rather than gated on a guess. How much the gate removes is a property of the stream, not of the
 gate, so the legend panel quotes no number; `--demo-guide` reads the share live. The vocabulary has
 been validated against a limited set of workloads — revisit it when the bulk of a project's stream
 is something else.

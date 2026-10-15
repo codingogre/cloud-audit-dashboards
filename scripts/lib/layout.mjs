@@ -20,7 +20,7 @@ import { ROOT, cfg } from './env.mjs';
 import { CONTROLS } from './controls.mjs';
 import {
   NAV_H, NOISE, BAND, BAND_KEYS, RISK, RISK_KEYS, RISK_RESTORE, VERB, ACTOR_RESOLVE, OBJ, OBJ_ID, OBJ_TYPE, CHANGE_PRED, CRED, OBJ_PRESENT,
-  CRED_TYPE_LABEL, INDEX_FAMILY, CONCRETE, SYS_INDEX,
+  CRED_TYPE_LABEL, INDEX_FAMILY, CONCRETE, SYS_INDEX, ACTOR_LABEL, MAGNITUDE_RAMP, SEVERITY_RAMP, fitRows, tableLimit,
 } from './panels.mjs';
 
 export const GRID_W = 48;
@@ -35,30 +35,32 @@ export const GRID_W = 48;
  * This is not hypothetical: RISK had drifted in two Vega specs and VERB in a third by the time
  * this check was written.
  */
+// ACTOR_LABEL: every static file that DISPLAYS an identity shows an opaque Cloud API key id in the one
+// shared form ("_4KEO… · Cloud API key"); Lens tables get it from table().
 const FRAGMENT_USES = {
-  'vega/01-actor-risk-treemap.json': { NOISE, RISK, RISK_KEYS, RISK_RESTORE },
+  'vega/01-actor-risk-treemap.json': { NOISE, RISK, RISK_KEYS, RISK_RESTORE, ACTOR_LABEL },
   'vega/03-object-verb-heatmap.json': { VERB, OBJ_ID, OBJ_TYPE },
-  'vega/02-auth-matrix.json': { ACTOR_RESOLVE, CRED_TYPE_LABEL },
-  'vega/04-actor-index-matrix.json': { ACTOR_RESOLVE, CONCRETE, INDEX_FAMILY },
+  'vega/02-auth-matrix.json': { ACTOR_RESOLVE, CRED_TYPE_LABEL, ACTOR_LABEL },
+  'vega/04-actor-index-matrix.json': { ACTOR_RESOLVE, CONCRETE, INDEX_FAMILY, ACTOR_LABEL },
   'vega/05-rare-event-scatter.json': { RISK, RISK_KEYS, RISK_RESTORE },
   'vega/06-geo-origin.json': { ACTOR_RESOLVE },
   'vega/07-noise-ratio-stream.json': { BAND_KEYS, BAND },
   // Groups on the real attributes.user.email (never the actor COALESCE), so there is no fragment to pin.
   'vega/10-actor-geography.json': {},
   'vega/11-actor-object-flow.json': { OBJ_PRESENT, CRED, VERB, OBJ_TYPE },
-  'searches/01-all-mutations.json': { CHANGE_PRED, ACTOR_RESOLVE, VERB, OBJ },
-  'searches/02-failed-authentications.json': { ACTOR_RESOLVE },
-  'searches/03-security-config-changes.json': { ACTOR_RESOLVE },
-  'searches/04-kibana-object-changes.json': { ACTOR_RESOLVE, VERB, OBJ, OBJ_PRESENT },
-  'searches/05-system-index-access.json': { ACTOR_RESOLVE, SYS_INDEX },
+  'searches/01-all-mutations.json': { CHANGE_PRED, ACTOR_RESOLVE, VERB, OBJ, ACTOR_LABEL },
+  'searches/02-failed-authentications.json': { ACTOR_RESOLVE, ACTOR_LABEL },
+  'searches/03-security-config-changes.json': { ACTOR_RESOLVE, ACTOR_LABEL },
+  'searches/04-kibana-object-changes.json': { ACTOR_RESOLVE, VERB, OBJ, OBJ_PRESENT, ACTOR_LABEL },
+  'searches/05-system-index-access.json': { ACTOR_RESOLVE, SYS_INDEX, ACTOR_LABEL },
   // 06 and 10 previously carried a bare `NOT (... IN ...)` gate. That is null on Kibana events —
   // where the Elasticsearch action field does not exist — and `WHERE null` drops the row, so both
   // sessions were silently returning ZERO Kibana audit, measured live against an hour that held
   // plenty. The fragment is null-guarded; pinning these two to it is what stops that regressing again.
-  'searches/06-actor-first-seen.json': { ACTOR_RESOLVE, NOISE },
-  'searches/08-cross-space-activity.json': { ACTOR_RESOLVE },
-  'searches/09-session-reconstruction.json': { ACTOR_RESOLVE },
-  'searches/10-raw-signal-feed.json': { ACTOR_RESOLVE, NOISE },
+  'searches/06-actor-first-seen.json': { ACTOR_RESOLVE, NOISE, ACTOR_LABEL },
+  'searches/08-cross-space-activity.json': { ACTOR_RESOLVE, ACTOR_LABEL },
+  'searches/09-session-reconstruction.json': { ACTOR_RESOLVE, ACTOR_LABEL },
+  'searches/10-raw-signal-feed.json': { ACTOR_RESOLVE, NOISE, ACTOR_LABEL },
 };
 
 function checkGrid(name, panels, problems) {
@@ -194,6 +196,44 @@ function textMarks(node, isVL, out = []) {
 }
 
 /**
+ * Every non-linear scale in a spec, Vega (`scales[]`) or Vega-Lite (`encoding.<channel>.scale`), with
+ * the channel it drives where Vega-Lite names one.
+ */
+function scalesOf(node, channel, out = []) {
+  if (Array.isArray(node)) { node.forEach((n) => scalesOf(n, channel, out)); return out; }
+  if (!node || typeof node !== 'object') return out;
+  if (['log', 'symlog', 'sqrt', 'pow'].includes(node.type) && node.range !== undefined) out.push({ channel, scale: node });
+  for (const [k, v] of Object.entries(node)) scalesOf(v, k === 'scale' ? channel : k, out);
+  return out;
+}
+
+/**
+ * MAGNITUDE (README, Vega colour; panels.mjs MAGNITUDE_RAMP). A magnitude scale is a colour ramp over
+ * the four suite hues: a one-hue opacity ramp went flat on the dark theme, and any other hex list on a
+ * log colour scale is a ramp nobody checked in both themes. Severity keeps SEVERITY_RAMP.
+ */
+const OPACITY_CHANNELS = new Set(['opacity', 'fillOpacity', 'strokeOpacity']);
+function checkMagnitude(file, spec, problems) {
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  const scaleNames = new Map();
+  for (const { channel, scale } of scalesOf(spec)) {
+    const r = scale.range;
+    const numeric = Array.isArray(r) && r.length === 2 && r.every((v) => typeof v === 'number' && v >= 0 && v <= 1);
+    if (numeric && (OPACITY_CHANNELS.has(channel) || scale.name)) {
+      if (scale.name) scaleNames.set(scale.name, true);
+      problems.push(`vega: ${file} encodes magnitude as opacity (${scale.type} scale${scale.name ? ` "${scale.name}"` : ''}, range ${JSON.stringify(r)}) — flat on the dark theme; use a colour scale with range MAGNITUDE_RAMP`);
+    }
+    const hexes = Array.isArray(r) && r.length > 1 && r.every((v) => typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v));
+    if (hexes && !same(r, MAGNITUDE_RAMP) && !same(r, SEVERITY_RAMP)) {
+      problems.push(`vega: ${file} has a ${scale.type} colour ramp ${JSON.stringify(r)} — use MAGNITUDE_RAMP (volume) or SEVERITY_RAMP (risk) from panels.mjs`);
+    }
+    if (hexes && same(r, MAGNITUDE_RAMP) && (scale.nice || scale.domainMin !== undefined)) {
+      problems.push(`vega: ${file} stretches a MAGNITUDE_RAMP domain (nice/domainMin) — fit it to the data so the hues span what is drawn`);
+    }
+  }
+}
+
+/**
  * Rules for Vega specs that nothing downstream can see break. Each was established on a live 9.6
  * serverless dashboard, not read off documentation.
  */
@@ -249,6 +289,8 @@ function checkVega(problems) {
     } else if (dsl.length && scoped !== dsl.length) {
       problems.push(`vega: ${file} has a DSL dataset without %dashboard_context-must_clause% — the control bar would not scope it`);
     }
+
+    checkMagnitude(file, spec, problems);
 
     // Kibana themes guide/title styles but not mark text: an unstyled text mark renders #000, which is
     // invisible on the dark theme. Full Vega: give it style "guide-label"/"guide-title" (theme-aware) or
@@ -320,6 +362,50 @@ function checkCompleteness(name, panels, problems) {
   }
 }
 
+/**
+ * ROWS (panels.mjs, ROWS THAT FIT and CUT). A Lens table shows no cue that rows continue, so:
+ *   - a LIMIT above fitRows(h) needs { scroll: true } — and its title must say "scroll";
+ *   - a { wrap: true } table's visible count is unknowable, so it is scrollable and says so;
+ *   - a LIMITed table names its N in the title ("· top 10", "the 30 most recent"), because a list cut
+ *     at N beside a tile counting more reads as complete otherwise.
+ * Checked on the final query, so a LIMIT that is not the trailing step (which table() cannot clamp) is
+ * caught too.
+ */
+function checkRows(name, panels, problems) {
+  for (const p of panels) {
+    if (p.config?.type !== 'data_table') continue;
+    const q = p.config.data_source?.query || '';
+    const n = tableLimit(q);
+    const t = p.config.title || '';
+    if (!n) continue;
+    const fit = fitRows(p.grid.h);
+    if (n > fit && !p.lint?.scroll) {
+      problems.push(`${name}: table ${p.id} "${t}" is LIMIT ${n} but h=${p.grid.h} shows ${fit} rows — rows would be hidden with no cue; lower the LIMIT, grow the panel, or pass { scroll: true }`);
+    }
+    if ((p.lint?.wrap || n > fit) && !/\bscroll\b/i.test(t)) {
+      problems.push(`${name}: table ${p.id} "${t}" holds more rows than it shows but its title does not say "scroll"`);
+    }
+    if (p.lint?.cut !== false && !new RegExp(`(^|[^\\d,.])${n}(?![\\d,])`).test(t)) {
+      problems.push(`${name}: table ${p.id} "${t}" is cut at ${n} rows but its title does not say so — build it with table(), which appends "· top ${n}"`);
+    }
+  }
+}
+
+/**
+ * EMPTY wording (panels.mjs, EMPTY STATES). A title shows whether or not the panel has rows, so an
+ * empty-state clause must be a parenthetical condition — "(empty = good)", "(empty when …)" — never the
+ * round-3 status form "· none is good" / "· empty without …", which read as a verdict on a full table.
+ */
+const EMPTY_STATUS = /·\s*(none is good|often empty|empty\b)/i;
+function checkEmptyWording(name, panels, problems) {
+  for (const p of panels) {
+    const t = p.config?.title || '';
+    if (EMPTY_STATUS.test(t)) {
+      problems.push(`${name}: panel ${p.id} "${t}" states an empty state as a status — use { empty } (EMPTY), which words it as a condition`);
+    }
+  }
+}
+
 /** Returns an array of human-readable problems; empty means clean. */
 export function checkLayout(all) {
   const problems = [];
@@ -333,6 +419,8 @@ export function checkLayout(all) {
     checkRefs(name, panels, problems);
     checkMarkdown(name, panels, problems);
     checkCompleteness(name, panels, problems);
+    checkRows(name, panels, problems);
+    checkEmptyWording(name, panels, problems);
     rows.push(`${name}: panels=${panels.length} rows=${maxY}`);
     // Advisory, not a failure: a table whose columns cannot fit a 1440px viewport needs a layout
     // decision (a wider panel or fewer columns), which no width arithmetic can make. See fitWidths().

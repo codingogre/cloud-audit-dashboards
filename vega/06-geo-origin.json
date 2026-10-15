@@ -1,6 +1,6 @@
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
-  "description": "Audited events by real client country. Countries are colored by event volume on a log scale, green (few) through blue to purple (most): three mid-tone hues from the suite palette, so every step stands apart from the grey no-data countries in both themes, and the gradient legend reads as a scale. An opacity ramp of one blue drew a 1-event country almost exactly like a country with no data in dark theme. Hover for events, identities, client IPs and share of placed traffic. The title line states how much of the stream could be placed at all: CGNAT and private addresses resolve to nothing and many events carry no client IP, so a blank country is not evidence of no traffic.",
+  "description": "Audited events by real client country. Countries are colored by event volume on a log scale, teal (few) through blue and purple to pink (most): the suite’s four mid-tone magnitude hues from the suite palette, so every step stands apart from the grey no-data countries in both themes, and the gradient legend reads as a scale. An opacity ramp of one blue drew a 1-event country almost exactly like a country with no data in dark theme. Hover for events, identities, client IPs and share of placed traffic. The title line states how much of the stream could be placed at all: CGNAT and private addresses resolve to nothing and many events carry no client IP, so a blank country is not evidence of no traffic.",
   "autosize": {
     "type": "fit",
     "contains": "padding"
@@ -143,11 +143,11 @@
           "type": "quantitative",
           "scale": {
             "type": "log",
-            "domainMin": 1,
             "range": [
               "#54B399",
               "#6092C0",
-              "#9170B8"
+              "#9170B8",
+              "#D36086"
             ],
             "interpolate": "hcl"
           },
@@ -158,7 +158,7 @@
             "gradientLength": 120,
             "gradientThickness": 10,
             "values": {
-              "expr": "length(data('countries')) && data('countries')[0].events > 1 ? [1, data('countries')[0].events] : [1]"
+              "expr": "length(data('countries')) ? (domain('color')[1] > domain('color')[0] ? domain('color') : [domain('color')[0]]) : []"
             },
             "labelExpr": "format(datum.value, '.3~s')",
             "titleOpacity": {
