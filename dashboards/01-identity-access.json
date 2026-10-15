@@ -315,7 +315,7 @@
       },
       "config": {
         "title": "Elasticsearch requests per minute by credential type",
-        "description": "Elasticsearch requests per minute by how they presented credentials: API key, token (SSO browser sessions and service accounts), realm (username and password) or SAML. One bar per credential type per interval — 1 minute at 1h, 30 minutes at 24h, 3 hours at 7d — and its height is that interval's requests divided by its minutes, so the scale reads the same at every range: a lone request in a 30-minute bar is 0.033 a minute. A log scale, so a type carrying a fraction of a percent of the traffic is as readable as the bulk; an interval with no bar had no requests of that type. The first and last bars cover only part of their interval, so they read low. A shift in this mix is worth explaining.",
+        "description": "Elasticsearch requests per minute by how they presented credentials: API key, token (SSO browser sessions and service accounts), realm (username and password) or SAML. One bar per credential type per interval — 1 minute at 1h, 30 minutes at 24h, 3 hours at 7d — and its height is that interval's requests divided by its minutes, so the scale reads the same at every range: a lone request in a 30-minute bar is 0.033 a minute. A log scale, so a type carrying a fraction of a percent of the traffic is as readable as the bulk; an interval with no bar had no requests of that type. Every bar is a whole interval counted back from the end of the range, so the newest bar is the most recent minutes and none is left out. A shift in this mix is worth explaining.",
         "type": "xy",
         "axis": {
           "x": {
@@ -346,10 +346,10 @@
             "type": "bar",
             "data_source": {
               "type": "esql",
-              "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.authentication.type IS NOT NULL | STATS events = COUNT(*) BY BUCKET(@timestamp, 75, ?_tstart, ?_tend), attributes.authentication.type | STATS events = SUM(events) BY `BUCKET(@timestamp, 75, ?_tstart, ?_tend)`, attributes.authentication.type, prev = BUCKET(`BUCKET(@timestamp, 75, ?_tstart, ?_tend)` - 1 millisecond, 75, ?_tstart, ?_tend) | EVAL per_minute = events * 60.0 / DATE_DIFF(\"second\", prev, `BUCKET(@timestamp, 75, ?_tstart, ?_tend)`), auth = CASE(attributes.authentication.type == \"api_key\", \"API key\", attributes.authentication.type == \"token\", \"Token\", attributes.authentication.type == \"realm\", \"Realm\", attributes.authentication.type == \"saml\", \"SAML\", attributes.authentication.type == \"anonymous\", \"Anonymous\", attributes.authentication.type == \"internal\", \"Internal\", attributes.authentication.type) | KEEP `BUCKET(@timestamp, 75, ?_tstart, ?_tend)`, auth, per_minute | SORT auth"
+              "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.authentication.type IS NOT NULL | EVAL k = DATE_DIFF(\"second\", @timestamp, TO_DATETIME(?_tend)) / CASE(DATE_DIFF(\"second\", TO_DATETIME(?_tstart), TO_DATETIME(?_tend)) <= 4500, 60, DATE_DIFF(\"second\", TO_DATETIME(?_tstart), TO_DATETIME(?_tend)) <= 22500, 300, DATE_DIFF(\"second\", TO_DATETIME(?_tstart), TO_DATETIME(?_tend)) <= 45000, 600, DATE_DIFF(\"second\", TO_DATETIME(?_tstart), TO_DATETIME(?_tend)) <= 135000, 1800, DATE_DIFF(\"second\", TO_DATETIME(?_tstart), TO_DATETIME(?_tend)) <= 270000, 3600, DATE_DIFF(\"second\", TO_DATETIME(?_tstart), TO_DATETIME(?_tend)) <= 810000, 10800, DATE_DIFF(\"second\", TO_DATETIME(?_tstart), TO_DATETIME(?_tend)) <= 3240000, 43200, 86400) | STATS events = COUNT(*) BY k, attributes.authentication.type | EVAL k = LEAST(k, GREATEST(DATE_DIFF(\"second\", TO_DATETIME(?_tstart), TO_DATETIME(?_tend)) / CASE(DATE_DIFF(\"second\", TO_DATETIME(?_tstart), TO_DATETIME(?_tend)) <= 4500, 60, DATE_DIFF(\"second\", TO_DATETIME(?_tstart), TO_DATETIME(?_tend)) <= 22500, 300, DATE_DIFF(\"second\", TO_DATETIME(?_tstart), TO_DATETIME(?_tend)) <= 45000, 600, DATE_DIFF(\"second\", TO_DATETIME(?_tstart), TO_DATETIME(?_tend)) <= 135000, 1800, DATE_DIFF(\"second\", TO_DATETIME(?_tstart), TO_DATETIME(?_tend)) <= 270000, 3600, DATE_DIFF(\"second\", TO_DATETIME(?_tstart), TO_DATETIME(?_tend)) <= 810000, 10800, DATE_DIFF(\"second\", TO_DATETIME(?_tstart), TO_DATETIME(?_tend)) <= 3240000, 43200, 86400), 1) - 1) | STATS events = SUM(events) BY k, attributes.authentication.type | EVAL span = CASE(DATE_DIFF(\"second\", TO_DATETIME(?_tstart), TO_DATETIME(?_tend)) <= 4500, 60, DATE_DIFF(\"second\", TO_DATETIME(?_tstart), TO_DATETIME(?_tend)) <= 22500, 300, DATE_DIFF(\"second\", TO_DATETIME(?_tstart), TO_DATETIME(?_tend)) <= 45000, 600, DATE_DIFF(\"second\", TO_DATETIME(?_tstart), TO_DATETIME(?_tend)) <= 135000, 1800, DATE_DIFF(\"second\", TO_DATETIME(?_tstart), TO_DATETIME(?_tend)) <= 270000, 3600, DATE_DIFF(\"second\", TO_DATETIME(?_tstart), TO_DATETIME(?_tend)) <= 810000, 10800, DATE_DIFF(\"second\", TO_DATETIME(?_tstart), TO_DATETIME(?_tend)) <= 3240000, 43200, 86400), n = GREATEST(DATE_DIFF(\"second\", TO_DATETIME(?_tstart), TO_DATETIME(?_tend)) / CASE(DATE_DIFF(\"second\", TO_DATETIME(?_tstart), TO_DATETIME(?_tend)) <= 4500, 60, DATE_DIFF(\"second\", TO_DATETIME(?_tstart), TO_DATETIME(?_tend)) <= 22500, 300, DATE_DIFF(\"second\", TO_DATETIME(?_tstart), TO_DATETIME(?_tend)) <= 45000, 600, DATE_DIFF(\"second\", TO_DATETIME(?_tstart), TO_DATETIME(?_tend)) <= 135000, 1800, DATE_DIFF(\"second\", TO_DATETIME(?_tstart), TO_DATETIME(?_tend)) <= 270000, 3600, DATE_DIFF(\"second\", TO_DATETIME(?_tstart), TO_DATETIME(?_tend)) <= 810000, 10800, DATE_DIFF(\"second\", TO_DATETIME(?_tstart), TO_DATETIME(?_tend)) <= 3240000, 43200, 86400), 1), ts = TO_DATETIME(TO_LONG(TO_DATETIME(?_tend)) - (k + 1) * span * 1000), per_minute = events * 60.0 / (span + CASE(k == n - 1, DATE_DIFF(\"second\", TO_DATETIME(?_tstart), TO_DATETIME(?_tend)) - n * span, 0)) | EVAL auth = CASE(attributes.authentication.type == \"api_key\", \"API key\", attributes.authentication.type == \"token\", \"Token\", attributes.authentication.type == \"realm\", \"Realm\", attributes.authentication.type == \"saml\", \"SAML\", attributes.authentication.type == \"anonymous\", \"Anonymous\", attributes.authentication.type == \"internal\", \"Internal\", attributes.authentication.type) | KEEP ts, auth, per_minute | SORT auth"
             },
             "x": {
-              "column": "BUCKET(@timestamp, 75, ?_tstart, ?_tend)",
+              "column": "ts",
               "label": "@timestamp"
             },
             "y": [
@@ -617,12 +617,12 @@
           },
           {
             "label": "Events",
-            "width": 90,
+            "width": 100,
             "column": "events"
           },
           {
             "label": "IPs",
-            "width": 90,
+            "width": 56,
             "column": "ips"
           }
         ]
@@ -639,7 +639,7 @@
       },
       "config": {
         "title": "Busiest human identities · top 10 at most",
-        "description": "People by email, busiest first: the people the Humans tile counts, over all traffic, with the same event counts as Identity first and last seen, which also has when each was first and last seen and from how many IPs. The panel shows the top rows; the rest are in that session. Click an email to pin that person across the suite.",
+        "description": "People by email, busiest first: the people the Humans tile counts, over all traffic, with the same event counts as Identity first and last seen, which also has when each was first and last seen and from how many IPs. The panel shows the top rows; the rest are in that session. Click an email to pin that person across the suite. The range ends a minute ago, so nothing in it is still arriving; each panel reads the clock for itself, up to a second apart, so two panels side by side can differ by the events of that second at either end of the range: usually none, a few on a busy all-traffic count or during a burst.",
         "type": "data_table",
         "data_source": {
           "type": "esql",

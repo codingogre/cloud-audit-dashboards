@@ -1,6 +1,6 @@
 /** 01 Identity & Access — see scripts/lib/definitions.mjs for how the suite is assembled. */
 import {
-  IDX, ACTOR_RESOLVE, ORG, CRED_TYPE_LABEL, CRED_TYPE_COLORS, TIME, BUCKET, dash, kpi, xy, table, sized,
+  IDX, ACTOR_RESOLVE, ORG, CRED_TYPE_LABEL, CRED_TYPE_COLORS, TIME, dash, kpi, xy, table, sized,
   vega, search, resetIds, bar, cloudKeyLabel, grouped, FAILED_OR_DENIED, SIGNIN_FAILED, SIGNIN_WORDS, EDGE_NOTE
 } from '../panels.mjs';
 import { WHO } from './shared.mjs';
@@ -55,6 +55,31 @@ const rateBar = (p) => {
   p.config.axis.y.domain = { type: 'custom', min: 0.001, max: 1e5, rounding: false };
   p.config.layers[0].y[0].format = { type: 'custom', pattern: '0.[000]a' };
   return p;
+};
+
+/**
+ * Time bars counted back from the end of the range, for a per-minute rate (the time chart below says
+ * why Lens needs them). One interval, `span` seconds, from BUCKET's ladder at its 75-bar target, so a bar
+ * is 1 minute at 1h, 30 at 24h and 3 hours at 7d as before. Its CASE reads only the two range
+ * parameters, so ES|QL folds it to a constant: per event the query adds one DATE_DIFF and a division.
+ *
+ *   EVAL k = DATE_DIFF("second", @timestamp, ?_tend) / <span>      per event: whole intervals before the end
+ *   STATS events = COUNT(*) BY k, <series> | <bars(series)>         per grouped row: ts, per_minute
+ *
+ * Bar k covers (end − (k+1)·span, end − k·span], so the newest bar ends exactly at the range end and the
+ * oldest starts at its start: the first and last bars Lens will draw (a bar must start inside the range
+ * and no later than one bar before its end). Anchored to the minute instead, so bar times read as whole
+ * minutes, one end or the other always fell outside. A range that is not a whole number of spans leaves
+ * a remainder older than the oldest bar; that bar absorbs it (k clamped to n − 1), with the remainder
+ * in its divisor, so every rate is exact.
+ */
+const R_LEN = 'DATE_DIFF("second", TO_DATETIME(?_tstart), TO_DATETIME(?_tend))';
+const SPAN = `CASE(${R_LEN} <= 4500, 60, ${R_LEN} <= 22500, 300, ${R_LEN} <= 45000, 600, ${R_LEN} <= 135000, 1800, ${R_LEN} <= 270000, 3600, ${R_LEN} <= 810000, 10800, ${R_LEN} <= 3240000, 43200, 86400)`;
+const ANCHORED = {
+  k: `EVAL k = DATE_DIFF("second", @timestamp, TO_DATETIME(?_tend)) / ${SPAN}`,
+  bars: (series) => `EVAL k = LEAST(k, GREATEST(${R_LEN} / ${SPAN}, 1) - 1) | STATS events = SUM(events) BY k, ${series} | ` +
+    `EVAL span = ${SPAN}, n = GREATEST(${R_LEN} / ${SPAN}, 1), ts = TO_DATETIME(TO_LONG(TO_DATETIME(?_tend)) - (k + 1) * span * 1000), ` +
+    `per_minute = events * 60.0 / (span + CASE(k == n - 1, ${R_LEN} - n * span, 0))`,
 };
 
 /**
@@ -119,15 +144,20 @@ export function build() {
     // 1h. Per minute, the busiest bar is ~5–6k in every one of those windows, so the axis can stop at 100k
     // (10x headroom at 10x volume) in all of them. The other end: one request in a 3-hour bar is 0.0056 a
     // minute, so the floor is 0.001, and a lone SAML or Realm request at 24h draws a bar 1.5 decades tall
-    // instead of the sliver it was at a 0.5 floor. The bar's span comes from BUCKET itself, grouped a
-    // second time one millisecond before the bar starts (BUCKET is refused in EVAL), so it is always the
-    // span Lens drew; it runs on the grouped rows, never per event. The x column keeps BUCKET's own name:
-    // aliased (ts = BUCKET…), Lens dropped the first bar, which starts before the range — and with it the
-    // only SAML and Realm requests of a 24h render, and their legend entries.
+    // instead of the sliver it was at a 0.5 floor.
+    //
+    // BARS COUNTED BACK FROM THE END OF THE RANGE (ANCHORED), not BUCKET's calendar grid. Lens draws a
+    // time bar only if it starts at or after the range start and at or before (range end − one bar):
+    // checked on a fixed 24h range (2026-10-15, round-6 skeptic), it dropped BOTH of BUCKET's partial
+    // bars — the oldest, which starts before the range, and the newest, which runs past its end. The
+    // newest was the worse loss: the last 30 minutes at 24h (3 hours at 7d) of the busiest key never
+    // drew, nor did a sign-in made in them, while the matrix and the tiles beside it counted it.
+    // Leaving out the x domain or rounding it changed nothing. Anchored bars end exactly at the range
+    // end and step back one interval at a time, so every bar is whole and inside what Lens draws.
     rateBar(xy(0, 5, 24, 12, 'Elasticsearch requests per minute by credential type',
-        `FROM ${IDX} | ${TIME} | WHERE attributes.authentication.type IS NOT NULL | STATS events = COUNT(*) BY ${BUCKET}, attributes.authentication.type | STATS events = SUM(events) BY \`${BUCKET}\`, attributes.authentication.type, prev = BUCKET(\`${BUCKET}\` - 1 millisecond, 75, ?_tstart, ?_tend) | EVAL per_minute = events * 60.0 / DATE_DIFF("second", prev, \`${BUCKET}\`), ${CRED_TYPE_LABEL} | KEEP \`${BUCKET}\`, auth, per_minute | SORT auth`,
-        'per_minute', 'Elasticsearch requests per minute by how they presented credentials: API key, token (SSO browser sessions and service accounts), realm (username and password) or SAML. One bar per credential type per interval — 1 minute at 1h, 30 minutes at 24h, 3 hours at 7d — and its height is that interval\'s requests divided by its minutes, so the scale reads the same at every range: a lone request in a 30-minute bar is 0.033 a minute. A log scale, so a type carrying a fraction of a percent of the traffic is as readable as the bulk; an interval with no bar had no requests of that type. The first and last bars cover only part of their interval, so they read low. A shift in this mix is worth explaining.',
-        { breakdown: 'auth', kind: 'bar', colors: CRED_TYPE_COLORS, yScale: 'log' })),
+        `FROM ${IDX} | ${TIME} | WHERE attributes.authentication.type IS NOT NULL | ${ANCHORED.k} | STATS events = COUNT(*) BY k, attributes.authentication.type | ${ANCHORED.bars('attributes.authentication.type')} | EVAL ${CRED_TYPE_LABEL} | KEEP ts, auth, per_minute | SORT auth`,
+        'per_minute', 'Elasticsearch requests per minute by how they presented credentials: API key, token (SSO browser sessions and service accounts), realm (username and password) or SAML. One bar per credential type per interval — 1 minute at 1h, 30 minutes at 24h, 3 hours at 7d — and its height is that interval\'s requests divided by its minutes, so the scale reads the same at every range: a lone request in a 30-minute bar is 0.033 a minute. A log scale, so a type carrying a fraction of a percent of the traffic is as readable as the bulk; an interval with no bar had no requests of that type. Every bar is a whole interval counted back from the end of the range, so the newest bar is the most recent minutes and none is left out. A shift in this mix is worth explaining.',
+        { breakdown: 'auth', kind: 'bar', colors: CRED_TYPE_COLORS, yScale: 'log', xcol: 'ts' })),
     vega(24, 5, 24, 12, '02-auth-matrix', 'Credential type by identity · Elasticsearch requests',
       'Which credential type each of the busiest identities presents, 12 at most, and how many Elasticsearch requests it made with each: the count is printed in the cell. Cells are coloured by credential type, in the same colours as the time chart beside it, so a colour means the same thing in both panels. Humans should authenticate by token (SSO); service identities by API key. Only Elasticsearch requests record a credential type, so the counts leave out Kibana traffic and can be lower than the same identity\'s count in the tables below (Busiest API keys counts both), and identities seen only in Kibana or only anonymously are counted in Identities above but are not on this chart. A Cloud API key has no name and is shown as “_4KEO… · Cloud API key”, the first five characters of its id.'),
     // Bars on a log axis, not the donuts they replace. A donut rounds a share: in an hour where a Cloud
@@ -160,9 +190,11 @@ export function build() {
     // distinct ids and is the one Kind "Cloud" row (one id: its own). The label runs on grouped rows,
     // never per event. API key is assigned in ES|QL so a Cloud key reads "_4KEO… · Cloud API key", and
     // Lens refuses click-to-filter on such a column; no control or drilldown keys on api_key.name.
+    // Events and IPs are sized: auto, they took ~240px of a 655px panel at a 1440px viewport and left a
+    // 36-character key name (syn-new-hire-it-20261014-141115-4426) touching "Elasticsearch" in Kind.
     table(24, 17, 24, 12, 'Busiest API keys by name',
       `FROM ${IDX} | ${TIME} | ${KEYED} | STATS events = COUNT(*), ips = COUNT_DISTINCT(client.ip), key_ids = COUNT_DISTINCT(attributes.api_key.id) BY api_key = attributes.api_key.name, attributes.user.name | EVAL kind = CASE(key_ids == 0, "Cloud", "Elasticsearch"), key_ids = GREATEST(key_ids, 1), api_key = COALESCE(api_key, ${cloudKeyLabel('attributes.user.name', '"(no name)"')}) | SORT events DESC, api_key | LIMIT 10`,
-      ['api_key', sized('kind', 105)], [sized('key_ids', 90, { label: 'Key IDs', min: 72 }), 'events', 'ips'],
+      ['api_key', sized('kind', 105)], [sized('key_ids', 90, { label: 'Key IDs', min: 72 }), sized('events', 100), sized('ips', 56)],
       `The busiest API keys of both kinds, one row per key name, with request volume and how many distinct client IPs used it. Kind is Cloud (an Elastic Cloud API key: it has no name and is recorded by its id, so it reads “_4KEO… · Cloud API key”, the first five characters of its id) or Elasticsearch (an Elasticsearch API key: id and name). A re-issued Elasticsearch key keeps its name under a new id, so Key IDs counts the ids a name ran under in range; API key inventory below has one row per id, with owner and first and last use. The API keys tile counts every id and every name in range, so past the ten busiest names the rows here add up to less than it; the rest are in the inventory. A key used from many IPs is worth investigating. ${EDGE_NOTE}`),
     // Grouped on the email alone. user.full_name was a second key, but over 7 days it was empty on all
     // but 2 of ~11,600 events for the one SSO user, and on those 2 it held the email again — so it split
@@ -174,7 +206,7 @@ export function build() {
     table(0, 29, 12, 12, 'Busiest human identities',
       `FROM ${IDX} | ${TIME} | WHERE attributes.user.email IS NOT NULL | STATS events = COUNT(*) BY attributes.user.email | SORT events DESC | LIMIT 10`,
       [WHO], ['events'],
-      'People by email, busiest first: the people the Humans tile counts, over all traffic, with the same event counts as Identity first and last seen, which also has when each was first and last seen and from how many IPs. The panel shows the top rows; the rest are in that session. Click an email to pin that person across the suite.'),
+      `People by email, busiest first: the people the Humans tile counts, over all traffic, with the same event counts as Identity first and last seen, which also has when each was first and last seen and from how many IPs. The panel shows the top rows; the rest are in that session. Click an email to pin that person across the suite. ${EDGE_NOTE}`),
     // Grouped on the raw identity fields and resolved afterwards (QUERY SHAPE rule 2): the COALESCE then
     // runs once per group instead of once per failed event. An action that is neither a failed sign-in
     // nor access_denied is here only because its outcome was failure, and without saying so a
