@@ -1,6 +1,6 @@
 {
   "$schema": "https://vega.github.io/schema/vega/v5.json",
-  "description": "How the current selection's Kibana activity flows: which credential it arrived with, which space it happened in, what kind of object it touched and what it did to it. Ribbon width is event count in the time picker's range. Kibana audit only, and only events that touched an object — requests, logins and point-in-time internals are left out. Elasticsearch events carry no space and no saved object, so including them would put most of the ink in a branch that says nothing. Credential is authentication type where Elasticsearch records one and the user's realm otherwise, which is what separates a person in a browser (SAML SSO, the cloud-saml-kibana realm) from a script calling Kibana with a key (Elasticsearch or Cloud API key); hover a credential for its raw name. Object types come from the shared OBJ_TYPE fragment, which recovers a type from the event for workflows, ML jobs, agent-builder tools and secrets that carry no saved-object fields. Top 40 flows: a missing ribbon means the flow is outside the top 40, not that it never happened. Each column names its biggest values and folds the rest into \"other (N)\", drawn last, so a small value is counted there rather than drawn as an unlabelled sliver. Click a named credential or space to pin it across the suite — object type and operation are derived, so a pill on them would match nothing. Double-click anywhere in the panel to clear every pill on the page.",
+  "description": "How the current selection's Kibana activity flows: which credential it arrived with, which space it happened in, what kind of object it touched and what it did to it. Ribbon width is event count in the time picker's range. Kibana audit only, and only events that touched an object — requests, logins and point-in-time internals are left out. Elasticsearch events carry no space and no saved object, so including them would put most of the ink in a branch that says nothing. Credential is authentication type where Elasticsearch records one and the user's realm otherwise, which is what separates a person in a browser (SAML SSO, the cloud-saml-kibana realm) from a script calling Kibana with a key (Elasticsearch or Cloud API key); hover a credential for its raw name. Object types come from the shared OBJ_TYPE fragment, which recovers a type from the event for workflows, ML jobs, agent-builder tools and secrets that carry no saved-object fields. Every event is counted, so each column adds up to the same total and Operation's delete is every Kibana delete of an object — saved_object_delete, space_delete and the feature deletes, including the objects a deleted space took with it — which is at least the delete rows of the scoring table above. Each column names its seven biggest values and folds the rest into \"other (N)\", drawn last. A small value is drawn at a minimum height so that it can carry its label: heights are proportional above that floor, and the number beside each value is exact. Click a named credential or space to pin it across the suite — object type and operation are derived, so a pill on them would match nothing. Double-click anywhere in the panel to clear every pill on the page.",
   "autosize": {
     "type": "fit",
     "contains": "padding"
@@ -62,16 +62,28 @@
       "update": "data('rawTotal').length ? max(1, data('rawTotal')[0].t) : 1"
     },
     {
-      "name": "minShare",
-      "update": "13 / max(1, height - head - gap * (foldK - 1))"
-    },
-    {
       "name": "maxPerStage",
       "update": "max(1, data('stageCounts').length ? data('stageCounts')[0].most : 1)"
     },
     {
       "name": "total",
       "update": "data('stageTotal').length ? data('stageTotal')[0].t : 1"
+    },
+    {
+      "name": "minPx",
+      "value": 12
+    },
+    {
+      "name": "yRange",
+      "update": "max(10, height - head - gap * (maxPerStage - 1))"
+    },
+    {
+      "name": "pxPerEvent",
+      "update": "length(data('kfit2')) ? data('kfit2')[0].k : 0"
+    },
+    {
+      "name": "k1",
+      "update": "length(data('kfit1')) ? data('kfit1')[0].k : 0"
     }
   ],
   "data": [
@@ -79,7 +91,7 @@
       "name": "raw",
       "url": {
         "%type%": "esql",
-        "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE resource.attributes.service.name == \"serverless-kibana\" | STATS events = COUNT(*) BY attributes.authentication.type, attributes.user.domain, attributes.kibana.space.id, attributes.kibana.saved_object.type, attributes.event.action | WHERE (attributes.kibana.saved_object.type IS NOT NULL OR attributes.event.action LIKE \"ml_*\" OR attributes.event.action LIKE \"workflow_*\" OR attributes.event.action LIKE \"agent_builder_*\" OR attributes.event.action LIKE \"product_documentation_*\" OR attributes.event.action == \"secret_create\") | EVAL credential = COALESCE(attributes.authentication.type, attributes.user.domain, \"unknown\") | EVAL verb = CASE(attributes.event.action LIKE \"*_execution_cancel\", \"cancel\", attributes.event.action LIKE \"*_run_soon\", \"run\", attributes.event.action LIKE \"*_run\", \"run\", attributes.event.action LIKE \"*_test\", \"test\", attributes.event.action LIKE \"*_enable\", \"enable\", attributes.event.action LIKE \"*_disable\", \"disable\", attributes.event.action LIKE \"ml_put_*\", \"create\", attributes.event.action LIKE \"ml_open_*\", \"open\", attributes.event.action LIKE \"ml_start_*\", \"start\", attributes.event.action LIKE \"*point_in_time\", \"pit\", attributes.event.action LIKE \"*_create*\", \"create\", attributes.event.action LIKE \"*_update*\", \"update\", attributes.event.action LIKE \"*_delete\", \"delete\", attributes.event.action LIKE \"*_find\", \"find\", attributes.event.action LIKE \"*_get\", \"get\", attributes.event.action LIKE \"*_resolve\", \"resolve\", \"other\") | EVAL obj_type = CASE(attributes.kibana.saved_object.type IS NOT NULL, attributes.kibana.saved_object.type, attributes.event.action LIKE \"ml_*ad_job\", \"ml-job\", attributes.event.action LIKE \"ml_*ad_datafeed\", \"ml-datafeed\", attributes.event.action LIKE \"workflow_execution_*\", \"workflow-execution\", attributes.event.action LIKE \"workflow_*\", \"workflow\", attributes.event.action LIKE \"agent_builder_agent_*\", \"agent-builder-agent\", attributes.event.action LIKE \"agent_builder_tool_*\", \"agent-builder-tool\", attributes.event.action LIKE \"product_documentation_*\", \"product-documentation\", attributes.event.action == \"secret_create\", \"secret\", attributes.event.action IS NULL, \"unclassified\", REPLACE(attributes.event.action, \"_(create|update|delete|enable|disable|run|run_soon|test|cancel)$\", \"\")) | EVAL space = COALESCE(attributes.kibana.space.id, \"no space\") | STATS events = SUM(events) BY credential, space, obj_type, verb | SORT events DESC | LIMIT 40",
+        "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE resource.attributes.service.name == \"serverless-kibana\" | STATS events = COUNT(*) BY attributes.authentication.type, attributes.user.domain, attributes.kibana.space.id, attributes.kibana.saved_object.type, attributes.event.action | WHERE (attributes.kibana.saved_object.type IS NOT NULL OR attributes.event.action LIKE \"ml_*\" OR attributes.event.action LIKE \"workflow_*\" OR attributes.event.action LIKE \"agent_builder_*\" OR attributes.event.action LIKE \"product_documentation_*\" OR attributes.event.action == \"secret_create\") | EVAL credential = COALESCE(attributes.authentication.type, attributes.user.domain, \"unknown\") | EVAL verb = CASE(attributes.event.action LIKE \"*_execution_cancel\", \"cancel\", attributes.event.action LIKE \"*_run_soon\", \"run\", attributes.event.action LIKE \"*_run\", \"run\", attributes.event.action LIKE \"*_test\", \"test\", attributes.event.action LIKE \"*_enable\", \"enable\", attributes.event.action LIKE \"*_disable\", \"disable\", attributes.event.action LIKE \"ml_put_*\", \"create\", attributes.event.action LIKE \"ml_open_*\", \"open\", attributes.event.action LIKE \"ml_start_*\", \"start\", attributes.event.action LIKE \"*point_in_time\", \"pit\", attributes.event.action LIKE \"*_create*\", \"create\", attributes.event.action LIKE \"*_update*\", \"update\", attributes.event.action LIKE \"*_delete\", \"delete\", attributes.event.action LIKE \"*_find\", \"find\", attributes.event.action LIKE \"*_get\", \"get\", attributes.event.action LIKE \"*_resolve\", \"resolve\", \"other\") | EVAL obj_type = CASE(attributes.kibana.saved_object.type IS NOT NULL, attributes.kibana.saved_object.type, attributes.event.action LIKE \"ml_*ad_job\", \"ml-job\", attributes.event.action LIKE \"ml_*ad_datafeed\", \"ml-datafeed\", attributes.event.action LIKE \"workflow_execution_*\", \"workflow-execution\", attributes.event.action LIKE \"workflow_*\", \"workflow\", attributes.event.action LIKE \"agent_builder_agent_*\", \"agent-builder-agent\", attributes.event.action LIKE \"agent_builder_tool_*\", \"agent-builder-tool\", attributes.event.action LIKE \"product_documentation_*\", \"product-documentation\", attributes.event.action == \"secret_create\", \"secret\", attributes.event.action IS NULL, \"unclassified\", REPLACE(attributes.event.action, \"_(create|update|delete|enable|disable|run|run_soon|test|cancel)$\", \"\")) | EVAL space = COALESCE(attributes.kibana.space.id, \"no space\") | STATS events = SUM(events) BY credential, space, obj_type, verb | SORT events DESC | LIMIT 10000",
         "%timefield%": "@timestamp",
         "%context%": true
       }
@@ -137,7 +149,7 @@
         {
           "type": "formula",
           "as": "keep",
-          "expr": "datum.r < foldK && datum.v / rawTotal >= minShare ? 1 : 0"
+          "expr": "datum.r < foldK ? 1 : 0"
         },
         {
           "type": "joinaggregate",
@@ -202,7 +214,7 @@
         {
           "type": "formula",
           "as": "keep",
-          "expr": "datum.r < foldK && datum.v / rawTotal >= minShare ? 1 : 0"
+          "expr": "datum.r < foldK ? 1 : 0"
         },
         {
           "type": "joinaggregate",
@@ -267,7 +279,7 @@
         {
           "type": "formula",
           "as": "keep",
-          "expr": "datum.r < foldK && datum.v / rawTotal >= minShare ? 1 : 0"
+          "expr": "datum.r < foldK ? 1 : 0"
         },
         {
           "type": "joinaggregate",
@@ -332,7 +344,7 @@
         {
           "type": "formula",
           "as": "keep",
-          "expr": "datum.r < foldK && datum.v / rawTotal >= minShare ? 1 : 0"
+          "expr": "datum.r < foldK ? 1 : 0"
         },
         {
           "type": "joinaggregate",
@@ -700,6 +712,146 @@
       ]
     },
     {
+      "name": "kfit1",
+      "source": "nodes",
+      "transform": [
+        {
+          "type": "formula",
+          "as": "small",
+          "expr": "datum.value * yRange / max(1, total) < minPx ? 1 : 0"
+        },
+        {
+          "type": "formula",
+          "as": "vSmall",
+          "expr": "datum.small ? datum.value : 0"
+        },
+        {
+          "type": "aggregate",
+          "groupby": [
+            "stage"
+          ],
+          "fields": [
+            "small",
+            "vSmall",
+            "value"
+          ],
+          "ops": [
+            "sum",
+            "sum",
+            "sum"
+          ],
+          "as": [
+            "nSmall",
+            "vSmall",
+            "v"
+          ]
+        },
+        {
+          "type": "formula",
+          "as": "k",
+          "expr": "datum.v - datum.vSmall > 0 ? max(0, yRange - minPx * datum.nSmall) / (datum.v - datum.vSmall) : 0"
+        },
+        {
+          "type": "aggregate",
+          "fields": [
+            "k"
+          ],
+          "ops": [
+            "min"
+          ],
+          "as": [
+            "k"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "kfit2",
+      "source": "nodes",
+      "transform": [
+        {
+          "type": "formula",
+          "as": "small",
+          "expr": "datum.value * k1 < minPx ? 1 : 0"
+        },
+        {
+          "type": "formula",
+          "as": "vSmall",
+          "expr": "datum.small ? datum.value : 0"
+        },
+        {
+          "type": "aggregate",
+          "groupby": [
+            "stage"
+          ],
+          "fields": [
+            "small",
+            "vSmall",
+            "value"
+          ],
+          "ops": [
+            "sum",
+            "sum",
+            "sum"
+          ],
+          "as": [
+            "nSmall",
+            "vSmall",
+            "v"
+          ]
+        },
+        {
+          "type": "formula",
+          "as": "k",
+          "expr": "datum.v - datum.vSmall > 0 ? max(0, yRange - minPx * datum.nSmall) / (datum.v - datum.vSmall) : 0"
+        },
+        {
+          "type": "aggregate",
+          "fields": [
+            "k"
+          ],
+          "ops": [
+            "min"
+          ],
+          "as": [
+            "k"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "layout",
+      "source": "nodes",
+      "transform": [
+        {
+          "type": "formula",
+          "as": "px",
+          "expr": "max(minPx, datum.value * pxPerEvent)"
+        },
+        {
+          "type": "stack",
+          "groupby": [
+            "stage"
+          ],
+          "field": "px",
+          "sort": {
+            "field": [
+              "isOther",
+              "value"
+            ],
+            "order": [
+              "ascending",
+              "descending"
+            ]
+          },
+          "as": [
+            "py0",
+            "py1"
+          ]
+        }
+      ]
+    },
+    {
       "name": "stageCounts",
       "source": "nodes",
       "transform": [
@@ -753,33 +905,41 @@
       "transform": [
         {
           "type": "lookup",
-          "from": "nodes",
+          "from": "layout",
           "key": "key",
           "fields": [
             "src"
           ],
           "values": [
-            "y0",
+            "py0",
+            "px",
+            "value",
             "rank"
           ],
           "as": [
-            "srcY0",
+            "srcPy0",
+            "srcPx",
+            "srcV",
             "srcRank"
           ]
         },
         {
           "type": "lookup",
-          "from": "nodes",
+          "from": "layout",
           "key": "key",
           "fields": [
             "dst"
           ],
           "values": [
-            "y0",
+            "py0",
+            "px",
+            "value",
             "rank"
           ],
           "as": [
-            "dstY0",
+            "dstPy0",
+            "dstPx",
+            "dstV",
             "dstRank"
           ]
         },
@@ -791,7 +951,7 @@
           "field": "value",
           "sort": {
             "field": [
-              "dstY0"
+              "dstPy0"
             ],
             "order": [
               "ascending"
@@ -810,7 +970,7 @@
           "field": "value",
           "sort": {
             "field": [
-              "srcY0"
+              "srcPy0"
             ],
             "order": [
               "ascending"
@@ -839,22 +999,22 @@
         {
           "type": "formula",
           "as": "s0",
-          "expr": "head + scale('y', datum.srcY0 + datum.sy0) + datum.srcRank * gap"
+          "expr": "head + datum.srcPy0 + datum.sy0 * datum.srcPx / max(1, datum.srcV) + datum.srcRank * gap"
         },
         {
           "type": "formula",
           "as": "s1",
-          "expr": "max(datum.s0 + 1, head + scale('y', datum.srcY0 + datum.sy1) + datum.srcRank * gap)"
+          "expr": "max(datum.s0 + 1, head + datum.srcPy0 + datum.sy1 * datum.srcPx / max(1, datum.srcV) + datum.srcRank * gap)"
         },
         {
           "type": "formula",
           "as": "t0",
-          "expr": "head + scale('y', datum.dstY0 + datum.ty0) + datum.dstRank * gap"
+          "expr": "head + datum.dstPy0 + datum.ty0 * datum.dstPx / max(1, datum.dstV) + datum.dstRank * gap"
         },
         {
           "type": "formula",
           "as": "t1",
-          "expr": "max(datum.t0 + 1, head + scale('y', datum.dstY0 + datum.ty1) + datum.dstRank * gap)"
+          "expr": "max(datum.t0 + 1, head + datum.dstPy0 + datum.ty1 * datum.dstPx / max(1, datum.dstV) + datum.dstRank * gap)"
         },
         {
           "type": "formula",
@@ -899,23 +1059,6 @@
           "signal": "width - nodeW"
         }
       ]
-    },
-    {
-      "name": "y",
-      "type": "linear",
-      "domain": [
-        0,
-        {
-          "signal": "total"
-        }
-      ],
-      "range": [
-        0,
-        {
-          "signal": "max(10, height - head - gap * (maxPerStage - 1))"
-        }
-      ],
-      "zero": true
     },
     {
       "name": "stageColor",
@@ -1010,7 +1153,7 @@
       "type": "rect",
       "name": "node",
       "from": {
-        "data": "nodes"
+        "data": "layout"
       },
       "encode": {
         "update": {
@@ -1022,10 +1165,10 @@
             "signal": "nodeW"
           },
           "y": {
-            "signal": "head + scale('y', datum.y0) + datum.rank * gap"
+            "signal": "head + datum.py0 + datum.rank * gap"
           },
           "y2": {
-            "signal": "head + max(scale('y', datum.y0) + 1, scale('y', datum.y1)) + datum.rank * gap"
+            "signal": "head + datum.py1 + datum.rank * gap"
           },
           "fill": {
             "scale": "stageColor",
@@ -1044,7 +1187,7 @@
       "type": "text",
       "style": "guide-label",
       "from": {
-        "data": "nodes"
+        "data": "layout"
       },
       "interactive": false,
       "encode": {
@@ -1056,7 +1199,7 @@
             "signal": "datum.stage === 3 ? 'right' : 'left'"
           },
           "y": {
-            "signal": "head + (scale('y', datum.y0) + scale('y', datum.y1)) / 2 + datum.rank * gap"
+            "signal": "head + (datum.py0 + datum.py1) / 2 + datum.rank * gap"
           },
           "baseline": {
             "value": "middle"
@@ -1068,7 +1211,7 @@
             "signal": "datum.display + '  ' + format(datum.value, ',')"
           },
           "opacity": {
-            "signal": "datum.rank === datum.nInStage - 1 || indexof(datum.label, 'other (') === 0 || scale('y', datum.y1) - scale('y', datum.y0) + gap >= 12 ? 1 : 0"
+            "value": 1
           },
           "limit": {
             "signal": "width / 3 - 24"

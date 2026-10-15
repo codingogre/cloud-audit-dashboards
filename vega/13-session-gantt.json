@@ -15,7 +15,7 @@
   "signals": [
     {
       "name": "lane",
-      "update": "length(data('sessions')) ? max(10, min(30, height / length(data('sessions')))) : 12"
+      "update": "length(data('sessions')) ? max(10, min(44, height / max(3, length(data('sessions'))))) : 12"
     },
     {
       "name": "zoomTo",
@@ -482,7 +482,7 @@
             "signal": "noSess ? scale('x', noSess) + (scale('x', noSess) > width / 2 ? -6 : 6) : 0"
           },
           "y": {
-            "signal": "min(height - 6, length(data('sessions')) * lane + 20)"
+            "signal": "height - 4"
           },
           "baseline": {
             "value": "bottom"
