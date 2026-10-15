@@ -25,8 +25,18 @@
         "links": [
           {
             "type": "dashboardLink",
-            "destination": "cloud-audit-00-command-center",
+            "destination": "elastic_cloud-audit-dashboard",
             "label": "🎛️  Command Center",
+            "options": {
+              "use_filters": true,
+              "use_time_range": true,
+              "open_in_new_tab": false
+            }
+          },
+          {
+            "type": "dashboardLink",
+            "destination": "cloud-audit-07-actor-360",
+            "label": "👤  Actor 360",
             "options": {
               "use_filters": true,
               "use_time_range": true,
@@ -77,26 +87,6 @@
             "type": "dashboardLink",
             "destination": "cloud-audit-05-geo-network",
             "label": "🌍  Geo & Network",
-            "options": {
-              "use_filters": true,
-              "use_time_range": true,
-              "open_in_new_tab": false
-            }
-          },
-          {
-            "type": "dashboardLink",
-            "destination": "cloud-audit-06-platform-volume",
-            "label": "📊  Platform Volume",
-            "options": {
-              "use_filters": true,
-              "use_time_range": true,
-              "open_in_new_tab": false
-            }
-          },
-          {
-            "type": "dashboardLink",
-            "destination": "cloud-audit-07-actor-360",
-            "label": "👤  Actor 360",
             "options": {
               "use_filters": true,
               "use_time_range": true,
@@ -480,7 +470,7 @@
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE (attributes.elasticsearch.audit.action IS NULL OR NOT (attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\") OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/msearch*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/scroll*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/esql*\" OR attributes.elasticsearch.audit.action LIKE \"indices:admin/esql/*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/field_caps*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/async_search/*\" OR attributes.elasticsearch.audit.action LIKE \"indices:admin/resolve/*\" OR attributes.elasticsearch.audit.action == \"indices:admin/shards/search_shards\" OR attributes.elasticsearch.audit.action LIKE \"cluster:monitor/xpack/esql/*\" OR attributes.elasticsearch.audit.action IN (\"cluster:monitor/project/tags\", \"cluster:monitor/xpack/inference/get\", \"cluster:admin/xpack/security/api_key/get\", \"cluster:admin/xpack/security/api_key/query\"))) AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"authentication_success\",\"connection_granted\") OR attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\",\"space_get\",\"space_find\") OR (attributes.event.action == \"http_request\" AND attributes.url.original IS NOT NULL AND attributes.url.original RLIKE \"https?://[^/]+(/s/[^/]+)?/((internal|translations|app)/.*|api/content_management/rpc/(get|search|mget|bulkGet).*|bootstrap(-anonymous)?[.]js.*|api/(core|licensing|banners|ui_counters)/.*|api/spaces/space([?].*)?)|https?://[^/]+(/s/[^/]+)?/api/(saved_objects/(_import|_export)|[^?]*/cloud-audit-).*\") OR (attributes.kibana.saved_object.type IS NOT NULL AND ((attributes.event.action == \"saved_object_get\" AND attributes.kibana.saved_object.type IN (\"config\",\"config-global\")) OR (attributes.event.action == \"saved_object_find\" AND attributes.kibana.saved_object.type == \"index-pattern\"))) OR (attributes.kibana.saved_object.id IS NOT NULL AND attributes.kibana.saved_object.id LIKE \"cloud-audit-*\" AND (attributes.event.action IN (\"saved_object_get\",\"saved_object_resolve\",\"saved_object_find\") OR attributes.kibana.session.id IS NULL)))) | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | STATS first_seen = MIN(@timestamp), last_seen = MAX(@timestamp), events = COUNT(*), ips = COUNT_DISTINCT(client.ip) BY actor | SORT first_seen DESC, actor | EVAL actor_scope = CASE(actor IN (\"elastic.maintenance\",\"autoscaling\",\"elasticsearch-controller\",\"elastic/fleet-server\",\"elastic/kibana\"), \"platform\", actor IN (\"<anonymous>\",\"<unauthenticated-cloud-access-token>\",\"<unauthenticated-saml-user>\",\"<unauthenticated-cloud-api-key>\"), \"unauthenticated\", \"tenant\") | EVAL new_in_range = CASE(TO_LONG(first_seen) - TO_LONG(TO_DATETIME(?_tstart)) > (TO_LONG(TO_DATETIME(?_tend)) - TO_LONG(TO_DATETIME(?_tstart))) / 12, \"yes\", \"no\") | LIMIT 12 | EVAL actor = CASE((LENGTH(actor) == 20 AND actor RLIKE \"[-_A-Za-z0-9]{20}\" AND NOT actor RLIKE \"[0-9]{20}\"), CONCAT(LEFT(actor, 5), \"… · Cloud API key\"), actor)"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE (attributes.elasticsearch.audit.action IS NULL OR NOT (attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\") OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/msearch*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/scroll*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/esql*\" OR attributes.elasticsearch.audit.action LIKE \"indices:admin/esql/*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/field_caps*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/async_search/*\" OR attributes.elasticsearch.audit.action LIKE \"indices:admin/resolve/*\" OR attributes.elasticsearch.audit.action == \"indices:admin/shards/search_shards\" OR attributes.elasticsearch.audit.action LIKE \"cluster:monitor/xpack/esql/*\" OR attributes.elasticsearch.audit.action IN (\"cluster:monitor/project/tags\", \"cluster:monitor/xpack/inference/get\", \"cluster:admin/xpack/security/api_key/get\", \"cluster:admin/xpack/security/api_key/query\"))) AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (\"authentication_success\",\"connection_granted\") OR attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\",\"space_get\",\"space_find\") OR (attributes.event.action == \"http_request\" AND attributes.url.original IS NOT NULL AND attributes.url.original RLIKE \"https?://[^/]+(/s/[^/]+)?/((internal|translations|app)/.*|api/content_management/rpc/(get|search|mget|bulkGet).*|bootstrap(-anonymous)?[.]js.*|api/(core|licensing|banners|ui_counters)/.*|api/spaces/space([?].*)?)|https?://[^/]+(/s/[^/]+)?/api/(saved_objects/(_import|_export)|[^?]*/(elastic_)?cloud-audit-).*\") OR (attributes.kibana.saved_object.type IS NOT NULL AND ((attributes.event.action == \"saved_object_get\" AND attributes.kibana.saved_object.type IN (\"config\",\"config-global\")) OR (attributes.event.action == \"saved_object_find\" AND attributes.kibana.saved_object.type == \"index-pattern\"))) OR (attributes.kibana.saved_object.id IS NOT NULL AND (attributes.kibana.saved_object.id LIKE \"cloud-audit-*\" OR attributes.kibana.saved_object.id LIKE \"elastic_cloud-audit-*\") AND (attributes.event.action IN (\"saved_object_get\",\"saved_object_resolve\",\"saved_object_find\") OR attributes.kibana.session.id IS NULL)))) | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | STATS first_seen = MIN(@timestamp), last_seen = MAX(@timestamp), events = COUNT(*), ips = COUNT_DISTINCT(client.ip) BY actor | SORT first_seen DESC, actor | EVAL actor_scope = CASE(actor IN (\"elastic.maintenance\",\"autoscaling\",\"elasticsearch-controller\",\"elastic/fleet-server\",\"elastic/kibana\"), \"platform\", actor IN (\"<anonymous>\",\"<unauthenticated-cloud-access-token>\",\"<unauthenticated-saml-user>\",\"<unauthenticated-cloud-api-key>\"), \"unauthenticated\", \"tenant\") | EVAL new_in_range = CASE(TO_LONG(first_seen) - TO_LONG(TO_DATETIME(?_tstart)) > (TO_LONG(TO_DATETIME(?_tend)) - TO_LONG(TO_DATETIME(?_tstart))) / 12, \"yes\", \"no\") | LIMIT 12 | EVAL actor = CASE((LENGTH(actor) == 20 AND actor RLIKE \"[-_A-Za-z0-9]{20}\" AND NOT actor RLIKE \"[0-9]{20}\"), CONCAT(LEFT(actor, 5), \"… · Cloud API key\"), actor)"
         },
         "styling": {
           "density": {

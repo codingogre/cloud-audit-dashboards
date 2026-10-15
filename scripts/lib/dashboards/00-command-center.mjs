@@ -4,8 +4,9 @@ import {
   md, resetIds, privilegedKpi, grouped, fitRows, EDGE_NOTE
 } from '../panels.mjs';
 import {
-  LEGEND_MD, ACTOR_KEYS
+  legendMd, ACTOR_KEYS
 } from './shared.mjs';
+import { isDeployed } from '../suite.mjs';
 
 /**
  * Panels that read the whole stream say so in their title. The legend panel tells the reader the
@@ -51,6 +52,8 @@ const COUNT_W = 72;
 
 export function build() {
   resetIds();
+  // Platform Volume is opt-in (lib/suite.mjs): a description may point at it only when it is deployed.
+  const pv = isDeployed('06-platform-volume');
   const P = [
     kpi(0, 0, 8, 5, `FROM ${IDX} | ${TIME} | STATS \`Total events${ALL}\` = COUNT(*)`, `Total events${ALL}`,
       'Every audited event in range, including machine noise. Compare with Signal to see how much the noise gate removes.'),
@@ -60,7 +63,7 @@ export function build() {
     // identities that table ranks (an ungated count included people whose only traffic was the noise
     // gate's: 4 here over a 3-row table). Counted first by the raw identity fields, resolved after.
     kpi(15, 0, 7, 5, `FROM ${IDX} | ${TIME} | ${NOISE} | STATS n = COUNT(*) BY ${ACTOR_KEYS} | ${ACTOR_RESOLVE} | STATS \`Distinct actors\` = COUNT_DISTINCT(actor)`, 'Distinct actors',
-      'Identities with signal traffic, behind the same noise gate and resolved the same way as Busiest identities: email, then API key name, then numeric user id. Someone whose only events are noise (browsing dashboards, health checks) is not counted here; Platform Volume counts all traffic.'),
+      `Identities with signal traffic, behind the same noise gate and resolved the same way as Busiest identities: email, then API key name, then numeric user id. Someone whose only events are noise (browsing dashboards, health checks) is not counted here${pv ? '; Platform Volume counts all traffic' : ''}.`),
     kpi(22, 0, 7, 5, `FROM ${IDX} | ${TIME} | ${NOISE} | WHERE attributes.user.email IS NOT NULL | STATS \`Human actors\` = COUNT_DISTINCT(attributes.user.email)`, 'Human actors',
       'Distinct email addresses with signal traffic, behind the same noise gate as Signal events. Includes an API key whose events carry its creator’s email: such a row in Busiest identities reads “email · via key name”.'),
     // Widths follow the titles at a 1440px viewport, where a metric tile clips its secondary line and
@@ -79,7 +82,7 @@ export function build() {
       `FROM ${IDX} | ${TIME} | STATS events = COUNT(*) BY ${BUCKET}, source = resource.attributes.service.name | ${SOURCE_LABEL}`,
       'events', 'Total audited events over time, split by originating service. Elasticsearch audits every transport action, so its volume usually far exceeds Kibana’s — and the Kibana slice is where most of the forensic value is. The plot spans exactly the time range. The range ends a minute ago, part-way through the last bucket, so the last bar covers only part of its interval and is usually short; a bucket with no bar had no audit events delivered for it (the stream arrives in batches). Signal vs noise draws the same buckets over the same span.',
       { breakdown: 'source', colors: SOURCE_COLORS, legend: 'right' })),
-    md(32, 5, 16, 13, LEGEND_MD),
+    md(32, 5, 16, 13, legendMd()),
     // Two rows taller than the rest of the page: at 13 the treemap's floor-sized tiles were too short
     // for a two-line name once the legend took its row under the plot.
     vega(0, 18, 24, 15, '01-actor-risk-treemap', 'Actor footprint · area by √events, color by risk total',
@@ -97,7 +100,7 @@ export function build() {
      */
     logFloor(fullRange(xy(24, 18, 24, 15, `Signal vs noise over time${ALL}`,
       `FROM ${IDX} | ${TIME} | STATS n = COUNT(*) BY ts = ${BUCKET}, ${BAND_KEYS} | ${BAND} | EVAL side = CASE(band == "signal", "Signal", "Noise") | STATS events = SUM(n) BY ts, side | EVAL ord = CASE(side == "Signal", 0, 1) | SORT ord, ts`,
-      'events', 'Every audited event per time bucket, on either side of the noise gate: Signal is what the gate keeps (the Signal events tile, and what every gated panel reads), Noise is what it removes (health pings, query internals, API key lookups, page loads, bulk sign-in events and this suite’s own traffic). The two bars of a bucket add up to its Audit volume bar. LOG SCALE: each gridline is ten times the one below, so a bucket with one signal event among tens of thousands still shows; read the gap between the two bar tops as a ratio (one gridline apart is 10×). Platform Volume splits the noise into its bands. As on Audit volume, the last bucket covers only part of its interval, and a missing bar means no events on that side of the gate in that bucket.',
+      'events', `Every audited event per time bucket, on either side of the noise gate: Signal is what the gate keeps (the Signal events tile, and what every gated panel reads), Noise is what it removes (health pings, query internals, API key lookups, page loads, bulk sign-in events and this suite’s own traffic). The two bars of a bucket add up to its Audit volume bar. LOG SCALE: each gridline is ten times the one below, so a bucket with one signal event among tens of thousands still shows; read the gap between the two bar tops as a ratio (one gridline apart is 10×).${pv ? ' Platform Volume splits the noise into its bands.' : ''} As on Audit volume, the last bucket covers only part of its interval, and a missing bar means no events on that side of the gate in that bucket.`,
       { kind: 'bar', xcol: 'ts', breakdown: 'side', colors: { Signal: '#54B399', Noise: '#98A2B3' }, yScale: 'log' }))),
     table(0, 33, 13, TABLE_H, 'Most frequent actions',
       `FROM ${IDX} | ${TIME} | ${NOISE} | STATS events = COUNT(*) BY action = attributes.event.action, source = resource.attributes.service.name | ${SOURCE_LABEL} | SORT events DESC | LIMIT ${fitRows(TABLE_H)}`,
@@ -136,6 +139,6 @@ export function build() {
     search(0, 46, 48, 25, '10-raw-signal-feed', 'Live signal feed · Kibana key clean-up left out',
       'The newest 200 signal events, newest first, behind the same noise gate as Signal events, without Kibana’s own routine API-key clean-up (invalidate_apikeys by the elastic/kibana service account, every few seconds), which would otherwise fill it: Privileged ops counts those in its “excl. N cleanups” line, and they still count in Signal events. Detail is the Kibana message, the transport action on an Elasticsearch event, or for a security change (API key, role) what it changed: “API key <name or id> + N more” for one call that invalidated several keys. A Client IP marked internal is Kibana or the platform calling Elasticsearch on someone’s behalf, not where they are; “none recorded” is an event with no client address, such as Kibana’s own service account working inside the platform. Automation reads as long runs of near-identical rows from one identity: this suite’s own install is left out by the gate, but any other script — a deploy, a scan, a tool polling an API — can fill this feed for minutes. To read past it, pick a Person above, or open the session and filter that identity out. Open the Discover session to page further back or add columns.'),
   ];
-  return dash('cloud-audit-00-command-center', '[Audit] 🎛️ Command Center',
+  return dash('elastic_cloud-audit-dashboard', '[Audit] 🎛️ Command Center',
     'Entry point for Cloud Audit Dashboards. KPIs, volume, actor risk and the live signal feed.', P);
 }

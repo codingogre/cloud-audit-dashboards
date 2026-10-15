@@ -90,8 +90,8 @@ import {
 const VOL_NOTE = `### The quarantine dashboard
 
 Every other dashboard applies a **noise gate**; this one does not, so the whole firehose stays measurable. Every event lands in exactly one band, so the four band tiles add up to **All events** (give or take the events of the second between two tiles' fetches):
-**Signal** — what the other dashboards read · **Auth success** — Elasticsearch's \`authentication_success\`, one per authenticated request
-**Query internals** — search, \`ES|QL\`, Kibana \`/internal/\`, the suite's own traffic, \`connection_granted\` · **Infra health** — \`cluster:monitor/main\`, \`elastic.maintenance\`
+**Signal**: what the other dashboards read · **Auth success**: Elasticsearch's \`authentication_success\`, one per authenticated request
+**Query internals**: search, \`ES|QL\`, Kibana \`/internal/\`, the suite's own traffic, \`connection_granted\` · **Infra health**: \`cluster:monitor/main\`, \`elastic.maintenance\`
 
 A named API key's events carry its **creator**: a person's key counts under that person (Kind **human + key**), any other under its own name.`;
 

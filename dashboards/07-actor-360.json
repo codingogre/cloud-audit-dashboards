@@ -25,8 +25,18 @@
         "links": [
           {
             "type": "dashboardLink",
-            "destination": "cloud-audit-00-command-center",
+            "destination": "elastic_cloud-audit-dashboard",
             "label": "🎛️  Command Center",
+            "options": {
+              "use_filters": true,
+              "use_time_range": true,
+              "open_in_new_tab": false
+            }
+          },
+          {
+            "type": "dashboardLink",
+            "destination": "cloud-audit-07-actor-360",
+            "label": "👤  Actor 360",
             "options": {
               "use_filters": true,
               "use_time_range": true,
@@ -82,26 +92,6 @@
               "use_time_range": true,
               "open_in_new_tab": false
             }
-          },
-          {
-            "type": "dashboardLink",
-            "destination": "cloud-audit-06-platform-volume",
-            "label": "📊  Platform Volume",
-            "options": {
-              "use_filters": true,
-              "use_time_range": true,
-              "open_in_new_tab": false
-            }
-          },
-          {
-            "type": "dashboardLink",
-            "destination": "cloud-audit-07-actor-360",
-            "label": "👤  Actor 360",
-            "options": {
-              "use_filters": true,
-              "use_time_range": true,
-              "open_in_new_tab": false
-            }
           }
         ]
       }
@@ -116,7 +106,7 @@
         "h": 3
       },
       "config": {
-        "content": "👤 **Pick a person in the control bar** and every panel becomes their story; with nobody selected it is the whole estate. **① Is this normal?** is a fixed 7 days in UTC · **② What they did** follows the time picker · **③ Evidence** ends in the raw records. Table times and the session timeline are in your time zone."
+        "content": "👤 **Pick a person in the Person (email) control** and every panel becomes their story; with nobody selected it is the whole estate. **① Is this normal?** is a fixed 7 days in UTC · **② What they did** follows the time picker · **③ Evidence** ends in the raw records. Table times and the session timeline are in your time zone."
       }
     },
     {
@@ -387,7 +377,7 @@
         "h": 2
       },
       "config": {
-        "content": "#### ① Is this normal? · _fixed 7-day window in UTC — ignores the time picker_"
+        "content": "#### ① Is this normal? · _fixed 7-day window in UTC (ignores the time picker)_"
       }
     },
     {
@@ -589,7 +579,7 @@
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.indices IS NOT NULL | MV_EXPAND attributes.elasticsearch.audit.indices | WHERE ((attributes.elasticsearch.audit.indices LIKE \".*\" AND NOT attributes.elasticsearch.audit.indices LIKE \".ds-*\") OR attributes.elasticsearch.audit.indices LIKE \".ds-.*\") AND (attributes.elasticsearch.audit.action IS NULL OR NOT attributes.elasticsearch.audit.action LIKE \"*[*\") | STATS n = COUNT(*), seen = MAX(@timestamp) BY attributes.elasticsearch.audit.indices, action = attributes.elasticsearch.audit.action | WHERE NOT (LOCATE(attributes.elasticsearch.audit.indices, \"*\") > 0 OR STARTS_WITH(attributes.elasticsearch.audit.indices, \"<\")) | EVAL family = REPLACE(REPLACE(attributes.elasticsearch.audit.indices, \"\"\"^\\.ds-\"\"\", \"\"), \"\"\"[-.]?\\d{4}[.-]\\d{2}[.-]\\d{2}(-\\d+)?$\"\"\", \"\") | STATS events = SUM(n), indices = COUNT_DISTINCT(attributes.elasticsearch.audit.indices), actions = COUNT_DISTINCT(action), last_seen = MAX(seen), named_idx = MIN(attributes.elasticsearch.audit.indices) WHERE NOT attributes.elasticsearch.audit.indices LIKE \".ds-*\", any_idx = MIN(attributes.elasticsearch.audit.indices) BY family | EVAL `attributes.elasticsearch.audit.indices` = COALESCE(named_idx, any_idx) | DROP named_idx, any_idx | SORT events DESC, family | LIMIT 9"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.indices IS NOT NULL | MV_EXPAND attributes.elasticsearch.audit.indices | WHERE ((attributes.elasticsearch.audit.indices LIKE \".*\" AND NOT attributes.elasticsearch.audit.indices LIKE \".ds-*\") OR attributes.elasticsearch.audit.indices LIKE \".ds-.*\") AND (attributes.elasticsearch.audit.action IS NULL OR NOT attributes.elasticsearch.audit.action LIKE \"*[*\") | STATS n = COUNT(*), seen = MAX(@timestamp) BY attributes.elasticsearch.audit.indices, action = attributes.elasticsearch.audit.action | WHERE NOT (LOCATE(attributes.elasticsearch.audit.indices, \"*\") > 0 OR STARTS_WITH(attributes.elasticsearch.audit.indices, \"<\")) | EVAL family = REPLACE(REPLACE(attributes.elasticsearch.audit.indices, \"\"\"^\\.ds-\"\"\", \"\"), \"\"\"[-.]?\\d{4}[.-]\\d{2}[.-]\\d{2}(-\\d+)?$\"\"\", \"\") | INLINE STATS events = SUM(n), indices = COUNT_DISTINCT(attributes.elasticsearch.audit.indices), actions = COUNT_DISTINCT(action), last_seen = MAX(seen), named_idx = MIN(attributes.elasticsearch.audit.indices) WHERE NOT attributes.elasticsearch.audit.indices LIKE \".ds-*\", any_idx = MIN(attributes.elasticsearch.audit.indices) BY family | WHERE attributes.elasticsearch.audit.indices == COALESCE(named_idx, any_idx) | STATS events = MAX(events), indices = MAX(indices), actions = MAX(actions), last_seen = MAX(last_seen) BY attributes.elasticsearch.audit.indices, family | SORT events DESC, family | LIMIT 9"
         },
         "styling": {
           "density": {
@@ -732,7 +722,7 @@
       "config": {
         "ref_id": "cloud-audit-vega-13-session-gantt",
         "title": "Kibana browser sessions — last 24 hours, your time zone",
-        "description": "One bar per Kibana browser session in the last 24 hours, newest first — its length runs from the first to the last thing they did in it and its strength is how much it did, which are independent: a short session can carry far more activity than a long one left open and idle. Click a bar to set the dashboard's time range to that session (plus a minute either side); use the time picker's back arrow to return. Shift-click pins that identity across the suite. What an open browser tab does on its own — internal page requests, usage counters, point-in-time paging — is left out, exactly as in the Session records below, so a tab left open does not stretch a bar past the person's last action and every bar has records under it. Only Kibana browser sign-ins carry a session id: work through an API key or the Elasticsearch API has no session and draws no bar, so the dashed line marks the latest such event in the same 24 hours — activity after the last bar is real, it is just not a session. An identity that only works through the API has no bars, and that is the correct answer. Twelve most recent sessions, each labelled with who and when it started (with the weekday when that was not today); a session already open when the 24-hour window begins starts at the window's left edge and is labelled \"or earlier\", because its real start is outside the window. Times are in your browser's timezone, like the rest of Kibana. Fixed 24-hour window: does not follow the time picker."
+        "description": "One bar per Kibana browser session in the last 24 hours, newest first — its length runs from the first to the last thing they did in it and its strength is how much it did, which are independent: a short session can carry far more activity than a long one left open and idle. Click a bar to filter the dashboard to that session (a \"session: …\" pill on attributes.kibana.session.id) and to set the time range to the session plus a minute either side, so the session records directly below this timeline show exactly that session's events: those records follow the time picker, while this timeline stays on its fixed 24 hours. To return, remove the pill and set the time range again. The pill narrows every panel on the page to that session, so a panel of Elasticsearch events, which carry no session id, reads empty while it is on. Shift-click pins that identity by email across the suite instead. What an open browser tab does on its own — internal page requests, usage counters, point-in-time paging — is left out, exactly as in the session records below, so a tab left open does not stretch a bar past the person's last action and every bar has records under it. Only Kibana browser sign-ins carry a session id: work through an API key or the Elasticsearch API has no session and draws no bar, so the dashed line marks the latest such event in the same 24 hours — activity after the last bar is real, it is just not a session. An identity that only works through the API has no bars, and that is the correct answer. Twelve most recent sessions, each labelled with who and when it started (with the weekday when that was not today); a session already open when the 24-hour window begins starts at the window's left edge and is labelled \"or earlier\", because its real start is outside the window. Times are in your browser's timezone, like the rest of Kibana. Fixed 24-hour window: does not follow the time picker."
       }
     },
     {
@@ -747,7 +737,7 @@
       "config": {
         "ref_id": "cloud-audit-search-09-session-reconstruction",
         "title": "Session records · newest 1,000 at most (empty when none in range)",
-        "description": "The raw Kibana events behind the session timeline above, newest first and capped at the newest 1,000 — so \"1,000 results\" above the grid is that cap, not a count of the range — with the session, the object and the message Kibana wrote. Columns are cut to fit the panel: expand a row (the ⤢ at its left) to read the full session id, object name and message, or open the session in Discover. Like the timeline, it leaves out what an open browser tab does on its own — internal page requests, usage counters, point-in-time paging — so a session in the timeline always has records here, and an hour in which they only had Kibana open is empty. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email. Often empty over the default hour on a healthy project; widen the time range to see older rows."
+        "description": "The raw Kibana events behind the session timeline above, newest first and capped at the newest 1,000 — so \"1,000 results\" above the grid is that cap, not a count of the range — with the session, the object and the message Kibana wrote. To read one session, click its bar in the timeline above, or hover a cell of the attributes.kibana.session.id column (the full session id, under its field name so that the cell can filter) and choose Filter for value. Columns are cut to fit the panel: expand a row (the ⤢ at its left) to read the full session id, object name and message, or open the session in Discover. Like the timeline, it leaves out what an open browser tab does on its own — internal page requests, usage counters, point-in-time paging — so a session in the timeline always has records here, and an hour in which they only had Kibana open is empty. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email. Often empty over the default hour on a healthy project; widen the time range to see older rows."
       }
     }
   ]

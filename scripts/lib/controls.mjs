@@ -1,5 +1,5 @@
 /**
- * The dashboard control bar — four dropdowns that scope the whole suite.
+ * The dashboard control bar — three dropdowns that scope the whole suite: Project, Person (email), Client IP.
  *
  * Why this lives outside the dashboard definitions: `PUT /api/dashboards/{id}` is
  * Zod-strict and silently drops `controlGroupInput`, so the control bar cannot travel
@@ -16,13 +16,13 @@
  *
  * Field choices are driven by what the audit stream actually carries:
  *   attributes.project.name    the emitting serverless project — see CONTROLS below
- *   attributes.user.email      the reliable identity key, never null for a human
- *   attributes.user.full_name  a person's display name, but NULL for some identities, so it
- *                              can never be the only identity control
+ *   attributes.user.email      the identity control: the reliable key, never null for a human
  *   client.ip                  high-cardinality — too many to eyeball, which is the point of
  *                              a searchable dropdown rather than a table
  * `attributes.user.name` is deliberately NOT offered: it is a numeric id (e.g. 1234567890), not
- * a name. See esql/fragments.md.
+ * a name. See esql/fragments.md. `attributes.user.full_name` is not offered either (removed in
+ * 1.0.2): it was NULL for some identities, so a "Person (name)" dropdown silently missed people
+ * that the email dropdown always finds, and two person controls invited a contradictory pair.
  */
 import { cfg, nsId } from './env.mjs';
 import { stableUuid } from './ids.mjs';
@@ -47,9 +47,9 @@ export const dataViewObject = () => ({
  * Order is deliberate. Project leads because an audit project usually collects the audit
  * streams of SEVERAL serverless projects, and the chaining below is HIERARCHICAL: picking a
  * project narrows every dropdown after it to the people and addresses seen in that project.
- * Then name, because it is what a person asks for out loud, email second because it is what
- * actually resolves, IP last because it answers a different question ("who was at this
- * address") rather than "what did this person do".
+ * Then email, the identity control, because it is what actually resolves a person; IP last
+ * because it answers a different question ("who was at this address") rather than "what did
+ * this person do".
  *
  * attributes.project.* names the project that EMITTED the event, not the audit project that
  * stores it, and it is populated on every Elasticsearch and Kibana event (verified 2026-10-14,
@@ -63,7 +63,6 @@ export const dataViewObject = () => ({
  */
 export const CONTROLS = [
   { field: 'attributes.project.name',   title: 'Project',        width: 'medium', search: 'prefix' },
-  { field: 'attributes.user.full_name', title: 'Person (name)',  width: 'medium', search: 'prefix' },
   { field: 'attributes.user.email',     title: 'Person (email)', width: 'medium', search: 'prefix' },
   // 'wildcard', not 'prefix': prefix search on an `ip` field only matches whole octets, so
   // typing "100.64" returns nothing while "100.64.0.10" works. Wildcard matches substrings.
@@ -71,7 +70,8 @@ export const CONTROLS = [
 ];
 
 /** Deterministic per field, so redeploys do not churn control ids (and therefore do not
- *  orphan a selection the analyst has already made). */
+ *  orphan a selection the analyst has already made). Keyed on the field, not the position, so
+ *  removing a control (full_name, 1.0.2) left the others' ids and selections untouched. */
 const controlId = (field) => stableUuid(`cloud-audit-control:${field}`);
 
 /**

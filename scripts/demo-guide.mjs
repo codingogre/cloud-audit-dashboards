@@ -14,7 +14,8 @@
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { cfg, ROOT, nsId } from './lib/env.mjs';
+import { cfg, ROOT } from './lib/env.mjs';
+import { deployed, isDeployed, dashId } from './lib/suite.mjs';
 import { es } from './lib/http.mjs';
 import { success, info, detail, warn } from './lib/log.mjs';
 import { IDX, NOISE, BAND, BAND_KEYS, ACTOR, ACTOR_RESOLVE, CHANGE, TIME_TO } from './lib/panels.mjs';
@@ -36,18 +37,12 @@ const WINDOW = process.env.AUDIT_DEMO_WINDOW || 'now-1h';
 const WINDOW_LABEL = WINDOW === 'now-1h' ? 'Last 1 hour' : `Last ${WINDOW.replace('now-', '')}`;
 const HOURS = Number((WINDOW.match(/now-(\d+)h/) || [, 1])[1]);
 
-const DASHBOARDS = [
-  ['00-command-center', 'Command Center'],
-  ['01-identity-access', 'Identity & Access'],
-  ['02-kibana-objects', 'Kibana Object Forensics'],
-  ['03-data-access', 'Elasticsearch Data Access'],
-  ['04-security-anomalies', 'Security & Anomalies'],
-  ['05-geo-network', 'Geo & Network'],
-  ['06-platform-volume', 'Platform Volume'],
-  ['07-actor-360', 'Actor 360'],
-];
+// The dashboards this run deploys (lib/suite.mjs): Platform Volume only when opted in, so the guide
+// never sends a presenter to a dashboard that is not there.
+const DASHBOARDS = deployed();
+const PV = isDeployed('06-platform-volume');
 
-const link = (id) => `${cfg.kbs}/app/dashboards#/view/${nsId(`cloud-audit-${id}`)}?_g=(time:(from:${WINDOW},to:${TIME_TO}))`;
+const link = (name) => `${cfg.kbs}/app/dashboards#/view/${dashId(name)}?_g=(time:(from:${WINDOW},to:${TIME_TO}))`;
 
 /** Discover, with an ES|QL query already applied — the "show me this identity's hour" path. */
 const discover = (query) =>
@@ -238,11 +233,11 @@ export async function run(argv = []) {
       }),
       step('Pick an identity from the control bar', {
         mins: '1 min',
-        act: 'At the top of every dashboard there are four dropdowns — **Project**, **Person (name)**, **Person (email)** and **Client IP**. When the audit project collects several serverless projects, pick one under **Project** first and the other dropdowns narrow to it. Open **Person (name)**, type a few letters, choose someone. Every panel on the dashboard rescopes to them.',
-        say: 'An analyst should be able to pick a person rather than hunt for them. Name, email or client IP — every dashboard carries the same set, with Project first for audit projects that collect more than one serverless project. Names are the full names recorded for each identity, so you can search the way you would say it out loud.',
+        act: 'At the top of every dashboard there are three dropdowns — **Project**, **Person (email)** and **Client IP**. When the audit project collects several serverless projects, pick one under **Project** first and the other dropdowns narrow to it. Open **Person (email)**, type the first letters of an address, choose someone. Every panel on the dashboard rescopes to them.',
+        say: 'An analyst should be able to pick a person rather than hunt for them. Email or client IP — every dashboard carries the same set, with Project first for audit projects that collect more than one serverless project.',
         note: {
-          kind: 'tip', label: 'Why both name and email',
-          body: '`full_name` is null for some identities, so the name dropdown cannot be the only way in — the email dropdown is the one that never misses. Client IP is searchable because there are usually far too many to scroll.',
+          kind: 'tip', label: 'Why email and not name',
+          body: '`full_name` is null for some identities, so a name dropdown would silently miss people; the email dropdown is the one that never misses. Client IP is searchable because there are usually far too many to scroll.',
         },
       }),
       step('Carry that identity across the whole suite', {
@@ -301,7 +296,9 @@ export async function run(argv = []) {
     ['A panel sits on a loading spinner.',
      `Widening the picker makes the unfiltered actor-grouping panels slower, and a query already sent can keep running after you narrow it back. Return to **${WINDOW_LABEL}** and let the page settle rather than refreshing — each refresh adds work. To show history without widening, open **Actor 360**: its first band always reads the last seven days.`],
     ['Someone asks what the noise gate is hiding.',
-     'Open **Platform Volume**. It applies no gate and splits the stream into its four bands — infra health, query internals, authentication and signal — so every excluded event is still counted there. The gate only narrows the forensic views; do not claim more than the bands show.'],
+     PV
+       ? 'Open **Platform Volume**. It applies no gate and splits the stream into its four bands — infra health, query internals, authentication and signal — so every excluded event is still counted there. The gate only narrows the forensic views; do not claim more than the bands show.'
+       : 'Point at **Signal vs noise over time** on Command Center. It applies no gate and stacks the stream in its four bands — infra health, query internals, authentication and signal — so every excluded event is still counted there. The gate only narrows the forensic views; do not claim more than the bands show.'],
     ['Someone asks why an Elastic account is in their risk table.',
      'It is Elastic platform automation performing credential rotation on the project. That is why `actor_scope` exists. Filter to `tenant` and the table becomes their own identities.'],
     ['Someone challenges a headline number.',
@@ -339,7 +336,8 @@ export async function run(argv = []) {
     redact
       ? 'This copy is redacted. Real identities are visible on screen but masked in this document.'
       : '**Check the identity use case 1 will name before you show it.** It puts the owner of the busiest API key on screen by email, and the live dashboards are never masked. The point is a process gap, not a person — confirm that address is appropriate for this audience before you present.',
-    'Have the Platform Volume dashboard ready as the answer to "what are you filtering out?"',
+    PV ? 'Have the Platform Volume dashboard ready as the answer to "what are you filtering out?"'
+       : 'Know where Signal vs noise over time sits on Command Center: it is the answer to "what are you filtering out?"',
     'Run `./audit --queries`. A query left scanning from earlier work slows every panel you open, and nothing can cancel it on serverless — if one is listed as still scanning, start later rather than present on a loaded project.',
   ]);
 
@@ -381,7 +379,7 @@ ${toc}
 <h2 id="preflight">Pre-flight &mdash; thirty minutes before, not five</h2>
 <p class="proves"><strong>Why this matters:</strong> the only two ways this walkthrough goes wrong are a cold panel spinning while you talk, and a leftover filter pill quietly scoping every number you show.</p>
 ${preflight}
-${callout('warn', 'Drive at ' + WINDOW_LABEL, `${WINDOW_LABEL} is the readable view of right now: the actor-grouping panels are fastest there and it still carries mutations, denials and config changes. Do not widen the picker to reach history — **Actor 360**'s first band always shows the last seven days whatever the picker says, and with a person selected it is a baseline, a rank among the busiest identities and a weekly rhythm. For raw volume over a longer window, use **Platform Volume**, whose panels are counts rather than groupings.`)}
+${callout('warn', 'Drive at ' + WINDOW_LABEL, `${WINDOW_LABEL} is the readable view of right now: the actor-grouping panels are fastest there and it still carries mutations, denials and config changes. Do not widen the picker to reach history — **Actor 360**'s first band always shows the last seven days whatever the picker says, and with a person selected it is a baseline, a rank among the busiest identities and a weekly rhythm.${PV ? ' For raw volume over a longer window, use **Platform Volume**, whose panels are counts rather than groupings.' : ''}`)}
 
 ${body}
 

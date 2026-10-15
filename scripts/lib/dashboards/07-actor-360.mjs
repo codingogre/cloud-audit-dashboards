@@ -1,12 +1,9 @@
 /** 07 Actor 360 — see scripts/lib/definitions.mjs for how the suite is assembled. */
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { ROOT } from '../env.mjs';
 import {
   IDX, TIME, INDEX_FAMILY, IP_GEO, indexFamily, dash, kpi, table, vega, search, md, section, row, stack, resetIds, sized, filterable, grouped,
   SYS_INDEX, fitRows
 } from '../panels.mjs';
-import { riskScored, CHANGED, CHANGED_KEYS, CHANGED_DERIVE } from './shared.mjs';
+import { riskScored, CHANGED, CHANGED_KEYS, CHANGED_DERIVE, specDescription } from './shared.mjs';
 
 /**
  * One identity's whole footprint on one page — pick a person in the control bar and every panel
@@ -26,8 +23,6 @@ import { riskScored, CHANGED, CHANGED_KEYS, CHANGED_DERIVE } from './shared.mjs'
  * real attributes.user.email instead, which is also the only thing a filter pill can match.
  */
 
-/** The tooltip for a Vega panel is its spec's own description — one source, so they cannot disagree. */
-const specDescription = (ref) => JSON.parse(readFileSync(join(ROOT, 'vega', `${ref}.json`), 'utf8')).description;
 const vegaPanel = (ref, title) => (x, y, w, h) => vega(x, y, w, h, ref, title, specDescription(ref));
 
 /** Out to the topic dashboard that owns the dimension clicked. Stripped before the API sees it. */
@@ -113,7 +108,7 @@ const weightWords = (col) => `CASE(${WEIGHT_WORDS.map(([w, words]) => `${col} ==
  * the browser's zone like the rest of Kibana. Side by side they disagree by the viewer's UTC offset,
  * and nothing else on the page says which is which.
  */
-const ORIENTATION = `👤 **Pick a person in the control bar** and every panel becomes their story; with nobody selected it is the whole estate. **① Is this normal?** is a fixed 7 days in UTC · **② What they did** follows the time picker · **③ Evidence** ends in the raw records. Table times and the session timeline are in your time zone.`;
+const ORIENTATION = `👤 **Pick a person in the Person (email) control** and every panel becomes their story; with nobody selected it is the whole estate. **① Is this normal?** is a fixed 7 days in UTC · **② What they did** follows the time picker · **③ Evidence** ends in the raw records. Table times and the session timeline are in your time zone.`;
 
 /**
  * Why the Risk tile and the scoring table can disagree on a live stream, measured rather than guessed.
@@ -208,7 +203,7 @@ export function build() {
       ['weight', 'events', { column: 'severity', label: 'Risk', width: 180, summary: { type: 'sum', label: 'Sum, all rows' } }, 'last_seen'],
       'The receipts for the Risk tile: the Sum under Risk totals every row, scrolled into view or not, and is the tile\'s number over the same window. One row per scoring action and weight, largest first; Risk here is weight × events, and the tile\'s subtitle counts the rows. ' + RACE_NOTE + ' Click an action to pin it, then "Open in Security & Anomalies" to see who else does it — the pinned person and action combine, so clear the person pill first to compare.', { scroll: true, cut: false }))]]),
 
-    row(2, [[48, (x, y, w, h) => section(x, y, w, h, '① Is this normal?', 'fixed 7-day window in UTC — ignores the time picker')]]),
+    row(2, [[48, (x, y, w, h) => section(x, y, w, h, '① Is this normal?', 'fixed 7-day window in UTC (ignores the time picker)')]]),
     row(14, [
       [20, vegaPanel('08-actor-baseline-band', 'Is this normal for them? — hourly, last 7 days (UTC)')],
       [12, vegaPanel('12-actor-cohort', 'Where they rank — last 7 days')],
@@ -246,7 +241,14 @@ export function build() {
         [{ column: 'family', label: 'Index family' }], ['indices', 'events'],
         'Where their reads concentrate, busiest first. Dated daily indices and data-stream backing indices are folded into the family they belong to, so a date-suffixed series is one row and `Indices` says how many of its members were read. A request naming several indices counts once per index; request patterns such as * and date-math names are left out, and so are shard- and node-level repeats of a request (search[phase/query], bulk[s][p]), which Elasticsearch audits with the same index as the request itself. Every dot-prefixed family here is also a row of "System and hidden index reads", with the same counts. The audit stream itself usually tops the list, because every dashboard on this page reads it. This is the busiest few; the Index families tile above counts every family.')],
       [28, (x, y, w, h) => drillTo('cloud-audit-03-data-access', table(x, y, w, h, '⚠️ System and hidden index reads',
-        `FROM ${IDX} | ${TIME} | WHERE attributes.elasticsearch.audit.indices IS NOT NULL | MV_EXPAND attributes.elasticsearch.audit.indices | ${SYS_INDEX} | STATS n = COUNT(*), seen = MAX(@timestamp) BY attributes.elasticsearch.audit.indices, action = attributes.elasticsearch.audit.action | ${NOT_PATTERN} | EVAL family = ${INDEX_FAMILY} | STATS events = SUM(n), indices = COUNT_DISTINCT(attributes.elasticsearch.audit.indices), actions = COUNT_DISTINCT(action), last_seen = MAX(seen), named_idx = MIN(attributes.elasticsearch.audit.indices) WHERE NOT attributes.elasticsearch.audit.indices LIKE ".ds-*", any_idx = MIN(attributes.elasticsearch.audit.indices) BY family | EVAL \`attributes.elasticsearch.audit.indices\` = COALESCE(named_idx, any_idx) | DROP named_idx, any_idx | SORT events DESC, family | LIMIT ${fitRows(11)}`,
+        `FROM ${IDX} | ${TIME} | WHERE attributes.elasticsearch.audit.indices IS NOT NULL | MV_EXPAND attributes.elasticsearch.audit.indices | ${SYS_INDEX} | STATS n = COUNT(*), seen = MAX(@timestamp) BY attributes.elasticsearch.audit.indices, action = attributes.elasticsearch.audit.action | ${NOT_PATTERN} | EVAL family = ${INDEX_FAMILY} | INLINE STATS events = SUM(n), indices = COUNT_DISTINCT(attributes.elasticsearch.audit.indices), actions = COUNT_DISTINCT(action), last_seen = MAX(seen), named_idx = MIN(attributes.elasticsearch.audit.indices) WHERE NOT attributes.elasticsearch.audit.indices LIKE ".ds-*", any_idx = MIN(attributes.elasticsearch.audit.indices) BY family | WHERE attributes.elasticsearch.audit.indices == COALESCE(named_idx, any_idx) | STATS events = MAX(events), indices = MAX(indices), actions = MAX(actions), last_seen = MAX(last_seen) BY attributes.elasticsearch.audit.indices, family | SORT events DESC, family | LIMIT ${fitRows(11)}`,
+        // The index column is the GROUP KEY of the last STATS, never assigned by an EVAL. Through 1.0.2 it was
+        // `EVAL attributes.elasticsearch.audit.indices = COALESCE(named_idx, any_idx)` after a STATS BY family:
+        // Lens drew it as a link, but Kibana builds no filter from a column created at query time, so a click
+        // produced no filter, no "Apply filter" and therefore no drilldown menu at all (clicked in Playwright,
+        // 1.0.3). INLINE STATS computes the family totals on the grouped rows, the WHERE keeps the family's
+        // representative index, and the STATS BY that raw field dedupes it (one row per action before it).
+        // Same rows as before at 1h, 24h and 7d; ~190ms against ~115ms over 24h and 7 days on the live stream.
         // Two count columns at 70px (from 90) so the longest family member, .alerts-observability.threshold.alerts-default, fits at 1440px.
         // The index column flexes and takes the rest; 20/28 split with the family table for the same reason.
         [filterable('attributes.elasticsearch.audit.indices', { label: 'Index (one per family)' })], [sized('indices', 70), sized('actions', 70), 'events', 'last_seen'],
@@ -266,7 +268,7 @@ export function build() {
     row(2, [[48, (x, y, w, h) => section(x, y, w, h, '③ Evidence', 'session timeline is fixed at 24 hours · the records follow the time picker · your time zone')]]),
     row(7, [[48, vegaPanel('13-session-gantt', 'Kibana browser sessions — last 24 hours, your time zone')]]),
     row(12, [[48, (x, y, w, h) => search(x, y, w, h, '09-session-reconstruction', 'Session records · newest 1,000 at most',
-      'The raw Kibana events behind the session timeline above, newest first and capped at the newest 1,000 — so "1,000 results" above the grid is that cap, not a count of the range — with the session, the object and the message Kibana wrote. Columns are cut to fit the panel: expand a row (the ⤢ at its left) to read the full session id, object name and message, or open the session in Discover. Like the timeline, it leaves out what an open browser tab does on its own — internal page requests, usage counters, point-in-time paging — so a session in the timeline always has records here, and an hour in which they only had Kibana open is empty.', { empty: 'quiet' })]]),
+      'The raw Kibana events behind the session timeline above, newest first and capped at the newest 1,000 — so "1,000 results" above the grid is that cap, not a count of the range — with the session, the object and the message Kibana wrote. To read one session, click its bar in the timeline above, or hover a cell of the attributes.kibana.session.id column (the full session id, under its field name so that the cell can filter) and choose Filter for value. Columns are cut to fit the panel: expand a row (the ⤢ at its left) to read the full session id, object name and message, or open the session in Discover. Like the timeline, it leaves out what an open browser tab does on its own — internal page requests, usage counters, point-in-time paging — so a session in the timeline always has records here, and an hour in which they only had Kibana open is empty.', { empty: 'quiet' })]]),
   ]);
   return dash('cloud-audit-07-actor-360', '[Audit] 👤 Actor 360',
     'One identity’s complete footprint — pick a person in the control bar and every panel becomes their story.', P);

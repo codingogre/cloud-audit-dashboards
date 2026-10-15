@@ -3,6 +3,16 @@ import {
   RISK, VERB, CSS_NAV, RISK_PREFILTER, RISK_KEYS, RISK_RESTORE, CHANGE, OBJ_GROK, OBJ_NAME, OBJ_TYPE, OUTCOME,
   filterable
 } from '../panels.mjs';
+import { isDeployed } from '../suite.mjs';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { ROOT } from '../env.mjs';
+
+/**
+ * The tooltip for a Vega panel is its spec's own description: one source, so they cannot disagree. A spec
+ * shown on more than one page (13, the session timeline, on 02 and 07) words it for every page it is on.
+ */
+export const specDescription = (ref) => JSON.parse(readFileSync(join(ROOT, 'vega', `${ref}.json`), 'utf8')).description;
 
 /**
  * The identity column, click-to-filter. Clicking a cell pins a filter pill on the real
@@ -29,11 +39,15 @@ export const WHO = filterable('attributes.user.email');
  * visible at 1440px: round 5's longer version, with a code chip, pushed it under the panel edge.
  * Never put sentence punctuation between two code chips: round 5's "the numeric `user.name`. `_4KEO…`"
  * rendered as two chips joined by a stray period and read as if user.name were the Cloud key.
+ *
+ * A function, because Platform Volume is opt-in (lib/suite.mjs): the pointer to its unfiltered totals
+ * is there only when it is deployed, so the legend never names a dashboard the nav strip does not have.
  */
-export const LEGEND_MD = CSS_NAV + `
+export const legendMd = () => CSS_NAV + `
 ### How to read this suite
 
-**Noise gate is ON** unless a title says *all traffic*: health pings, query internals, API key lookups, page loads, bulk sign-in events and this suite's own traffic are left out; unfiltered totals are on **📊 Platform Volume**.
+**Noise gate is ON** unless a title says *all traffic*: health pings, query internals, API key lookups, page loads, bulk sign-in events and this suite's own traffic are left out${
+  isDeployed('06-platform-volume') ? '; unfiltered totals are on **📊 Platform Volume**' : ''}.
 
 **Identity** is the email, else the API key name, else the numeric \`user.name\`; a Cloud API key has only an id and reads \`_4KEO… · Cloud API key\` everywhere.
 

@@ -3,6 +3,26 @@
 `CLAUDE.md`-style durable context lives in `README.md` and `esql/fragments.md` and wins on
 conflict. This file is "where we are right now" and should be assumed stale.
 
+## Release 1.0.3 — 1.0.2 merged under round 6, plus session filtering, 2026-10-15
+
+- **Merge:** release-1.0.2 (7cfd933) merged into ui-polish. 1.0.2 wins on ids (`elastic_cloud-audit-dashboard`,
+  `RETIRED_IDS`), nav order, Platform Volume opt-in, the 3-control bar and `drilldownRefs()`; round 6's
+  API key read gate, cleanup score 0, `TIME_TO` now-1m, `FAILED_OR_DENIED`, `EDGE_NOTE` and 00's Lens
+  time charts stand. `SUITE_SELF` matches both `cloud-audit-*` and `elastic_cloud-audit-*`. Generated
+  `dashboards/*.json` re-emitted; no em dash in any markdown panel.
+- **Session click (vega/13, on 07 and 02):** a click pins `session: <8 chars>…` (match_phrase on
+  `attributes.kibana.session.id`) and zooms the picker to the session ±1 min; the zoom is sent from a
+  Vega timer 0.7s/1.4s later (see README, *Vega panels filter too*). Shift-click still pins the email.
+  Clicked in Playwright on r103: pill present, time range changed, records show one session only.
+- **searches/09** shows the raw `attributes.kibana.session.id` (full id), so a dashboard cell offers
+  Filter for/out (clicked: pill added, 1,000 → 845 rows, one session). No friendlier header exists in
+  9.6: `grid.columns.<name>` accepts only `width`, and `fieldAttrs.customLabel` is ignored in ES|QL mode.
+- **02** has the session timeline (full width, h=7) directly above Session reconstruction.
+- **07 "System and hidden index reads"** opened no menu because its index column was assigned by an
+  EVAL after `STATS BY family`; Kibana builds no filter from a query-time column. It is now the group key
+  (INLINE STATS); clicked: "Apply filter to current view / Open in Elasticsearch Data Access".
+  `layout.mjs` `checkClickFilters` fails any click-to-filter column the query assigns.
+
 ## Round 6 — the human's decisions, applied in shared code, 2026-10-15
 
 Per-dashboard fixers apply these; rules in `README.md` → *Presentation conventions*, fragments in
@@ -28,6 +48,33 @@ Per-dashboard fixers apply these; rules in `README.md` → *Presentation convent
 - **LEGEND_MD**: no punctuation between two code chips; the noise sentence names API key lookups.
 - Still open: naming the Cloud API key (label stays `_4KEO… · Cloud API key`), the Geo coverage
   denominator, and whether RISK should also drop realm_authentication_failed traces (still scored 40).
+
+## Release 1.0.2 — product requests on top of 1.0.1, 2026-10-15
+
+Round 6 follows as 1.0.3. Dashboard ids, nav order and the opt-in set now live in `scripts/lib/suite.mjs`.
+
+- **Command Center's id is `elastic_cloud-audit-dashboard`** (the Cloud UI's *Log delivery* page links to
+  it): `<kibana>/s/<space>/app/dashboards#/view/elastic_cloud-audit-dashboard`. The source stays
+  `00-command-center.mjs/.json`; every other id is unchanged. `nsId()` namespaces it as
+  `elastic_cloud-audit-<ns>-dashboard` and is now idempotent. `SUITE_SELF` / `SUITE_INSTALL_URL` also
+  match `elastic_cloud-audit-*`, so views and installs of Command Center stay noise. `--dashboards` reads
+  and removes the pre-1.0.2 `cloud-audit-00-command-center` from the space it deploys to.
+- **Nav order:** Command Center, Actor 360, Identity & Access, Kibana Object Forensics, Elasticsearch
+  Data Access, Security & Anomalies, Geo & Network, then Platform Volume when deployed.
+- **No em dashes in markdown panels** (legend, 06 band note, 07 section headers). Titles, descriptions
+  and other text were not changed. There is no lint rule; a unit test covers the markdown panels.
+- **Platform Volume is opt-in:** `--with platform-volume` on any command, or `AUDIT_WITH=platform-volume`.
+  Without it: no tab, no drilldown, and no legend or tooltip text that mentions it. `dashboards/*.json`
+  is the default seven, and `--dashboards` removes a 06 left in the space.
+- **Control bar is Project, Person (email), Client IP.** The Person (name) control
+  (`attributes.user.full_name`, null for some identities) is gone; chaining stays HIERARCHICAL and
+  `controlId()` is keyed on the field, so the remaining controls keep their ids and selections.
+- **Drilldowns open their target again.** Through 1.0.1 every "Open in …" drilldown landed on an
+  empty `#/create` dashboard (clicked in Playwright on production and on a private deploy): Kibana
+  navigates by a `<panelIndex>:drilldown:DASHBOARD_TO_DASHBOARD_DRILLDOWN:<eventId>:dashboardId`
+  reference, not the inline `dashboardId`. The post-pass now adds it (`drilldownRefs()`).
+  Still open: on Actor 360, clicking a row of *System and hidden index reads* opens no menu at all,
+  so its drilldown to Data Access cannot fire. That panel is unchanged since 1.0.1; left for 1.0.3.
 
 ## Round 5 — cross-cutting fixes from the round-4 production review, 2026-10-15
 

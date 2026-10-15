@@ -18,14 +18,15 @@
  * dashboard. Note the ordering constraint: the PUT passes above wipe both every time, so
  * this post-pass is not an install step, it is part of every deploy.
  */
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { cfg, ROOT, nsId } from './lib/env.mjs';
+import { cfg, ROOT } from './lib/env.mjs';
+import { dashId, strays, SUITE } from './lib/suite.mjs';
 import { kb } from './lib/http.mjs';
 import { success, detail, info } from './lib/log.mjs';
 import { buildAll } from './lib/definitions.mjs';
 import { controlGroup, dataViewObject, isControlRef, CONTROLS } from './lib/controls.mjs';
-import { panelDrilldown, hasFilterableColumn, ACTOR_360 } from './lib/drilldowns.mjs';
+import { panelDrilldown, hasFilterableColumn, ACTOR_360, drilldownRefs, isDrilldownRef } from './lib/drilldowns.mjs';
 import { checkLayout } from './lib/layout.mjs';
 
 /**
@@ -51,6 +52,9 @@ export function emit() {
   for (const [name, def] of Object.entries(all)) {
     writeFileSync(join(ROOT, 'dashboards', `${name}.json`), JSON.stringify(payload(def), null, 2) + '\n');
   }
+  // The files are this run's set and nothing else: an opt-in left out has no payload, and a stale copy
+  // of it would carry a nav strip that no longer matches the others.
+  for (const { name } of SUITE.filter((d) => !all[d.name])) rmSync(join(ROOT, 'dashboards', `${name}.json`), { force: true });
   return all;
 }
 
@@ -66,7 +70,7 @@ async function applyImportOnlyState(all) {
   let vegaTotal = 0;
   let drillTotal = 0;
   for (const [name, def] of Object.entries(all)) {
-    const id = nsId(`cloud-audit-${name}`);
+    const id = dashId(name);
     const vegaPanels = Object.fromEntries(
       def.panels.filter((p) => p.type === 'vis' && p.config?.ref_id).map((p) => [p.id, p.config.ref_id]));
     // Drilldowns fire on FILTER_TRIGGER, so they belong only on panels that already carry a
@@ -79,7 +83,7 @@ async function applyImportOnlyState(all) {
     const panels = JSON.parse(obj.attributes.panelsJSON);
     // Drop any control references from a previous deploy before re-adding, or each run
     // appends a duplicate set and the import eventually rejects the object.
-    let refs = (obj.references || []).filter((r) => !isControlRef(r.name));
+    let refs = (obj.references || []).filter((r) => !isControlRef(r.name) && !isDrilldownRef(r.name));
     let changed = 0;
     for (const p of panels) {
       const vid = vegaPanels[p.panelIndex];
@@ -101,6 +105,7 @@ async function applyImportOnlyState(all) {
       if (!drillPanels.has(p.panelIndex)) continue;
       p.embeddableConfig = p.embeddableConfig || {};
       p.embeddableConfig.enhancements = panelDrilldown(id, p.panelIndex, drillPanels.get(p.panelIndex));
+      refs.push(...drilldownRefs(p.panelIndex, p.embeddableConfig.enhancements));
       drilled++;
     }
     obj.attributes.panelsJSON = JSON.stringify(panels);
@@ -114,20 +119,37 @@ async function applyImportOnlyState(all) {
   return { vegaTotal, drillTotal };
 }
 
+/**
+ * A suite dashboard this run does not deploy must not stay behind in the space: its nav strip would
+ * still list the old set, and a retired id still links to dashboards by their old ids. That is the
+ * pre-1.0.2 Command Center id (cloud-audit-00-command-center, now elastic_cloud-audit-dashboard), and Platform
+ * Volume when it is not opted in. Only those exact ids are touched, and each is read first.
+ */
+async function removeStrays() {
+  for (const id of strays()) {
+    const r = await kb.sRaw(`/api/dashboards/${id}`, { method: 'GET' });
+    if (r.status === 404) continue;
+    const d = await kb.sRaw(`/api/dashboards/${id}`, { method: 'DELETE' });
+    if (!d.ok && d.status !== 404) throw new Error(`could not remove stray dashboard ${id}: ${d.status}`);
+    info(`removed ${id}: not in this deploy's set (retired id, or an opt-in left out)`);
+  }
+}
+
 export async function run() {
   const all = emit();
   detail(`generated ${Object.keys(all).length} dashboard definitions`);
 
   for (const pass of [1, 2]) {
     for (const [name, def] of Object.entries(all)) {
-      await kb.sPut(`/api/dashboards/${nsId(`cloud-audit-${name}`)}`, payload(def));
+      await kb.sPut(`/api/dashboards/${dashId(name)}`, payload(def));
     }
     if (pass === 1) info('pass 1 complete — creating dashboards');
   }
-  for (const name of Object.keys(all)) detail(nsId(`cloud-audit-${name}`));
+  for (const name of Object.keys(all)) detail(dashId(name));
 
   const { vegaTotal, drillTotal } = await applyImportOnlyState(all);
   success(`${Object.keys(all).length} dashboards deployed to space "${cfg.space}"`
     + ` (${vegaTotal} Vega re-pointed, ${CONTROLS.length} controls each, ${drillTotal} drilldowns)`);
-  info(`Open: ${cfg.kbs}/app/dashboards#/view/${nsId('cloud-audit-00-command-center')}`);
+  await removeStrays();
+  info(`Open: ${cfg.kbs}/app/dashboards#/view/${dashId('00-command-center')}`);
 }

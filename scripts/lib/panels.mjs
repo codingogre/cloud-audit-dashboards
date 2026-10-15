@@ -52,6 +52,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { cfg, nsId, ROOT } from './env.mjs';
+import { deployed } from './suite.mjs';
 
 /** The audit stream, from config — one definition, so a rename is an .env change, not a code change. */
 export const IDX = cfg.dataStream;
@@ -548,8 +549,9 @@ export const RISK_RESTORE =
  *                   saved_object_find of `index-pattern` (the logs-* / metrics-* default data-view check,
  *                   the workflows data views): 2,021 each in 24h, one per page load, by every viewer and
  *                   by the verify renderer. Reading, creating or changing a particular data view stays.
- *   The suite       (SUITE_SELF) what the suite does to its own saved objects — `cloud-audit-*`, which
- *                   covers every AUDIT_ID_NS namespace too:
+ *   The suite       (SUITE_SELF) what the suite does to its own saved objects — `cloud-audit-*`, plus
+ *                   Command Center's `elastic_cloud-audit-dashboard` (1.0.2, the id the Cloud UI links
+ *                   to) as `elastic_cloud-audit-*`; both cover every AUDIT_ID_NS namespace too:
  *                     · a READ (get, resolve, find) by anyone: "User has accessed dashboard
  *                       [id=cloud-audit-…]" is the suite watching itself be watched, one per panel
  *                       load per viewer;
@@ -632,14 +634,14 @@ export const KIBANA_PLUMBING_URL =
  * an import or export touches is audited again as its own saved_object_* event, and that is where the
  * session test applies.
  */
-export const SUITE_INSTALL_URL = 'https?://[^/]+(/s/[^/]+)?/api/(saved_objects/(_import|_export)|[^?]*/cloud-audit-).*';
+export const SUITE_INSTALL_URL = 'https?://[^/]+(/s/[^/]+)?/api/(saved_objects/(_import|_export)|[^?]*/(elastic_)?cloud-audit-).*';
 
 /**
  * SUITE_SELF: the suite's own saved objects, read by anyone or touched with no browser session. The
  * session test is `IS NULL`, so it never yields null.
  */
 export const SUITE_SELF =
-  '(attributes.kibana.saved_object.id IS NOT NULL AND attributes.kibana.saved_object.id LIKE "cloud-audit-*" ' +
+  '(attributes.kibana.saved_object.id IS NOT NULL AND (attributes.kibana.saved_object.id LIKE "cloud-audit-*" OR attributes.kibana.saved_object.id LIKE "elastic_cloud-audit-*") ' +
   'AND (attributes.event.action IN ("saved_object_get","saved_object_resolve","saved_object_find") OR attributes.kibana.session.id IS NULL))';
 
 export const KIBANA_INTERNALS =
@@ -786,16 +788,12 @@ export const MUT =
   'WHERE attributes.event.action LIKE "*_create" OR attributes.event.action LIKE "*_update" ' +
   'OR attributes.event.action LIKE "*_delete"';;
 
-export const DASH = [
-  ['cloud-audit-00-command-center',     '\u{1F39B}️  Command Center'],
-  ['cloud-audit-01-identity-access',    '\u{1F510}  Identity & Access'],
-  ['cloud-audit-02-kibana-objects',     '\u{1F5C2}️  Kibana Object Forensics'],
-  ['cloud-audit-03-data-access',        '\u{1F50E}  Elasticsearch Data Access'],
-  ['cloud-audit-04-security-anomalies', '\u{1F6A8}  Security & Anomalies'],
-  ['cloud-audit-05-geo-network',        '\u{1F30D}  Geo & Network'],
-  ['cloud-audit-06-platform-volume',    '\u{1F4CA}  Platform Volume'],
-  ['cloud-audit-07-actor-360',          '\u{1F464}  Actor 360'],
-];
+/**
+ * The navigation strip's entries, in order: the dashboards this run deploys (see lib/suite.mjs, which
+ * owns the order, the ids and the Platform Volume opt-in). A function, not a constant, because the set
+ * depends on AUDIT_WITH at build time.
+ */
+export const navDashes = () => deployed().map((d) => [d.id, d.label]);
 
 let seq = 0;
 export const resetIds = () => { seq = 0; };
@@ -1437,11 +1435,11 @@ export const links = (x, y, w, h, current, layout = 'horizontal') => ({
      * story rests on it.
      */
     /**
-     * All eight, in the same order on every dashboard. Dropping the current one shifted every
+     * Every deployed dashboard, in the same order on every dashboard. Dropping the current one shifted every
      * link after it, so the bar re-ordered itself depending on where you were. Kibana renders a
      * link to the dashboard you are on as the current item, which doubles as "you are here".
      */
-    links: DASH.map(([d, label]) => ({
+    links: navDashes().map(([d, label]) => ({
       type: 'dashboardLink', destination: nsId(d), label,
       options: { use_filters: true, use_time_range: true, open_in_new_tab: false },
     })),

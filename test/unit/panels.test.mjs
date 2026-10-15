@@ -289,3 +289,15 @@ test('round 6: one failed sign-in counts once on 01 and 04 (no per-realm traces)
     assert.ok(!/IN \(\\"authentication_failed\\",\\"realm_authentication_failed\\"/.test(qs), name);
   }
 });
+
+test('checkClickFilters() rejects a click-to-filter column the query assigns, and passes a grouped raw field', async () => {
+  const { checkClickFilters } = await import('../../scripts/lib/layout.mjs');
+  const panel = (query, column) => ({ id: 'p', config: { title: 't', data_source: { query }, rows: [{ column, click_filter: true }] } });
+  const run = (q, c) => { const problems = []; checkClickFilters('d', [panel(q, c)], problems); return problems; };
+  const F = 'attributes.elasticsearch.audit.indices';
+  assert.equal(run(`FROM x | STATS a = MIN(${F}) BY family | EVAL \`${F}\` = COALESCE(a, "") | LIMIT 9`, F).length, 1);
+  assert.equal(run(`FROM x | STATS n = COUNT(*), ${F} = MIN(y) BY family`, F).length, 1);
+  assert.equal(run(`FROM x | STATS n = COUNT(*) BY y | RENAME y AS ${F}`, F).length, 1);
+  assert.equal(run(`FROM x | INLINE STATS m = MIN(${F}) BY family | WHERE ${F} == m | STATS n = MAX(n) BY ${F}, family`, F).length, 0);
+  assert.equal(run('FROM x | STATS events = COUNT(*) BY attributes.user.email | SORT events DESC', 'attributes.user.email').length, 0);
+});

@@ -50,5 +50,15 @@ export const cfg = {
   ROOT,
 };
 
-/** A `cloud-audit-…` id in the active namespace (identity when AUDIT_ID_NS is unset). */
-export const nsId = (id) => id.replace(/^cloud-audit(?=-)/, cfg.ns);
+/**
+ * A `cloud-audit-…` id in the active namespace (identity when AUDIT_ID_NS is unset). Command Center's
+ * `elastic_cloud-audit-dashboard` (the id the Cloud UI links to) keeps its `elastic_` prefix and is
+ * namespaced the same way: `elastic_cloud-audit-<ns>-dashboard`.
+ */
+export const nsId = (id) => {
+  // Idempotent: an id already in the namespace is returned as is, so a caller holding a deployed id
+  // (ACTOR_360, a dashId()) cannot namespace it twice into `cloud-audit-<ns>-<ns>-…`.
+  const bare = id.replace(/^elastic_/, '');
+  if (process.env.AUDIT_ID_NS && bare.startsWith(`${cfg.ns}-`)) return id;
+  return id.replace(/^(elastic_)?cloud-audit(?=-)/, (_, e = '') => `${e}${cfg.ns}`);
+};

@@ -5,9 +5,13 @@
  * same _export -> mutate -> _import post-pass in scripts/dashboards.mjs.
  *
  * Shape verified empirically against Kibana 9.6.0 serverless: attach `enhancements.dynamicActions`
- * to a panel's embeddableConfig, import, export back. The whole structure survives verbatim and —
- * unlike the control group's data view — `dashboardId` stays INLINE in config; Kibana extracts no
- * reference for it, so there is nothing extra to add to `references`.
+ * to a panel's embeddableConfig, import, export back. The structure survives verbatim, `dashboardId`
+ * included, BUT that inline id is not what the dashboard app navigates by. On load Kibana injects
+ * the target from a reference named `<panelIndex>:drilldown:DASHBOARD_TO_DASHBOARD_DRILLDOWN:
+ * <eventId>:dashboardId`; with no such reference the target is blank and "Open in …" lands on an
+ * empty `#/create` dashboard. Through 1.0.1 every suite drilldown did exactly that (clicked in
+ * Playwright, 2026-10-15, on production and on a private deploy). drilldownRefs() supplies the
+ * reference, and the inline id stays as well, matching what Kibana itself exports.
  *
  * FILTER_TRIGGER is the click-to-filter trigger, so the drilldown appears exactly where an
  * identity cell is already clickable. That is why it is attached only to panels carrying a
@@ -16,7 +20,7 @@
  */
 import { stableUuid } from './ids.mjs';
 import { nsId } from './env.mjs';
-import { DASH } from './panels.mjs';
+import { SUITE, deployed } from './suite.mjs';
 
 export const ACTOR_360 = nsId('cloud-audit-07-actor-360');
 
@@ -34,10 +38,21 @@ export const hasFilterableColumn = (panel) =>
  * investigated. The Actor 360 seed carries no destination suffix, so adding outbound drilldowns did
  * not change the ids of the inbound ones.
  */
+/** A drilldown reference name ends in this; the post-pass drops stale ones before re-adding. */
+export const isDrilldownRef = (name) => /:drilldown:DASHBOARD_TO_DASHBOARD_DRILLDOWN:[^:]+:dashboardId$/.test(name);
+
+/** The references Kibana resolves a panel's dashboard drilldowns through (see the header). */
+export const drilldownRefs = (panelIndex, enhancements) => (enhancements?.dynamicActions?.events || [])
+  .filter((ev) => ev.action?.factoryId === 'DASHBOARD_TO_DASHBOARD_DRILLDOWN')
+  .map((ev) => ({ name: `${panelIndex}:drilldown:DASHBOARD_TO_DASHBOARD_DRILLDOWN:${ev.eventId}:dashboardId`, type: 'dashboard', id: ev.action.config.dashboardId }));
+
 export function panelDrilldown(dashboardId, panelId, dest = ACTOR_360) {
-  // Destinations are authored as the deployed `cloud-audit-…` ids; see cfg.ns.
+  // Destinations are authored as the deployed `cloud-audit-…` ids (see cfg.ns); the default, ACTOR_360,
+  // is already namespaced, and nsId() leaves a namespaced id alone.
   const destination = nsId(dest);
-  const label = DASH.find(([id]) => nsId(id) === destination)?.[1].replace(/^\S+\s+/, '') || 'Actor 360';
+  // A drilldown to a dashboard this run does not deploy (an opt-in left out) would open "not found".
+  if (!deployed().some((d) => nsId(d.id) === destination)) throw new Error(`drilldown ${dashboardId}/${panelId} -> ${destination}: not a deployed dashboard`);
+  const label = SUITE.find((d) => nsId(d.id) === destination).label.replace(/^\S+\s+/, '');
   const seed = destination === ACTOR_360
     ? `cloud-audit-drilldown:${dashboardId}:${panelId}`
     : `cloud-audit-drilldown:${dashboardId}:${panelId}:${destination}`;

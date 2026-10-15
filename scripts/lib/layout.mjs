@@ -417,6 +417,25 @@ function checkRows(name, panels, problems) {
 }
 
 /**
+ * CLICK FILTERS. A click-to-filter column must reach the table as the raw field: grouped on it, or kept
+ * as it is. Kibana builds no filter from a column the query creates (an EVAL, a STATS aggregate or a
+ * RENAME that assigns the name), even when the name is a real field: Lens still draws the cell as a link,
+ * but a click yields no filter, so neither "Apply filter" nor any drilldown appears. 07's "System and
+ * hidden index reads" shipped that way through 1.0.2 (clicked in Playwright, 1.0.3).
+ */
+export function checkClickFilters(name, panels, problems) {
+  const esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  for (const p of panels) {
+    const q = p.config?.data_source?.query || '';
+    for (const r of p.config?.rows || []) {
+      if (!r?.click_filter) continue;
+      const assigned = new RegExp(`(\\||,|\\bEVAL)\\s*\`?${esc(r.column)}\`?\\s*=(?!=)|\\bAS\\s+\`?${esc(r.column)}\`?(\\s|,|$)`).test(q);
+      if (assigned) problems.push(`${name}: panel ${p.id} "${p.config.title}" assigns its click-to-filter column ${r.column} in the query — Kibana builds no filter from a column created at query time, so a click does nothing; group on the raw field instead`);
+    }
+  }
+}
+
+/**
  * TITLES (panels.mjs, CUT). Every panel title is shown at every time range and every row count, so it
  * may state only what is true at all of them. Three forms were false at some window in the round-5
  * review, and are rejected on every panel type (tables, charts, Vega, Discover sessions):
@@ -483,6 +502,7 @@ export function checkLayout(all) {
     checkMarkdown(name, panels, problems);
     checkCompleteness(name, panels, problems);
     checkRows(name, panels, problems);
+    checkClickFilters(name, panels, problems);
     checkTitles(name, panels, problems);
     checkEmptyWording(name, panels, problems);
     rows.push(`${name}: panels=${panels.length} rows=${maxY}`);

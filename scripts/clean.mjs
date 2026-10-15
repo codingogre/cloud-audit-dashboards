@@ -9,15 +9,17 @@
 import { cfg, nsId } from './lib/env.mjs';
 import { kb, es } from './lib/http.mjs';
 import { success, info, warn, detail } from './lib/log.mjs';
-import { buildAll } from './lib/definitions.mjs';
+import { SUITE, RETIRED_IDS } from './lib/suite.mjs';
 import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { ROOT } from './lib/env.mjs';
 import { DATA_VIEW_ID } from './lib/controls.mjs';
 
 async function cleanDashboards() {
-  for (const name of Object.keys(buildAll())) {
-    const id = nsId(`cloud-audit-${name}`);
+  // Every suite dashboard, opted in or not, and every id an earlier release used: --clean removes what
+  // any deploy could have left, not just this run's set. A 404 is simply "was not there".
+  const ids = [...SUITE.map((d) => nsId(d.id)), ...RETIRED_IDS.map(nsId)];
+  for (const id of ids) {
     const r = await kb.sRaw(`/api/dashboards/${id}`, { method: 'DELETE' });
     detail(`dashboard ${id}: ${r.status}`);
   }
@@ -33,7 +35,7 @@ async function cleanDashboards() {
   await kb.raw(`/s/${cfg.space}/api/saved_objects/_bulk_delete?force=true`, {
     method: 'POST', body: JSON.stringify(objs), headers: { 'Content-Type': 'application/json' },
   });
-  success(`removed ${Object.keys(buildAll()).length} dashboards and ${objs.length} saved objects`);
+  success(`removed up to ${ids.length} dashboards and ${objs.length} saved objects`);
 }
 
 /**
