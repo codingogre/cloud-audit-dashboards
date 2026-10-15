@@ -1,105 +1,1044 @@
 {
-  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
-  "description": "The audit firehose, stacked by band. Signal is what the forensic dashboards show.",
-  "title": { "text": { "expr": "length(data('rows')) ? '' : 'No activity for this selection in this time range'" } },
+  "$schema": "https://vega.github.io/schema/vega/v5.json",
+  "description": "The audit firehose by band, one bucket per bar. On a tall panel (Platform Volume) three charts share one time axis: events stacked by band, Signal alone on its own scale, and each bucket as 100% with lulls marked; on a short one (Command Center) the stacked events only. Signal is what the forensic dashboards show.",
   "autosize": {
     "type": "fit",
     "contains": "padding"
   },
+  "padding": 4,
   "config": {
     "axis": {
       "labelFontSize": 11,
       "titleFontSize": 11,
       "labelFont": "\"Elastic UI Numeric\", Inter, \"system-ui\", Helvetica, Arial, sans-serif"
     },
-    "view": {
-      "stroke": null
-    },
-    "title": { "fontSize": 12, "fontWeight": 500, "anchor": "start" },
     "legend": {
-      "labelFontSize": 11,
+      "labelFontSize": 12,
       "titleFontSize": 11
     }
   },
-  "data": {
-    "name": "rows",
-    "url": {
-      "%type%": "esql",
-      "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS n = COUNT(*) BY ts = BUCKET(@timestamp, 75, ?_tstart, ?_tend), attributes.elasticsearch.audit.action, attributes.event.action, kib_internal = (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\",\"space_get\",\"space_find\") OR (attributes.event.action == \"http_request\" AND attributes.url.original IS NOT NULL AND attributes.url.original RLIKE \"https?://[^/]+(/s/[^/]+)?/((internal|translations|app)/.*|api/content_management/rpc/(get|search|mget|bulkGet).*|bootstrap(-anonymous)?[.]js.*|api/(core|licensing|banners|ui_counters)/.*|api/spaces/space([?].*)?)|https?://[^/]+(/s/[^/]+)?/api/(saved_objects/(_import|_export)|[^?]*/cloud-audit-).*\") OR (attributes.kibana.saved_object.type IS NOT NULL AND ((attributes.event.action == \"saved_object_get\" AND attributes.kibana.saved_object.type IN (\"config\",\"config-global\")) OR (attributes.event.action == \"saved_object_find\" AND attributes.kibana.saved_object.type == \"index-pattern\"))) OR (attributes.kibana.saved_object.id IS NOT NULL AND attributes.kibana.saved_object.id LIKE \"cloud-audit-*\" AND (attributes.event.action IN (\"saved_object_get\",\"saved_object_resolve\",\"saved_object_find\") OR attributes.kibana.session.id IS NULL))) | EVAL band = CASE(attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\"), \"infra-noise\", attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/msearch*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/scroll*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/esql*\" OR attributes.elasticsearch.audit.action LIKE \"indices:admin/esql/*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/field_caps*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/async_search/*\" OR attributes.elasticsearch.audit.action LIKE \"indices:admin/resolve/*\" OR attributes.elasticsearch.audit.action == \"indices:admin/shards/search_shards\" OR attributes.elasticsearch.audit.action LIKE \"cluster:monitor/xpack/esql/*\" OR attributes.elasticsearch.audit.action IN (\"cluster:monitor/project/tags\", \"cluster:monitor/xpack/inference/get\", \"cluster:admin/xpack/security/api_key/get\", \"cluster:admin/xpack/security/api_key/query\"), \"query-noise\", kib_internal, \"query-noise\", attributes.event.action == \"connection_granted\", \"query-noise\", attributes.event.action == \"authentication_success\", \"authn-volume\", \"signal\") | STATS events = SUM(n) BY ts, band | EVAL band = CASE(band == \"signal\", \"Signal\", band == \"authn-volume\", \"Auth success\", band == \"query-noise\", \"Query internals\", \"Infra health\") | EVAL t0 = TO_DATETIME(?_tstart), t1 = TO_DATETIME(?_tend) | SORT ts ASC",
-      "%timefield%": "@timestamp",
-      "%context%": true
-    }
-  },
-  "transform": [
-    { "impute": "events", "key": "ts", "groupby": ["band"], "value": 0 },
-    { "calculate": "indexof(['Signal', 'Auth success', 'Query internals', 'Infra health'], datum.band)", "as": "ord" },
-    { "stack": "events", "groupby": ["ts"], "sort": [{ "field": "ord", "order": "ascending" }], "as": ["y0", "y1"] },
-    { "joinaggregate": [{ "op": "sum", "field": "events", "as": "total" }], "groupby": ["ts"] },
-    { "window": [{ "op": "lag", "field": "ts", "as": "ts_prev" }], "groupby": ["band"], "sort": [{ "field": "ts", "order": "ascending" }] },
-    { "calculate": "datum.ts_prev ? toDate(datum.ts) - toDate(datum.ts_prev) : null", "as": "gap" },
-    { "joinaggregate": [{ "op": "min", "field": "gap", "as": "min_gap" }] },
-    { "calculate": "(toDate(datum.t1) - toDate(datum.t0)) / 75", "as": "need" },
-    { "calculate": "datum.need <= 1e3 ? 1e3 : datum.need <= 5e3 ? 5e3 : datum.need <= 1e4 ? 1e4 : datum.need <= 3e4 ? 3e4 : datum.need <= 6e4 ? 6e4 : datum.need <= 3e5 ? 3e5 : datum.need <= 6e5 ? 6e5 : datum.need <= 18e5 ? 18e5 : datum.need <= 36e5 ? 36e5 : datum.need <= 108e5 ? 108e5 : datum.need <= 432e5 ? 432e5 : datum.need <= 864e5 ? 864e5 : datum.need <= 6048e5 ? 6048e5 : datum.need <= 2592e6 ? 2592e6 : datum.need <= 7776e6 ? 7776e6 : 31536e6", "as": "interval" },
-    { "calculate": "toDate(datum.ts) + (datum.min_gap ? min(datum.min_gap, datum.interval) : datum.interval)", "as": "ts_end" }
-  ],
-  "layer": [
-    { "mark": { "type": "rule", "opacity": 0 }, "encoding": { "x": { "field": "t0", "type": "temporal" }, "x2": { "field": "t1" } } },
+  "signals": [
     {
-      "mark": { "type": "rect", "opacity": 1, "strokeWidth": 0 },
-      "encoding": {
-        "x": {
-          "field": "ts",
-          "type": "temporal",
-          "axis": {
-            "title": null,
-            "labelAngle": 0,
-            "labelAlign": "left",
-            "labelOffset": 4,
-            "labelBaseline": "top",
-            "labelPadding": -12,
-            "labelOverlap": false,
-            "ticks": true,
-            "tickSize": 14,
-            "tickCount": { "expr": "length(data('rows')) && toDate(data('rows')[0].t1) - toDate(data('rows')[0].t0) > 432e5 ? 5 : 15" },
-            "grid": true,
-            "gridOpacity": { "expr": "length(data('rows')) ? 1 : 0" },
-            "tickOpacity": { "expr": "length(data('rows')) ? 1 : 0" },
-            "domainOpacity": { "expr": "length(data('rows')) ? 1 : 0" },
-            "labelExpr": "length(data('rows')) && datum.index > 0 && datum.value > toDate(data('rows')[0].t1) - (toDate(data('rows')[0].t1) - toDate(data('rows')[0].t0)) * (hours(datum.value) == 0 && minutes(datum.value) == 0 ? 100 : 36) / width ? '' : datum.index == 0 || (hours(datum.value) == 0 && minutes(datum.value) == 0) ? [timeFormat(datum.value, '%H:%M'), timeFormat(datum.value, '%B %d, %Y')] : timeFormat(datum.value, '%H:%M')"
-          }
+      "name": "empty",
+      "update": "length(data('rows')) === 0"
+    },
+    {
+      "name": "full",
+      "update": "height >= 440"
+    },
+    {
+      "name": "win",
+      "update": "empty ? 36e5 : time(toDate(data('rows')[0].t1)) - time(toDate(data('rows')[0].t0))"
+    },
+    {
+      "name": "need",
+      "update": "win / 75"
+    },
+    {
+      "name": "span",
+      "update": "need <= 1000 ? 1000 : need <= 5000 ? 5000 : need <= 10000 ? 10000 : need <= 30000 ? 30000 : need <= 60000 ? 60000 : need <= 300000 ? 300000 : need <= 600000 ? 600000 : need <= 1800000 ? 1800000 : need <= 3600000 ? 3600000 : need <= 10800000 ? 10800000 : need <= 43200000 ? 43200000 : need <= 86400000 ? 86400000 : need <= 604800000 ? 604800000 : need <= 2592000000 ? 2592000000 : need <= 7776000000 ? 7776000000 : 31536e6"
+    },
+    {
+      "name": "ticks",
+      "update": "win > 432e5 ? 5 : 15"
+    },
+    {
+      "name": "gap",
+      "update": "full ? 30 : 0"
+    },
+    {
+      "name": "avail",
+      "update": "max(60, height - 2 * gap - (full ? 20 : 0))"
+    },
+    {
+      "name": "hS",
+      "update": "full ? round(avail * 0.44) : height"
+    },
+    {
+      "name": "hG",
+      "update": "full ? round(avail * 0.2) : 0"
+    },
+    {
+      "name": "hR",
+      "update": "full ? avail - hS - hG : 0"
+    },
+    {
+      "name": "top",
+      "update": "full ? 20 : 0"
+    },
+    {
+      "name": "nS",
+      "update": "max(3, floor(hS / 40))"
+    },
+    {
+      "name": "nG",
+      "update": "max(3, floor(hG / 40))"
+    },
+    {
+      "name": "nR",
+      "update": "max(3, floor(hR / 40))"
+    },
+    {
+      "name": "yG",
+      "update": "top + hS + gap"
+    },
+    {
+      "name": "yR",
+      "update": "top + hS + gap + hG + gap"
+    },
+    {
+      "name": "lo",
+      "update": "length(data('buckets')) ? data('buckets')[0].lo : 0"
+    },
+    {
+      "name": "hi",
+      "update": "length(data('buckets')) ? data('buckets')[0].hi : -1"
+    },
+    {
+      "name": "typical",
+      "update": "length(data('buckets')) ? data('buckets')[0].typical : 0"
+    }
+  ],
+  "data": [
+    {
+      "name": "rows",
+      "url": {
+        "%type%": "esql",
+        "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS n = COUNT(*) BY ts = BUCKET(@timestamp, 75, ?_tstart, ?_tend), attributes.elasticsearch.audit.action, attributes.event.action, kib_internal = (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\",\"space_get\",\"space_find\") OR (attributes.event.action == \"http_request\" AND attributes.url.original IS NOT NULL AND attributes.url.original RLIKE \"https?://[^/]+(/s/[^/]+)?/((internal|translations|app)/.*|api/content_management/rpc/(get|search|mget|bulkGet).*|bootstrap(-anonymous)?[.]js.*|api/(core|licensing|banners|ui_counters)/.*|api/spaces/space([?].*)?)|https?://[^/]+(/s/[^/]+)?/api/(saved_objects/(_import|_export)|[^?]*/cloud-audit-).*\") OR (attributes.kibana.saved_object.type IS NOT NULL AND ((attributes.event.action == \"saved_object_get\" AND attributes.kibana.saved_object.type IN (\"config\",\"config-global\")) OR (attributes.event.action == \"saved_object_find\" AND attributes.kibana.saved_object.type == \"index-pattern\"))) OR (attributes.kibana.saved_object.id IS NOT NULL AND attributes.kibana.saved_object.id LIKE \"cloud-audit-*\" AND (attributes.event.action IN (\"saved_object_get\",\"saved_object_resolve\",\"saved_object_find\") OR attributes.kibana.session.id IS NULL))) | EVAL band = CASE(attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\"), \"infra-noise\", attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/msearch*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/scroll*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/esql*\" OR attributes.elasticsearch.audit.action LIKE \"indices:admin/esql/*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/field_caps*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/async_search/*\" OR attributes.elasticsearch.audit.action LIKE \"indices:admin/resolve/*\" OR attributes.elasticsearch.audit.action == \"indices:admin/shards/search_shards\" OR attributes.elasticsearch.audit.action LIKE \"cluster:monitor/xpack/esql/*\" OR attributes.elasticsearch.audit.action IN (\"cluster:monitor/project/tags\", \"cluster:monitor/xpack/inference/get\", \"cluster:admin/xpack/security/api_key/get\", \"cluster:admin/xpack/security/api_key/query\"), \"query-noise\", kib_internal, \"query-noise\", attributes.event.action == \"connection_granted\", \"query-noise\", attributes.event.action == \"authentication_success\", \"authn-volume\", \"signal\") | STATS events = SUM(n) BY ts, band | EVAL band = CASE(band == \"signal\", \"Signal\", band == \"authn-volume\", \"Auth success\", band == \"query-noise\", \"Query internals\", \"Infra health\") | EVAL t0 = TO_DATETIME(?_tstart), t1 = TO_DATETIME(?_tend) | SORT ts ASC",
+        "%timefield%": "@timestamp",
+        "%context%": true
+      }
+    },
+    {
+      "name": "buckets",
+      "source": "rows",
+      "transform": [
+        {
+          "type": "formula",
+          "as": "sig",
+          "expr": "datum.band === 'Signal' ? datum.events : 0"
         },
-        "x2": { "field": "ts_end" },
-        "y": {
-          "field": "y1",
-          "type": "quantitative",
-          "axis": { "title": null, "minExtent": 50, "labelExpr": "length(data('rows')) ? format(datum.value, ',') : ''", "grid": true, "gridOpacity": { "expr": "length(data('rows')) ? 1 : 0" }, "domainOpacity": { "expr": "length(data('rows')) ? 1 : 0" }, "tickOpacity": { "expr": "length(data('rows')) ? 1 : 0" } }
+        {
+          "type": "aggregate",
+          "groupby": [
+            "ts"
+          ],
+          "fields": [
+            "events",
+            "sig"
+          ],
+          "ops": [
+            "sum",
+            "sum"
+          ],
+          "as": [
+            "total",
+            "signal"
+          ]
         },
-        "y2": { "field": "y0" },
-        "color": {
-          "field": "band",
-          "type": "nominal",
-          "scale": {
-            "domain": ["Signal", "Auth success", "Query internals", "Infra health"],
-            "range": ["#54B399", "#6092C0", "#B9A888", "#DA8B45"]
+        {
+          "type": "formula",
+          "as": "ms",
+          "expr": "time(toDate(datum.ts))"
+        },
+        {
+          "type": "window",
+          "sort": {
+            "field": "ms",
+            "order": "ascending"
           },
-          "legend": {
-            "title": null,
-            "orient": "bottom",
-            "direction": "horizontal",
-            "symbolType": "circle",
-            "values": { "expr": "length(data('rows')) ? ['Signal', 'Auth success', 'Query internals', 'Infra health'] : []" },
-            "symbolOpacity": { "expr": "length(data('rows')) ? 1 : 0" },
-            "labelOpacity": { "expr": "length(data('rows')) ? 1 : 0" },
-            "symbolStrokeWidth": 0,
-            "labelFontSize": 12
+          "ops": [
+            "lag",
+            "lag",
+            "lag",
+            "lag",
+            "lag",
+            "lag",
+            "lead",
+            "lead",
+            "lead",
+            "lead",
+            "lead",
+            "lead"
+          ],
+          "fields": [
+            "ms",
+            "ms",
+            "ms",
+            "total",
+            "total",
+            "total",
+            "ms",
+            "ms",
+            "ms",
+            "total",
+            "total",
+            "total"
+          ],
+          "params": [
+            1,
+            2,
+            3,
+            1,
+            2,
+            3,
+            1,
+            2,
+            3,
+            1,
+            2,
+            3
+          ],
+          "as": [
+            "lm1",
+            "lm2",
+            "lm3",
+            "lt1",
+            "lt2",
+            "lt3",
+            "ld1",
+            "ld2",
+            "ld3",
+            "nt1",
+            "nt2",
+            "nt3"
+          ]
+        },
+        {
+          "type": "formula",
+          "as": "gap",
+          "expr": "datum.lm1 != null ? datum.ms - datum.lm1 : null"
+        },
+        {
+          "type": "joinaggregate",
+          "fields": [
+            "total",
+            "ms",
+            "ms",
+            "gap"
+          ],
+          "ops": [
+            "mean",
+            "min",
+            "max",
+            "min"
+          ],
+          "as": [
+            "mean_total",
+            "lo",
+            "hi",
+            "min_gap"
+          ]
+        },
+        {
+          "type": "formula",
+          "as": "ref",
+          "expr": "datum.total * 20 >= datum.mean_total ? datum.total : null"
+        },
+        {
+          "type": "joinaggregate",
+          "fields": [
+            "ref"
+          ],
+          "ops": [
+            "median"
+          ],
+          "as": [
+            "typical"
+          ]
+        },
+        {
+          "type": "formula",
+          "as": "ms_end",
+          "expr": "datum.ms + (datum.min_gap ? min(datum.min_gap, span) : span)"
+        },
+        {
+          "type": "formula",
+          "as": "p1",
+          "expr": "datum.lm1 === datum.ms - 1 * span ? datum.lt1 : datum.lm2 === datum.ms - 1 * span ? datum.lt2 : datum.lm3 === datum.ms - 1 * span ? datum.lt3 : (datum.ms - 1 * span < datum.lo || datum.ms - 1 * span > datum.hi) ? -1 : 0"
+        },
+        {
+          "type": "formula",
+          "as": "p2",
+          "expr": "datum.lm1 === datum.ms - 2 * span ? datum.lt1 : datum.lm2 === datum.ms - 2 * span ? datum.lt2 : datum.lm3 === datum.ms - 2 * span ? datum.lt3 : (datum.ms - 2 * span < datum.lo || datum.ms - 2 * span > datum.hi) ? -1 : 0"
+        },
+        {
+          "type": "formula",
+          "as": "p3",
+          "expr": "datum.lm1 === datum.ms - 3 * span ? datum.lt1 : datum.lm2 === datum.ms - 3 * span ? datum.lt2 : datum.lm3 === datum.ms - 3 * span ? datum.lt3 : (datum.ms - 3 * span < datum.lo || datum.ms - 3 * span > datum.hi) ? -1 : 0"
+        },
+        {
+          "type": "formula",
+          "as": "n1",
+          "expr": "datum.ld1 === datum.ms + 1 * span ? datum.nt1 : datum.ld2 === datum.ms + 1 * span ? datum.nt2 : datum.ld3 === datum.ms + 1 * span ? datum.nt3 : (datum.ms + 1 * span < datum.lo || datum.ms + 1 * span > datum.hi) ? -1 : 0"
+        },
+        {
+          "type": "formula",
+          "as": "n2",
+          "expr": "datum.ld1 === datum.ms + 2 * span ? datum.nt1 : datum.ld2 === datum.ms + 2 * span ? datum.nt2 : datum.ld3 === datum.ms + 2 * span ? datum.nt3 : (datum.ms + 2 * span < datum.lo || datum.ms + 2 * span > datum.hi) ? -1 : 0"
+        },
+        {
+          "type": "formula",
+          "as": "n3",
+          "expr": "datum.ld1 === datum.ms + 3 * span ? datum.nt1 : datum.ld2 === datum.ms + 3 * span ? datum.nt2 : datum.ld3 === datum.ms + 3 * span ? datum.nt3 : (datum.ms + 3 * span < datum.lo || datum.ms + 3 * span > datum.hi) ? -1 : 0"
+        },
+        {
+          "type": "formula",
+          "as": "blank",
+          "expr": "datum.total * 10 < datum.typical ? true : datum.total * 3 < datum.typical ? ((datum.p1 >= 0 && datum.p1 * 10 < datum.typical) || (datum.n1 >= 0 && datum.n1 * 10 < datum.typical) || ((datum.p1 >= 0 && datum.p1 * 3 < datum.typical) && (datum.p2 >= 0 && datum.p2 * 10 < datum.typical)) || ((datum.n1 >= 0 && datum.n1 * 3 < datum.typical) && (datum.n2 >= 0 && datum.n2 * 10 < datum.typical))) : datum.total >= datum.typical ? false : ((datum.p1 < 0 || (datum.p1 >= 0 && datum.p1 * 10 < datum.typical) || ((datum.p1 >= 0 && datum.p1 * 3 < datum.typical) && ((datum.p2 >= 0 && datum.p2 * 10 < datum.typical) || ((datum.p2 >= 0 && datum.p2 * 3 < datum.typical) && (datum.p3 >= 0 && datum.p3 * 10 < datum.typical))))) && (datum.n1 < 0 || (datum.n1 >= 0 && datum.n1 * 10 < datum.typical) || ((datum.n1 >= 0 && datum.n1 * 3 < datum.typical) && ((datum.n2 >= 0 && datum.n2 * 10 < datum.typical) || ((datum.n2 >= 0 && datum.n2 * 3 < datum.typical) && (datum.n3 >= 0 && datum.n3 * 10 < datum.typical))))))"
+        },
+        {
+          "type": "window",
+          "sort": {
+            "field": "ms",
+            "order": "ascending"
+          },
+          "ops": [
+            "lag",
+            "lead"
+          ],
+          "fields": [
+            "blank",
+            "blank"
+          ],
+          "params": [
+            1,
+            1
+          ],
+          "as": [
+            "pb",
+            "nb"
+          ]
+        },
+        {
+          "type": "formula",
+          "as": "blank",
+          "expr": "datum.blank || (datum.total < datum.typical && datum.ms - span >= datum.lo && datum.ms + span <= datum.hi && (datum.lm1 === datum.ms - span ? datum.pb : true) && (datum.ld1 === datum.ms + span ? datum.nb : true))"
+        }
+      ]
+    },
+    {
+      "name": "bands",
+      "source": "rows",
+      "transform": [
+        {
+          "type": "impute",
+          "field": "events",
+          "key": "ts",
+          "groupby": [
+            "band"
+          ],
+          "value": 0
+        },
+        {
+          "type": "formula",
+          "as": "ord",
+          "expr": "indexof(['Signal','Auth success','Query internals','Infra health'], datum.band)"
+        },
+        {
+          "type": "stack",
+          "field": "events",
+          "groupby": [
+            "ts"
+          ],
+          "sort": {
+            "field": "ord",
+            "order": "ascending"
+          },
+          "as": [
+            "y0",
+            "y1"
+          ]
+        },
+        {
+          "type": "lookup",
+          "from": "buckets",
+          "key": "ts",
+          "fields": [
+            "ts"
+          ],
+          "values": [
+            "ms",
+            "ms_end",
+            "total",
+            "blank",
+            "typical"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "shares",
+      "source": "bands",
+      "transform": [
+        {
+          "type": "filter",
+          "expr": "!datum.blank && datum.total > 0"
+        }
+      ]
+    },
+    {
+      "name": "lulls",
+      "transform": [
+        {
+          "type": "sequence",
+          "start": {
+            "signal": "lo"
+          },
+          "stop": {
+            "signal": "hi + 1"
+          },
+          "step": {
+            "signal": "span"
+          },
+          "as": "ms"
+        },
+        {
+          "type": "lookup",
+          "from": "buckets",
+          "key": "ms",
+          "fields": [
+            "ms"
+          ],
+          "values": [
+            "total",
+            "blank",
+            "ms_end"
+          ]
+        },
+        {
+          "type": "filter",
+          "expr": "datum.total == null || datum.blank"
+        },
+        {
+          "type": "formula",
+          "as": "total",
+          "expr": "datum.total || 0"
+        },
+        {
+          "type": "formula",
+          "as": "ms_end",
+          "expr": "datum.ms_end || datum.ms + span"
+        }
+      ]
+    },
+    {
+      "name": "sigmax",
+      "source": "buckets",
+      "transform": [
+        {
+          "type": "aggregate",
+          "fields": [
+            "signal"
+          ],
+          "ops": [
+            "max"
+          ],
+          "as": [
+            "m"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "fullrow",
+      "values": [
+        {}
+      ],
+      "transform": [
+        {
+          "type": "filter",
+          "expr": "full && !empty"
+        }
+      ]
+    }
+  ],
+  "scales": [
+    {
+      "name": "x",
+      "type": "time",
+      "range": [
+        0,
+        {
+          "signal": "width"
+        }
+      ],
+      "domain": {
+        "signal": "empty ? [0, 36e5] : [time(toDate(data('rows')[0].t0)), time(toDate(data('rows')[0].t1))]"
+      }
+    },
+    {
+      "name": "yv",
+      "type": "linear",
+      "range": [
+        {
+          "signal": "hS"
+        },
+        0
+      ],
+      "domain": {
+        "data": "bands",
+        "field": "y1"
+      },
+      "zero": true,
+      "nice": {
+        "signal": "nS"
+      }
+    },
+    {
+      "name": "yg",
+      "type": "sqrt",
+      "range": [
+        {
+          "signal": "hG"
+        },
+        0
+      ],
+      "domain": {
+        "signal": "[0, max(1, length(data('sigmax')) ? data('sigmax')[0].m : 1)]"
+      },
+      "zero": true,
+      "nice": {
+        "signal": "nG"
+      }
+    },
+    {
+      "name": "ys",
+      "type": "linear",
+      "range": [
+        {
+          "signal": "hR"
+        },
+        0
+      ],
+      "domain": [
+        0,
+        1
+      ]
+    },
+    {
+      "name": "color",
+      "type": "ordinal",
+      "domain": [
+        "Signal",
+        "Auth success",
+        "Query internals",
+        "Infra health",
+        "Too few events to split"
+      ],
+      "range": [
+        "#54B399",
+        "#6092C0",
+        "#B9A888",
+        "#DA8B45",
+        "#8E9AAF"
+      ]
+    }
+  ],
+  "legends": [
+    {
+      "fill": "color",
+      "orient": "bottom",
+      "direction": "horizontal",
+      "labelLimit": 0,
+      "gridAlign": "none",
+      "columnPadding": 18,
+      "symbolType": "circle",
+      "symbolStrokeWidth": 0,
+      "labelFontSize": 12,
+      "values": {
+        "signal": "empty ? [] : full ? ['Signal','Auth success','Query internals','Infra health','Too few events to split'] : ['Signal','Auth success','Query internals','Infra health']"
+      },
+      "encode": {
+        "symbols": {
+          "update": {
+            "fillOpacity": {
+              "signal": "datum.value === 'Too few events to split' ? 0.35 : 1"
+            },
+            "opacity": {
+              "signal": "empty ? 0 : 1"
+            }
           }
         },
-        "tooltip": [
-          { "field": "ts", "type": "temporal", "title": "Bucket start", "format": "%b %d, %H:%M" },
-          { "field": "band", "title": "Band" },
-          { "field": "events", "type": "quantitative", "title": "Events", "format": "," },
-          { "field": "total", "type": "quantitative", "title": "All bands", "format": "," }
-        ]
+        "labels": {
+          "update": {
+            "opacity": {
+              "signal": "empty ? 0 : 1"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "marks": [
+    {
+      "type": "group",
+      "name": "stream",
+      "clip": false,
+      "title": {
+        "text": {
+          "signal": "full && !empty ? 'Events per bucket, stacked by band' : ''"
+        },
+        "anchor": "start",
+        "frame": "group",
+        "fontSize": 11,
+        "fontWeight": 500,
+        "offset": 6,
+        "orient": "top"
+      },
+      "encode": {
+        "update": {
+          "x": {
+            "value": 0
+          },
+          "y": {
+            "signal": "top"
+          },
+          "width": {
+            "signal": "width"
+          },
+          "height": {
+            "signal": "hS"
+          }
+        }
+      },
+      "axes": [
+        {
+          "orient": "bottom",
+          "scale": "x",
+          "grid": true,
+          "labels": false,
+          "ticks": false,
+          "domain": false,
+          "tickCount": {
+            "signal": "ticks"
+          },
+          "gridOpacity": {
+            "signal": "empty ? 0 : 1"
+          },
+          "zindex": 0,
+          "gridScale": "yv"
+        },
+        {
+          "orient": "left",
+          "scale": "yv",
+          "grid": true,
+          "minExtent": 50,
+          "tickCount": {
+            "signal": "nS"
+          },
+          "gridOpacity": {
+            "signal": "empty ? 0 : 1"
+          },
+          "domainOpacity": {
+            "signal": "empty ? 0 : 1"
+          },
+          "tickOpacity": {
+            "signal": "empty ? 0 : 1"
+          },
+          "labelOpacity": {
+            "signal": "empty ? 0 : 1"
+          },
+          "encode": {
+            "labels": {
+              "update": {
+                "text": {
+                  "signal": "format(datum.value, ',')"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "marks": [
+        {
+          "type": "rect",
+          "from": {
+            "data": "bands"
+          },
+          "clip": true,
+          "encode": {
+            "update": {
+              "x": {
+                "scale": "x",
+                "field": "ms"
+              },
+              "x2": {
+                "scale": "x",
+                "field": "ms_end"
+              },
+              "y": {
+                "scale": "yv",
+                "field": "y1"
+              },
+              "y2": {
+                "scale": "yv",
+                "field": "y0"
+              },
+              "fill": {
+                "scale": "color",
+                "field": "band"
+              },
+              "strokeWidth": {
+                "value": 0
+              },
+              "tooltip": {
+                "signal": "{'Bucket start': timeFormat(toDate(datum.ts), '%b %d, %H:%M'), 'Band': datum.band, 'Events': format(datum.events, ','), 'All bands': format(datum.total, ',')}"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "group",
+      "name": "signal",
+      "from": {
+        "data": "fullrow"
+      },
+      "title": {
+        "text": "Signal alone, on its own square-root scale",
+        "anchor": "start",
+        "frame": "group",
+        "fontSize": 11,
+        "fontWeight": 500,
+        "offset": 6,
+        "orient": "top"
+      },
+      "encode": {
+        "update": {
+          "x": {
+            "value": 0
+          },
+          "y": {
+            "signal": "yG"
+          },
+          "width": {
+            "signal": "width"
+          },
+          "height": {
+            "signal": "hG"
+          }
+        }
+      },
+      "axes": [
+        {
+          "orient": "bottom",
+          "scale": "x",
+          "grid": true,
+          "labels": false,
+          "ticks": false,
+          "domain": false,
+          "tickCount": {
+            "signal": "ticks"
+          },
+          "gridOpacity": {
+            "signal": "empty ? 0 : 1"
+          },
+          "zindex": 0,
+          "gridScale": "yg"
+        },
+        {
+          "orient": "left",
+          "scale": "yg",
+          "grid": true,
+          "minExtent": 50,
+          "tickCount": {
+            "signal": "nG"
+          },
+          "gridOpacity": {
+            "signal": "empty ? 0 : 1"
+          },
+          "domainOpacity": {
+            "signal": "empty ? 0 : 1"
+          },
+          "tickOpacity": {
+            "signal": "empty ? 0 : 1"
+          },
+          "labelOpacity": {
+            "signal": "empty ? 0 : 1"
+          },
+          "encode": {
+            "labels": {
+              "update": {
+                "text": {
+                  "signal": "format(datum.value, ',')"
+                }
+              }
+            }
+          },
+          "values": {
+            "signal": "domain('yg')[1] >= 4 ? [0, domain('yg')[1] / 4, domain('yg')[1]] : [0, domain('yg')[1]]"
+          }
+        }
+      ],
+      "marks": [
+        {
+          "type": "rect",
+          "from": {
+            "data": "buckets"
+          },
+          "clip": true,
+          "encode": {
+            "update": {
+              "x": {
+                "scale": "x",
+                "field": "ms"
+              },
+              "x2": {
+                "scale": "x",
+                "field": "ms_end"
+              },
+              "y": {
+                "scale": "yg",
+                "field": "signal"
+              },
+              "y2": {
+                "scale": "yg",
+                "value": 0
+              },
+              "fill": {
+                "value": "#54B399"
+              },
+              "strokeWidth": {
+                "value": 0
+              },
+              "tooltip": {
+                "signal": "{'Bucket start': timeFormat(toDate(datum.ts), '%b %d, %H:%M'), 'Signal': format(datum.signal, ','), 'Share of the bucket': format(datum.total ? datum.signal / datum.total : 0, '.2%'), 'All bands': format(datum.total, ',')}"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "group",
+      "name": "share",
+      "from": {
+        "data": "fullrow"
+      },
+      "title": {
+        "text": "Each bucket as 100%, split by band",
+        "anchor": "start",
+        "frame": "group",
+        "fontSize": 11,
+        "fontWeight": 500,
+        "offset": 6,
+        "orient": "top"
+      },
+      "encode": {
+        "update": {
+          "x": {
+            "value": 0
+          },
+          "y": {
+            "signal": "yR"
+          },
+          "width": {
+            "signal": "width"
+          },
+          "height": {
+            "signal": "hR"
+          }
+        }
+      },
+      "axes": [
+        {
+          "orient": "bottom",
+          "scale": "x",
+          "grid": true,
+          "labels": false,
+          "ticks": false,
+          "domain": false,
+          "tickCount": {
+            "signal": "ticks"
+          },
+          "gridOpacity": {
+            "signal": "empty ? 0 : 1"
+          },
+          "zindex": 0,
+          "gridScale": "ys"
+        },
+        {
+          "orient": "left",
+          "scale": "ys",
+          "grid": true,
+          "minExtent": 50,
+          "tickCount": {
+            "signal": "nR"
+          },
+          "gridOpacity": {
+            "signal": "empty ? 0 : 1"
+          },
+          "domainOpacity": {
+            "signal": "empty ? 0 : 1"
+          },
+          "tickOpacity": {
+            "signal": "empty ? 0 : 1"
+          },
+          "labelOpacity": {
+            "signal": "empty ? 0 : 1"
+          },
+          "format": ".0%"
+        }
+      ],
+      "marks": [
+        {
+          "type": "rect",
+          "from": {
+            "data": "lulls"
+          },
+          "clip": true,
+          "encode": {
+            "update": {
+              "x": {
+                "scale": "x",
+                "field": "ms"
+              },
+              "x2": {
+                "scale": "x",
+                "field": "ms_end"
+              },
+              "y": {
+                "value": 0
+              },
+              "y2": {
+                "signal": "hR"
+              },
+              "fill": {
+                "value": "#8E9AAF"
+              },
+              "fillOpacity": {
+                "value": 0.35
+              },
+              "strokeWidth": {
+                "value": 0
+              },
+              "tooltip": {
+                "signal": "{'Bucket start': timeFormat(toDate(datum.ts), '%b %d, %H:%M'), 'Events': format(datum.total, ','), 'Typical bucket': format(typical, ','), 'Not split': 'too few events: as a percentage this bucket would stand as tall as the busiest one'}"
+              }
+            }
+          }
+        },
+        {
+          "type": "rect",
+          "from": {
+            "data": "shares"
+          },
+          "clip": true,
+          "encode": {
+            "update": {
+              "x": {
+                "scale": "x",
+                "field": "ms"
+              },
+              "x2": {
+                "scale": "x",
+                "field": "ms_end"
+              },
+              "y": {
+                "scale": "ys",
+                "signal": "datum.y1 / datum.total"
+              },
+              "y2": {
+                "scale": "ys",
+                "signal": "datum.y0 / datum.total"
+              },
+              "fill": {
+                "scale": "color",
+                "field": "band"
+              },
+              "strokeWidth": {
+                "value": 0
+              },
+              "tooltip": {
+                "signal": "{'Bucket start': timeFormat(toDate(datum.ts), '%b %d, %H:%M'), 'Band': datum.band, 'Share': format(datum.events / datum.total, '.2%'), 'Events': format(datum.events, ','), 'All bands': format(datum.total, ',')}"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "group",
+      "name": "xaxis",
+      "encode": {
+        "update": {
+          "x": {
+            "value": 0
+          },
+          "y": {
+            "signal": "height"
+          },
+          "width": {
+            "signal": "width"
+          },
+          "height": {
+            "value": 0
+          }
+        }
+      },
+      "axes": [
+        {
+          "orient": "bottom",
+          "scale": "x",
+          "grid": false,
+          "ticks": true,
+          "tickSize": 14,
+          "labelAlign": "left",
+          "labelBaseline": "top",
+          "labelOffset": 4,
+          "labelPadding": -12,
+          "labelOverlap": false,
+          "tickCount": {
+            "signal": "ticks"
+          },
+          "tickOpacity": {
+            "signal": "empty ? 0 : 1"
+          },
+          "domainOpacity": {
+            "signal": "empty ? 0 : 1"
+          },
+          "labelOpacity": {
+            "signal": "empty ? 0 : 1"
+          },
+          "encode": {
+            "labels": {
+              "update": {
+                "text": {
+                  "signal": "!empty && datum.index > 0 && datum.value > domain('x')[1] - (domain('x')[1] - domain('x')[0]) * (hours(datum.value) == 0 && minutes(datum.value) == 0 ? 100 : 36) / width ? '' : datum.index == 0 || (hours(datum.value) == 0 && minutes(datum.value) == 0) ? [timeFormat(datum.value, '%H:%M'), timeFormat(datum.value, '%B %d, %Y')] : timeFormat(datum.value, '%H:%M')"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "style": "guide-label",
+      "interactive": false,
+      "encode": {
+        "update": {
+          "x": {
+            "signal": "width / 2"
+          },
+          "y": {
+            "signal": "height / 2"
+          },
+          "align": {
+            "value": "center"
+          },
+          "baseline": {
+            "value": "middle"
+          },
+          "fontSize": {
+            "value": 12
+          },
+          "text": {
+            "signal": "empty ? 'No activity for this selection in this time range' : ''"
+          }
+        }
       }
     }
   ]

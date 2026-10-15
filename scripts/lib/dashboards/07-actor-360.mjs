@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { ROOT } from '../env.mjs';
 import {
   IDX, TIME, INDEX_FAMILY, IP_GEO, indexFamily, dash, kpi, table, vega, search, md, section, row, stack, resetIds, sized, filterable, grouped,
-  SYS_INDEX, fitRows, EDGE_NOTE
+  SYS_INDEX, fitRows
 } from '../panels.mjs';
 import { riskScored, CHANGED, CHANGED_KEYS, CHANGED_DERIVE } from './shared.mjs';
 
@@ -56,6 +56,43 @@ const NOT_PATTERN = `WHERE NOT (${isPattern('attributes.elasticsearch.audit.indi
 const NOT_FANOUT = '(attributes.elasticsearch.audit.action IS NULL OR NOT attributes.elasticsearch.audit.action LIKE "*[*")';
 
 /**
+ * DELETING A SPACE DELETES WHAT IS IN IT, and Kibana audits each of those objects as its own
+ * saved_object_delete — with the space the REQUEST was made in (usually `default`), not the deleted space
+ * the object lived in, and with the space_delete's own http.request.id (probed: `DELETE space r6shared`
+ * and its 13 object deletes share request 0b8878ad… and all read space `default`). Grouped by name, the
+ * same-named objects of many deleted spaces merged into one row: round-5 review read "[Audit] Actor
+ * first-seen and footprint · default · 74 events", one object deleted 74 times in a space it was never in.
+ * At 24h, 2,801 of 3,132 saved-object deletes were that cascade (89 space deletes).
+ *
+ * So a cascaded delete is folded into the space delete that caused it: that row reads "r6shared · and the
+ * 13 objects in it", its Events count every delete it stands for (so the table's deletes still add up to
+ * the flow's), and a delete with no space delete in its request keeps its own row. The request id is kept
+ * only for the two delete actions (one boolean per event, cheap), so the extra grouping is one row per
+ * delete request rather than per change.
+ *
+ * ES|QL has no window function and no join here, so the request's verdict reaches its rows through one
+ * more STATS on the grouped rows: keyed by the request for a delete and by the row itself otherwise, each
+ * row packed into one string so a bulk delete of several objects (one request, no space) unpacks back
+ * into its rows with MV_EXPAND + DISSECT. INLINE STATS was the obvious tool and was measured out: once
+ * its result is used it re-runs the whole scan, 0.47s → 1.9s over 7 days on the replica.
+ * `␞` separates the packed fields; a name containing it would mis-split, and none does.
+ */
+const SEP = '␞';
+const PACK = ['attributes.event.action', 'attributes.kibana.saved_object.type', 'obj_name', 'execution', 'space', 'result']
+  .map((c) => `COALESCE(${c}, "")`).join(`, "${SEP}", `) + `, "${SEP}", TO_STRING(n), "${SEP}", TO_STRING(last_ts)`;
+const CASCADE_KEY = 'EVAL req = CASE(attributes.event.action IN ("space_delete", "saved_object_delete"), attributes.http.request.id)';
+const CASCADE_FOLD =
+  `EVAL pack = CONCAT(${PACK}), sd = attributes.event.action == "space_delete" ` +
+  '| STATS n = SUM(n), inside = SUM(n) WHERE attributes.event.action == "saved_object_delete", last_ts = MAX(last_ts), ' +
+  'gone = COUNT(*) WHERE sd, sname = MAX(obj_name) WHERE sd, sspace = MAX(space) WHERE sd, sres = MAX(result) WHERE sd, rows = VALUES(pack) ' +
+  'BY k = COALESCE(req, pack) ' +
+  `| EVAL rows = CASE(gone > 0, CONCAT("space_delete${SEP}space${SEP}", COALESCE(sname, "a deleted space"), "${SEP}—${SEP}", COALESCE(sspace, ""), "${SEP}", COALESCE(sres, ""), "${SEP}", TO_STRING(n), "${SEP}", TO_STRING(last_ts)), rows), inside = CASE(gone > 0, inside, 0) ` +
+  `| MV_EXPAND rows | DISSECT rows "%{a}${SEP}%{t}${SEP}%{obj_name}${SEP}%{execution}${SEP}%{sp}${SEP}%{res}${SEP}%{ns}${SEP}%{ts}" ` +
+  '| EVAL attributes.event.action = CASE(a == "", null, a), attributes.kibana.saved_object.type = CASE(t == "", null, t), ' +
+  'space = CASE(sp == "", null, sp), result = CASE(res == "", null, res), n = TO_LONG(ns), last_ts = TO_DATETIME(ts) ' +
+  `| STATS n = SUM(n), inside = SUM(inside), last_ts = MAX(last_ts) BY ${CHANGED_KEYS}, obj_name, execution, space, result`;
+
+/**
  * What each RISK weight means, in words, for the receipts table's "Why it scored" column. The Risk tile
  * names its worst weight as the NUMBER, which this column sits beside: a tile subtitle holds ~22
  * characters at a 1440px viewport, and "worst: security config change" after a count was cut there. A
@@ -98,10 +135,24 @@ const ORIENTATION = `👤 **Pick a person in the control bar** and every panel b
  * two queries are equal; what moves is the stream itself — a closed two-minute window kept growing for
  * 5–7 seconds after it closed (3,005 → 3,025 Elasticsearch events) — and a 30 is one delete landing in
  * that gap. Round 6 ended every dashboard's range at now-1m (TIME_TO, panels.mjs), so nothing in range is
- * still arriving; what is left is the sub-second spread between the two panels' `now` at both ends of the
- * range, which EDGE_NOTE states.
+ * still arriving; what is left is the spread between the two panels' `now` at both ends of the range.
+ *
+ * Round 6 measured that spread on its own render, and it is not always sub-second. light-1h showed Risk
+ * 43,980 over Sum 43,580 with all 7 rows visible. Re-running the tile query on windows ending every 5s:
+ * 43,580 is the window ending 13:43:09 UTC and 43,980 the one ending 13:43:25 — the two panels resolved
+ * `now` ~16 seconds apart (the render resizes its viewport after loading, and a panel that re-renders then
+ * can re-fetch), while this repo's own deploy was writing ~2 saved objects a second at that edge. Same
+ * window, same number, every time (16,380 = 16,380 at 1h, 496,650 = 496,650 at 24h); the gap is the
+ * clock, and a later re-fetch is not something a query can prevent.
+ *
+ * So the tile and its receipt do not take TIME: both cut their window to whole minutes (WHOLE_MINUTES), so
+ * two fetches seconds apart resolve to the SAME window unless they straddle a minute boundary — about one
+ * load in sixty for a one-second spread, where TIME let any traffic at either edge show. The cost is that
+ * these two panels stop at the last whole minute, up to a minute short of the panels around them, which
+ * their descriptions say. A one-condition WHERE on constants: free.
  */
-const RACE_NOTE = EDGE_NOTE;
+const WHOLE_MINUTES = 'WHERE @timestamp < DATE_TRUNC(1 minute, TO_DATETIME(?_tend)) AND @timestamp >= DATE_TRUNC(1 minute, TO_DATETIME(?_tstart))';
+const RACE_NOTE = 'This tile and "Every scoring action" both count whole minutes only — from the first whole minute of the range to the last — so two fetches a few seconds apart still read the same window; they can stop up to a minute short of the panels around them.';
 
 export function build() {
   resetIds();
@@ -110,15 +161,15 @@ export function build() {
 
     row(7, [
       [16, (x, y, w, h) => table(x, y, w, h, 'Who this is — people, by email',
-        `FROM ${IDX} | ${TIME} | WHERE attributes.user.email IS NOT NULL | STATS events = COUNT(*), keys = COUNT_DISTINCT(attributes.api_key.name, 100) BY attributes.user.email | SORT events DESC | LIMIT 10`,
-        [filterable('attributes.user.email')], ['events', { column: 'keys', label: 'Own API keys' }],
-        'People only: counts only events that carry a user email, so an organization-level Cloud API key (`_4KEO… · Cloud API key`), which belongs to no person, is never a row here even when it is the busiest credential in the flow below; and with nobody selected these rows add up to far less than the Events tile: API-key and service traffic with no email behind it has nothing to group on here, and is counted in the tile. The people in range, busiest first — click an email to pin that identity across the suite. `Own API keys` counts the named API keys acting under that email: Elasticsearch stamps a key\'s CREATOR on every event the key emits, so a person with keys may be carrying a machine\'s traffic. It reads 0 beside API-key credentials in the flow below when that key traffic carries no email.')],
+        `FROM ${IDX} | ${TIME} | STATS events = COUNT(*), keys = COUNT_DISTINCT(attributes.api_key.name, 100) BY attributes.user.email | INLINE STATS all = SUM(events) | WHERE attributes.user.email IS NOT NULL | EVAL share = TO_DOUBLE(events) / all | DROP all | SORT events DESC | LIMIT 10`,
+        [filterable('attributes.user.email')], ['events', { column: 'share', label: '% of Events', width: 100, format: { type: 'percent', decimals: 1 } }, { column: 'keys', label: 'Own API keys' }],
+        'People only: `% of Events` is each person\'s share of the Events tile beside this table, so the rest of that tile — traffic with no person behind it — is visible here and not only in this note. Counts only events that carry a user email, so an organization-level Cloud API key (`_4KEO… · Cloud API key`), which belongs to no person, is never a row here even when it is the busiest credential in the flow below; and with nobody selected these rows add up to far less than the Events tile: API-key and service traffic with no email behind it has nothing to group on here, and is counted in the tile. The people in range, busiest first — click an email to pin that identity across the suite. `Own API keys` counts the named API keys acting under that email: Elasticsearch stamps a key\'s CREATOR on every event the key emits, so a person with keys may be carrying a machine\'s traffic. It reads 0 beside API-key credentials in the flow below when that key traffic carries no email.')],
       [8, (x, y, w, h) => kpi(x, y, w, h,
         `FROM ${IDX} | ${TIME} | STATS Events = COUNT(*), actions = COUNT_DISTINCT(attributes.event.action, 100), last_ts = MAX(@timestamp) | EVAL mins = DATE_DIFF("minutes", last_ts, NOW()) | EVAL detail = CASE(Events == 0, "no activity", CONCAT(${grouped('actions')}, CASE(actions == 1, " action", " actions"), " · ", CASE(mins < 1, "just now", mins < 60, CONCAT(${grouped('mins')}, "m ago"), CONCAT(TO_STRING(mins / 60), "h ago")))) | KEEP Events, detail`,
         'Events', 'Every audited event for the selection, how many different things that was, and how recently they were last seen. Unfiltered by the noise gate, so it includes connection housekeeping.',
         { secondary: 'detail' })],
       [8, (x, y, w, h) => kpi(x, y, w, h,
-        `FROM ${IDX} | ${TIME} | ${riskScored()} | STATS sev = SUM(risk * n) BY attributes.event.action, risk | STATS Risk = SUM(sev), worst = MAX(risk), kinds = COUNT(*) | EVAL detail = CASE(worst IS NULL, "nothing scored", CONCAT(${grouped('kinds')}, CASE(kinds == 1, " action · worst ", " actions · worst "), ${grouped('worst')})), Risk = COALESCE(Risk, 0) | KEEP Risk, detail`,
+        `FROM ${IDX} | ${WHOLE_MINUTES} | ${riskScored()} | STATS sev = SUM(risk * n) BY attributes.event.action, risk | STATS Risk = SUM(sev), worst = MAX(risk), kinds = COUNT(*) | EVAL detail = CASE(worst IS NULL, "nothing scored", CONCAT(${grouped('kinds')}, CASE(kinds == 1, " action · worst ", " actions · worst "), ${grouped('worst')})), Risk = COALESCE(Risk, 0) | KEEP Risk, detail`,
         'Risk', 'Summed severity (weight × events) of everything that scored, how many scoring actions that was, and the highest weight among them (50 is a security config change; the table below names every weight in words). Routine activity scores zero, so this is not an event count in disguise. The receipts are in "Every scoring action" below: one row per action and weight, scrollable, and the Sum under its Risk column is this number; the count here is its number of rows. An action that scored at two weights (a create that succeeded, and one that failed) counts twice, as it is two rows there. ' + RACE_NOTE,
         { secondary: 'detail' })],
       // Families, not raw names, so the tile counts the same thing as "What they read, by index family"
@@ -140,21 +191,21 @@ export function build() {
     ]),
 
     // Directly under the KPI row rather than at the foot of section ②, so the tile and its receipt are
-    // read together; the Sum footer is what a reader compares with the tile (RACE_NOTE: EDGE_NOTE).
+    // read together; the Sum footer is what a reader compares with the tile (RACE_NOTE, WHOLE_MINUTES).
     // EVERY row, scrollable, rather than a top-N: the Risk tile above counts these rows and sums their
     // Risk column, and a top 8 under "43 actions" is a receipt that cannot add up (round-3 review). The
     // set is closed — one row per scoring action and weight, bounded by Kibana's and Elasticsearch's
     // action vocabulary (43 over 24h at today's volume; volume adds events, not rows) — so the LIMIT is
     // a guard, not a cut, and the title says "every" instead of a count (the description says "scroll").
-    row(11, [[48, (x, y, w, h) => drillTo('cloud-audit-04-security-anomalies', table(x, y, w, h, 'Every scoring action and its weight, largest first · its Sum is the Risk tile',
-      `FROM ${IDX} | ${TIME} | ${riskScored({ aggs: 'last_ts = MAX(@timestamp)' })} | STATS events = SUM(n), severity = SUM(risk * n), last_seen = MAX(last_ts) BY attributes.event.action, weight = risk | EVAL why = ${weightWords('weight')} | SORT severity DESC | LIMIT 500`,
+    row(13, [[48, (x, y, w, h) => drillTo('cloud-audit-04-security-anomalies', table(x, y, w, h, 'Every scoring action and its weight, largest first · its Sum is the Risk tile',
+      `FROM ${IDX} | ${WHOLE_MINUTES} | ${riskScored({ aggs: 'last_ts = MAX(@timestamp)' })} | STATS events = SUM(n), severity = SUM(risk * n), last_seen = MAX(last_ts) BY attributes.event.action, weight = risk | EVAL why = ${weightWords('weight')} | SORT severity DESC | LIMIT 500`,
       // weight is a number, so it reads as one (right-aligned, beside the other numbers); it stays in the
       // BY clause, so the grouping is unchanged. The action stays the raw event.action because it is the
       // click-to-filter column (an assigned column cannot take a pill); `why` says it in words.
       [filterable('attributes.event.action'), sized('why', 220, { label: 'Why it scored' })],
       // The Sum footer is the tile's number computed from THESE rows in the same fetch, so the receipt
-      // reconciles on screen whatever is scrolled; 130px holds "Sum: 4,360,050" at 10x today's 24h.
-      ['weight', 'events', { column: 'severity', label: 'Risk', width: 130, summary: { type: 'sum' } }, 'last_seen'],
+      // reconciles on screen whatever is scrolled. Its label says "all rows" because only 11 of 43 fit at 24h (the list scrolls; a title may not say so, CUT in panels.mjs), and 180px holds "Sum, all rows: 4,360,050" at 10x today's 24h.
+      ['weight', 'events', { column: 'severity', label: 'Risk', width: 180, summary: { type: 'sum', label: 'Sum, all rows' } }, 'last_seen'],
       'The receipts for the Risk tile: the Sum under Risk totals every row, scrolled into view or not, and is the tile\'s number over the same window. One row per scoring action and weight, largest first; Risk here is weight × events, and the tile\'s subtitle counts the rows. ' + RACE_NOTE + ' Click an action to pin it, then "Open in Security & Anomalies" to see who else does it — the pinned person and action combine, so clear the person pill first to compare.', { scroll: true, cut: false }))]]),
 
     row(2, [[48, (x, y, w, h) => section(x, y, w, h, '① Is this normal?', 'fixed 7-day window in UTC — ignores the time picker')]]),
@@ -172,7 +223,7 @@ export function build() {
     // here, so it leads; the rest follow newest first, and the list scrolls to the guard of 100 rows.
     // `gone` is a one-condition EVAL on the grouped rows, so it costs nothing per event.
     row(12, [[48, (x, y, w, h) => table(x, y, w, h, '⚠️ What they changed — deletes first, then newest · up to 100',
-      `FROM ${IDX} | ${TIME} | ${CHANGED} | STATS n = COUNT(*), last_ts = MAX(@timestamp) BY ${CHANGED_KEYS}, obj_name, execution, space = attributes.kibana.space.id, result | ${CHANGED_DERIVE} | STATS events = SUM(n), last_seen = MAX(last_ts) BY verb, type = obj_type, name = obj_name, execution, space, result | EVAL name = CASE(execution == "—", name, CONCAT(name, " · run ", execution)), type = REPLACE(type, "-", " "), gone = verb == "delete" | EVAL verb = CASE(result == "failure", CONCAT(verb, " (failed)"), verb) | DROP execution, result | SORT gone DESC, last_seen DESC | DROP gone | LIMIT 100`,
+      `FROM ${IDX} | ${TIME} | ${CHANGED} | ${CASCADE_KEY} | STATS n = COUNT(*), last_ts = MAX(@timestamp) BY ${CHANGED_KEYS}, obj_name, execution, space = attributes.kibana.space.id, result, req | ${CASCADE_FOLD} | ${CHANGED_DERIVE} | STATS events = SUM(n), inside = SUM(inside), last_seen = MAX(last_ts) BY verb, type = obj_type, name = obj_name, execution, space, result | EVAL name = CASE(execution == "—", name, CONCAT(name, " · run ", execution)), type = REPLACE(type, "-", " "), gone = verb == "delete" | EVAL name = CASE(inside > 0, CONCAT(name, " · and the ", ${grouped('inside')}, CASE(inside == 1, " object in it", " objects in it")), name) | EVAL verb = CASE(result == "failure", CONCAT(verb, " (failed)"), verb) | DROP execution, result, inside | SORT gone DESC, last_seen DESC | DROP gone | LIMIT 100`,
       // Space is a free-form id, so it gets room for one ('syn-marketing' filled 110px edge to edge).
       // No Execution column: it read "—" on every row that is not a workflow run, which is nearly all of
       // them, so the run id rides on the name instead ("Daily sweep · run 3f2a9c1e").
@@ -214,8 +265,8 @@ export function build() {
 
     row(2, [[48, (x, y, w, h) => section(x, y, w, h, '③ Evidence', 'session timeline is fixed at 24 hours · the records follow the time picker · your time zone')]]),
     row(7, [[48, vegaPanel('13-session-gantt', 'Kibana browser sessions — last 24 hours, your time zone')]]),
-    row(12, [[48, (x, y, w, h) => search(x, y, w, h, '09-session-reconstruction', 'Session records',
-      'The raw Kibana events behind the session timeline above, newest first, with the session, the object and the message Kibana wrote. Columns are cut to fit the panel: expand a row (the ⤢ at its left) to read the full session id, object name and message, or open the session in Discover. Like the timeline, it leaves out what an open browser tab does on its own — internal page requests, usage counters, point-in-time paging — so a session in the timeline always has records here, and an hour in which they only had Kibana open is empty.', { empty: 'quiet' })]]),
+    row(12, [[48, (x, y, w, h) => search(x, y, w, h, '09-session-reconstruction', 'Session records · newest 1,000 at most',
+      'The raw Kibana events behind the session timeline above, newest first and capped at the newest 1,000 — so "1,000 results" above the grid is that cap, not a count of the range — with the session, the object and the message Kibana wrote. Columns are cut to fit the panel: expand a row (the ⤢ at its left) to read the full session id, object name and message, or open the session in Discover. Like the timeline, it leaves out what an open browser tab does on its own — internal page requests, usage counters, point-in-time paging — so a session in the timeline always has records here, and an hour in which they only had Kibana open is empty.', { empty: 'quiet' })]]),
   ]);
   return dash('cloud-audit-07-actor-360', '[Audit] 👤 Actor 360',
     'One identity’s complete footprint — pick a person in the control bar and every panel becomes their story.', P);

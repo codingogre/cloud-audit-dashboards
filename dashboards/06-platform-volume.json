@@ -12,7 +12,7 @@
   "panels": [
     {
       "type": "links",
-      "id": "nav-14",
+      "id": "nav-13",
       "grid": {
         "x": 0,
         "y": 0,
@@ -305,12 +305,12 @@
         "x": 0,
         "y": 15,
         "w": 30,
-        "h": 13
+        "h": 25
       },
       "config": {
         "ref_id": "cloud-audit-vega-07-noise-ratio-stream",
         "title": "Signal vs noise over time",
-        "description": "Audit events per time bucket, stacked by band, so the top edge is the whole firehose and Signal sits on the baseline. Hover a segment for its band and the bucket total."
+        "description": "Three views of the same buckets on one time axis. Top: audit events per bucket, stacked by band, so the top edge is the whole firehose and Signal sits on the baseline. Middle: Signal alone, on its own square-root scale, so a rise or fall in the events the other dashboards read is visible at any share. Bottom: each bucket as 100%, split by band — whether a spike was more noise or more signal. A lull is shaded and not split, because as a percentage a few dozen events would stand as tall as the busiest bucket: a bucket under a tenth of the window’s typical volume (the median bucket, leaving out a trickle under a twentieth of the average), one under a third right beside such a bucket, and a lone low bucket inside a lull; a stretch that is merely quiet is split. Hover any bar for its numbers."
       }
     },
     {
@@ -320,15 +320,15 @@
         "x": 30,
         "y": 15,
         "w": 18,
-        "h": 13
+        "h": 15
       },
       "config": {
-        "title": "Named API keys · top 12 at most (empty when none in range)",
-        "description": "The busiest API keys that have a name, by events, as many as the panel holds. Click a key to pin it across the suite. Created by is who made the key, which Elasticsearch records on every event the key emits. A key made by a person counts under that person’s email in Highest-volume identities (Kind “human + key”); any other key has its own row there, with the same count as here. A Cloud API key has no name in the audit stream, so it is not listed here; it appears by id, as “_4KEO… · Cloud API key” (its first five characters). Often empty over the default hour on a healthy project; widen the time range to see older rows.",
+        "title": "Named API keys · top 14 at most (empty when unused)",
+        "description": "The busiest API keys that have a name, by events, as many as the panel holds. Click a key to pin it across the suite. Created by is who made the key, which Elasticsearch records on every event the key emits. A key made by a person counts under that person’s email in Highest-volume identities (Kind “human + key”); any other key has its own row there, with the same count as here. Empty when no named key was used in the time range: a Cloud API key has no name in the audit stream, so it is never listed here even while it drives the stream; it is in Highest-volume identities as “_4KEO… · Cloud API key” (its first five characters). This panel is empty when unused.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.api_key.name IS NOT NULL | STATS events = COUNT(*), emails = VALUES(attributes.user.email), names = VALUES(attributes.user.name) BY attributes.api_key.name | EVAL creator = COALESCE(MV_MIN(emails), MV_MIN(names)), n_creators = COALESCE(MV_COUNT(emails), 0) + COALESCE(MV_COUNT(names), 0) | EVAL created_by = COALESCE(CONCAT(CASE((LENGTH(creator) == 20 AND creator RLIKE \"[-_A-Za-z0-9]{20}\" AND NOT creator RLIKE \"[0-9]{20}\"), CONCAT(LEFT(creator, 5), \"… · Cloud API key\"), creator), CASE(n_creators > 1 AND emails IS NULL, CONCAT(\" + \", TO_STRING(n_creators - 1), \" more\"), \"\")), \" \") | KEEP attributes.api_key.name, created_by, events | SORT events DESC, attributes.api_key.name | LIMIT 12"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.api_key.name IS NOT NULL | STATS events = COUNT(*), emails = VALUES(attributes.user.email), names = VALUES(attributes.user.name) BY attributes.api_key.name | EVAL creator = COALESCE(MV_MIN(emails), MV_MIN(names)), n_creators = COALESCE(MV_COUNT(emails), 0) + COALESCE(MV_COUNT(names), 0) | EVAL created_by = COALESCE(CONCAT(CASE((LENGTH(creator) == 20 AND creator RLIKE \"[-_A-Za-z0-9]{20}\" AND NOT creator RLIKE \"[0-9]{20}\"), CONCAT(LEFT(creator, 5), \"… · Cloud API key\"), creator), CASE(n_creators > 1 AND emails IS NULL, CONCAT(\" + \", TO_STRING(n_creators - 1), \" more\"), \"\")), \" \") | KEEP attributes.api_key.name, created_by, events | SORT events DESC, attributes.api_key.name | LIMIT 14"
         },
         "styling": {
           "density": {
@@ -366,112 +366,10 @@
       "type": "vis",
       "id": "xy-10",
       "grid": {
-        "x": 0,
-        "y": 28,
-        "w": 30,
-        "h": 12
-      },
-      "config": {
-        "title": "Band share over time",
-        "description": "Each bucket’s events as 100%, split by band. A rising Signal share means activity, not housekeeping, is driving the volume. A lull is left blank, because as a percentage a few dozen events would stand as tall as the busiest minute: a bucket under a tenth of the window’s typical (median) volume, a bucket under a third of it right beside one of those, and a lone low bar inside such a lull. A stretch that is merely quiet is drawn. Signal vs noise over time, directly above, shows every bucket’s volume.",
-        "type": "xy",
-        "axis": {
-          "x": {
-            "title": {
-              "visible": false
-            },
-            "scale": "temporal",
-            "domain": {
-              "type": "fit",
-              "rounding": false
-            }
-          },
-          "y": {
-            "title": {
-              "visible": false
-            }
-          }
-        },
-        "layers": [
-          {
-            "type": "bar_percentage",
-            "data_source": {
-              "type": "esql",
-              "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS n = COUNT(*) BY ts = BUCKET(@timestamp, 75, ?_tstart, ?_tend), attributes.elasticsearch.audit.action, attributes.event.action, kib_internal = (attributes.event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\",\"space_get\",\"space_find\") OR (attributes.event.action == \"http_request\" AND attributes.url.original IS NOT NULL AND attributes.url.original RLIKE \"https?://[^/]+(/s/[^/]+)?/((internal|translations|app)/.*|api/content_management/rpc/(get|search|mget|bulkGet).*|bootstrap(-anonymous)?[.]js.*|api/(core|licensing|banners|ui_counters)/.*|api/spaces/space([?].*)?)|https?://[^/]+(/s/[^/]+)?/api/(saved_objects/(_import|_export)|[^?]*/cloud-audit-).*\") OR (attributes.kibana.saved_object.type IS NOT NULL AND ((attributes.event.action == \"saved_object_get\" AND attributes.kibana.saved_object.type IN (\"config\",\"config-global\")) OR (attributes.event.action == \"saved_object_find\" AND attributes.kibana.saved_object.type == \"index-pattern\"))) OR (attributes.kibana.saved_object.id IS NOT NULL AND attributes.kibana.saved_object.id LIKE \"cloud-audit-*\" AND (attributes.event.action IN (\"saved_object_get\",\"saved_object_resolve\",\"saved_object_find\") OR attributes.kibana.session.id IS NULL))) | EVAL band = CASE(attributes.elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\"), \"infra-noise\", attributes.elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/msearch*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/scroll*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR attributes.elasticsearch.audit.action == \"indices:data/read/open_reader_context\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/esql*\" OR attributes.elasticsearch.audit.action LIKE \"indices:admin/esql/*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/field_caps*\" OR attributes.elasticsearch.audit.action LIKE \"indices:data/read/async_search/*\" OR attributes.elasticsearch.audit.action LIKE \"indices:admin/resolve/*\" OR attributes.elasticsearch.audit.action == \"indices:admin/shards/search_shards\" OR attributes.elasticsearch.audit.action LIKE \"cluster:monitor/xpack/esql/*\" OR attributes.elasticsearch.audit.action IN (\"cluster:monitor/project/tags\", \"cluster:monitor/xpack/inference/get\", \"cluster:admin/xpack/security/api_key/get\", \"cluster:admin/xpack/security/api_key/query\"), \"query-noise\", kib_internal, \"query-noise\", attributes.event.action == \"connection_granted\", \"query-noise\", attributes.event.action == \"authentication_success\", \"authn-volume\", \"signal\") | STATS events = SUM(n) BY ts, band | STATS total = SUM(events), parts = VALUES(CONCAT(band, \"=\", TO_STRING(events))) BY ts | EVAL ms = TO_LONG(ts) | STATS typical = MEDIAN(total), b = VALUES(CONCAT(TO_STRING(ms), \"#\", TO_STRING(total), \"#\", MV_CONCAT(parts, \";\"))), idx = VALUES(CONCAT(\";\", TO_STRING(ms), \"=\", TO_STRING(total))), lo = MIN(ms), hi = MAX(ms) | EVAL idx = CONCAT(MV_CONCAT(idx, \"\"), \";\"), need = DATE_DIFF(\"second\", TO_DATETIME(?_tstart), TO_DATETIME(?_tend)) / 75.0 | EVAL span = 1000 * TO_LONG(CASE(need <= 1, 1, need <= 5, 5, need <= 10, 10, need <= 30, 30, need <= 60, 60, need <= 300, 300, need <= 600, 600, need <= 1800, 1800, need <= 3600, 3600, need <= 10800, 10800, need <= 43200, 43200, need <= 86400, 86400, need <= 604800, 604800, need <= 2592000, 2592000, need <= 7776000, 7776000, 31536000)) | MV_EXPAND b | DISSECT b \"%{ms}#%{total}#%{parts}\" | EVAL ms = TO_LONG(ms), total = TO_LONG(total) | EVAL p1 = CASE(ms + -1 * span < lo OR ms + -1 * span > hi, TO_LONG(-1), LOCATE(idx, CONCAT(\";\", TO_STRING(ms + -1 * span), \"=\")) > 0, TO_LONG(MV_FIRST(SPLIT(SUBSTRING(idx, LOCATE(idx, CONCAT(\";\", TO_STRING(ms + -1 * span), \"=\")) + LENGTH(CONCAT(\";\", TO_STRING(ms + -1 * span), \"=\"))), \";\"))), TO_LONG(0)), n1 = CASE(ms + 1 * span < lo OR ms + 1 * span > hi, TO_LONG(-1), LOCATE(idx, CONCAT(\";\", TO_STRING(ms + 1 * span), \"=\")) > 0, TO_LONG(MV_FIRST(SPLIT(SUBSTRING(idx, LOCATE(idx, CONCAT(\";\", TO_STRING(ms + 1 * span), \"=\")) + LENGTH(CONCAT(\";\", TO_STRING(ms + 1 * span), \"=\"))), \";\"))), TO_LONG(0)), p2 = CASE(ms + -2 * span < lo OR ms + -2 * span > hi, TO_LONG(-1), LOCATE(idx, CONCAT(\";\", TO_STRING(ms + -2 * span), \"=\")) > 0, TO_LONG(MV_FIRST(SPLIT(SUBSTRING(idx, LOCATE(idx, CONCAT(\";\", TO_STRING(ms + -2 * span), \"=\")) + LENGTH(CONCAT(\";\", TO_STRING(ms + -2 * span), \"=\"))), \";\"))), TO_LONG(0)), n2 = CASE(ms + 2 * span < lo OR ms + 2 * span > hi, TO_LONG(-1), LOCATE(idx, CONCAT(\";\", TO_STRING(ms + 2 * span), \"=\")) > 0, TO_LONG(MV_FIRST(SPLIT(SUBSTRING(idx, LOCATE(idx, CONCAT(\";\", TO_STRING(ms + 2 * span), \"=\")) + LENGTH(CONCAT(\";\", TO_STRING(ms + 2 * span), \"=\"))), \";\"))), TO_LONG(0)), p3 = CASE(ms + -3 * span < lo OR ms + -3 * span > hi, TO_LONG(-1), LOCATE(idx, CONCAT(\";\", TO_STRING(ms + -3 * span), \"=\")) > 0, TO_LONG(MV_FIRST(SPLIT(SUBSTRING(idx, LOCATE(idx, CONCAT(\";\", TO_STRING(ms + -3 * span), \"=\")) + LENGTH(CONCAT(\";\", TO_STRING(ms + -3 * span), \"=\"))), \";\"))), TO_LONG(0)), n3 = CASE(ms + 3 * span < lo OR ms + 3 * span > hi, TO_LONG(-1), LOCATE(idx, CONCAT(\";\", TO_STRING(ms + 3 * span), \"=\")) > 0, TO_LONG(MV_FIRST(SPLIT(SUBSTRING(idx, LOCATE(idx, CONCAT(\";\", TO_STRING(ms + 3 * span), \"=\")) + LENGTH(CONCAT(\";\", TO_STRING(ms + 3 * span), \"=\"))), \";\"))), TO_LONG(0)) | EVAL tp1 = p1 >= 0 AND p1 * 10 < typical, tp2 = p2 >= 0 AND p2 * 10 < typical, tp3 = p3 >= 0 AND p3 * 10 < typical, tn1 = n1 >= 0 AND n1 * 10 < typical, tn2 = n2 >= 0 AND n2 * 10 < typical, tn3 = n3 >= 0 AND n3 * 10 < typical, qp1 = p1 >= 0 AND p1 * 3 < typical, qp2 = p2 >= 0 AND p2 * 3 < typical, qn1 = n1 >= 0 AND n1 * 3 < typical, qn2 = n2 >= 0 AND n2 * 3 < typical | WHERE CASE(total * 10 < typical, false, total * 3 < typical, NOT (tp1 OR tn1 OR (qp1 AND tp2) OR (qn1 AND tn2)), total >= typical OR NOT ((p1 < 0 OR tp1 OR (qp1 AND (tp2 OR (qp2 AND tp3)))) AND (n1 < 0 OR tn1 OR (qn1 AND (tn2 OR (qn2 AND tn3)))))) | EVAL part = SPLIT(parts, \";\") | MV_EXPAND part | DISSECT part \"%{band}=%{events}\" | EVAL `BUCKET(@timestamp, 75, ?_tstart, ?_tend)` = TO_DATETIME(ms), events = TO_LONG(events) | KEEP `BUCKET(@timestamp, 75, ?_tstart, ?_tend)`, band, events | EVAL ord = CASE(band == \"signal\", 0, band == \"authn-volume\", 1, band == \"query-noise\", 2, 3) | SORT ord | DROP ord | EVAL band = CASE(band == \"signal\", \"Signal\", band == \"authn-volume\", \"Auth success\", band == \"query-noise\", \"Query internals\", \"Infra health\")"
-            },
-            "x": {
-              "column": "BUCKET(@timestamp, 75, ?_tstart, ?_tend)",
-              "label": "@timestamp"
-            },
-            "y": [
-              {
-                "column": "events"
-              }
-            ],
-            "breakdown_by": {
-              "column": "band",
-              "color": {
-                "mode": "categorical",
-                "palette": "eui_amsterdam",
-                "mapping": [
-                  {
-                    "values": [
-                      "Signal"
-                    ],
-                    "color": {
-                      "type": "color_code",
-                      "value": "#54B399"
-                    }
-                  },
-                  {
-                    "values": [
-                      "Auth success"
-                    ],
-                    "color": {
-                      "type": "color_code",
-                      "value": "#6092C0"
-                    }
-                  },
-                  {
-                    "values": [
-                      "Query internals"
-                    ],
-                    "color": {
-                      "type": "color_code",
-                      "value": "#B9A888"
-                    }
-                  },
-                  {
-                    "values": [
-                      "Infra health"
-                    ],
-                    "color": {
-                      "type": "color_code",
-                      "value": "#DA8B45"
-                    }
-                  }
-                ]
-              }
-            }
-          }
-        ],
-        "legend": {
-          "visibility": "visible",
-          "position": "bottom",
-          "layout": {
-            "type": "list"
-          }
-        }
-      }
-    },
-    {
-      "type": "vis",
-      "id": "xy-11",
-      "grid": {
         "x": 30,
-        "y": 28,
+        "y": 30,
         "w": 18,
-        "h": 12
+        "h": 10
       },
       "config": {
         "title": "Audit volume by source service",
@@ -550,20 +448,20 @@
     },
     {
       "type": "vis",
-      "id": "tbl-12",
+      "id": "tbl-11",
       "grid": {
         "x": 0,
         "y": 40,
         "w": 22,
-        "h": 13
+        "h": 10
       },
       "config": {
-        "title": "Noisiest transport actions · top 12 at most",
+        "title": "Noisiest transport actions · top 8 at most",
         "description": "Highest-volume Elasticsearch transport actions, unfiltered. Busiest identity is the identity behind most of each action’s events (resolved as in Highest-volume identities), followed by how many others also called it. ES|QL’s own fan-out (esql/compute, search_shards, field_caps[n]) is in Query internals, and much of it is dashboards querying this stream — often the Cloud API key running this suite, shown as “_4KEO… · Cloud API key” (its first five characters).",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.action IS NOT NULL | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | STATS n = COUNT(*) BY attributes.elasticsearch.audit.action, actor | STATS events = SUM(n), actors = COUNT(*), top = MAX(CONCAT(TO_STRING(1000000000000 + n), actor)) BY attributes.elasticsearch.audit.action | EVAL top_identity = SUBSTRING(top, 14) | EVAL top_identity = CONCAT(CASE((LENGTH(top_identity) == 20 AND top_identity RLIKE \"[-_A-Za-z0-9]{20}\" AND NOT top_identity RLIKE \"[0-9]{20}\"), CONCAT(LEFT(top_identity, 5), \"… · Cloud API key\"), top_identity), CASE(actors > 1, CONCAT(\" + \", TO_STRING(actors - 1), \" more\"), \"\")) | KEEP attributes.elasticsearch.audit.action, top_identity, events | SORT events DESC, attributes.elasticsearch.audit.action | LIMIT 12"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE attributes.elasticsearch.audit.action IS NOT NULL | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | STATS n = COUNT(*) BY attributes.elasticsearch.audit.action, actor | STATS events = SUM(n), actors = COUNT(*), top = MAX(CONCAT(TO_STRING(1000000000000 + n), actor)) BY attributes.elasticsearch.audit.action | EVAL top_identity = SUBSTRING(top, 14) | EVAL top_identity = CONCAT(CASE((LENGTH(top_identity) == 20 AND top_identity RLIKE \"[-_A-Za-z0-9]{20}\" AND NOT top_identity RLIKE \"[0-9]{20}\"), CONCAT(LEFT(top_identity, 5), \"… · Cloud API key\"), top_identity), CASE(actors > 1, CONCAT(\" + \", TO_STRING(actors - 1), \" more\"), \"\")) | KEEP attributes.elasticsearch.audit.action, top_identity, events | SORT events DESC, attributes.elasticsearch.audit.action | LIMIT 8"
         },
         "styling": {
           "density": {
@@ -598,20 +496,20 @@
     },
     {
       "type": "vis",
-      "id": "tbl-13",
+      "id": "tbl-12",
       "grid": {
         "x": 22,
         "y": 40,
         "w": 26,
-        "h": 13
+        "h": 10
       },
       "config": {
-        "title": "Highest-volume identities · top 12 at most",
-        "description": "Unfiltered volume leaderboard, top identities by events — this is where the machine traffic shows up (often the Cloud API key running this suite). Only the busiest rows fit, so quieter identities — including the smaller keys in Named API keys — are beyond the rows shown. Kind “API key” is a named (Elasticsearch) API key, listed under its own name, or a Cloud API key; Created by is who made a named key, which Elasticsearch records on every event the key emits. When a PERSON makes a key, its events carry that person’s email, so they count under the person, whose Kind then reads “human + key”. Kind “failed sign-in” is a username that only ever failed to authenticate — usually a guess, not an account. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email.",
+        "title": "Highest-volume identities · top 8 at most",
+        "description": "Unfiltered volume leaderboard, top identities by events — this is where the machine traffic shows up (often the Cloud API key running this suite). Only the busiest rows fit, so quieter identities — including the smaller keys in Named API keys — are beyond the rows shown. Kind “API key” is a named (Elasticsearch) API key, listed under its own name, or a Cloud API key; who made a named key is in Named API keys. When a PERSON makes a key, its events carry that person’s email, so they count under the person, whose Kind then reads “human + key”. Kind “failed sign-in” is a username that only ever failed to authenticate — usually a guess, not an account. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS events = COUNT(*), via_key = COUNT(attributes.api_key.name), creators = VALUES(attributes.user.name) WHERE attributes.api_key.name IS NOT NULL, acts = VALUES(attributes.event.action) BY actor, actor_kind | EVAL actor_kind = CASE(actor IN (\"<anonymous>\",\"<unauthenticated-cloud-access-token>\",\"<unauthenticated-saml-user>\",\"<unauthenticated-cloud-api-key>\"), \"unauthenticated\", actor IN (\"elastic.maintenance\",\"autoscaling\",\"elasticsearch-controller\",\"elastic/fleet-server\",\"elastic/kibana\"), \"platform\", actor_kind) | EVAL actions = MV_COUNT(acts), acts = MV_CONCAT(MV_SORT(acts), \",\") | EVAL actor_kind = CASE((LENGTH(actor) == 20 AND actor RLIKE \"[-_A-Za-z0-9]{20}\" AND NOT actor RLIKE \"[0-9]{20}\"), \"API key\", actor_kind == \"service\" AND via_key == events, \"API key\", actor_kind == \"human\" AND via_key > 0, \"human + key\", actor_kind == \"service\" AND acts IN (\"authentication_failed\", \"realm_authentication_failed\", \"authentication_failed,realm_authentication_failed\"), \"failed sign-in\", actor_kind) | EVAL creator = CASE(actor_kind == \"API key\" AND via_key == events, MV_MIN(creators)), n_creators = MV_COUNT(creators) | EVAL created_by = COALESCE(CONCAT(CASE((LENGTH(creator) == 20 AND creator RLIKE \"[-_A-Za-z0-9]{20}\" AND NOT creator RLIKE \"[0-9]{20}\"), CONCAT(LEFT(creator, 5), \"… · Cloud API key\"), creator), CASE(n_creators > 1, CONCAT(\" + \", TO_STRING(n_creators - 1), \" more\"), \"\")), \" \") | KEEP actor, actor_kind, created_by, events, actions | SORT events DESC, actor | LIMIT 12 | EVAL actor = CASE((LENGTH(actor) == 20 AND actor RLIKE \"[-_A-Za-z0-9]{20}\" AND NOT actor RLIKE \"[0-9]{20}\"), CONCAT(LEFT(actor, 5), \"… · Cloud API key\"), actor)"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\"), actor_kind = CASE(attributes.user.email IS NOT NULL, \"human\", \"service\") | STATS events = COUNT(*), via_key = COUNT(attributes.api_key.name), acts = VALUES(attributes.event.action) BY actor, actor_kind | EVAL actor_kind = CASE(actor IN (\"<anonymous>\",\"<unauthenticated-cloud-access-token>\",\"<unauthenticated-saml-user>\",\"<unauthenticated-cloud-api-key>\"), \"unauthenticated\", actor IN (\"elastic.maintenance\",\"autoscaling\",\"elasticsearch-controller\",\"elastic/fleet-server\",\"elastic/kibana\"), \"platform\", actor_kind) | EVAL actions = MV_COUNT(acts), acts = MV_CONCAT(MV_SORT(acts), \",\") | EVAL actor_kind = CASE((LENGTH(actor) == 20 AND actor RLIKE \"[-_A-Za-z0-9]{20}\" AND NOT actor RLIKE \"[0-9]{20}\"), \"API key\", actor_kind == \"service\" AND via_key == events, \"API key\", actor_kind == \"human\" AND via_key > 0, \"human + key\", actor_kind == \"service\" AND acts IN (\"authentication_failed\", \"realm_authentication_failed\", \"authentication_failed,realm_authentication_failed\"), \"failed sign-in\", actor_kind) | KEEP actor, actor_kind, events, actions | SORT events DESC, actor | LIMIT 8 | EVAL actor = CASE((LENGTH(actor) == 20 AND actor RLIKE \"[-_A-Za-z0-9]{20}\" AND NOT actor RLIKE \"[0-9]{20}\"), CONCAT(LEFT(actor, 5), \"… · Cloud API key\"), actor)"
         },
         "styling": {
           "density": {
@@ -633,11 +531,6 @@
             "label": "Kind",
             "width": 120,
             "column": "actor_kind"
-          },
-          {
-            "label": "Created by",
-            "column": "created_by",
-            "width": 140
           }
         ],
         "metrics": [

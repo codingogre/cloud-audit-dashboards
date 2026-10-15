@@ -1,6 +1,6 @@
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
-  "description": "Audited events by real client country. Countries are colored by event volume on a log scale (the legend's title says so; the subtitle no longer does, since with one country shaded there is no legend to check it against), teal (few) through blue and purple to pink (most): the suite’s four mid-tone magnitude hues, so every step stands apart from the grey no-data countries in both themes. The gradient legend sits inside the map, over open ocean at the bottom left, labelled at the decades inside the data, and only once two or more countries are shaded — a single country has no range to read, and a 1-to-max ramp beside it matched nothing on the map. Hover for events, identities, client IPs and share of placed traffic. The title line states how much of the stream could be placed at all, rounded once in ES|QL exactly as the Geo coverage tile is (ROUND(located / total, 3)), so the two always print the same tenth of a percent: platform-internal hops, private addresses and events with no client IP resolve to nothing, so a blank country is not evidence of no traffic. Text is 13-14px, the size of the table text beside it: at 11px the subtitle was the smallest text on the page. Unshaded land is #98A2B3 at 0.3 opacity with a 0.75 border, one mid grey that reads on both themes: at 0.14 it all but vanished on the light theme's white panel.",
+  "description": "Audited events by real client country. Countries are colored by event volume on a log scale (the legend's title says so; the subtitle no longer does, since with one country shaded there is no legend to check it against), teal (few) through blue and purple to pink (most): the suite’s four mid-tone magnitude hues, so every step stands apart from the grey no-data countries in both themes. The gradient legend sits inside the map, over open ocean at the bottom left, labelled at the decades inside the data, and only once two or more countries are shaded — a single country has no range to read, and a 1-to-max ramp beside it matched nothing on the map. A lone country is drawn in #54B399, the teal it has as the only series of the time chart below (PALETTE[0], the first unpinned breakdown colour): a log scale over one value has no range, and it drew the country lavender, a colour that chart gives nothing. With two or more countries the colour is magnitude and the legend shows; it then cannot match the chart's categorical colours, and the panel description says so. Hover for events, identities, client IPs and share of placed traffic. The title line states how much of the stream could be placed at all, rounded once in ES|QL exactly as the Geo coverage tile is (ROUND(located / total, 3)), so the two always print the same tenth of a percent: platform-internal hops, private addresses and events with no client IP resolve to nothing, so a blank country is not evidence of no traffic. Text is 13-14px, the size of the table text beside it: at 11px the subtitle was the smallest text on the page. Unshaded land is #98A2B3 at 0.3 opacity with a 0.75 border, one mid grey that reads on both themes: at 0.14 it all but vanished on the light theme's white panel.",
   "autosize": {
     "type": "fit",
     "contains": "padding"
@@ -140,6 +140,10 @@
           "type": "geojson"
         },
         "color": {
+          "condition": {
+            "test": "length(data('countries')) < 2",
+            "value": "#54B399"
+          },
           "field": "events",
           "type": "quantitative",
           "scale": {

@@ -1,6 +1,6 @@
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
-  "description": "Which credential type each identity presents, for the busiest identities (12 at most). Only Elasticsearch requests record a credential type, so identities seen only in Kibana or only anonymously are not on this chart. Rows keep about the height twelve would have, from the top, so a short window does not stretch a few identities into tall blocks.",
+  "description": "Which credential type each of the busiest identities presents (12 at most), with the number of Elasticsearch requests in each cell. Cells are coloured by credential type, in the same colours as the time chart beside it, and the count is printed in the cell, so a colour never stands for a number. Only Elasticsearch requests record a credential type, so identities seen only in Kibana or only anonymously are not on this chart. Rows keep about the height twelve would have, from the top, so a short window does not stretch a few identities into tall blocks.",
   "title": {
     "text": {
       "expr": "length(data('rows')) ? '' : 'No activity for this selection in this time range'"
@@ -80,39 +80,44 @@
       },
       "encoding": {
         "color": {
-          "field": "events",
-          "type": "quantitative",
+          "field": "auth",
+          "type": "nominal",
           "scale": {
-            "type": "log",
+            "domain": [
+              "API key",
+              "Token",
+              "Realm",
+              "SAML",
+              "Anonymous",
+              "Internal"
+            ],
             "range": [
               "#54B399",
               "#6092C0",
+              "#D36086",
               "#9170B8",
-              "#D36086"
-            ],
-            "interpolate": "hcl"
+              "#D6BF57",
+              "#DA8B45"
+            ]
           },
-          "legend": {
-            "title": "Events",
-            "titlePadding": 10,
-            "orient": "right",
-            "direction": "vertical",
-            "gradientLength": 180,
-            "gradientThickness": 10,
-            "values": {
-              "expr": "!(length(data('rows'))) ? [] : !(domain('color')[1] > domain('color')[0]) ? [domain('color')[0]] : ((floor(log(domain('color')[1]) / LN10 - 0.5) - ceil(log(domain('color')[0]) / LN10 + 0.5) + 1) == 1 ? [domain('color')[0], pow(10, ceil(log(domain('color')[0]) / LN10 + 0.5) + 0), domain('color')[1]] : (floor(log(domain('color')[1]) / LN10 - 0.5) - ceil(log(domain('color')[0]) / LN10 + 0.5) + 1) == 2 ? [domain('color')[0], pow(10, ceil(log(domain('color')[0]) / LN10 + 0.5) + 0), pow(10, ceil(log(domain('color')[0]) / LN10 + 0.5) + 1), domain('color')[1]] : (floor(log(domain('color')[1]) / LN10 - 0.5) - ceil(log(domain('color')[0]) / LN10 + 0.5) + 1) == 3 ? [domain('color')[0], pow(10, ceil(log(domain('color')[0]) / LN10 + 0.5) + 0), pow(10, ceil(log(domain('color')[0]) / LN10 + 0.5) + 1), pow(10, ceil(log(domain('color')[0]) / LN10 + 0.5) + 2), domain('color')[1]] : (floor(log(domain('color')[1]) / LN10 - 0.5) - ceil(log(domain('color')[0]) / LN10 + 0.5) + 1) == 4 ? [domain('color')[0], pow(10, ceil(log(domain('color')[0]) / LN10 + 0.5) + 0), pow(10, ceil(log(domain('color')[0]) / LN10 + 0.5) + 1), pow(10, ceil(log(domain('color')[0]) / LN10 + 0.5) + 2), pow(10, ceil(log(domain('color')[0]) / LN10 + 0.5) + 3), domain('color')[1]] : (floor(log(domain('color')[1]) / LN10 - 0.5) - ceil(log(domain('color')[0]) / LN10 + 0.5) + 1) == 5 ? [domain('color')[0], pow(10, ceil(log(domain('color')[0]) / LN10 + 0.5) + 0), pow(10, ceil(log(domain('color')[0]) / LN10 + 0.5) + 1), pow(10, ceil(log(domain('color')[0]) / LN10 + 0.5) + 2), pow(10, ceil(log(domain('color')[0]) / LN10 + 0.5) + 3), pow(10, ceil(log(domain('color')[0]) / LN10 + 0.5) + 4), domain('color')[1]] : (floor(log(domain('color')[1]) / LN10 - 0.5) - ceil(log(domain('color')[0]) / LN10 + 0.5) + 1) == 6 ? [domain('color')[0], pow(10, ceil(log(domain('color')[0]) / LN10 + 0.5) + 0), pow(10, ceil(log(domain('color')[0]) / LN10 + 0.5) + 1), pow(10, ceil(log(domain('color')[0]) / LN10 + 0.5) + 2), pow(10, ceil(log(domain('color')[0]) / LN10 + 0.5) + 3), pow(10, ceil(log(domain('color')[0]) / LN10 + 0.5) + 4), pow(10, ceil(log(domain('color')[0]) / LN10 + 0.5) + 5), domain('color')[1]] : (floor(log(domain('color')[1]) / LN10 - 0.5) - ceil(log(domain('color')[0]) / LN10 + 0.5) + 1) == 7 ? [domain('color')[0], pow(10, ceil(log(domain('color')[0]) / LN10 + 0.5) + 0), pow(10, ceil(log(domain('color')[0]) / LN10 + 0.5) + 1), pow(10, ceil(log(domain('color')[0]) / LN10 + 0.5) + 2), pow(10, ceil(log(domain('color')[0]) / LN10 + 0.5) + 3), pow(10, ceil(log(domain('color')[0]) / LN10 + 0.5) + 4), pow(10, ceil(log(domain('color')[0]) / LN10 + 0.5) + 5), pow(10, ceil(log(domain('color')[0]) / LN10 + 0.5) + 6), domain('color')[1]] : (floor(log(domain('color')[1]) / LN10 - 0.5) - ceil(log(domain('color')[0]) / LN10 + 0.5) + 1) == 8 ? [domain('color')[0], pow(10, ceil(log(domain('color')[0]) / LN10 + 0.5) + 0), pow(10, ceil(log(domain('color')[0]) / LN10 + 0.5) + 1), pow(10, ceil(log(domain('color')[0]) / LN10 + 0.5) + 2), pow(10, ceil(log(domain('color')[0]) / LN10 + 0.5) + 3), pow(10, ceil(log(domain('color')[0]) / LN10 + 0.5) + 4), pow(10, ceil(log(domain('color')[0]) / LN10 + 0.5) + 5), pow(10, ceil(log(domain('color')[0]) / LN10 + 0.5) + 6), pow(10, ceil(log(domain('color')[0]) / LN10 + 0.5) + 7), domain('color')[1]] : [domain('color')[0], domain('color')[1]])"
-            },
-            "labelExpr": "format(datum.value, '.2~s')",
-            "titleOpacity": {
-              "expr": "length(data('rows')) ? 1 : 0"
-            },
-            "labelOpacity": {
-              "expr": "length(data('rows')) ? 1 : 0"
-            },
-            "gradientOpacity": {
-              "expr": "length(data('rows')) ? 1 : 0"
-            }
-          }
+          "legend": null
+        }
+      }
+    },
+    {
+      "mark": {
+        "type": "text",
+        "color": "#1D1E24",
+        "fontSize": 11,
+        "fontWeight": 600,
+        "baseline": "middle",
+        "align": "center"
+      },
+      "encoding": {
+        "text": {
+          "field": "events",
+          "type": "quantitative",
+          "format": ","
         }
       }
     }

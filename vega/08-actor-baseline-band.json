@@ -1,6 +1,6 @@
 {
   "$schema": "https://vega.github.io/schema/vega/v5.json",
-  "description": "Hourly activity for the current selection against its OWN pattern for that hour of day. The shaded band is their typical range for the hour (\"typical range\" in the legend, which lists only what is drawn) — the middle half of the seven observations in the window — and a point marks an hour beyond 1.5× that range, which is unusual for them. Seven observations per hour slot is thin, so read it as a sanity check rather than a detector: an identity with a steady background process plus human bursts will sit outside often, and correctly. The headline reads the last complete hour; the current partial hour is left off so it cannot read as a drop. Hours are UTC. Fixed 7-day window: does not follow the time picker. No noise gate, so it will not reconcile with Signal events. With less than three days of history the band has nothing to stand on: the second line then says when their history starts, no hour is marked unusual (every busy hour would read as unusual against a week of zeros), and the time axis starts three hours before that history instead of seven days back, so the chart is not a week of empty floor with the data in a sliver at the right edge.",
+  "description": "Hourly activity for the current selection against its OWN pattern for that hour of day. The shaded band is their typical range for the hour (\"typical range\" in the legend, which lists only what is drawn) — the middle half of the seven observations in the window — and a point marks an hour beyond 1.5× that range, which is unusual for them. Seven observations per hour slot is thin, so read it as a sanity check rather than a detector: an identity with a steady background process plus human bursts will sit outside often, and correctly. The headline reads the last complete hour; the current partial hour is left off so it cannot read as a drop. Hours are UTC. Fixed 7-day window: does not follow the time picker. No noise gate, so it will not reconcile with Signal events. The quartiles count only hours from their first event on, so the week before their history starts does not drag the band to zero. With less than three days of history the band has nothing to stand on: it is not drawn, the second line says when their history starts, no hour is marked unusual (every busy hour would read as unusual against a week of zeros), and the time axis starts three hours before that history instead of seven days back, so the chart is not a week of empty floor with the data in a sliver at the right edge. Hours before their first event are not drawn at all: the line starts where their history does, rather than climbing from zero through every decade of the log axis as if the volume had ramped up.",
   "autosize": {
     "type": "fit",
     "contains": "padding"
@@ -124,6 +124,11 @@
         },
         {
           "type": "formula",
+          "as": "livedEvents",
+          "expr": "datum.key >= datum.firstActive ? datum.events : null"
+        },
+        {
+          "type": "formula",
           "as": "slot",
           "expr": "utchours(datum.key)"
         },
@@ -133,9 +138,9 @@
             "slot"
           ],
           "fields": [
-            "events",
-            "events",
-            "events"
+            "livedEvents",
+            "livedEvents",
+            "livedEvents"
           ],
           "ops": [
             "q1",
@@ -181,8 +186,23 @@
       ]
     },
     {
-      "name": "outside",
+      "name": "lived",
       "source": "shown",
+      "transform": [
+        {
+          "type": "filter",
+          "expr": "isValid(datum.firstActive) && datum.key >= datum.firstActive"
+        },
+        {
+          "type": "formula",
+          "as": "decade",
+          "expr": "datum.events > 0 ? pow(10, floor(log(datum.events) / LN10 + 1e-9)) : 0"
+        }
+      ]
+    },
+    {
+      "name": "outside",
+      "source": "lived",
       "transform": [
         {
           "type": "filter",
@@ -253,7 +273,7 @@
       "transform": [
         {
           "type": "filter",
-          "expr": "datum.q3 > datum.q1"
+          "expr": "!datum.short && datum.q3 > datum.q1"
         },
         {
           "type": "aggregate",
@@ -302,11 +322,12 @@
       "name": "y",
       "type": "symlog",
       "domain": {
-        "data": "shown",
+        "data": "lived",
         "fields": [
           "events",
           "q1",
-          "q3"
+          "q3",
+          "decade"
         ]
       },
       "range": [
@@ -362,6 +383,7 @@
       "scale": "x",
       "tickCount": 7,
       "labelOverlap": true,
+      "labelSeparation": 10,
       "grid": false,
       "format": "%a %d",
       "formatType": "utc",
@@ -471,7 +493,7 @@
     {
       "type": "area",
       "from": {
-        "data": "shown"
+        "data": "lived"
       },
       "interactive": false,
       "encode": {
@@ -495,7 +517,7 @@
             "value": "#5082B1"
           },
           "fillOpacity": {
-            "signal": "quiet ? 0 : 0.35"
+            "signal": "quiet || datum.short ? 0 : 0.35"
           }
         }
       }
@@ -503,7 +525,7 @@
     {
       "type": "line",
       "from": {
-        "data": "shown"
+        "data": "lived"
       },
       "interactive": false,
       "encode": {
@@ -557,7 +579,7 @@
     {
       "type": "symbol",
       "from": {
-        "data": "shown"
+        "data": "lived"
       },
       "encode": {
         "update": {

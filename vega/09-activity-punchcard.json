@@ -1,6 +1,6 @@
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
-  "description": "Every audited event for the current selection by hour of day and day of week, over the last 7 days in UTC — one cell is one specific hour, not an average, because a seven-day window holds each hour of the week exactly once. Strength is volume on a log scale, so a quiet hour stays visible beside a busy one; a bare grey slot is an hour with no events at all. Fixed window: this panel does not follow the time picker. No noise gate: it measures presence, so it will not reconcile with Signal events. UTC is stated rather than localised so the chart reads the same for every viewer, whatever their timezone — read the rhythm, not the clock.",
+  "description": "Every audited event for the current selection by hour of day and day of week, over the last 7 days in UTC — one cell is one specific hour, not an average, because a seven-day window holds each hour of the week exactly once. Strength is volume on a log scale, so a quiet hour stays visible beside a busy one; a bare grey slot is an hour with no events at all. The current hour is still filling, so it is outlined rather than coloured: coloured, its first minutes read as a sudden drop after the full hours before it. Fixed window: this panel does not follow the time picker. No noise gate: it measures presence, so it will not reconcile with Signal events. UTC is stated rather than localised so the chart reads the same for every viewer, whatever their timezone — read the rhythm, not the clock.",
   "title": {
     "text": {
       "expr": "extent(pluck(data('hours'), 'doc_count'))[1] > 0 ? '' : 'No activity for this selection in the last 7 days'"
@@ -87,6 +87,14 @@
     {
       "calculate": "utcFormat(datum.key, '%a %d %b, %H:00') + '–' + utcFormat(datum.key + 3600000, '%H:00') + ' UTC'",
       "as": "when"
+    },
+    {
+      "calculate": "datum.key + 3600000 > now()",
+      "as": "partial"
+    },
+    {
+      "calculate": "datum.partial ? 'in progress — ' + format(datum.doc_count, ',') + ' so far' : format(datum.doc_count, ',')",
+      "as": "eventsText"
     }
   ],
   "encoding": {
@@ -141,9 +149,8 @@
         "title": "Hour"
       },
       {
-        "field": "doc_count",
-        "title": "Events",
-        "format": ","
+        "field": "eventsText",
+        "title": "Events"
       }
     ]
   },
@@ -161,7 +168,7 @@
     {
       "transform": [
         {
-          "filter": "datum.doc_count > 0"
+          "filter": "datum.doc_count > 0 && !datum.partial"
         }
       ],
       "mark": {
@@ -203,6 +210,24 @@
             }
           }
         }
+      }
+    },
+    {
+      "transform": [
+        {
+          "filter": "datum.partial && datum.doc_count > 0"
+        }
+      ],
+      "mark": {
+        "type": "rect",
+        "cornerRadius": 2,
+        "fillOpacity": 0,
+        "stroke": "#98A8C3",
+        "strokeWidth": 1.5,
+        "strokeDash": [
+          3,
+          2
+        ]
       }
     }
   ]
