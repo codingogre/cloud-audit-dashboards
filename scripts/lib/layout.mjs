@@ -366,6 +366,28 @@ function checkMarkdown(name, panels, problems) {
 }
 
 /**
+ * TOOLTIPS (panels.mjs): a panel's description, as deployed — after table() and prevKpi() append their notes —
+ * is at most TIP_MAX_WORDS words, and so is every Discover session's own description (searches/*.json), which
+ * Discover shows in its info panel. A word is a whitespace-separated token with a letter or digit in it, so
+ * "—", "·" and "×" do not count and "API-key" counts once. Page-wide caveats belong in the How to read block.
+ */
+export const TIP_MAX_WORDS = 40;
+export const tipWords = (text) => String(text || '').split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
+export function checkTips(name, panels, problems) {
+  for (const p of panels) {
+    const n = tipWords(p.config?.description);
+    if (n > TIP_MAX_WORDS) problems.push(`${name}: panel ${p.id} "${(p.config?.title || '').slice(0, 40)}" has a ${n}-word tooltip — ${TIP_MAX_WORDS} at most; move caveats to the How to read block or the README`);
+  }
+}
+export function checkSearchTips(problems, dir = join(ROOT, 'searches')) {
+  if (!existsSync(dir)) return;
+  for (const f of readdirSync(dir).filter((x) => x.endsWith('.json')).sort()) {
+    const n = tipWords(JSON.parse(readFileSync(join(dir, f), 'utf8')).description);
+    if (n > TIP_MAX_WORDS) problems.push(`searches/${f}: a ${n}-word description — ${TIP_MAX_WORDS} at most (Discover shows it as the session's info)`);
+  }
+}
+
+/**
  * A session that RENAMEs a column for display must list it by the NEW name: listed by the old one,
  * Discover renders an empty column under the raw header, which is exactly what the rename was for.
  */
@@ -519,6 +541,7 @@ export function checkLayout(all) {
     const maxY = checkGrid(name, panels, problems);
     checkRefs(name, panels, problems);
     checkMarkdown(name, panels, problems);
+    checkTips(name, panels, problems);
     checkCompleteness(name, panels, problems);
     checkRows(name, panels, problems);
     checkClickFilters(name, panels, problems);
@@ -533,5 +556,6 @@ export function checkLayout(all) {
   checkFragmentDrift(problems);
   checkVega(problems);
   checkSessions(problems);
+  checkSearchTips(problems);
   return { problems, panelCount, dashboards: Object.keys(all).length, rows };
 }

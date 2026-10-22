@@ -3,10 +3,10 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ROOT } from '../env.mjs';
 import {
-  IDX, ACTOR_RESOLVE, TIME, BUCKET, ESS, INDEX_FAMILY, CONCRETE, SYS_INDEX, cloudKeyLabel, EDGE_NOTE, dash, kpi, prevKpi, xy, table, vega, search, sized, fitRows, resetIds
+  IDX, ACTOR_RESOLVE, TIME, BUCKET, ESS, INDEX_FAMILY, CONCRETE, SYS_INDEX, cloudKeyLabel, dash, kpi, prevKpi, xy, table, vega, search, sized, fitRows, resetIds
 } from '../panels.mjs';
 import { rawId } from '../suite.mjs';
-import { PIN_BY, PIN_KEY, PIN_PRINCIPAL_SHORT, PIN_NOTE, RAW_RECORDS } from './shared.mjs';
+import { PIN_BY, PIN_KEY, PIN_PRINCIPAL_SHORT, RAW_RECORDS } from './shared.mjs';
 
 /**
  * Transport fan-out, dropped AFTER aggregation so it costs nothing: shard/node copies (`…[s]`, `[n]`,
@@ -98,16 +98,6 @@ const FAMILY_COLORS = {
   'cluster admin': '#9170B8', monitor: '#D36086', other: '#B9A888',
 };
 
-/**
- * THE LIVE EDGE. Audit events become searchable a few seconds after they happen, and this page's own
- * queries are audited reads, so at a range ending now the last seconds were still filling as panels loaded.
- * Measured on the live stream: one fixed 1h range read 5,266 ES|QL queries and, 4s later, 5,270 —
- * then held. Each panel is queried at its own moment, so the ES|QL queries tile and its row in Top
- * transport actions can differ by a few at the default "now" range (round 3 saw 17,012 vs 17,011) and
- * agree once the range ends a minute in the past — which, since round 6, every dashboard's range does
- * (TIME_TO). What is left is the sub-second spread between panels' `now`, which EDGE_NOTE states.
- */
-const LIVE_EDGE = EDGE_NOTE;
 
 /**
  * "Busiest" from rows already grouped by (key, actor): the largest n per key, carried as a string so
@@ -157,12 +147,19 @@ const withTotals = (p) => { p.config.legend = { ...p.config.legend, size: 'xl', 
 
 /** The intro (draft 5 of the 1.0.3 customer copy; INTRO TEXT in panels.mjs). */
 const INTRO = {
-  h: 6,
+  h: 12,
   heading: "What data was read or written in Elasticsearch, and by whom",
   paragraphs: [
     `See which indices each identity uses, the kinds of requests they made, any denied requests, and every touch of system or hidden indices. ${RAW_RECORDS}`,
     "Related indices are grouped into one family, so a data stream and its daily backing indices read as a single row. Use it to confirm that sensitive data is reached only by the people and keys you expect.",
     "**How to use it:** choose a Project, Person (email), API key or Client IP in the controls and set the time picker. Empty denied and system-index panels usually mean all is well.",
+  ],
+  howTo: [
+    'This page counts all traffic, these dashboards’ own reads included: on a page about who reads what, those reads are the subject.',
+    'A request counts once per index it names; shard copies and internal sub-steps are left out. Ranked tables show the top rows; the tiles count everything.',
+    'Matrix: a blank cell means no reads, or too few to be among the 500 busiest identity–family pairs.',
+    'System and hidden index access is expected from Kibana and platform automation; from anyone else, look closer.',
+    'The chart legend’s totals leave out the partial bucket at the right edge, so they can run behind the tiles.',
   ],
 };
 
@@ -172,20 +169,20 @@ export function build() {
     // Three DSL Vega tiles with a previous-period line (PREV_TILES in panels.mjs, held to their ES|QL by --lint).
     prevKpi(0, 0, 8, 5, 'es-events', 'All Elasticsearch audit events in range.'),
     kpi(8, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE elasticsearch.audit.indices IS NOT NULL AND ${COPIES} | STATS BY elasticsearch.audit.indices | ${CONCRETE} | EVAL family = ${INDEX_FAMILY} | ${fold('family')} | STATS \`Index families\` = COUNT_DISTINCT(family)`,
-      'Index families', 'Distinct index families named in audited requests — the rows Top index families and the matrix would list with no cut. A data stream and its backing indices are one family, as is a run of dated daily indices or of per-run indices stamped with a date and time (syn-tmp-20261014-152111-… is syn-tmp*), and system and hidden indices count once per area (.alerts*, .slo*, .kibana*…), the groups the ⚠️ table names. Wildcard and date-math expressions (*, -*, <…{now/d}>) are patterns, not indices, and are left out.'),
+      'Index families', 'Distinct index families named in requests. A data stream and its backing indices, or a run of dated indices, count as one family; system and hidden indices count once per area. Wildcard patterns are not counted.'),
     kpi(16, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE elasticsearch.audit.action IS NOT NULL | STATS BY elasticsearch.audit.action | WHERE NOT ${FANOUT} | STATS \`Distinct actions\` = COUNT(*)`, 'Distinct actions',
-      'Distinct Elasticsearch transport actions (cluster:*, indices:*), with shard-level copies and ES|QL sub-steps folded away — the same actions Top transport actions lists, all traffic.'),
+      'Distinct Elasticsearch transport actions (cluster:*, indices:*), the same actions Top transport actions lists, all traffic.'),
     // The top-level request only (PREV_TILES esql-queries). `LIKE "*esql*"` also counted the engine's own fan-out (compute,
     // data, search_shards, resolve_fields, async polling) and read ~9x the queries actually run —
     // a figure that grew with shard count, not with anyone's activity. `==` also pushes down.
     prevKpi(24, 0, 8, 5, 'esql-queries',
-      `ES|QL queries submitted — one per query, not per shard or sub-step. Includes the queries these dashboards run to draw themselves. Equals the indices:data/read/esql row in Top transport actions. ${LIVE_EDGE}`),
+      'ES|QL queries submitted, one per query rather than per shard or sub-step. Includes the queries these dashboards run to draw themselves.'),
     kpi(32, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE elasticsearch.audit.indices IS NOT NULL | MV_EXPAND elasticsearch.audit.indices | ${SYS_INDEX} | STATS \`System index access\` = COUNT(*)`, 'System index access',
-      'Requests touching dot-prefixed system and hidden indices (.kibana*, .security*, .slo-*, .alerts-*), counted once per index named. Backing indices of ordinary data streams (.ds-logs-…) are not system data and are left out, as are shard-level copies of a request.'),
+      'Requests touching system and hidden indices (.kibana*, .security*, .slo-*, .alerts-*), counted once per index named. Ordinary data-stream backing indices are not system data and are left out.'),
     prevKpi(40, 0, 8, 5, 'access-denied', 'Authorization denials. Sustained non-zero values mean a misconfigured client or a probe.'),
     withTotals(xy(0, 5, 24, 15, 'Data access over time by action family',
       `FROM ${IDX} | ${TIME} | WHERE elasticsearch.audit.action IS NOT NULL | STATS n = COUNT(*) BY time = ${BUCKET}, elasticsearch.audit.action, request = elasticsearch.audit.request.name | WHERE NOT ${FANOUT} AND NOT ${ASYNC_INNER} | ${FAMILY} | STATS events = SUM(n) BY time, family | SORT family`,
-      'events', 'Every Elasticsearch request that names a transport action, by kind of action — all traffic, the searches and ES|QL these dashboards run among the reads. Shard-level copies, ES|QL sub-steps and the search an async search runs for itself are folded away so a request counts once, and authentication and connection events (which name no action) are left out, so it sums to less than the Elasticsearch events tile. The legend gives each family\'s total, so a family too small to see as a bar is still counted; Lens leaves the partial bucket at the right edge, the one the range\'s end cuts through, out of those totals (up to half an hour at 24h), so they run behind the bars and the tiles. A stretch with no bars means no audited Elasticsearch request in that span — on a wide range that includes the time before the project\'s audit stream began.',
+      'events', 'Elasticsearch requests over time by kind of action (read, write, admin…), all traffic, including these dashboards’ own reads. Each request counts once. The legend gives each kind’s total; a gap means no audited requests then.',
       { breakdown: 'family', xcol: 'time', colors: FAMILY_COLORS, legend: 'right' })),
     // The matrix (vega/04) packs to the top left: each band scale's range is min(panel, cells × step),
     // with the cell count read from a no-op `opacity` / `strokeWidth` scale over the same field — a
@@ -213,11 +210,11 @@ export function build() {
     table(0, 20, 24, 15, 'Top index families by events',
       `FROM ${IDX} | ${TIME} | WHERE elasticsearch.audit.indices IS NOT NULL AND ${COPIES} | STATS n = COUNT(*) BY user.email, api_key.name, user.name, elasticsearch.audit.indices | ${CONCRETE} | ${ACTOR_RESOLVE}, index = ${INDEX_FAMILY} | ${fold('index')} | STATS n = SUM(n) BY index, actor | EVAL k = ${BUSIEST_KEY} | STATS events = SUM(n), actors = COUNT(*), top = MAX(k) BY index | SORT events DESC, index | LIMIT ${fitRows(15)} | EVAL busiest = SUBSTRING(top, 14) | EVAL busiest = ${cloudKeyLabel('busiest')} | KEEP index, busiest, actors, events`,
       [{ column: 'index', label: 'Index family' }, sized('busiest', 170, { label: 'Busiest identity' })], [sized('actors', 80), sized('events', 84)],
-      'The busiest index families, all traffic; the Index families tile counts every one, so the rest are beyond this list. Identities is how many distinct identities touched the family, and Busiest identity is the one with the most events against it — over a quiet hour the list is often only the audit stream itself, read by the identity these dashboards run as. A data stream and its backing indices are one row, as is a run of dated daily indices or of per-run indices stamped with a date and time (syn-tmp-20261014-152111-… is syn-tmp*), and system and hidden indices are one row per area (.alerts*, .slo*, .kibana*…), as in the ⚠️ table: one request naming ten alert indices is one .alerts* row, not ten. Events counts a request once per index it names, so a system area\'s events per identity are the ⚠️ table\'s; shard-level copies and the ES|QL engine\'s per-shard steps name the same indices again and are left out (an ES|QL query counts once, by the step that resolves its indices). Wildcard and date-math expressions are left out. The same count the matrix beside it colours, and the matrix lists its families in this order. A Busiest identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key, which the audit stream records only by its opaque id.'),
+      'The busiest index families across all traffic, with how many identities touched each and the busiest one. Over a quiet range this is often just the audit stream, read by the identity these dashboards run as.'),
     table(0, 35, 48, 14, 'Top transport actions',
       `FROM ${IDX} | ${TIME} | WHERE elasticsearch.audit.action IS NOT NULL | STATS n = COUNT(*), seen = MAX(@timestamp) BY user.email, api_key.name, user.name, elasticsearch.audit.action, request = elasticsearch.audit.request.name | WHERE NOT ${FANOUT} AND NOT ${ASYNC_INNER} | ${ACTOR_RESOLVE}, request = CASE(request IS NULL OR request == "", "—", request) | STATS events = SUM(n), actors = COUNT_DISTINCT(actor), last_seen = MAX(seen) BY elasticsearch.audit.action, request | SORT events DESC | LIMIT ${fitRows(14)}`,
       [sized('elasticsearch.audit.action', 420), 'request'], ['actors', 'events', 'last_seen'],
-      `The busiest Elasticsearch transport actions with their request class, all traffic — the searches and ES|QL reads these dashboards run included, since reads are what this page is about. The Distinct actions tile counts every action; the rest are beyond this list, and an action sent with two request classes is two rows. Shard-level copies, ES|QL sub-steps and the search an async search runs for itself are folded away, so a request counts once. Identities is how many distinct identities sent the action; Request "—" means the event named no request class. ${LIVE_EDGE}`),
+      'The busiest Elasticsearch actions with their request type and how many identities sent each, all traffic, including these dashboards’ own reads. Each request counts once. The Distinct actions tile counts every action, listed or not.'),
     // One row per identity: per (identity, action, index) one persona's run filled the panel and the
     // visible rows summed to 749 of the tile's 853 (round 3). The newest denial's action and index are
     // carried as one sortable string (ISO time first), so they belong to the same event as Last seen.
@@ -228,7 +225,7 @@ export function build() {
     table(0, 49, 48, 12, 'Denied requests by identity',
       `FROM ${IDX} | ${TIME} | WHERE event.action == "access_denied" OR event.action == "anonymous_access_denied" | STATS events = COUNT(*), seen = MAX(@timestamp) BY user.email, api_key.name, user.name, elasticsearch.audit.action, elasticsearch.audit.indices | ${ACTOR_RESOLVE}, k = CONCAT(TO_STRING(seen), "|", COALESCE(elasticsearch.audit.action, "—"), "|", COALESCE(elasticsearch.audit.indices, "—")) | STATS events = SUM(events), last_seen = MAX(seen), latest = MAX(k), actions = VALUES(elasticsearch.audit.action), indices = VALUES(elasticsearch.audit.indices) BY actor | ${foldRest(fitRows(12))} | EVAL latest_action = MV_SLICE(SPLIT(latest, "|"), 1), latest_index = MV_SLICE(SPLIT(latest, "|"), 2), actions = COALESCE(MV_COUNT(actions), 0), indices = COALESCE(MV_COUNT(indices), 0) | KEEP actor, latest_action, latest_index, actions, indices, events, last_seen | SORT last_seen DESC | LIMIT ${fitRows(12)}`,
       ['actor', { column: 'latest_action', label: 'Latest denied action' }, { column: 'latest_index', label: 'On index' }], [{ column: 'actions', label: 'Actions' }, 'indices', { column: 'events', label: 'Denials' }, 'last_seen'],
-      'Who was refused, newest first: one row per identity, with the action and index of its most recent denial, how many distinct actions and indices it was refused on, and its denials in range. When more identities were refused than the panel has rows, the last row (“N other identities”) holds the rest — their denials, the distinct actions and indices any of them was refused on, and the newest of their denials — so the Denials column always adds up to the Access denied tile. On index "—" with Indices 0 is a cluster-level request, with no index to count; <anonymous> with action "—" and Actions 0 is an HTTP call that carried no credentials, refused before it named an action.',
+      'Who was refused, newest first: each identity’s latest denied action and index, how many actions and indices, and its denials. A last row “N other identities” holds the rest; index “—” is a cluster-level request.',
       { empty: 'good' }),
     // One row per identity, for the same reason: per (identity, index group, action) a single
     // resolve/index request naming a dozen system areas filled the panel and pushed every other
@@ -237,10 +234,10 @@ export function build() {
     table(0, 61, 48, 10, '⚠️ Who touched system and hidden indices',
       `FROM ${IDX} | ${TIME} | WHERE elasticsearch.audit.indices IS NOT NULL | MV_EXPAND elasticsearch.audit.indices | ${SYS_INDEX} | STATS n = COUNT(*), seen = MAX(@timestamp) BY user.email, api_key.name, user.name, elasticsearch.audit.indices, elasticsearch.audit.action | ${ACTOR_RESOLVE}, area = ${SYS_AREA} | ${FAMILY} | STATS events = SUM(n), indices = COUNT_DISTINCT(elasticsearch.audit.indices), groups = VALUES(area), kinds = VALUES(family), last_seen = MAX(seen) BY actor, ${PIN_BY} | EVAL groups = MV_CONCAT(MV_SORT(groups), ", "), kinds = MV_CONCAT(MV_SORT(kinds), ", ") | KEEP actor, api_key.name, user.name, groups, kinds, indices, events, last_seen | SORT last_seen DESC | LIMIT 25`,
       ['actor', PIN_KEY, PIN_PRINCIPAL_SHORT, { column: 'groups', label: 'Index groups' }, sized('kinds', 240, { label: 'Kind of access' })], ['indices', 'events', 'last_seen'],
-      'Who touched system and hidden indices — Kibana internals, the security index, alerting and SLO data — one row per identity, newest first: the index groups it touched (.alerts*, .slo*, .kibana*…), the kinds of transport action (read, write, index admin, monitor…), how many real indices, and its requests in range, which add up to the System index access tile when every identity is in view. The Discover session below names each index and action. Backing indices of ordinary data streams (.ds-logs-…) and shard-level copies of a request are left out. Expected from Kibana and platform automation; unexpected from anyone else, and a write from anyone else is worth a look. An identity that touched many groups wraps onto a second line rather than cutting the list short. ' + PIN_NOTE,
+      'Who touched system and hidden indices (Kibana internals, security, alerting, SLO data), with the index groups, kinds of action and request count. Expected from Kibana and platform automation; from anyone else, a write is worth a look.',
       { empty: 'quiet', wrap: true }),
     search(0, 71, 48, 12, '05-system-index-access', 'Raw system index requests · newest 1,000 at most',
-      'The raw events behind the table above: the newest 1,000 requests against a system or hidden index, one row per index named, newest first — so a single request that names ten alert indices is ten rows with one timestamp here, and one .alerts* entry in the table above. It stops at 1,000, so it can hold fewer rows than the System index access tile counts — the "1,000 results" above the grid is that cap, not the total.',
+      'The raw requests behind the system index table above, one row per index named, newest first: one request naming ten indices is ten rows. Capped at 1,000, so it can show fewer than the tile counts.',
       { empty: 'quiet' }),
   ];
   return dash(rawId('03-data-access'), '[Audit] 🔎 Elasticsearch Data Access',

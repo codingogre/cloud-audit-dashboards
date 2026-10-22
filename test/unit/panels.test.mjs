@@ -7,7 +7,6 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   table, sized, filterable, label, humanise, fitRows, xy, bar, md, pie, blankNull, gridPx, COLUMNS, PALETTE_ID,
-  OPAQUE_ID_NOTE,
 } from '../../scripts/lib/panels.mjs';
 import { buildAll } from '../../scripts/lib/definitions.mjs';
 import { sessionGrid } from '../../scripts/objects.mjs';
@@ -74,8 +73,8 @@ test('table() budgets fixed widths for a 1440px viewport, and flags a table it c
   }
 });
 
-test('a table showing the resolved identity explains an opaque one; blankNull() blanks after the STATS', () => {
-  assert.ok(table(0, 0, 24, 12, 't', 'q', ['actor'], ['events'], 'Who.').config.description.endsWith(OPAQUE_ID_NOTE));
+test('a table\'s tooltip is its own words (the opaque-key note lives in the How to read blocks); blankNull() blanks after the STATS', () => {
+  assert.equal(table(0, 0, 24, 12, 't', 'q', ['actor'], ['events'], 'Who.').config.description, 'Who.');
   assert.equal(table(0, 0, 24, 12, 't', 'q', ['action'], ['events'], 'What.').config.description, 'What.');
   assert.equal(blankNull('via_key', 'owner'), 'EVAL via_key = COALESCE(via_key, " "), owner = COALESCE(owner, " ")');
   // A filter column must never be assigned in the query: Lens then refuses to filter on it.
@@ -159,9 +158,9 @@ test('empty states live in the title; completeness is a lint failure on a LIMITe
   // 'quiet' named one window ("(may be empty at 1h)") and read as wrong at every other: now a condition.
   const quiet = table(0, 0, 24, 12, 'Config changes', 'FROM x | LIMIT 30', ['a'], ['b'], 'Changes.', { empty: 'quiet' });
   assert.equal(quiet.config.title, 'Config changes · top 10 at most (empty when none in range)');
-  assert.ok(quiet.config.description.endsWith(EMPTY.quiet.desc));
+  assert.equal(quiet.config.description, 'Changes.', 'the title carries the empty state; the tooltip gains no sentence');
   assert.equal(EMPTY.good.title, '(empty = good)', 'a condition, true whether or not there are rows');
-  assert.ok(good.config.description.startsWith('Reads. ') && good.config.description.endsWith(EMPTY.good.desc));
+  assert.equal(good.config.description, 'Reads.');
   const own = table(0, 0, 24, 12, 'API key throughput', 'q', ['a'], ['b'], 'Keys.', { empty: 'empty without API-key traffic' });
   assert.equal(own.config.title, 'API key throughput (empty without API-key traffic)');
   assert.throws(() => table(0, 0, 24, 12, 't', 'q', ['a'], ['b'], 'd', { empty: 'none is good' }), /condition/);
@@ -210,6 +209,9 @@ test('a LIMITed table states its cut as a bound, and a scrollable one says scrol
   assert.equal(t('What changed · up to 100', 'FROM x | SORT d DESC | LIMIT 100', 12, { scroll: true }), 'What changed · up to 100');
   assert.equal(t('High value', 'FROM x | SORT last_seen DESC | LIMIT 10', 12, { wrap: true }), 'High value · newest 10 at most');
   assert.ok(mk('High value', 'FROM x | SORT last_seen DESC | LIMIT 10', 12, { wrap: true }).config.description.endsWith(SCROLL_NOTE));
+  assert.equal(SCROLL_NOTE, 'Scroll for more.', 'three words, so a 37-word tip still fits TIP_MAX_WORDS');
+  assert.equal(table(0, 0, 24, 12, 't', 'FROM x | LIMIT 10', ['a'], ['b'], 'Rows; scroll for the rest.', { wrap: true }).config.description,
+    'Rows; scroll for the rest.', 'a description that already says scroll is left alone');
   assert.ok(!mk('Busiest', 'FROM x | LIMIT 30', 12).config.description.includes(SCROLL_NOTE));
   assert.equal(t('Classes', 'FROM x | STATS n = COUNT(*) BY c', 9), 'Classes', 'no LIMIT, no cut');
   assert.equal(t('Fixed', 'FROM x | LIMIT 5', 9, { cut: false }), 'Fixed');
@@ -371,4 +373,55 @@ test('bounded() keeps SET first and splices the time bound after FROM', async ()
   const { bounded } = await import('../../scripts/esql.mjs');
   const b = bounded('SET unmapped_fields="nullify"; FROM x | STATS n = COUNT(*) BY api_key.name');
   assert.match(b, /^SET unmapped_fields="nullify"; FROM x \| WHERE .*\| STATS n = COUNT\(\*\) BY api_key\.name$/);
+});
+
+test('every tooltip is 40 words at most, appended notes included, and so is every Discover session description', async () => {
+  const { checkLayout, checkTips, checkSearchTips, tipWords, TIP_MAX_WORDS } = await import('../../scripts/lib/layout.mjs');
+  const { prevKpi, PREV_NOTE, introMd, HOW_TO_MAX } = await import('../../scripts/lib/panels.mjs');
+  assert.equal(TIP_MAX_WORDS, 40);
+  // A word has a letter or digit in it: separators and symbols do not count, a hyphenated word counts once.
+  assert.equal(tipWords('Risk is weight × events — API-key clean-up · “email · via key”'), 9);
+  assert.equal(tipWords(''), 0);
+  assert.equal(tipWords(undefined), 0);
+  for (const [name, def] of Object.entries(buildAll())) {
+    for (const p of def.panels) {
+      assert.ok(tipWords(p.config?.description) <= TIP_MAX_WORDS, `${name} ${p.id}: ${tipWords(p.config?.description)} words`);
+    }
+  }
+  // What a builder appends counts: the prior-period note rides on the tile's own words.
+  const tile = prevKpi(0, 0, 8, 5, 'total-events', 'Every audited event.');
+  assert.equal(tile.config.description, `Every audited event. ${PREV_NOTE}`);
+  assert.ok(tipWords(PREV_NOTE) <= 15, 'the note leaves room for the tile\'s own words');
+  // Wired into checkLayout: one long tooltip fails, naming the panel.
+  const all = buildAll();
+  const [name, def] = Object.entries(all)[0];
+  const p = def.panels.find((x) => x.config?.description);
+  const saved = p.config.description;
+  p.config.description = Array.from({ length: 41 }, (_, i) => `w${i}`).join(' ');
+  assert.ok(checkLayout(all).problems.some((m) => m.startsWith(`${name}: panel ${p.id}`) && /41-word tooltip/.test(m)));
+  p.config.description = Array.from({ length: 40 }, (_, i) => `w${i}`).join(' ');
+  const out = []; checkTips(name, def.panels, out);
+  assert.deepEqual(out, [], 'exactly 40 passes');
+  p.config.description = saved;
+  // searches/*.json: the shipped ones pass, and a long one in a scratch directory fails.
+  const none = []; checkSearchTips(none); assert.deepEqual(none, []);
+  const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const dir = mkdtempSync(join(tmpdir(), 'tips-'));
+  try {
+    writeFileSync(join(dir, 'x.json'), JSON.stringify({ description: Array(41).fill('word').join(' ') }));
+    const bad = []; checkSearchTips(bad, dir);
+    assert.ok(bad.length === 1 && /searches\/x\.json: a 41-word description/.test(bad[0]), bad.join('\n'));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+  // The How to read block: a bold label, then a tight list; at most HOW_TO_MAX bullets, one line each.
+  const intro = introMd(0, 0, 48, 11, 'Heading', ['One.'], ['First caveat.', 'Second caveat.']);
+  assert.match(intro.config.content, /\n\*\*How to read this page\*\*\n\n- First caveat\.\n- Second caveat\.\n$/);
+  assert.equal(introMd(0, 0, 48, 6, 'Heading', ['One.']).config.content, '### Heading\n\nOne.\n', 'no block without bullets');
+  assert.throws(() => introMd(0, 0, 48, 11, 'H', ['One.'], Array(HOW_TO_MAX + 1).fill('b')), /at most/);
+  assert.throws(() => introMd(0, 0, 48, 11, 'H', ['One.'], ['two\nlines']), /one source line/);
+  // Every dashboard carries one.
+  for (const [n, d] of Object.entries(all)) {
+    assert.ok(d.panels.some((q) => q.headed && q.config.content.includes('**How to read this page**')), `${n} has a How to read block`);
+  }
 });

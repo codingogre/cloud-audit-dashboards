@@ -91,12 +91,18 @@ import { RAW_RECORDS } from './shared.mjs';
  * creator rule (Kind "human + key") in Highest-volume identities'. Bands are named exactly as the tiles.
  */
 const INTRO = {
-  h: 6,
+  h: 11,
   heading: 'All audit traffic, with nothing left out',
   paragraphs: [
     `The other dashboards hide routine traffic so the meaningful events stand out. This page counts everything, in four groups that add up to the total. ${RAW_RECORDS}`,
     "**Signal** is what the other dashboards show. **Auth success** is logged once for every authenticated request. **Query internals** are the background steps behind searches and page loads. **Infra health** is Elastic's own monitoring.",
     'Use it to understand audit volume and to see how busy each API key is. **How to use it:** choose a Project, Person (email), API key or Client IP in the controls and set the time picker.',
+  ],
+  howTo: [
+    'Nothing is filtered here, so these numbers are larger than the same counts on the other dashboards.',
+    'One request often writes several audit records; the All events tile counts records, and the line above its number counts requests.',
+    'Much of the volume is dashboards querying the audit stream, these included, usually through the Cloud API key that runs them.',
+    'A key made by a person counts under that person’s email (Kind “human + key”); a Cloud API key has no name.',
   ],
 };
 
@@ -110,7 +116,7 @@ export function build() {
     // has no thousands separator, so grouped() writes "52,113" the way Lens prints the number above it.
     // "requests", not "HTTP requests": "728,436 HTTP requests" was cut at an 8-column tile's edge at 1440px.
     kpi(0, 0, 8, 5, `FROM ${IDX} | ${TIME} | STATS \`All events\` = COUNT(*), requests = COUNT_DISTINCT(http.request.id) | EVAL detail = CONCAT(${grouped('requests')}, " requests") | KEEP \`All events\`, detail`, 'All events',
-      'Total audited events, unfiltered. Beneath it, the distinct HTTP requests behind them — one request often emits several audit records. Every event lands in exactly one of the four bands (Signal, Auth success, Query internals, Infra health), so those tiles add up to this one, give or take the events of the second between two tiles\' fetches.', { secondary: 'detail' }),
+      'Total audited events, unfiltered; the line above the number counts the HTTP requests behind them, since one request often writes several records. The four band tiles (Signal, Auth success, Query internals, Infra health) add up to this one.', { secondary: 'detail' }),
     kpi(8, 0, 8, 5, `FROM ${IDX} | ${TIME} | ${NOISE} | STATS \`Signal\` = COUNT(*)`, 'Signal', 'Events that survive the noise gate: what every other dashboard reads.'),
     kpi(16, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE event.action == "authentication_success" | STATS \`Auth success\` = COUNT(*)`, 'Auth success',
       'Successful authentication events (authentication_success). Elasticsearch logs one per authenticated request, so credentials making many calls generate most of them.'),
@@ -119,7 +125,7 @@ export function build() {
     // no faster (450ms vs 454ms, 7d replica) once KIBANA_INTERNALS joined the band, and it was one more
     // list to keep in step. COALESCE because SUM over no rows is null, where COUNT was 0.
     kpi(24, 0, 8, 5, `FROM ${IDX} | ${TIME} | STATS n = COUNT(*) BY ${BAND_KEYS} | ${BAND} | WHERE band == "query-noise" | STATS q = SUM(n) | EVAL \`Query internals\` = COALESCE(q, 0) | KEEP \`Query internals\``, 'Query internals',
-      'The machinery behind a query, not a decision anyone made: Elasticsearch search phases, ES|QL sub-requests, field_caps, async search and point-in-time; reads of API key metadata (api_key/get and query); Kibana /internal/ page requests; reads of this suite’s own saved objects; and transport connection_granted.'),
+      'The machinery behind a query, not a decision anyone made: search phases and sub-requests, field lookups, async search, API key lookups, Kibana’s internal page requests, reads of this suite’s own objects, and connection records.'),
     kpi(32, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE elasticsearch.audit.action IN ("cluster:monitor/main","elastic.maintenance") | STATS \`Infra health\` = COUNT(*)`, 'Infra health',
       'Health-check and platform maintenance traffic: cluster:monitor/main and elastic.maintenance.'),
     kpi(40, 0, 8, 5, `FROM ${IDX} | ${TIME} | STATS n = COUNT(*) BY ${BAND_KEYS} | ${BAND} | STATS total = SUM(n), sig = SUM(CASE(band == "signal", n, 0)) | EVAL \`Signal share\` = ROUND(sig * 1.0 / total, 4) | KEEP \`Signal share\``, 'Signal share',
@@ -136,7 +142,7 @@ export function build() {
     // midnight label carrying its date — because a 6%-of-window zone dropped a last label that had room.
     // At 25 rows the spec draws its three charts on one time axis (SIGNAL VS NOISE OVER TIME, above).
     vega(0, 5, 30, 25, '07-noise-ratio-stream', 'Signal vs noise over time',
-      'Three views of the same buckets on one time axis. Top: audit events per bucket, stacked by band, so the top edge is the whole firehose and Signal sits on the baseline. Middle: Signal alone, on its own square-root scale, so a rise or fall in the events the other dashboards read is visible at any share. Bottom: each bucket as 100%, split by band — whether a spike was more noise or more signal. A lull is shaded and not split, because as a percentage a few dozen events would stand as tall as the busiest bucket: a bucket under a tenth of the window’s typical volume (the median bucket, leaving out a trickle under a twentieth of the average), one under a third right beside such a bucket, and a lone low bucket inside a lull; a stretch that is merely quiet is split. Hover any bar for its numbers.'),
+      'Three views of the same buckets: events stacked by band; Signal alone, on its own scale; and each bucket as 100%, showing whether a spike was noise or signal. Shaded lulls are too small to split. Hover for numbers.'),
     // Named keys only, which is why it can be empty while the stream is busy: an organization-level Cloud
     // API key — very often the one running this suite — carries no name, and the stream records it by id
     // alone, so it is on Highest-volume identities, marked, and never here (listing it would need a
@@ -156,7 +162,7 @@ export function build() {
       `| EVAL created_by = COALESCE(CONCAT(${cloudKeyLabel('creator')}, CASE(n_creators > 1 AND emails IS NULL, CONCAT(" + ", TO_STRING(n_creators - 1), " more"), "")), " ") ` +
       '| KEEP api_key.name, created_by, events | SORT events DESC, api_key.name | LIMIT 14',
       [filterable('api_key.name'), { column: 'created_by', label: 'Created by', width: 140 }], [{ column: 'events', width: 72 }],
-      'The busiest API keys that have a name, by events, as many as the panel holds. Click a key to pin it across the suite. Created by is who made the key, which Elasticsearch records on every event the key emits. A key made by a person counts under that person’s email in Highest-volume identities (Kind “human + key”); any other key has its own row there, with the same count as here. Empty when no named key was used in the time range: a Cloud API key has no name in the audit stream, so it is never listed here even while it drives the stream; it is in Highest-volume identities as “_4KEO… · Cloud API key” (its first five characters).',
+      'The busiest API keys that have a name, with who created each. Click a key to pin it across the suite. A Cloud API key has no name, so it is never listed here; see Highest-volume identities.',
       { empty: 'empty when unused' }),
     // Grouped on the raw keyword, relabelled after: the two-condition CASE runs on the grouped rows,
     // not on every event (panels.mjs QUERY SHAPE rules 1–2). Same labels, colours and order as 00's.
@@ -182,7 +188,7 @@ export function build() {
       // count, so the action keeps the rest: at 22 columns and even widths, 1440px left
       // "cluster:admin/xpack/security/api_key/get" 4px short of the identity beside it.
       ['elasticsearch.audit.action', { column: 'top_identity', label: 'Busiest identity', width: 210 }], [{ column: 'events', width: 80 }],
-      'Highest-volume Elasticsearch transport actions, unfiltered. Busiest identity is the identity behind most of each action’s events (resolved as in Highest-volume identities), followed by how many others also called it. ES|QL’s own fan-out (esql/compute, search_shards, field_caps[n]) is in Query internals, and much of it is dashboards querying this stream — often the Cloud API key running this suite, shown as “_4KEO… · Cloud API key” (its first five characters).'),
+      'The highest-volume Elasticsearch transport actions, unfiltered, with the identity behind most of each and how many others called it. Much of it is dashboards querying this stream, often the key running this suite.'),
     // Kind is refined after the STATS (KIND_REFINE, then the key cases), where it costs nothing: ACTOR's
     // two-way CASE called every key — the Cloud API key and each named key — "service", the same word as
     // a service account, on a dashboard titled "… & API Keys" (round-5 review). A row is a named key when
@@ -214,7 +220,7 @@ export function build() {
       // "<unauthenticated-cloud-access-token>" ran into Kind (round-5 skeptic); Noisiest's longest
       // action and "_4KEO… · Cloud API key + 19 more" still fit at 22.
       ['actor', { column: 'actor_kind', width: 120 }], ['events', { column: 'actions', width: 72 }],
-      'Unfiltered volume leaderboard, top identities by events — this is where the machine traffic shows up (often the Cloud API key running this suite). Only the busiest rows fit, so quieter identities — including the smaller keys in Named API keys — are beyond the rows shown. Kind “API key” is a named (Elasticsearch) API key, listed under its own name, or a Cloud API key; who made a named key is in Named API keys. When a PERSON makes a key, its events carry that person’s email, so they count under the person, whose Kind then reads “human + key”. Kind “failed sign-in” is a username that only ever failed to authenticate — usually a guess, not an account.'),
+      'Unfiltered volume leaderboard: where machine traffic shows up. Kind “API key” is a named or Cloud API key; “human + key” is a person whose key’s events carry their email; “failed sign-in” is a user name that never signed in.'),
   ];
   return dash(rawId('06-platform-volume'), '[Audit] 📊 Platform Volume & API Keys',
     'The unfiltered firehose, quarantined so the forensic dashboards stay readable.', P, { intro: INTRO });

@@ -232,7 +232,7 @@ guide links use it too). Audit events become searchable seconds after they happe
 kept growing for 5–7s), and each panel resolves `now` for itself about a second apart, so with a range
 ending at `now` two numbers side by side differed by whatever landed in between. A minute back nothing is
 still arriving; what is left is the sub-second spread between panels at both ends of the range, which
-`EDGE_NOTE` states where a page sets a total beside its parts. The last bucket still covers only part of
+the page's How to read block states where it sets a total beside its parts. The last bucket still covers only part of
 its interval (the range ends part-way through it), so it is usually short — say "covers part of its
 interval", not "still filling".
 
@@ -455,8 +455,8 @@ never null.
 Elasticsearch writes one `realm_authentication_failed` per realm an attempt tried, beside the one
 `authentication_failed` for the request, so with two realms one bad password was three events. Every
 failure count — 01's *Failed or denied* tile, its failure table and `searches/02`, 04's *Failures* tile and
-*Top failures and denials* — uses `FAILED_OR_DENIED` (`panels.mjs`; `SIGNIN_WORDS` says it in a
-description), and the drift check pins it in `searches/02`:
+*Top failures and denials* — uses `FAILED_OR_DENIED` (`panels.mjs`; 01's How to read block says an attempt counts
+once), and the drift check pins it in `searches/02`:
 
 ```esql
 | WHERE event.action IN ("authentication_failed","anonymous_access_denied")

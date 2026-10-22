@@ -103,10 +103,10 @@
         "x": 0,
         "y": 3,
         "w": 48,
-        "h": 6
+        "h": 12
       },
       "config": {
-        "content": "### The activity most worth a second look\n\nEach sensitive action earns a risk weight, from 10 for a workflow run up to 50 for a security setting change, while routine work scores zero. Raw records: [All audit events](/app/discover#/view/cloud-audit-search-00-all-events), [Raw signal feed](/app/discover#/view/cloud-audit-search-10-raw-signal-feed).\n\nPanels rank identities by that risk, show newly seen identities, and list every security configuration change. Elastic's own routine API key clean-up is counted separately, so it never hides real changes.\n\n**How to use it:** choose a Project, Person (email), API key or Client IP in the controls and set the time picker. Hover the ⓘ beside a panel title to see how it is scored.\n"
+        "content": "### The activity most worth a second look\n\nEach sensitive action earns a risk weight, from 10 for a workflow run up to 50 for a security setting change, while routine work scores zero. Raw records: [All audit events](/app/discover#/view/cloud-audit-search-00-all-events), [Raw signal feed](/app/discover#/view/cloud-audit-search-10-raw-signal-feed).\n\nPanels rank identities by that risk, show newly seen identities, and list every security configuration change. Elastic's own routine API key clean-up is counted separately, so it never hides real changes.\n\n**How to use it:** choose a Project, Person (email), API key or Client IP in the controls and set the time picker. Hover the ⓘ beside a panel title to see how it is scored.\n\n**How to read this page**\n\n- Weights: security config change 50, key invalidation 45, failure 40, anonymous denial 35, destructive change 30, other Kibana change 25, workflow run 10.\n- Risk total is weight × events, not an event count. A failed action scores on its own row, marked (failed).\n- Kibana’s own API-key clean-up and this suite’s automated install score 0; the line above a tile’s number counts them.\n- Scope separates your identities, Elastic platform automation and unauthenticated requests; an identity without an email is not necessarily external.\n- Click an API key or Principal id to filter the page or open Actor 360; a Cloud API key’s id also covers the API keys it created.\n"
       }
     },
     {
@@ -114,13 +114,13 @@
       "id": "kpi-01",
       "grid": {
         "x": 0,
-        "y": 9,
+        "y": 15,
         "w": 8,
         "h": 5
       },
       "config": {
         "title": "",
-        "description": "Average severity weight across scoring events, on the same 0–50 scale as the weights: config change 50, key invalidation 45, failure 40, anonymous denial 35, destructive change 30, other Kibana change 25, workflow execution 10. Executions weigh least on purpose — they are the one class with unbounded cadence, and a scheduled workflow firing every minute would otherwise turn total risk back into an event count. Routine activity scores 0 and is excluded, so this is not a disguised event count — read it with Scoring events beside it.",
+        "description": "Average risk weight per scoring event, on the 0–50 scale, from 50 for a config change down to 10 for a workflow run. Routine activity scores 0 and is excluded, so read it with Scoring events beside it.",
         "type": "metric",
         "data_source": {
           "type": "esql",
@@ -143,13 +143,13 @@
       "id": "kpi-02",
       "grid": {
         "x": 8,
-        "y": 9,
+        "y": 15,
         "w": 8,
         "h": 5
       },
       "config": {
         "title": "",
-        "description": "Security configuration changes recorded by Elasticsearch (API keys created, changed or invalidated, roles and user profiles written) — the total that the Config changes table and the event feed below draw from. Kibana's own API-key clean-up (invalidate_apikeys by the elastic/kibana service account through no named key, every few seconds) is left out, as on Command Center's Privileged ops; the second line says how many such events the range held. The range ends a minute ago, so nothing in it is still arriving; each panel reads the clock for itself, up to a second apart, so two panels side by side can differ by the events of that second at either end of the range: usually none, a few on a busy all-traffic count or during a burst.",
+        "description": "Security configuration changes: API keys created, changed or invalidated, and roles and user profiles written. Kibana’s routine API-key clean-up is left out; the line above the number counts it. Any other change deserves review.",
         "type": "metric",
         "data_source": {
           "type": "esql",
@@ -176,13 +176,13 @@
       "id": "kpi-03",
       "grid": {
         "x": 16,
-        "y": 9,
+        "y": 15,
         "w": 8,
         "h": 5
       },
       "config": {
         "title": "",
-        "description": "invalidate_apikeys requests in range (one request can name several keys) — legitimate rotation, or a credential being revoked in a hurry; a subset of Config changes. Kibana's own API-key clean-up (invalidate_apikeys by the elastic/kibana service account through no named key, every few seconds) is left out, as on Command Center's Privileged ops; the second line says how many such events the range held. Risk scoring leaves the same clean-up out (it scores 0), so the invalidations it weighs are these.",
+        "description": "API key invalidation requests (one can revoke several keys): routine rotation, or a credential revoked in a hurry. Part of Config changes. Kibana’s routine API-key clean-up is left out; the line above the number counts it.",
         "type": "metric",
         "data_source": {
           "type": "esql",
@@ -209,13 +209,13 @@
       "id": "kpi-04",
       "grid": {
         "x": 24,
-        "y": 9,
+        "y": 15,
         "w": 8,
         "h": 5
       },
       "config": {
         "title": "",
-        "description": "Events with a failure outcome: failed sign-ins (authentication_failed or anonymous_access_denied, one per request; the realm_authentication_failed events Elasticsearch writes for each realm an attempt tried are left out, so an attempt counts once), denials and any other failed action. Counted as on Identity & Access's Failed or denied tile, so the two agree.",
+        "description": "Events that failed: failed sign-ins (each attempt counted once), denials and any other failed action. Counted as on Identity & Access’s Failed or denied tile, so the two agree.",
         "type": "metric",
         "data_source": {
           "type": "esql",
@@ -238,7 +238,7 @@
       "id": "kpi-05",
       "grid": {
         "x": 32,
-        "y": 9,
+        "y": 15,
         "w": 8,
         "h": 5
       },
@@ -267,13 +267,13 @@
       "id": "kpi-06",
       "grid": {
         "x": 40,
-        "y": 9,
+        "y": 15,
         "w": 8,
         "h": 5
       },
       "config": {
         "title": "",
-        "description": "Number of events that carried any risk weight at all — the denominator of Mean severity, and the volume that severity is averaged over. The suite's own automated install (its cloud-audit-* objects written with no browser session) scores 0, so it is left out and counted in the second line instead; it is still listed in the Mutation feed.",
+        "description": "Events that carried any risk weight: what Mean severity averages over. This suite’s own automated install scores 0 and is left out; the line above the number counts it.",
         "type": "metric",
         "data_source": {
           "type": "esql",
@@ -300,13 +300,13 @@
       "id": "tbl-07",
       "grid": {
         "x": 0,
-        "y": 14,
+        "y": 20,
         "w": 48,
         "h": 7
       },
       "config": {
         "title": "🚨 Config changes · up to 5 identity–action pairs, latest first (empty = good)",
-        "description": "Security configuration changes grouped by identity and action, the most recently active first; in a busy range the quieter pairs are beyond the rows shown, so Events here add up to the Config changes tile only when every pair fits. Kibana's own API-key clean-up (invalidate_apikeys by the elastic/kibana service account through no named key, every few seconds) is left out, as on Command Center's Privileged ops. Latest target is what the newest of those changes named (the API key, the key ids of an invalidation, the role, or the user profile), and Targets counts the different ones named across all of them: hundreds of invalidations over hundreds of keys is rotation, hundreds over one key is a loop. A profile activation names no target (it is the signed-in user's own profile), so it reads \"(none named in the payload)\" and 0. A key named \"TaskManager: … - <id>\" is one Kibana created to run a task on that identity's behalf: the id at its end is its owner's, not a name for it. The full JSON payload of every change is in the Config-change event feed at the foot of the page. Click an API key or Principal id to filter to it or open Actor 360; a Cloud API key's Principal id also covers the API keys it created. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email. An empty panel means nothing matched in the time range, which is the healthy state; any row here is worth reading.",
+        "description": "Security configuration changes (API keys, roles, user profiles) by identity and action, most recent first, with the latest target and how many targets. Many invalidations over many keys is rotation; over one key, a loop.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
@@ -380,14 +380,14 @@
       "id": "vega-08",
       "grid": {
         "x": 0,
-        "y": 21,
+        "y": 27,
         "w": 24,
         "h": 13
       },
       "config": {
         "ref_id": "cloud-audit-vega-05-rare-event-scatter",
         "title": "Highest-severity actions, by how rare",
-        "description": "The highest-severity scoring actions in range, one row per action and weight, placed by how often each happened: rarer is further left, so the top-left is rare and high-severity — look there first. Shows the top 12 by severity, rarest first within a weight; the subtitle says how many actions scored in all. On a quiet range the top 12 reach down to routine Kibana changes (weight 25), which can be frequent: rare is a position on this chart, not a filter. Each row ends with its severity weight, which the colour repeats: one colour per weight, blue for 10 up to deep red for 50, keyed below the chart (the key lists only the weights the chart shows). A failed action gets its own row, marked (failed) unless its name already says so, as in Why these identities scored; a failed Kibana change scores 40 whatever it changed. Hover a point for how many identities did it and when. Routine activity scores 0 and is not shown. Kibana's own API-key clean-up scores 0, as it is left out of the Key invalidations tile, so invalidate_apikeys here counts the same invalidations that tile does (with a failed one, if any, on its own (failed) row)."
+        "description": "The highest-severity scoring actions in range, placed by how often each happened: rarer is further left, so look top-left first. Color repeats the risk weight, blue for 10 up to deep red for 50. Hover for who and when."
       }
     },
     {
@@ -395,13 +395,13 @@
       "id": "xy-09",
       "grid": {
         "x": 24,
-        "y": 21,
+        "y": 27,
         "w": 24,
         "h": 13
       },
       "config": {
         "title": "Risk over time",
-        "description": "Summed severity weight per interval, routine activity excluded, split by who it came from: tenant identities, Elastic platform automation, or unauthenticated requests. Spikes are clusters of privileged, failed or denied activity. The axis always spans the whole range: a blank stretch means nothing scored then, or, on a project younger than the range, that the audit stream had not started yet.",
+        "description": "Risk weight summed per interval, routine activity excluded, split by tenant identities, Elastic platform automation or unauthenticated requests. Spikes are clusters of privileged, failed or denied activity. A blank stretch means nothing scored then.",
         "type": "xy",
         "axis": {
           "x": {
@@ -489,13 +489,13 @@
       "id": "tbl-10",
       "grid": {
         "x": 0,
-        "y": 34,
+        "y": 40,
         "w": 48,
         "h": 13
       },
       "config": {
         "title": "Identities by first appearance in range · newest 12 at most",
-        "description": "Identities ordered by their first event inside the selected range, latest first, from signal events only (query internals are left out, as on every gated panel). First seen is within the range, not ever: an identity that was already active when the range opened also shows a first-seen near its start. New reads \"no\" for those (first seen in the opening twelfth of the range) and \"yes\" otherwise; on a project whose audit history is shorter than the range, every identity reads \"yes\". A \"yes\" near the top is an identity worth a question; widen the range to tell a new identity from a returning one. Client IPs is 0 for an identity none of whose events recorded a client address: the Kibana service account and platform automation, which call from inside the platform, and a sign-in rejected before its caller was identified — <unauthenticated-cloud-api-key> events carry only the platform proxy's address, so they have no client address to count. Click a Principal id to filter to it or open Actor 360; a Cloud API key's Principal id also covers the API keys it created, and a named key's row pins the identity that created it. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email.",
+        "description": "Identities by their first signal event in the range, latest first. New reads “yes” unless they were already active as the range opened. A “yes” near the top is worth a question; widen the range to tell new from returning.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
@@ -564,13 +564,13 @@
       "id": "tbl-11",
       "grid": {
         "x": 0,
-        "y": 47,
+        "y": 53,
         "w": 48,
         "h": 13
       },
       "config": {
         "title": "Risk leaderboard — top identities by total severity · 12 at most",
-        "description": "Identities ranked by total accumulated severity, so sustained behaviour outranks a single high-severity event; only the top of the ranking fits the panel. Scope separates tenant identities from Elastic platform automation and unauthenticated requests — without it elastic.maintenance can top this table, because Elastic platform automation performs routine security config changes itself. Privileged counts the identity's security config changes the way the Config changes tile does. Kibana's own API-key clean-up is left out of both columns: it scores 0, so the elastic/kibana service account appears here only for something else it did. The suite's own install of its cloud-audit-* objects, made with no browser session, scores 0 too, so the key that deploys the suite is ranked only for what else it did. Identity is the email for a person and the key name for a named API key. Click an API key or Principal id to filter to it or open Actor 360; a Cloud API key's Principal id also covers the API keys it created. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email.",
+        "description": "Identities ranked by total risk, so sustained behavior outranks one high-severity event. Scope sets Elastic’s own platform automation (such as elastic.maintenance) apart from your users. Privileged counts security configuration changes.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
@@ -644,13 +644,13 @@
       "id": "tbl-12",
       "grid": {
         "x": 0,
-        "y": 60,
+        "y": 66,
         "w": 48,
         "h": 13
       },
       "config": {
         "title": "Why these identities scored — top risky actions, with their weight · 12 at most",
-        "description": "The receipts behind the leaderboard: the identity and action pairs that contributed the most risk, with what each action weighed, how many times it happened, and when it last did. Risk total is weight × events, the same quantity the leaderboard sums. A failed action is its own row, marked (failed) unless its name already says so (access_denied, authentication_failed): for a pair that also appears in Top failures and denials, that row's Events is the same number, and the unmarked row beside it is the pair's successes. realm_authentication_failed, the trace Elasticsearch writes for each realm a failed sign-in tried, still scores here, though the failure counts leave it out so that an attempt counts once. Only the largest contributions fit the panel, so a rare action can be missing here: Highest-severity actions, by how rare lists the actions by severity instead. Click a Principal id to filter to it or open Actor 360; a Cloud API key's Principal id also covers the API keys it created, and a named key's row pins the identity that created it. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email.",
+        "description": "The receipts behind the risk leaderboard: the identity and action pairs that added the most risk, with weight, count and last time. Risk total is weight × events. A rare action may be missing; see Highest-severity actions.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
@@ -719,13 +719,13 @@
       "id": "tbl-13",
       "grid": {
         "x": 0,
-        "y": 73,
+        "y": 79,
         "w": 48,
         "h": 13
       },
       "config": {
         "title": "Top failures and denials by identity and action · 12 at most (empty = good)",
-        "description": "Failed and denied operations, one row per identity and action, the most frequent first; only the top rows fit the panel. These are the events the Failures tile counts (every denial and failed sign-in carries a failure outcome), and the Anonymous denials tile is their anonymous_access_denied rows. A failure is scored on a row of its own in Why these identities scored, marked (failed) unless the action's name already says so, so where a pair appears in both, Events here is the same number as on that row. Latest IP is the client address of the newest of those events (\"none recorded\" when none of them carried one, as for <unauthenticated-cloud-api-key>, whose events record only the platform proxy) and Client IPs counts the different addresses they came from: many addresses behind one identity is a spray, one address behind many identities is one source trying names. An address tagged (internal) is the platform-internal hop (100.64/10), as on Geo & Network: the platform calling on the client's behalf, not the client, and Client IPs counts it too. Scope separates unauthenticated probes from tenant identities and Elastic platform automation. API keys and native users (elastic, admin) carry no email, so an Identity that is not an email does not mean an external probe — read Scope. Click a Principal id to filter to it or open Actor 360; a Cloud API key's Principal id also covers the API keys it created, and a named key's row pins the identity that created it. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email. An empty panel means nothing matched in the time range, which is the healthy state; any row here is worth reading.",
+        "description": "Failed and denied operations by identity and action, most frequent first, with the latest client IP and how many addresses were used. Many addresses behind one identity suggests a spray; “(internal)” is the platform’s own hop.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
@@ -794,14 +794,14 @@
       "id": "ds-14",
       "grid": {
         "x": 0,
-        "y": 111,
+        "y": 117,
         "w": 48,
         "h": 25
       },
       "config": {
         "ref_id": "cloud-audit-search-03-security-config-changes",
         "title": "Config-change event feed · newest 1,000 at most (empty = good)",
-        "description": "Every security configuration change the Config changes tile counts, as its own event, newest first, one line each: the payload is cut at the panel edge, so expand a row to read it whole. Kibana's own API-key clean-up (invalidate_apikeys by the elastic/kibana service account through no named key, every few seconds) is left out, as on Command Center's Privileged ops. Discover returns at most the newest 1,000 events, and its result count is that cap rather than the total: when it reads 1,000, the Config changes tile at the top has the total. Scroll the grid for older rows. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email. An empty panel means nothing matched in the time range, which is the healthy state; any row here is worth reading."
+        "description": "Every security configuration change, one event per row, newest first. The payload is cut at the panel edge: expand a row to read it whole. Capped at the newest 1,000; the Config changes tile has the total."
       }
     },
     {
@@ -809,14 +809,14 @@
       "id": "ds-15",
       "grid": {
         "x": 0,
-        "y": 86,
+        "y": 92,
         "w": 48,
         "h": 25
       },
       "config": {
         "ref_id": "cloud-audit-search-01-all-mutations",
         "title": "Mutation feed · newest 1,000 at most",
-        "description": "Creates, updates and deletes across Kibana and Elasticsearch security config, newest first. Object is what the change named: the saved object or feature object for a Kibana change; for an Elasticsearch security change, the API key's name, the key ids of an invalidation, the role or the profile, with its full JSON payload under Message. Kibana's own API-key clean-up (invalidate_apikeys by the elastic/kibana service account through no named key, every few seconds) is left out, as on Command Center's Privileged ops. Space id is the space's id, the /s/<id> in its URL: the audit stream records no space display name, not even on a space read. It is empty on an Elasticsearch security change, which belongs to no space. Spaces that tooling creates and deletes (review or test spaces) are real activity, and so is the config object Kibana creates the first time a space is opened. Discover returns at most the newest 1,000 events, and its result count is that cap rather than the total. Scroll the grid for older rows; to reach older events still, narrow the time range. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email."
+        "description": "Every create, update and delete in Kibana and in Elasticsearch security configuration, newest first, with what each change named. Capped at the newest 1,000, so the result count is that cap; narrow the time range to reach older events."
       }
     }
   ]

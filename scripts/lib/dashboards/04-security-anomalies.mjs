@@ -1,11 +1,11 @@
 /** 04 Security & Anomalies — see scripts/lib/definitions.mjs for how the suite is assembled. */
 import {
   IDX, ACTOR_RESOLVE, RISK_INDEX_STATS, RISK_INDEX_EVAL, NOISE, TIME, BUCKET, SCOPE, PALETTE, PRIVILEGED,
-  privilegedKpi, FAILED_OR_DENIED, RISK_PREFILTER, RISK_KEYS, RISK_RESTORE, RISK, grouped, SIGNIN_WORDS, EDGE_NOTE, dash, kpi, xy, table, vega, search, sized, fitRows, resetIds
+  privilegedKpi, FAILED_OR_DENIED, RISK_PREFILTER, RISK_KEYS, RISK_RESTORE, RISK, grouped, dash, kpi, xy, table, vega, search, sized, fitRows, resetIds
 } from '../panels.mjs';
 import { rawId } from '../suite.mjs';
 import {
-  ACTOR_KEYS, riskScored, PIN_BY, PIN_COLS, PIN_KEY, PIN_PRINCIPAL, PIN_PRINCIPAL_SHORT, PIN_NOTE, PIN_NOTE_ID, RAW_RECORDS
+  ACTOR_KEYS, riskScored, PIN_BY, PIN_COLS, PIN_KEY, PIN_PRINCIPAL, PIN_PRINCIPAL_SHORT, RAW_RECORDS
 } from './shared.mjs';
 
 /**
@@ -52,13 +52,12 @@ const TARGET_SHOW =
  * PRIVILEGED, on every panel here that counts security config changes (the two tiles, the table, the
  * feed, the leaderboard's Privileged column): Kibana's own API-key clean-up (HOUSEKEEPING) is left out
  * of all of them, so they reconcile with each other and with 00's Privileged ops. The tiles show what
- * was left out on their second line. Round 4 found this page's tiles, table and feed contradicting each
+ * was left out on the line above the number. Round 4 found this page's tiles, table and feed contradicting each
  * other by 4 events in one 1h render (676 against 680): every one of the 680 was that clean-up,
  * arriving every few seconds while the panels below the fold were still mounting. With it gone, what
  * these panels count is a few events an hour rather than a few a second, and since round 6 the range
- * ends at now-1m, so LIVE_NOTE is the shared EDGE_NOTE.
+ * ends at now-1m.
  */
-const LIVE_NOTE = EDGE_NOTE;
 
 /**
  * A failed action gets its own row and a visible mark wherever an action is scored: the scatter's
@@ -72,8 +71,7 @@ const LIVE_NOTE = EDGE_NOTE;
  */
 const FAILED_MARK =
   'EVAL action = CASE(failed AND NOT (action LIKE "*fail*" OR action LIKE "*denied*"), CONCAT(action, " (failed)"), action) | DROP failed';
-const CLEANUP = 'Kibana\'s own API-key clean-up (invalidate_apikeys by the elastic/kibana service account through no named key, every few seconds) is left out, as on Command Center\'s Privileged ops';
-const CLEANUP_NOTE = `${CLEANUP}; the second line says how many such events the range held.`;
+// Kibana's own API-key clean-up is named once, in this page's How to read block, not in every tooltip.
 /**
  * No Email column on this page's identity tables. On every render (1h and 24h) it held only dashes:
  * the identities that score are API keys, service accounts and unauthenticated principals, and
@@ -122,12 +120,19 @@ const TH = 13;
 
 /** The intro (draft 6 of the 1.0.3 customer copy; INTRO TEXT in panels.mjs). */
 const INTRO = {
-  h: 6,
+  h: 12,
   heading: "The activity most worth a second look",
   paragraphs: [
     `Each sensitive action earns a risk weight, from 10 for a workflow run up to 50 for a security setting change, while routine work scores zero. ${RAW_RECORDS}`,
     "Panels rank identities by that risk, show newly seen identities, and list every security configuration change. Elastic's own routine API key clean-up is counted separately, so it never hides real changes.",
     "**How to use it:** choose a Project, Person (email), API key or Client IP in the controls and set the time picker. Hover the ⓘ beside a panel title to see how it is scored.",
+  ],
+  howTo: [
+    'Weights: security config change 50, key invalidation 45, failure 40, anonymous denial 35, destructive change 30, other Kibana change 25, workflow run 10.',
+    'Risk total is weight × events, not an event count. A failed action scores on its own row, marked (failed).',
+    'Kibana’s own API-key clean-up and this suite’s automated install score 0; the line above a tile’s number counts them.',
+    'Scope separates your identities, Elastic platform automation and unauthenticated requests; an identity without an email is not necessarily external.',
+    'Click an API key or Principal id to filter the page or open Actor 360; a Cloud API key’s id also covers the API keys it created.',
   ],
 };
 
@@ -138,14 +143,14 @@ export function build() {
     // "34.2" beside "377" reads as another count. A `secondary` line would say it too, but would
     // push this tile's number off the baseline its five siblings share.
     kpi(0, 0, 8, 5, `FROM ${IDX} | ${TIME} | ${riskScored()} | STATS ${RISK_INDEX_STATS} | ${RISK_INDEX_EVAL} | EVAL \`Mean severity (of 50)\` = mean_severity | KEEP \`Mean severity (of 50)\``, 'Mean severity (of 50)',
-      'Average severity weight across scoring events, on the same 0–50 scale as the weights: config change 50, key invalidation 45, failure 40, anonymous denial 35, destructive change 30, other Kibana change 25, workflow execution 10. Executions weigh least on purpose — they are the one class with unbounded cadence, and a scheduled workflow firing every minute would otherwise turn total risk back into an event count. Routine activity scores 0 and is excluded, so this is not a disguised event count — read it with Scoring events beside it.', { dec: 1 }),
+      'Average risk weight per scoring event, on the 0–50 scale, from 50 for a config change down to 10 for a workflow run. Routine activity scores 0 and is excluded, so read it with Scoring events beside it.', { dec: 1 }),
     kpi(8, 0, 8, 5, `FROM ${IDX} | ${TIME} | ${privilegedKpi('Config changes')}`, 'Config changes',
-      `Security configuration changes recorded by Elasticsearch (API keys created, changed or invalidated, roles and user profiles written) — the total that the Config changes table and the event feed below draw from. ${CLEANUP_NOTE} ${LIVE_NOTE}`,
+      'Security configuration changes: API keys created, changed or invalidated, and roles and user profiles written. Kibana’s routine API-key clean-up is left out; the line above the number counts it. Any other change deserves review.',
       { secondary: 'housekeeping_note' }),
     kpi(16, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE event.action == "invalidate_apikeys" | ${privilegedKpi('Key invalidations')}`, 'Key invalidations',
-      `invalidate_apikeys requests in range (one request can name several keys) — legitimate rotation, or a credential being revoked in a hurry; a subset of Config changes. ${CLEANUP_NOTE} Risk scoring leaves the same clean-up out (it scores 0), so the invalidations it weighs are these.`,
+      'API key invalidation requests (one can revoke several keys): routine rotation, or a credential revoked in a hurry. Part of Config changes. Kibana’s routine API-key clean-up is left out; the line above the number counts it.',
       { secondary: 'housekeeping_note' }),
-    kpi(24, 0, 8, 5, `FROM ${IDX} | ${TIME} | ${FAILED_OR_DENIED} | STATS \`Failures\` = COUNT(*)`, 'Failures', `Events with a failure outcome: failed sign-ins (${SIGNIN_WORDS}), denials and any other failed action. Counted as on Identity & Access's Failed or denied tile, so the two agree.`),
+    kpi(24, 0, 8, 5, `FROM ${IDX} | ${TIME} | ${FAILED_OR_DENIED} | STATS \`Failures\` = COUNT(*)`, 'Failures', 'Events that failed: failed sign-ins (each attempt counted once), denials and any other failed action. Counted as on Identity & Access’s Failed or denied tile, so the two agree.'),
     kpi(32, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE event.action == "anonymous_access_denied" | STATS \`Anonymous denials\` = COUNT(*)`, 'Anonymous denials', 'Unauthenticated requests that were rejected.'),
     // riskScored() spelled out without its `WHERE risk > 0`, so the suite's own install (scored 0 through the
     // suite_install key) can be counted in the second line, the way privilegedKpi() counts the cleanups.
@@ -154,7 +159,7 @@ export function build() {
       '| EVAL `Scoring events` = COALESCE(scoring, 0), installs = COALESCE(installs, 0), ' +
       `install_note = CASE(installs == 0, "no suite installs in range", CONCAT("excl. ", ${grouped('installs')}, " suite installs")) ` +
       '| KEEP `Scoring events`, install_note', 'Scoring events',
-      'Number of events that carried any risk weight at all — the denominator of Mean severity, and the volume that severity is averaged over. The suite\'s own automated install (its cloud-audit-* objects written with no browser session) scores 0, so it is left out and counted in the second line instead; it is still listed in the Mutation feed.',
+      'Events that carried any risk weight: what Mean severity averages over. This suite’s own automated install scores 0 and is left out; the line above the number counts it.',
       { secondary: 'install_note' }),
     // One row per identity and action, not per payload: grouped by the raw payload, every API key id
     // made its own one-event row (10 of 12 rows at 24h read "invalidate_apikeys · 1") and the JSON was
@@ -164,17 +169,17 @@ export function build() {
       `FROM ${IDX} | ${TIME} | ${PRIVILEGED} | ${TARGET} | ${ACTOR_RESOLVE} | STATS events = COUNT(*), targets = COUNT_DISTINCT(SPLIT(target, ",")), latest = LAST(target, @timestamp), last_change = MAX(@timestamp) BY actor, ${PIN_BY}, action = event.action | SORT last_change DESC | ${SCOPE} | ${TARGET_SHOW} | LIMIT ${fitRows(7)}`,
       [sized('actor', 220, { min: 200 }), PIN_KEY, PIN_PRINCIPAL_SHORT, 'actor_scope', sized('action', 190, { min: 145 }), { column: 'latest', label: 'Latest target' }],
       [sized('targets', 90, { label: 'Targets' }), 'events', 'last_change'],
-      `Security configuration changes grouped by identity and action, the most recently active first; in a busy range the quieter pairs are beyond the rows shown, so Events here add up to the Config changes tile only when every pair fits. ${CLEANUP}. Latest target is what the newest of those changes named (the API key, the key ids of an invalidation, the role, or the user profile), and Targets counts the different ones named across all of them: hundreds of invalidations over hundreds of keys is rotation, hundreds over one key is a loop. A profile activation names no target (it is the signed-in user's own profile), so it reads "(none named in the payload)" and 0. A key named "TaskManager: … - <id>" is one Kibana created to run a task on that identity's behalf: the id at its end is its owner's, not a name for it. The full JSON payload of every change is in the Config-change event feed at the foot of the page. ${PIN_NOTE}`,
+      'Security configuration changes (API keys, roles, user profiles) by identity and action, most recent first, with the latest target and how many targets. Many invalidations over many keys is rotation; over one key, a loop.',
       { empty: 'good' }),
     vega(0, 12, 24, 13, '05-rare-event-scatter', 'Highest-severity actions, by how rare',
-      'The highest-severity scoring actions in range, one row per action and weight, placed by how often each happened: rarer is further left, so the top-left is rare and high-severity — look there first. Shows the top 12 by severity, rarest first within a weight; the subtitle says how many actions scored in all. On a quiet range the top 12 reach down to routine Kibana changes (weight 25), which can be frequent: rare is a position on this chart, not a filter. Each row ends with its severity weight, which the colour repeats: one colour per weight, blue for 10 up to deep red for 50, keyed below the chart (the key lists only the weights the chart shows). A failed action gets its own row, marked (failed) unless its name already says so, as in Why these identities scored; a failed Kibana change scores 40 whatever it changed. Hover a point for how many identities did it and when. Routine activity scores 0 and is not shown. Kibana\'s own API-key clean-up scores 0, as it is left out of the Key invalidations tile, so invalidate_apikeys here counts the same invalidations that tile does (with a failed one, if any, on its own (failed) row).'),
+      'The highest-severity scoring actions in range, placed by how often each happened: rarer is further left, so look top-left first. Color repeats the risk weight, blue for 10 up to deep red for 50. Hover for who and when.'),
     // Bars, not an area: an area interpolates straight across empty buckets and draws minutes of
     // rising risk that never happened. Split by scope so a spike says whose it was before anyone
     // has to open the leaderboard. The scope EVALs run on the scored subset only (measured: 0.2s vs
     // 0.15s unsplit over 1h).
     xy(24, 12, 24, 13, 'Risk over time',
       `FROM ${IDX} | ${TIME} | ${riskScored({ by: `${BUCKET}, ${ACTOR_KEYS}` })} | ${ACTOR_RESOLVE} | ${SCOPE} | STATS \`Summed severity\` = SUM(risk * n) BY \`${BUCKET}\`, actor_scope | SORT actor_scope`,
-      'Summed severity', 'Summed severity weight per interval, routine activity excluded, split by who it came from: tenant identities, Elastic platform automation, or unauthenticated requests. Spikes are clusters of privileged, failed or denied activity. The axis always spans the whole range: a blank stretch means nothing scored then, or, on a project younger than the range, that the audit stream had not started yet.',
+      'Summed severity', 'Risk weight summed per interval, routine activity excluded, split by tenant identities, Elastic platform automation or unauthenticated requests. Spikes are clusters of privileged, failed or denied activity. A blank stretch means nothing scored then.',
       { breakdown: 'actor_scope', colors: SCOPE_COLORS, yTitle: 'Summed severity' }),
     // first_seen is window-censored (see NEW_IN_RANGE). Grouped on actor alone and scoped AFTER
     // the STATS — scope is a function of actor. Full width: at half width its six columns left
@@ -184,7 +189,7 @@ export function build() {
     table(0, 25, 48, TH, 'Identities by first appearance in range',
       `FROM ${IDX} | ${TIME} | ${NOISE} | STATS first_seen = MIN(@timestamp), last_seen = MAX(@timestamp), events = COUNT(*), ips = COUNT_DISTINCT(client.ip) BY user.email, ${PIN_BY} | ${ACTOR_RESOLVE} | SORT first_seen DESC, actor | ${SCOPE} | ${NEW_IN_RANGE} | LIMIT ${fitRows(TH)}`,
       [WHO_COL, PIN_PRINCIPAL, sized('new_in_range', 70, { label: 'New' })], ['first_seen', 'last_seen', 'events', { column: 'ips', label: 'Client IPs' }, SCOPE_LAST],
-      `Identities ordered by their first event inside the selected range, latest first, from signal events only (query internals are left out, as on every gated panel). First seen is within the range, not ever: an identity that was already active when the range opened also shows a first-seen near its start. New reads "no" for those (first seen in the opening twelfth of the range) and "yes" otherwise; on a project whose audit history is shorter than the range, every identity reads "yes". A "yes" near the top is an identity worth a question; widen the range to tell a new identity from a returning one. Client IPs is 0 for an identity none of whose events recorded a client address: the Kibana service account and platform automation, which call from inside the platform, and a sign-in rejected before its caller was identified — <unauthenticated-cloud-api-key> events carry only the platform proxy\'s address, so they have no client address to count. ${PIN_NOTE_ID}`),
+      'Identities by their first signal event in the range, latest first. New reads “yes” unless they were already active as the range opened. A “yes” near the top is worth a question; widen the range to tell new from returning.'),
     // Full width because Identity is free text: at half width a 36-character identity
     // (<unauthenticated-cloud-access-token>, a long persona name) was cut. One decimal on
     // the mean throughout, since "40" beside "26.4" reads as two kinds of number.
@@ -194,12 +199,12 @@ export function build() {
       // Two-word headers get the width to stay on one line: wrapped, "Scoring events" and "Mean severity"
       // made the header row 16px taller, and the twelfth row of an h=13 table was cut through its glyphs.
       ['risk_total', sized('scoring_events', 120), { column: 'mean_severity', width: 120, format: { type: 'number', decimals: 1 } }, 'privileged', SCOPE_LAST],
-      `Identities ranked by total accumulated severity, so sustained behaviour outranks a single high-severity event; only the top of the ranking fits the panel. Scope separates tenant identities from Elastic platform automation and unauthenticated requests — without it elastic.maintenance can top this table, because Elastic platform automation performs routine security config changes itself. Privileged counts the identity's security config changes the way the Config changes tile does. Kibana's own API-key clean-up is left out of both columns: it scores 0, so the elastic/kibana service account appears here only for something else it did. The suite's own install of its cloud-audit-* objects, made with no browser session, scores 0 too, so the key that deploys the suite is ranked only for what else it did. Identity is the email for a person and the key name for a named API key. ${PIN_NOTE}`),
+      'Identities ranked by total risk, so sustained behavior outranks one high-severity event. Scope sets Elastic’s own platform automation (such as elastic.maintenance) apart from your users. Privileged counts security configuration changes.'),
     table(0, 51, 48, TH, 'Why these identities scored — top risky actions, with their weight',
       `FROM ${IDX} | ${TIME} | ${riskScored({ by: ACTOR_KEYS, aggs: 'last_ts = MAX(@timestamp)' })} | ${ACTOR_RESOLVE} | ${SCOPE} | STATS events = SUM(n), risk_total = SUM(risk * n), last_seen = MAX(last_ts) BY actor, actor_scope, ${PIN_BY}, action = event.action, weight = risk, failed = event.outcome == "failure" | ${FAILED_MARK} | SORT risk_total DESC, actor, action | LIMIT ${fitRows(TH)}`,
       // weight is a group key, but listed as a metric so it right-aligns with the numbers it multiplies.
       [WHO_COL, PIN_PRINCIPAL, WHAT_COL], ['weight', 'events', 'risk_total', 'last_seen', SCOPE_LAST],
-      `The receipts behind the leaderboard: the identity and action pairs that contributed the most risk, with what each action weighed, how many times it happened, and when it last did. Risk total is weight × events, the same quantity the leaderboard sums. A failed action is its own row, marked (failed) unless its name already says so (access_denied, authentication_failed): for a pair that also appears in Top failures and denials, that row's Events is the same number, and the unmarked row beside it is the pair's successes. realm_authentication_failed, the trace Elasticsearch writes for each realm a failed sign-in tried, still scores here, though the failure counts leave it out so that an attempt counts once. Only the largest contributions fit the panel, so a rare action can be missing here: Highest-severity actions, by how rare lists the actions by severity instead. ${PIN_NOTE_ID}`),
+      'The receipts behind the risk leaderboard: the identity and action pairs that added the most risk, with weight, count and last time. Risk total is weight × events. A rare action may be missing; see Highest-severity actions.'),
     // Full width: identity and the action name are variable-length text, and at half width the
     // action — the column the panel exists for — was the one cut. One row per identity and action:
     // grouped by source IP as well (round 4), elastic and admin took two rows each and a pair's count
@@ -214,7 +219,7 @@ export function build() {
     table(0, 64, 48, TH, 'Top failures and denials by identity and action',
       `FROM ${IDX} | ${TIME} | ${FAILED_OR_DENIED} | ${ACTOR_RESOLVE} | STATS events = COUNT(*), ips = COUNT_DISTINCT(client.ip), ip = LAST(client.ip, @timestamp), last_seen = MAX(@timestamp) BY actor, user.name, action = event.action | SORT events DESC, actor, action | ${SCOPE} | EVAL ip = COALESCE(CASE(CIDR_MATCH(ip, "100.64.0.0/10"), CONCAT(TO_STRING(ip), " (internal)"), TO_STRING(ip)), "none recorded") | LIMIT ${fitRows(TH)}`,
       [WHO_COL, PIN_PRINCIPAL, WHAT_COL, { column: 'ip', label: 'Latest IP', width: 200, min: 170 }], [{ column: 'ips', label: 'Client IPs' }, 'events', 'last_seen', SCOPE_LAST],
-      `Failed and denied operations, one row per identity and action, the most frequent first; only the top rows fit the panel. These are the events the Failures tile counts (every denial and failed sign-in carries a failure outcome), and the Anonymous denials tile is their anonymous_access_denied rows. A failure is scored on a row of its own in Why these identities scored, marked (failed) unless the action's name already says so, so where a pair appears in both, Events here is the same number as on that row. Latest IP is the client address of the newest of those events ("none recorded" when none of them carried one, as for <unauthenticated-cloud-api-key>, whose events record only the platform proxy) and Client IPs counts the different addresses they came from: many addresses behind one identity is a spray, one address behind many identities is one source trying names. An address tagged (internal) is the platform-internal hop (100.64/10), as on Geo & Network: the platform calling on the client's behalf, not the client, and Client IPs counts it too. Scope separates unauthenticated probes from tenant identities and Elastic platform automation. API keys and native users (elastic, admin) carry no email, so an Identity that is not an email does not mean an external probe — read Scope. ${PIN_NOTE_ID}`, { empty: 'good' }),
+      'Failed and denied operations by identity and action, most frequent first, with the latest client IP and how many addresses were used. Many addresses behind one identity suggests a spray; “(internal)” is the platform’s own hop.', { empty: 'good' }),
     // Discover in ES|QL mode returns at most 1,000 rows and prints that as "1,000 results", which on a
     // 24h range sat under a Config changes tile reading 1,976. The cap is the reason, so the title says it.
     //
@@ -232,10 +237,10 @@ export function build() {
     // The Config-change feed sits LAST: it is mostly empty over the default hour (a change or two once the
     // clean-up is left out), and a sparse grid at the foot of the page reads as the end of it, not a gap.
     search(0, 102, 48, 25, '03-security-config-changes', 'Config-change event feed · newest 1,000 at most',
-      `Every security configuration change the Config changes tile counts, as its own event, newest first, one line each: the payload is cut at the panel edge, so expand a row to read it whole. ${CLEANUP}. Discover returns at most the newest 1,000 events, and its result count is that cap rather than the total: when it reads 1,000, the Config changes tile at the top has the total. Scroll the grid for older rows.`,
+      'Every security configuration change, one event per row, newest first. The payload is cut at the panel edge: expand a row to read it whole. Capped at the newest 1,000; the Config changes tile has the total.',
       { empty: 'good' }),
     search(0, 77, 48, 25, '01-all-mutations', 'Mutation feed · newest 1,000 at most',
-      `Creates, updates and deletes across Kibana and Elasticsearch security config, newest first. Object is what the change named: the saved object or feature object for a Kibana change; for an Elasticsearch security change, the API key's name, the key ids of an invalidation, the role or the profile, with its full JSON payload under Message. ${CLEANUP}. Space id is the space's id, the /s/<id> in its URL: the audit stream records no space display name, not even on a space read. It is empty on an Elasticsearch security change, which belongs to no space. Spaces that tooling creates and deletes (review or test spaces) are real activity, and so is the config object Kibana creates the first time a space is opened. Discover returns at most the newest 1,000 events, and its result count is that cap rather than the total. Scroll the grid for older rows; to reach older events still, narrow the time range.`),
+      'Every create, update and delete in Kibana and in Elasticsearch security configuration, newest first, with what each change named. Capped at the newest 1,000, so the result count is that cap; narrow the time range to reach older events.'),
   ];
   return dash(rawId('04-security-anomalies'), '[Audit] 🚨 Security & Anomalies',
     'Mean-severity risk scoring, privileged operations, failures and newly seen identities.', P, { intro: INTRO });

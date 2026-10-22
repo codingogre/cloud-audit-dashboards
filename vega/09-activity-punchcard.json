@@ -1,6 +1,6 @@
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
-  "description": "Every audited event for the current selection by hour of day and day of week, over the last 7 days in UTC — one cell is one specific hour, not an average, because a seven-day window holds each hour of the week exactly once. Strength is volume on a log scale, so a quiet hour stays visible beside a busy one; a bare grey slot is an hour with no events at all. The current hour is still filling, so it is outlined rather than coloured: coloured, its first minutes read as a sudden drop after the full hours before it. Fixed window: this panel does not follow the time picker. No noise gate: it measures presence, so it will not reconcile with Signal events. UTC is stated rather than localised so the chart reads the same for every viewer, whatever their timezone — read the rhythm, not the clock.",
+  "description": "Every event for this selection by hour of day and day of week, last 7 days in UTC. Each cell is one real hour; stronger color means more. Grey means no activity; the current hour is outlined while it fills.",
   "title": {
     "text": {
       "expr": "extent(pluck(data('hours'), 'doc_count'))[1] > 0 ? '' : 'No activity for this selection in the last 7 days'"

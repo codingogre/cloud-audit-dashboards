@@ -1,6 +1,6 @@
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
-  "description": "Where the current selection connected from, in the time picker's range. Points are resolved client locations sized by event volume; a line joins one location to the next the same identity appeared from, colored by the speed that move implies between last seen there and first seen here. Places are aggregated per city, so an identity active in two cities at overlapping times is marked as such rather than given an impossible speed. Read the title line first: many events cannot be placed at all — an address geoip never placed (always the case for CGNAT and private addresses), an event with no client IP, or an event from a placeable address that predates geo enrichment — so the absence of a line is not evidence of absence. An address counts as unplaceable only when none of its events were placed, as in \"Busiest addresses they used\". The line legend appears only when there is a line to read. This is a movement record, not an impossible-travel detector.",
+  "description": "Where this selection connected from: dots are locations sized by activity; lines join one location to the next, colored by the travel speed implied. Read the title line first: many events cannot be placed. Not an impossible-travel detector.",
   "autosize": {
     "type": "fit",
     "contains": "padding"

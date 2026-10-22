@@ -103,10 +103,10 @@
         "x": 0,
         "y": 3,
         "w": 48,
-        "h": 6
+        "h": 11
       },
       "config": {
-        "content": "### Everything one person did, on one page\n\nUse it to check whether their activity is normal, see what they changed and read, and gather evidence for a review or investigation. Raw records: [All audit events](/app/discover#/view/cloud-audit-search-00-all-events), [Raw signal feed](/app/discover#/view/cloud-audit-search-10-raw-signal-feed).\n\n**How to use it:** pick someone in the Person (email) control, or click an email in a table; with nobody selected, the page covers everyone. ① *Is this normal?* always looks at the last 7 days in UTC, ② *What they did* follows the time picker, and ③ *Evidence* ends in the raw records. Table times are in your time zone.\n"
+        "content": "### Everything one person did, on one page\n\nUse it to check whether their activity is normal, see what they changed and read, and gather evidence for a review or investigation. Raw records: [All audit events](/app/discover#/view/cloud-audit-search-00-all-events), [Raw signal feed](/app/discover#/view/cloud-audit-search-10-raw-signal-feed).\n\n**How to use it:** pick someone in the Person (email) control, or click an email in a table; with nobody selected, the page covers everyone. ① *Is this normal?* always looks at the last 7 days in UTC, ② *What they did* follows the time picker, and ③ *Evidence* ends in the raw records. Table times are in your time zone.\n\n**How to read this page**\n\n- A person’s own API keys carry their email, so their counts can include machine traffic; a Cloud API key belongs to no person.\n- The ① panels read a fixed 7 days with no noise gate, so they will not match Signal events or the time picker.\n- Baseline: the band is their usual range for each hour; with under three days of history no band is drawn.\n- The Risk tile and Every scoring action count whole minutes only, so they can stop up to a minute short of the panels around them.\n- Session timeline: click a bar to pin a session (Elasticsearch panels then read empty); API-only identities have no sessions.\n"
       }
     },
     {
@@ -114,13 +114,13 @@
       "id": "tbl-01",
       "grid": {
         "x": 0,
-        "y": 9,
+        "y": 14,
         "w": 16,
         "h": 7
       },
       "config": {
         "title": "Who this is — by email and principal id · top 5 at most",
-        "description": "The identities behind the selection, busiest first: the email for a person, and the Principal id for every signed-in principal (a person's numeric id, a service account, or a Cloud API key's full id). An Elasticsearch API key's events carry the identity that created it. Click an email or Principal id to pin it across the suite; a Cloud API key's Principal id also covers the API keys it created. Requests with no identity (<anonymous>, <unauthenticated-…>) count in the Events tile but have no row.",
+        "description": "The identities behind the selection, busiest first: a person’s email and the Principal id of every signed-in principal. Click either to pin it across the suite. Requests with no identity count in the Events tile but have no row.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
@@ -164,13 +164,13 @@
       "id": "kpi-02",
       "grid": {
         "x": 16,
-        "y": 9,
+        "y": 14,
         "w": 8,
         "h": 7
       },
       "config": {
         "title": "",
-        "description": "Every audited event for the selection, how many different things that was, and how recently they were last seen. Unfiltered by the noise gate, so it includes connection housekeeping.",
+        "description": "Every audited event for the selection, how many distinct actions that was, and how recently they were last seen. Routine traffic included, so it counts connection housekeeping.",
         "type": "metric",
         "data_source": {
           "type": "esql",
@@ -197,13 +197,13 @@
       "id": "kpi-03",
       "grid": {
         "x": 24,
-        "y": 9,
+        "y": 14,
         "w": 8,
         "h": 7
       },
       "config": {
         "title": "",
-        "description": "Summed severity (weight × events) of everything that scored, how many scoring actions that was, and the highest weight among them (50 is a security config change; the table below names every weight in words). Routine activity scores zero, so this is not an event count in disguise. The suite's own install of its cloud-audit-* objects, made with no browser session, scores zero too. The receipts are in \"Every scoring action\" below: one row per action and weight, scrollable, and the Sum under its Risk column is this number; the count here is its number of rows. An action that scored at two weights (a create that succeeded, and one that failed) counts twice, as it is two rows there. This tile and \"Every scoring action\" both count whole minutes only — from the first whole minute of the range to the last — so two fetches a few seconds apart still read the same window; they can start and stop up to a minute inside the panels around them.",
+        "description": "Total risk for the selection (weight × events for everything that scored), how many scoring actions, and the highest weight; 50 is a security configuration change. Routine activity scores zero. Every scoring action below lists the receipts.",
         "type": "metric",
         "data_source": {
           "type": "esql",
@@ -230,13 +230,13 @@
       "id": "kpi-04",
       "grid": {
         "x": 32,
-        "y": 9,
+        "y": 14,
         "w": 8,
         "h": 7
       },
       "config": {
         "title": "",
-        "description": "The width of their reach in Elasticsearch: index families named in their requests, and how many distinct indices those families hold. A family folds dated daily indices and data-stream backing indices together, as \"What they read, by index family\" does, so one dashboard reading thirty days of a daily index is one family. Request patterns such as * and date-math names are not counted, and neither are shard-level repeats of a request (search[phase/query]), so `from N indices` is the sum of the Indices column of that table when every family fits in it.",
+        "description": "How widely this selection reaches into Elasticsearch: index families named in their requests, and how many distinct indices those families hold. Dated and backing indices fold into one family, so thirty days of a daily index is one.",
         "type": "metric",
         "data_source": {
           "type": "esql",
@@ -263,13 +263,13 @@
       "id": "kpi-05",
       "grid": {
         "x": 40,
-        "y": 9,
+        "y": 14,
         "w": 8,
         "h": 7
       },
       "config": {
         "title": "",
-        "description": "Distinct real client addresses — the rows of \"Busiest addresses they used\" below — how many countries they resolve to, and how many cannot be placed at all, which is always the case for a private or CGNAT address. Many addresses for one named person is the shared-credential signal.",
+        "description": "Distinct real client addresses for this selection, how many countries they resolve to, and how many cannot be placed (always so for a private address). Many addresses for one named person is the shared-credential signal.",
         "type": "metric",
         "data_source": {
           "type": "esql",
@@ -296,13 +296,13 @@
       "id": "tbl-06",
       "grid": {
         "x": 0,
-        "y": 16,
+        "y": 21,
         "w": 48,
         "h": 13
       },
       "config": {
         "title": "Every scoring action and its weight, largest first · its Sum is the Risk tile",
-        "description": "The receipts for the Risk tile: the Sum under Risk totals every row, scrolled into view or not, and is the tile's number over the same window. One row per scoring action and weight, largest first; Risk here is weight × events, and the tile's subtitle counts the rows. This tile and \"Every scoring action\" both count whole minutes only — from the first whole minute of the range to the last — so two fetches a few seconds apart still read the same window; they can start and stop up to a minute inside the panels around them. Click an action to pin it, then \"Open in Security & Anomalies\" to see who else does it — the pinned person and action combine, so clear the person pill first to compare. The table holds more rows than the panel shows: scroll it for the rest.",
+        "description": "The receipts for the Risk tile: one row per scoring action and weight, largest first; scroll for more. Risk is weight × events, and the Sum under it is the tile's number. Click an action, then Open in Security & Anomalies.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
@@ -364,7 +364,7 @@
       "id": "md-07",
       "grid": {
         "x": 0,
-        "y": 29,
+        "y": 34,
         "w": 48,
         "h": 2
       },
@@ -377,14 +377,14 @@
       "id": "vega-08",
       "grid": {
         "x": 0,
-        "y": 31,
+        "y": 36,
         "w": 20,
         "h": 14
       },
       "config": {
         "ref_id": "cloud-audit-vega-08-actor-baseline-band",
         "title": "Is this normal for them? — hourly, last 7 days (UTC)",
-        "description": "Hourly activity for the current selection against its OWN pattern for that hour of day. The shaded band is their typical range for the hour (\"typical range\" in the legend, which lists only what is drawn) — the middle half of the seven observations in the window — and a point marks an hour beyond 1.5× that range, which is unusual for them. Seven observations per hour slot is thin, so read it as a sanity check rather than a detector: an identity with a steady background process plus human bursts will sit outside often, and correctly. The headline reads the last complete hour; the current partial hour is left off so it cannot read as a drop. Hours are UTC. Fixed 7-day window: does not follow the time picker. No noise gate, so it will not reconcile with Signal events. The quartiles count only hours from their first event on, so the week before their history starts does not drag the band to zero. With less than three days of history the band has nothing to stand on: it is not drawn, the second line says when their history starts, no hour is marked unusual (every busy hour would read as unusual against a week of zeros), and the time axis starts three hours before that history instead of seven days back, so the chart is not a week of empty floor with the data in a sliver at the right edge. Hours before their first event are not drawn at all: the line starts where their history does, rather than climbing from zero through every decade of the log axis as if the volume had ramped up."
+        "description": "Hourly activity over the last 7 days against this selection’s own usual range for each hour of day (the shaded band). A marked point is an hour well outside their usual range. A sanity check, not a detector. UTC."
       }
     },
     {
@@ -392,14 +392,14 @@
       "id": "vega-09",
       "grid": {
         "x": 20,
-        "y": 31,
+        "y": 36,
         "w": 12,
         "h": 14
       },
       "config": {
         "ref_id": "cloud-audit-vega-12-actor-cohort",
         "title": "Where they rank — last 7 days",
-        "description": "The 40 busiest people by user email over the last 7 days (an organization-level Cloud API key belongs to no person, so it is never ranked here however busy it is), placed by percentile rank on three measures: how much they did, how many different things they did, and how many kinds of Kibana object they touched. The cohort follows the Project control and nothing else: the people it ranks against are everyone active in the projects in scope, so a Person or Client IP selection highlights that identity (an orange diamond, drawn only when exactly one identity is in scope) instead of shrinking the cohort to one. The projects in scope are the projects the current selection is active in. When that is every project the ranks are exact; when it is one project they are exact for that project; when it is several, events are summed across them and the two distinct counts take the largest per-project value, which can undercount, so the title says approximate. Rank rather than raw value so all three measures share one honest axis: a person can be busier than 90% of the cohort while touching fewer kinds of object than most. Hover any point for its raw numbers. With fewer than two identities there is no rank to draw, and the panel says so in its centre instead of plotting one; with exactly one it shows that identity's raw numbers instead. Fixed 7-day window: does not follow the time picker."
+        "description": "Up to 40 busiest people over the last 7 days, ranked by percentile on three measures: how much they did, how many different things, and kinds of Kibana object. The selected person is an orange diamond; hover for raw numbers."
       }
     },
     {
@@ -407,14 +407,14 @@
       "id": "vega-10",
       "grid": {
         "x": 32,
-        "y": 31,
+        "y": 36,
         "w": 16,
         "h": 14
       },
       "config": {
         "ref_id": "cloud-audit-vega-09-activity-punchcard",
         "title": "Working rhythm — last 7 days (UTC)",
-        "description": "Every audited event for the current selection by hour of day and day of week, over the last 7 days in UTC — one cell is one specific hour, not an average, because a seven-day window holds each hour of the week exactly once. Strength is volume on a log scale, so a quiet hour stays visible beside a busy one; a bare grey slot is an hour with no events at all. The current hour is still filling, so it is outlined rather than coloured: coloured, its first minutes read as a sudden drop after the full hours before it. Fixed window: this panel does not follow the time picker. No noise gate: it measures presence, so it will not reconcile with Signal events. UTC is stated rather than localised so the chart reads the same for every viewer, whatever their timezone — read the rhythm, not the clock."
+        "description": "Every event for this selection by hour of day and day of week, last 7 days in UTC. Each cell is one real hour; stronger color means more. Grey means no activity; the current hour is outlined while it fills."
       }
     },
     {
@@ -422,7 +422,7 @@
       "id": "md-11",
       "grid": {
         "x": 0,
-        "y": 45,
+        "y": 50,
         "w": 48,
         "h": 2
       },
@@ -435,14 +435,14 @@
       "id": "vega-12",
       "grid": {
         "x": 0,
-        "y": 47,
+        "y": 52,
         "w": 48,
         "h": 11
       },
       "config": {
         "ref_id": "cloud-audit-vega-11-actor-object-flow",
         "title": "How they reached what they touched in Kibana — credential → space → object → operation",
-        "description": "How the current selection's Kibana activity flows: which credential it arrived with, which space it happened in, what kind of object it touched and what it did to it. Ribbon width is event count in the time picker's range. Kibana audit only, and only events that touched an object — requests, logins and point-in-time internals are left out. Elasticsearch events carry no space and no saved object, so including them would put most of the ink in a branch that says nothing. Credential is authentication type where Elasticsearch records one and the user's realm otherwise, which is what separates a person in a browser (SAML SSO, the cloud-saml-kibana realm) from a script calling Kibana with a key (Elasticsearch or Cloud API key); hover a credential for its raw name. Object types come from the shared OBJ_TYPE fragment, which recovers a type from the event for workflows, ML jobs, agent-builder tools and secrets that carry no saved-object fields. Every event is counted, so each column adds up to the same total and Operation's delete is every Kibana delete of an object — saved_object_delete, space_delete and the feature deletes, including the objects a deleted space took with it — which is at least the delete rows of the scoring table above. Each column names its seven biggest values and folds the rest into \"other (N)\", drawn last. A small value is drawn at a minimum height so that it can carry its label: heights are proportional above that floor, and the number beside each value is exact. Click a named credential or space to pin it across the suite — object type and operation are derived, so a pill on them would match nothing. Double-click anywhere in the panel to clear every pill on the page."
+        "description": "This selection’s Kibana activity: credential, space, object type, then what was done. Wider ribbons mean more events. A person in a browser arrives by SAML SSO; a script by API key. Click a credential or space to pin it."
       }
     },
     {
@@ -450,13 +450,13 @@
       "id": "tbl-13",
       "grid": {
         "x": 0,
-        "y": 58,
+        "y": 63,
         "w": 48,
         "h": 12
       },
       "config": {
         "title": "⚠️ What they changed — deletes first, then newest · up to 100",
-        "description": "What they changed, ran or deleted in Kibana — deletes first, then everything else newest first; scroll for the rest, up to the first 100 rows. `type` and `name` are the real saved-object fields where Kibana records them, and are otherwise recovered from the event message: workflows, agent-builder agents and tools, ML jobs and secrets carry no saved_object fields at all. A workflow run, test or cancel carries its run on the name (\"· run\" and the first 8 characters of the run id) — a cancel and the run it cancelled share that id; the full id is in the session records at the bottom of the page. An operation marked \"(failed)\" was denied; every other row is a change Kibana recorded as attempted or completed (most saved-object changes are logged as the attempt, before the outcome is known).",
+        "description": "What this selection changed, ran or deleted in Kibana: deletes first, then newest first, up to 100 rows. “(failed)” marks a denied change; other rows are changes Kibana recorded as attempted or completed. Scroll for more.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
@@ -513,13 +513,13 @@
       "id": "tbl-14",
       "grid": {
         "x": 0,
-        "y": 70,
+        "y": 75,
         "w": 20,
         "h": 11
       },
       "config": {
         "title": "What they read, by index family · top 9 at most",
-        "description": "Where their reads concentrate, busiest first. Dated daily indices and data-stream backing indices are folded into the family they belong to, so a date-suffixed series is one row and `Indices` says how many of its members were read. A request naming several indices counts once per index; request patterns such as * and date-math names are left out, and so are shard- and node-level repeats of a request (search[phase/query], bulk[s][p]), which Elasticsearch audits with the same index as the request itself. Every dot-prefixed family here is also a row of \"System and hidden index reads\", with the same counts. The audit stream itself usually tops the list, because every dashboard on this page reads it. This is the busiest few; the Index families tile above counts every family.",
+        "description": "The index families this selection read most, busiest first. Dated and backing indices fold into one family; Indices counts how many of its members were read. The audit stream usually tops the list because these dashboards read it.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
@@ -561,13 +561,13 @@
       "id": "tbl-15",
       "grid": {
         "x": 20,
-        "y": 70,
+        "y": 75,
         "w": 28,
         "h": 11
       },
       "config": {
         "title": "⚠️ System and hidden index reads · top 9 at most (empty = good)",
-        "description": "The dot-prefixed families of \"What they read, by index family\" beside it — system and hidden indices — counted the same way, so a family reads the same Events and Indices in both: daily indices and a dot-named stream's backing indices (.ds-.alerts-…) are folded into their family, and request patterns and shard-level repeats are left out. A backing index of an ordinary stream (.ds-logs-…) is ordinary data and is not here, as on Elasticsearch Data Access. The index shown is one real member of the family, never a backing index when the family has another — the row counts the whole family — and it is what a click pins; then \"Open in Elasticsearch Data Access\" to see who else reads it. An empty panel means nothing matched in the time range, which is the healthy state; any row here is worth reading.",
+        "description": "The system and hidden index families this selection read, counted as in “What they read, by index family” beside it. Click a row to pin it, then open Elasticsearch Data Access to see who else reads it.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
@@ -620,14 +620,14 @@
       "id": "vega-16",
       "grid": {
         "x": 0,
-        "y": 81,
+        "y": 86,
         "w": 18,
         "h": 12
       },
       "config": {
         "ref_id": "cloud-audit-vega-10-actor-geography",
         "title": "Where they connected from",
-        "description": "Where the current selection connected from, in the time picker's range. Points are resolved client locations sized by event volume; a line joins one location to the next the same identity appeared from, colored by the speed that move implies between last seen there and first seen here. Places are aggregated per city, so an identity active in two cities at overlapping times is marked as such rather than given an impossible speed. Read the title line first: many events cannot be placed at all — an address geoip never placed (always the case for CGNAT and private addresses), an event with no client IP, or an event from a placeable address that predates geo enrichment — so the absence of a line is not evidence of absence. An address counts as unplaceable only when none of its events were placed, as in \"Busiest addresses they used\". The line legend appears only when there is a line to read. This is a movement record, not an impossible-travel detector."
+        "description": "Where this selection connected from: dots are locations sized by activity; lines join one location to the next, colored by the travel speed implied. Read the title line first: many events cannot be placed. Not an impossible-travel detector."
       }
     },
     {
@@ -635,13 +635,13 @@
       "id": "tbl-17",
       "grid": {
         "x": 18,
-        "y": 81,
+        "y": 86,
         "w": 30,
         "h": 12
       },
       "config": {
         "title": "Busiest addresses they used · top 10 at most",
-        "description": "Their real client addresses, busiest first, one row per address — the same addresses the Client IPs tile counts — including the ones the map cannot show. \"unplaced\" means geoip placed none of that address's events, which is always the case for a private or CGNAT address; \"—\" is a country with no city. An address keeps its place even when some of its events predate geo enrichment. Click an address to pin it, then \"Open in Geo & Network\".",
+        "description": "This selection’s real client addresses, busiest first, including ones the map cannot show. “unplaced” means no location was found, always so for a private address; “—” is a country with no city. Click an address to pin it.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
@@ -694,7 +694,7 @@
       "id": "md-18",
       "grid": {
         "x": 0,
-        "y": 93,
+        "y": 98,
         "w": 48,
         "h": 2
       },
@@ -707,14 +707,14 @@
       "id": "vega-19",
       "grid": {
         "x": 0,
-        "y": 95,
+        "y": 100,
         "w": 48,
         "h": 7
       },
       "config": {
         "ref_id": "cloud-audit-vega-13-session-gantt",
         "title": "Kibana browser sessions · fixed last 24 hours, your time zone",
-        "description": "One bar per Kibana browser session in the last 24 hours, newest first — its length runs from the first to the last thing they did in it and its strength is how much it did, which are independent: a short session can carry far more activity than a long one left open and idle. Click a bar to filter the dashboard to that session (a \"session: …\" pill on kibana.session.id) and to set the time range to the session plus a minute either side, so the session records directly below this timeline show exactly that session's events: those records follow the time picker, while this timeline stays on its fixed 24 hours. To return, remove the pill and set the time range again. The pill narrows every panel on the page to that session, so a panel of Elasticsearch events, which carry no session id, reads empty while it is on. Shift-click pins that identity by email across the suite instead. What an open browser tab does on its own — internal page requests, usage counters, point-in-time paging — is left out, exactly as in the session records below, so a tab left open does not stretch a bar past the person's last action and every bar has records under it. Only Kibana browser sign-ins carry a session id: work through an API key or the Elasticsearch API has no session and draws no bar, so the dashed line marks the latest such event in the same 24 hours — activity after the last bar is real, it is just not a session. An identity that only works through the API has no bars, and that is the correct answer. Twelve most recent sessions, each labelled with who and when it started (with the weekday when that was not today); a session already open when the 24-hour window begins starts at the window's left edge and is labelled \"or earlier\", because its real start is outside the window. Times are in your browser's timezone, like the rest of Kibana. Fixed 24-hour window: does not follow the time picker."
+        "description": "The 12 most recent Kibana browser sessions in the last 24 hours: length is how long, shade is how much was done. Click a bar to show that session’s records below. API-key work has no session. Ignores the time picker."
       }
     },
     {
@@ -722,14 +722,14 @@
       "id": "ds-20",
       "grid": {
         "x": 0,
-        "y": 102,
+        "y": 107,
         "w": 48,
         "h": 12
       },
       "config": {
         "ref_id": "cloud-audit-search-09-session-reconstruction",
         "title": "Session records · newest 1,000 at most (empty when none in range)",
-        "description": "The raw Kibana events behind the session timeline above, newest first and capped at the newest 1,000 — so \"1,000 results\" above the grid is that cap, not a count of the range — with the session, the object and the message Kibana wrote. To read one session, click its bar in the timeline above, or hover a cell of the kibana.session.id column (the full session id, under its field name so that the cell can filter) and choose Filter for value. Columns are cut to fit the panel: expand a row (the ⤢ at its left) to read the full session id, object name and message, or open the session in Discover. Like the timeline, it leaves out what an open browser tab does on its own — internal page requests, usage counters, point-in-time paging — so a session in the timeline always has records here, and an hour in which they only had Kibana open is empty. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email. Often empty over the default hour on a healthy project; widen the time range to see older rows."
+        "description": "The raw Kibana events behind the session timeline, newest first. Click a timeline bar or filter on a session id to read one session. Capped at the newest 1,000; an hour with only an idle Kibana tab is empty."
       }
     }
   ]

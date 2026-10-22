@@ -103,10 +103,10 @@
         "x": 0,
         "y": 3,
         "w": 48,
-        "h": 6
+        "h": 12
       },
       "config": {
-        "content": "### See who did what across your Elastic Cloud projects\n\nThis overview shows how much activity there was, who was busiest, which identities carry the most risk, and the latest events as they arrive.\n\nStart here for a routine review or when something looks wrong, then use the links above to go deeper on one person, sign-ins, Kibana objects, data access, security or location.\n\n**How to use it:** choose a Project, Person (email), API key or Client IP in the controls to focus every panel, and set the time picker. Raw records: [All audit events](/app/discover#/view/cloud-audit-search-00-all-events), [Raw signal feed](/app/discover#/view/cloud-audit-search-10-raw-signal-feed).\n"
+        "content": "### See who did what across your Elastic Cloud projects\n\nThis overview shows how much activity there was, who was busiest, which identities carry the most risk, and the latest events as they arrive.\n\nStart here for a routine review or when something looks wrong, then use the links above to go deeper on one person, sign-ins, Kibana objects, data access, security or location.\n\n**How to use it:** choose a Project, Person (email), API key or Client IP in the controls to focus every panel, and set the time picker. Raw records: [All audit events](/app/discover#/view/cloud-audit-search-00-all-events), [Raw signal feed](/app/discover#/view/cloud-audit-search-10-raw-signal-feed).\n\n**How to read this page**\n\n- Risk is weight × events, from 10 for a workflow run to 50 for a security change, so it runs far above event counts.\n- An API key carries its creator’s email, so a person’s row can include a machine’s traffic (“email · via key”).\n- Click a Principal id to filter the page or open Actor 360; a Cloud API key’s id also covers the API keys it created.\n- A Client IP marked *internal* is Kibana or the platform acting for someone, not where they are.\n- The last time bucket is partial, and panels side by side can differ by an event or two at the edges of the range.\n"
       }
     },
     {
@@ -114,14 +114,14 @@
       "id": "vega-01",
       "grid": {
         "x": 0,
-        "y": 9,
+        "y": 15,
         "w": 8,
         "h": 5
       },
       "config": {
         "ref_id": "cloud-audit-vega-15-prev-total-events",
         "title": "",
-        "description": "Every audited event in range, including machine noise. Compare with Signal to see how much the noise gate removes. The line above the number compares it with the prior period: the same length of time just before the range (the day before, on the default 24 hours). ▲ or ▼ is the change, and a change of ten times or more reads “×”. “no full prior …” means the audit stream starts inside that earlier period, or that period begins more than 15 days ago, so there is nothing fair to compare with."
+        "description": "Every audited event in range, routine machine traffic included. Compare with Signal events to see how much the noise gate removes. The line above the number compares it with the prior period of the same length."
       }
     },
     {
@@ -129,13 +129,13 @@
       "id": "kpi-02",
       "grid": {
         "x": 8,
-        "y": 9,
+        "y": 15,
         "w": 7,
         "h": 5
       },
       "config": {
         "title": "",
-        "description": "Events left after the noise gate removes health checks (cluster:monitor/main, elastic.maintenance), query internals (search, ES|QL, field_caps and async-search sub-requests, API key metadata lookups, Kibana /internal/ page requests and page-load lookups, and this suite reading and automatically installing its own saved objects), connection_granted and bulk authentication_success.",
+        "description": "Events left after the noise gate removes routine traffic: health checks, the background requests behind searches and page loads, API key lookups, bulk sign-in records and these dashboards' own activity.",
         "type": "metric",
         "data_source": {
           "type": "esql",
@@ -158,13 +158,13 @@
       "id": "kpi-03",
       "grid": {
         "x": 15,
-        "y": 9,
+        "y": 15,
         "w": 7,
         "h": 5
       },
       "config": {
         "title": "",
-        "description": "Identities with signal traffic, behind the same noise gate and resolved the same way as Busiest identities: email, then API key name, then numeric user id. Someone whose only events are noise (browsing dashboards, health checks) is not counted here.",
+        "description": "Identities with signal traffic, named as in Busiest identities. Someone whose only events are routine (browsing dashboards, health checks) is not counted here.",
         "type": "metric",
         "data_source": {
           "type": "esql",
@@ -187,13 +187,13 @@
       "id": "kpi-04",
       "grid": {
         "x": 22,
-        "y": 9,
+        "y": 15,
         "w": 7,
         "h": 5
       },
       "config": {
         "title": "",
-        "description": "Distinct email addresses with signal traffic, behind the same noise gate as Signal events. Includes an API key whose events carry its creator’s email: such a row in Busiest identities reads “email · via key name”.",
+        "description": "Distinct email addresses with signal traffic. Includes API keys whose events carry their creator’s email; Busiest identities shows those as “email · via key name”.",
         "type": "metric",
         "data_source": {
           "type": "esql",
@@ -216,13 +216,13 @@
       "id": "kpi-05",
       "grid": {
         "x": 29,
-        "y": 9,
+        "y": 15,
         "w": 10,
         "h": 5
       },
       "config": {
         "title": "",
-        "description": "Security configuration changes — API keys created, changed or invalidated, roles and user profiles written — by any identity, over all traffic (the noise gate removes none of these, so gated and ungated counts are the same). Kibana’s own routine clean-up of API keys (invalidate_apikeys by the elastic/kibana service account) is not counted here; the line under the number (“excl. N cleanups”) says how many there were. Any other non-zero value deserves review.",
+        "description": "Security configuration changes (API keys created, changed or invalidated; roles and user profiles written) by anyone, all traffic. Kibana’s routine API-key clean-up is left out; the line above the number counts it. Any other non-zero value deserves review.",
         "type": "metric",
         "data_source": {
           "type": "esql",
@@ -249,14 +249,14 @@
       "id": "vega-06",
       "grid": {
         "x": 39,
-        "y": 9,
+        "y": 15,
         "w": 9,
         "h": 5
       },
       "config": {
         "ref_id": "cloud-audit-vega-15-prev-failed-events",
         "title": "",
-        "description": "Failed outcomes plus anonymous access denials over all traffic, not only signal: a failure is worth seeing even when it is a health check or a query internal. The first place to look during an incident. The line above the number compares it with the prior period: the same length of time just before the range (the day before, on the default 24 hours). ▲ or ▼ is the change, and a change of ten times or more reads “×”. “no full prior …” means the audit stream starts inside that earlier period, or that period begins more than 15 days ago, so there is nothing fair to compare with."
+        "description": "Failed outcomes and anonymous access denials across all traffic, routine included. The first place to look during an incident. The line above the number compares it with the prior period of the same length."
       }
     },
     {
@@ -264,13 +264,13 @@
       "id": "xy-07",
       "grid": {
         "x": 0,
-        "y": 14,
+        "y": 20,
         "w": 32,
         "h": 16
       },
       "config": {
         "title": "Audit volume by source · all traffic",
-        "description": "Total audited events over time, split by originating service. Elasticsearch audits every transport action, so its volume usually far exceeds Kibana’s — and the Kibana slice is where most of the forensic value is. The plot spans exactly the time range. The range ends a minute ago, part-way through the last bucket, so the last bar covers only part of its interval and is usually short; a bucket with no bar had no audit events delivered for it (the stream arrives in batches). Signal vs noise draws the same buckets over the same span.",
+        "description": "Total audited events over time, by source service. Elasticsearch usually far outweighs Kibana, but Kibana holds most of the forensic value. The last bar is partial; a gap means no events were delivered for that bucket.",
         "type": "xy",
         "axis": {
           "x": {
@@ -341,7 +341,7 @@
       "id": "md-08",
       "grid": {
         "x": 32,
-        "y": 14,
+        "y": 20,
         "w": 16,
         "h": 11
       },
@@ -354,7 +354,7 @@
       "id": "vega-09",
       "grid": {
         "x": 32,
-        "y": 25,
+        "y": 31,
         "w": 16,
         "h": 5
       },
@@ -369,14 +369,14 @@
       "id": "vega-10",
       "grid": {
         "x": 0,
-        "y": 30,
+        "y": 36,
         "w": 24,
         "h": 15
       },
       "config": {
         "ref_id": "cloud-audit-vega-01-actor-risk-treemap",
         "title": "Actor footprint · area by √events, color by risk total",
-        "description": "The top 12 identities by signal volume (fewer on a narrow screen, down to 8), in one block per kind; the rest of each kind is folded into one grey “+N more” tile (just “+N” where the tile is narrow; hover it for the count). Blocks: named API key (labelled by the KEY, with its owner — the principal that created it — on a further line when there is room, and in the tooltip); person (a real email address); cloud API key (an organization-level Cloud key, which the audit stream records only by id and with no owner); platform (Elastic’s own service accounts and automation, such as elastic/kibana, the Kibana service account); user, no email (a user name that signed in but carries no email; absent on most projects); and unattributed (no authenticated principal: <anonymous>, an unauthenticated token, or a user name that only ever failed to sign in, such as elastic or admin in a password-guessing run). An identity is one tile even when its events disagree about its kind; it goes in the most specific block any of them supports. Area grows with the SQUARE ROOT of event volume, so one dominant identity cannot crush the rest into slivers, plus the same small share for every tile, so the quietest identity keeps a readable name but is never drawn larger than a busier one. Each tile prints its event count where it fits (a bare number on a narrow tile): read the number, not the area, for how much more one identity did. A name too long for its tile ends in “…” — the tooltip has the full name and exact counts. Color is Risk total, the quantity the Security Anomalies risk leaderboard ranks by: each scoring event’s risk weight (from 10 for a workflow run to 50 for a security configuration change; 0 for anything that does not score, and 0 for Kibana’s own routine API-key clean-up, which Privileged ops leaves out too) summed over the identity’s events, on a square-root scale. It is in weight × events, not events, so it runs well above the counts on the tiles. A key that carries its creator’s email is its own tile here, but counts under the person in Busiest identities. The range ends a minute ago, so nothing in it is still arriving; each panel reads the clock for itself, up to a second apart, so two panels side by side can differ by the events of that second at either end of the range: usually none, a few on a busy all-traffic count or during a burst. That is how a tile here and the same identity’s row in Busiest identities can differ by one or two events."
+        "description": "The busiest identities as tiles, grouped by kind: named API key, person, Cloud API key, platform, user without email, unattributed. Bigger means more activity, but read the printed count, not the area. Stronger color means more risk."
       }
     },
     {
@@ -384,13 +384,13 @@
       "id": "xy-11",
       "grid": {
         "x": 24,
-        "y": 30,
+        "y": 36,
         "w": 24,
         "h": 15
       },
       "config": {
         "title": "Signal vs noise over time · all traffic",
-        "description": "Every audited event per time bucket, on either side of the noise gate: Signal is what the gate keeps (the Signal events tile, and what every gated panel reads), Noise is what it removes (health pings, query internals, API key lookups, page loads, bulk sign-in events and this suite’s own traffic). The two bars of a bucket add up to its Audit volume bar. LOG SCALE: each gridline is ten times the one below, so a bucket with one signal event among tens of thousands still shows; read the gap between the two bar tops as a ratio (one gridline apart is 10×). As on Audit volume, the last bucket covers only part of its interval, and a missing bar means no events on that side of the gate in that bucket.",
+        "description": "Every bucket split into Signal, what the noise gate keeps, and Noise, the routine traffic it removes. Log scale: each gridline is ten times the one below, so read the gap between the bars as a ratio.",
         "type": "xy",
         "axis": {
           "x": {
@@ -471,7 +471,7 @@
       "id": "tbl-12",
       "grid": {
         "x": 0,
-        "y": 45,
+        "y": 51,
         "w": 13,
         "h": 13
       },
@@ -519,13 +519,13 @@
       "id": "tbl-13",
       "grid": {
         "x": 13,
-        "y": 45,
+        "y": 51,
         "w": 22,
         "h": 13
       },
       "config": {
         "title": "Busiest identities · top 12 at most",
-        "description": "The identities generating the most signal traffic; the rows sum to Signal events when they all fit, and fewer rows than the bound means every identity with signal is listed (Distinct actors counts the same set). Identity resolves to an email, then an API key name, then a user id. An identity’s treemap tile and its row here can differ by an event or two at the range’s edges, because each panel reads the clock for itself. Elasticsearch stamps an API key’s CREATOR’s email on every event the key emits, so any number of machines authenticating with one key resolve to one person: such a row reads “email · via key name” and is a credential’s traffic, not the person at a keyboard. To follow one person across the suite, pick them in the Person (email) control above, or click a Principal id to filter to it or open Actor 360; a Cloud API key's Principal id also covers the API keys it created, and a named key's row pins the identity that created it. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email.",
+        "description": "The identities with the most signal traffic. A row reading “email · via key name” is an API key’s traffic stamped with its creator’s email, not that person at a keyboard. Click a Principal id to filter or open Actor 360.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
@@ -568,13 +568,13 @@
       "id": "xy-14",
       "grid": {
         "x": 35,
-        "y": 45,
+        "y": 51,
         "w": 13,
         "h": 13
       },
       "config": {
         "title": "Event categories · all traffic",
-        "description": "ECS event categories over the whole stream, noise included, each with its count, on a log scale so the small categories are as readable as the bulk: read each bar by its count, not its length (each axis step is ten times the one before). event.category is a multi-value array, so an event in two categories counts once in each and the bars sum to more than the event total; “none recorded” is events that carry no category. A category with a single event has no visible bar.",
+        "description": "Event categories across all traffic, routine included. Log scale: read each bar’s count, not its length. An event can belong to two categories, so the bars sum to more than the total; “none recorded” means no category.",
         "type": "xy",
         "axis": {
           "x": {
@@ -622,14 +622,14 @@
       "id": "ds-15",
       "grid": {
         "x": 0,
-        "y": 58,
+        "y": 64,
         "w": 48,
         "h": 25
       },
       "config": {
         "ref_id": "cloud-audit-search-10-raw-signal-feed",
         "title": "Live signal feed · Kibana key clean-up left out",
-        "description": "The newest 200 signal events, newest first, behind the same noise gate as Signal events, without Kibana’s own routine API-key clean-up (invalidate_apikeys by the elastic/kibana service account, every few seconds), which would otherwise fill it: Privileged ops counts those in its “excl. N cleanups” line, and they still count in Signal events. Detail is the Kibana message, the transport action on an Elasticsearch event, or for a security change (API key, role) what it changed: “API key <name or id> + N more” for one call that invalidated several keys. A Client IP marked internal is Kibana or the platform calling Elasticsearch on someone’s behalf, not where they are; “none recorded” is an event with no client address, such as Kibana’s own service account working inside the platform. Automation reads as long runs of near-identical rows from one identity: this suite’s own install is left out by the gate, but any other script — a deploy, a scan, a tool polling an API — can fill this feed for minutes. To read past it, pick a Person above, or open the session and filter that identity out. Open the Discover session to page further back or add columns. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email."
+        "description": "The newest 200 signal events, with routine traffic and Kibana’s own key clean-up left out. Long runs of near-identical rows from one identity are automation: pick a Person, or filter it out in Discover, to read past it."
       }
     }
   ]

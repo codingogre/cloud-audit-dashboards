@@ -103,10 +103,10 @@
         "x": 0,
         "y": 3,
         "w": 48,
-        "h": 6
+        "h": 12
       },
       "config": {
-        "content": "### Who signed in, how, and what failed\n\nSee which sign-in methods and credentials are in use, your busiest people and API keys, every key and when it was last used, and each failed or denied attempt.\n\nUse it to check that access looks as expected, review API keys, or follow up on failed sign-ins. Empty failure panels are good news. Raw records: [All audit events](/app/discover#/view/cloud-audit-search-00-all-events), [Raw signal feed](/app/discover#/view/cloud-audit-search-10-raw-signal-feed).\n\n**How to use it:** choose a Project, Person (email), API key or Client IP in the controls and set the time picker. Click an email in a table to filter the whole suite to that person.\n"
+        "content": "### Who signed in, how, and what failed\n\nSee which sign-in methods and credentials are in use, your busiest people and API keys, every key and when it was last used, and each failed or denied attempt.\n\nUse it to check that access looks as expected, review API keys, or follow up on failed sign-ins. Empty failure panels are good news. Raw records: [All audit events](/app/discover#/view/cloud-audit-search-00-all-events), [Raw signal feed](/app/discover#/view/cloud-audit-search-10-raw-signal-feed).\n\n**How to use it:** choose a Project, Person (email), API key or Client IP in the controls and set the time picker. Click an email in a table to filter the whole suite to that person.\n\n**How to read this page**\n\n- An identity is an email, else an API key’s name, else a user ID; a key named after a person is still a key.\n- An Elasticsearch API key carries its creator’s email, so its traffic counts under that person.\n- Cloud API keys have no name or owner: they read “_4KEO… · Cloud API key”, with Owner “Cloud organization”.\n- A re-issued key keeps its name under a new id, so key ids can outnumber names.\n- A failed sign-in counts once per attempt. Credential type exists only on Elasticsearch requests, so those panels leave out Kibana traffic.\n"
       }
     },
     {
@@ -114,13 +114,13 @@
       "id": "kpi-01",
       "grid": {
         "x": 0,
-        "y": 9,
+        "y": 15,
         "w": 8,
         "h": 5
       },
       "config": {
         "title": "",
-        "description": "Distinct identities in all traffic, resolved as email, then API key name, then user.name — one per row of Identity first and last seen. The people among them, by email, are the Humans tile beside it. The line under the number counts the API keys among them that have no email, by name (a Cloud API key, which has none, by its id): a re-issued key keeps its name, so it counts once here and once per id in the API keys tile. A key named after a person (syn-new-hire-…) is still a key. The rest of the number is service accounts and built-in users (elastic/kibana, autoscaling), user names tried in a failed sign-in (admin, elastic), and the placeholders for requests that presented no identity (<anonymous>, <unauthenticated-…>) — each a row in that session.",
+        "description": "Distinct identities, all traffic: people, API keys, service accounts, user names tried in failed sign-ins, and placeholders for anonymous requests. The line above the number counts the API key names among them. Identity first and last seen lists each.",
         "type": "metric",
         "data_source": {
           "type": "esql",
@@ -147,13 +147,13 @@
       "id": "kpi-02",
       "grid": {
         "x": 8,
-        "y": 9,
+        "y": 15,
         "w": 8,
         "h": 5
       },
       "config": {
         "title": "",
-        "description": "Distinct email addresses in all traffic — the people Busiest human identities ranks. An Elasticsearch API key carries its creator's email, so a person can count here through a key they made without signing in; the line under the number says how many of them used SAML SSO in range (a browser session, whether it began in range or earlier — SSO events beside it says which).",
+        "description": "Distinct email addresses across all traffic: the people Busiest human identities ranks. A person can count through an API key they created without signing in; the line above the number says how many used SAML SSO.",
         "type": "metric",
         "data_source": {
           "type": "esql",
@@ -180,13 +180,13 @@
       "id": "kpi-03",
       "grid": {
         "x": 16,
-        "y": 9,
+        "y": 15,
         "w": 8,
         "h": 5
       },
       "config": {
         "title": "",
-        "description": "Distinct API keys seen in range, by id, of both kinds: Elastic Cloud API keys (recorded by id only) and Elasticsearch API keys (by id and name) — one per row of API key inventory. The line under the number counts the names those ids carry (a Cloud API key, which has none, by its id), one per row of Busiest API keys by name: a re-issued Elasticsearch key keeps its name under a new id, so a name with many ids is one key re-issued many times. These are the key names in the Identities tile beside it, unless a person created a key: that key's traffic carries the person's email, so Identities counts the person instead and this count of names is higher.",
+        "description": "Distinct API keys used in range, Cloud and Elasticsearch, one per row of API key inventory. The line above the number counts their names: a name with many ids is one key re-issued many times.",
         "type": "metric",
         "data_source": {
           "type": "esql",
@@ -213,13 +213,13 @@
       "id": "kpi-04",
       "grid": {
         "x": 24,
-        "y": 9,
+        "y": 15,
         "w": 8,
         "h": 5
       },
       "config": {
         "title": "",
-        "description": "Events authenticated through the cloud-saml-kibana SAML realm — a person in a browser. The line under the number counts Kibana user_login events in range, or reads “signed in earlier” when there are none: the sessions behind these events began before the range, so a person can use SSO (the Humans tile) with no new sign-in here.",
+        "description": "Events from people using Kibana in a browser through SAML SSO. The line above the number counts new sign-ins in range, or reads “signed in earlier” when the sessions began before the range.",
         "type": "metric",
         "data_source": {
           "type": "esql",
@@ -246,13 +246,13 @@
       "id": "kpi-05",
       "grid": {
         "x": 32,
-        "y": 9,
+        "y": 15,
         "w": 8,
         "h": 5
       },
       "config": {
         "title": "",
-        "description": "Failed sign-ins (authentication_failed or anonymous_access_denied, one per request; the realm_authentication_failed events Elasticsearch writes for each realm an attempt tried are left out, so an attempt counts once) plus requests refused or failed after sign-in (access_denied and any other failed outcome). The line under the number counts the failed sign-in attempts (nobody signed in: these are not logins); the rest of the number is denied — refused or failed after sign-in. A denial is an authenticated identity hitting a permission wall, not someone guessing credentials. Same predicate as the two failure panels below.",
+        "description": "Failed sign-ins plus requests refused or failed after sign-in. The line above the number counts the failed sign-ins; the rest are signed-in identities hitting a permission wall, not someone guessing credentials.",
         "type": "metric",
         "data_source": {
           "type": "esql",
@@ -279,7 +279,7 @@
       "id": "kpi-06",
       "grid": {
         "x": 40,
-        "y": 9,
+        "y": 15,
         "w": 8,
         "h": 5
       },
@@ -312,13 +312,13 @@
       "id": "xy-07",
       "grid": {
         "x": 0,
-        "y": 14,
+        "y": 20,
         "w": 24,
         "h": 12
       },
       "config": {
         "title": "Elasticsearch requests per minute by credential type",
-        "description": "Elasticsearch requests per minute by how they presented credentials: API key, token (SSO browser sessions and service accounts), realm (username and password) or SAML. One bar per credential type per interval — 1 minute at 1h, 30 minutes at 24h, 3 hours at 7d — and its height is that interval's requests divided by its minutes, so the scale reads the same at every range: a lone request in a 30-minute bar is 0.033 a minute. A log scale, so a type carrying a fraction of a percent of the traffic is as readable as the bulk; an interval with no bar had no requests of that type. Every bar is a whole interval counted back from the end of the range, so the newest bar is the most recent minutes and none is left out. A shift in this mix is worth explaining.",
+        "description": "Elasticsearch requests per minute by credential type: API key, token (SSO browsers and service accounts), realm (username and password) or SAML. Log scale, so small types stay readable. A shift in this mix is worth explaining.",
         "type": "xy",
         "axis": {
           "x": {
@@ -443,14 +443,14 @@
       "id": "vega-08",
       "grid": {
         "x": 24,
-        "y": 14,
+        "y": 20,
         "w": 24,
         "h": 12
       },
       "config": {
         "ref_id": "cloud-audit-vega-02-auth-matrix",
         "title": "Credential type by identity · Elasticsearch requests",
-        "description": "Which credential type each of the busiest identities presents, 12 at most, and how many Elasticsearch requests it made with each: the count is printed in the cell. Cells are coloured by credential type, in the same colours as the time chart beside it, so a colour means the same thing in both panels. Humans should authenticate by token (SSO); service identities by API key. Only Elasticsearch requests record a credential type, so the counts leave out Kibana traffic and can be lower than the same identity's count in the tables below (Busiest API keys counts both), and identities seen only in Kibana or only anonymously are counted in Identities above but are not on this chart. A Cloud API key has no name and is shown as “_4KEO… · Cloud API key”, the first five characters of its id."
+        "description": "Which credential type each of the 12 busiest identities uses, with its Elasticsearch request count in each cell. Colors match the time chart beside it. People should sign in by token (SSO); services by API key."
       }
     },
     {
@@ -458,13 +458,13 @@
       "id": "xy-09",
       "grid": {
         "x": 0,
-        "y": 26,
+        "y": 32,
         "w": 12,
         "h": 12
       },
       "config": {
         "title": "Events by identity origin",
-        "description": "Events, not identities, by the email on the event: Elastic (@elastic.co), Tenant (any other address), or Machine (no email: service accounts, Cloud API keys, internal users and anonymous requests). Each origin's name carries its count, and the bars are on a log scale so a person's few dozen events are visible beside a key's hundreds of thousands: read the count, not the length. An origin with no bar had no events in range. One busy key can make Machine nearly all of the traffic while most identities are people. An Elasticsearch API key carries its creator's email, so traffic from a key a person created counts under that person's origin.",
+        "description": "Events, not identities, by the email on the event: Elastic (@elastic.co), Tenant (any other address) or Machine (no email). Log scale: read the count, not the bar length. One busy key can make Machine nearly all traffic.",
         "type": "xy",
         "axis": {
           "x": {
@@ -518,13 +518,13 @@
       "id": "xy-10",
       "grid": {
         "x": 12,
-        "y": 26,
+        "y": 32,
         "w": 12,
         "h": 12
       },
       "config": {
         "title": "Events by authentication realm",
-        "description": "Events by the security realm that authenticated them. Each realm's name carries its count, and the bars are on a log scale so a small realm is visible beside the bulk: read the count, not the length. SAML SSO is interactive human sign-in (cloud-saml-kibana); Elasticsearch API key (_es_api_key) and Cloud API key (_cloud_api_key) are programmatic — an Elasticsearch key minted by a Cloud API key authenticates in the Cloud key's realm; Service account is Elastic's own components (_service_account). Any other realm is shown by its name. Anonymous and unauthenticated requests record no realm and are not counted, so the bars can sum to less than Events by identity origin beside it.",
+        "description": "Events by how they were authenticated: SAML SSO is people signing in through a browser; Elasticsearch and Cloud API keys are programmatic; Service account is Elastic’s own components. Log scale: read each bar’s count, not its length.",
         "type": "xy",
         "axis": {
           "x": {
@@ -578,13 +578,13 @@
       "id": "tbl-11",
       "grid": {
         "x": 24,
-        "y": 26,
+        "y": 32,
         "w": 24,
         "h": 12
       },
       "config": {
         "title": "Busiest API keys by name · top 10 at most",
-        "description": "The busiest API keys of both kinds, one row per key name, with request volume and how many distinct client IPs used it. An Elastic Cloud API key has no name, so its API key cell is empty and the next column holds its full id; for an Elasticsearch API key that column is the identity that created it (often a Cloud API key's id). A re-issued Elasticsearch key keeps its name under a new id, so Key IDs counts the ids a name ran under in range; API key inventory below has one row per id, with owner and first and last use. The API keys tile counts every id and every name in range, so past the ten busiest names the rows here add up to less than it; the rest are in the inventory. A key used from many IPs is worth investigating. Click a cell in either key column to filter to it or open Actor 360; a Cloud API key's id also covers the API keys it created. The range ends a minute ago, so nothing in it is still arriving; each panel reads the clock for itself, up to a second apart, so two panels side by side can differ by the events of that second at either end of the range: usually none, a few on a busy all-traffic count or during a burst.",
+        "description": "The busiest API keys, one row per name, with volume and distinct client IPs. The next column is the creator, or a Cloud API key’s full id (it has no name). Many IPs on one key deserve a look.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
@@ -638,13 +638,13 @@
       "id": "tbl-12",
       "grid": {
         "x": 0,
-        "y": 38,
+        "y": 44,
         "w": 12,
         "h": 12
       },
       "config": {
         "title": "Busiest human identities · top 10 at most",
-        "description": "People by email, busiest first: the people the Humans tile counts, over all traffic, with the same event counts as Identity first and last seen, which also has when each was first and last seen and from how many IPs. The panel shows the top rows; the rest are in that session. Click an email to pin that person across the suite. The range ends a minute ago, so nothing in it is still arriving; each panel reads the clock for itself, up to a second apart, so two panels side by side can differ by the events of that second at either end of the range: usually none, a few on a busy all-traffic count or during a burst.",
+        "description": "The people the Humans tile counts, busiest first, over all traffic. Identity first and last seen has the rest, with first and last seen times and IP counts. Click an email to pin that person across the suite.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
@@ -682,13 +682,13 @@
       "id": "tbl-13",
       "grid": {
         "x": 12,
-        "y": 38,
+        "y": 44,
         "w": 36,
         "h": 12
       },
       "config": {
         "title": "Top failed or denied access · 10 at most (empty = good)",
-        "description": "Failed sign-ins and refused requests grouped by identity, action and source IP, most frequent first; the top rows of what the Failed or denied tile counts. Result names the kind, as in the session below: failed sign-in (authentication_failed or anonymous_access_denied, one per request; the realm_authentication_failed events Elasticsearch writes for each realm an attempt tried are left out, so an attempt counts once), denied (access_denied: an authenticated identity refused an action), or failed (any other action, here because its outcome was failure). An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email. An empty panel means nothing matched in the time range, which is the healthy state; any row here is worth reading.",
+        "description": "Failed sign-ins and refused requests by identity, action and source IP, most frequent first. Result names the kind: failed sign-in, denied (refused an action) or failed (any other failure).",
         "type": "data_table",
         "data_source": {
           "type": "esql",
@@ -745,14 +745,14 @@
       "id": "ds-14",
       "grid": {
         "x": 0,
-        "y": 50,
+        "y": 56,
         "w": 48,
         "h": 12
       },
       "config": {
         "ref_id": "cloud-audit-search-02-failed-authentications",
         "title": "Failed sign-ins and denied access · newest 1,000 at most (empty = good)",
-        "description": "The newest failed sign-ins and refused requests, record by record. Discover stops at 1,000 rows, so on a busy range its result count is that cap and the Failed or denied tile is the total. Result names the kind: failed sign-in, denied (access_denied), or failed (any other failed outcome). Credential is the credential type, or the realm on a Kibana event, and reads “not authenticated” on a failed sign-in; Country reads “internal” for a private or carrier-NAT address, which is Kibana or the platform calling on someone's behalf. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email. An empty panel means nothing matched in the time range, which is the healthy state; any row here is worth reading."
+        "description": "The newest failed sign-ins and refused requests, record by record, up to 1,000; the Failed or denied tile has the total. Credential reads “not authenticated” when no credential worked; Country reads “internal” for Kibana or the platform acting for someone."
       }
     },
     {
@@ -760,14 +760,14 @@
       "id": "ds-15",
       "grid": {
         "x": 0,
-        "y": 62,
+        "y": 68,
         "w": 48,
         "h": 12
       },
       "config": {
         "ref_id": "cloud-audit-search-07-api-key-activity",
         "title": "API key inventory",
-        "description": "Every API key seen in range (up to 1,000), Cloud and Elasticsearch, busiest first — one row per key the API keys tile counts — with owner, volume, IP spread, indices touched and first and last use. Owner is the identity that created the key: a person's email, or, for a key minted programmatically, the Cloud API key that minted it, shown as “_4KEO… · Cloud API key” like that key's own row; a Cloud API key's own creator is not in the audit stream, so its Owner reads Cloud organization."
+        "description": "Every API key used in range (up to 1,000), Cloud and Elasticsearch, busiest first, with owner, volume, IP spread, indices touched and first and last use. Owner is its creator: a person or the Cloud API key that minted it."
       }
     },
     {
@@ -775,14 +775,14 @@
       "id": "ds-16",
       "grid": {
         "x": 0,
-        "y": 74,
+        "y": 80,
         "w": 48,
         "h": 14
       },
       "config": {
         "ref_id": "cloud-audit-search-06-actor-first-seen",
         "title": "Identity first and last seen",
-        "description": "Every identity in range (up to 1,000), all traffic — one row per identity the Identities tile counts — with its first and last appearance, Events (everything it did, the same count as Busiest human identities) and Signal events (what is left after the noise gate, the count the gated panels across the suite use). Newest first appearance on top. Widen the time range to tell a brand-new identity from one that was simply quiet. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email."
+        "description": "Every identity in range (up to 1,000), all traffic, newest first appearance on top, with all its events and its signal events after the noise gate. Widen the time range to tell a brand-new identity from a quiet one."
       }
     }
   ]

@@ -62,7 +62,7 @@
  *      queries; that was the multi-condition CASE of rule 1.)
  */
 
-import { readFileSync, existsSync, writeFileSync } from 'node:fs';
+import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { cfg, nsId, ROOT, DEFAULT_STREAM } from './env.mjs';
 import { deployed } from './suite.mjs';
@@ -299,7 +299,6 @@ export const OUTCOME =
 export const SIGNIN_FAILED = '"authentication_failed","anonymous_access_denied"';
 export const REALM_TRACE = '(event.action IS NULL OR event.action != "realm_authentication_failed")';
 export const FAILED_OR_DENIED = `WHERE event.action IN (${SIGNIN_FAILED}) OR (event.outcome == "failure" AND ${REALM_TRACE})`;
-export const SIGNIN_WORDS = 'authentication_failed or anonymous_access_denied, one per request; the realm_authentication_failed events Elasticsearch writes for each realm an attempt tried are left out, so an attempt counts once';
 
 /**
  * Severity weights. Routine activity scores 0 on purpose: with a baseline of 1 the
@@ -1125,7 +1124,8 @@ export const fitRows = (h) => Math.max(1, Math.floor((28 * h - 76) / 24));
  * No instructions and no window-specific caveats in a title: it is shown at every time range and row
  * count, so "· scroll" over a table with nothing to scroll, or "(may be empty at 1h)" over 774 rows at
  * 24h, is false there. A table that holds more rows than fit — `{ scroll: true }` with a LIMIT above
- * fitRows(h), or `{ wrap: true }` — says so in its DESCRIPTION (SCROLL_NOTE, appended by table()).
+ * fitRows(h), or `{ wrap: true }` — says so in its DESCRIPTION (SCROLL_NOTE, appended by table() unless the
+ * description already says "scroll").
  * `{ cut: false }` opts out for a table whose rows are a closed set (a breakdown with a fixed number of
  * classes, or a guard LIMIT the title already words as "every …").
  */
@@ -1166,7 +1166,7 @@ export const withCut = (title, q, { cut = true } = {}) => {
   return ORDER_WORDS[word].test(title) ? `${title} · ${fmtN(n)} at most` : `${title} · ${word === 'latest' ? 'newest' : 'top'} ${fmtN(n)} at most`;
 };
 /** The description sentence a table that holds more rows than it shows ends with. */
-export const SCROLL_NOTE = 'The table holds more rows than the panel shows: scroll it for the rest.';
+export const SCROLL_NOTE = 'Scroll for more.';
 const withScrollNote = (desc, scrolls) => (scrolls && !/\bscroll\b/i.test(desc || '') ? `${desc || ''} ${SCROLL_NOTE}`.trim() : desc);
 
 /**
@@ -1243,13 +1243,11 @@ export const fitWidths = (cols, w) => {
 export const narrowOverflow = (p) => p.config?.type === 'data_table' && p.narrow1440 === true;
 
 /**
- * An identity that reads as a 20-character id is ACTOR_RESOLVE's last resort, not a defect, and a reader
- * meeting one needs to be told so where they meet it. Appended to the description of every table that
- * shows the resolved identity, unless the description already explains it.
+ * An identity that reads as a 20-character id is ACTOR_RESOLVE's last resort, not a defect. Until 1.0.5 a sentence
+ * saying so (OPAQUE_ID_NOTE) was appended to every tooltip that showed an identity, 42 words each time; it now
+ * lives once, in Command Center's suite legend, in each dashboard's How to read block and in the README
+ * (TOOLTIPS, below), so a tooltip stays within TIP_MAX_WORDS.
  */
-export const OPAQUE_ID_NOTE = 'An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email.';
-const withIdNote = (desc, cols) =>
-  (cols.some((c) => c.column === 'actor') && !/opaque/i.test(desc || '') ? `${desc} ${OPAQUE_ID_NOTE}` : desc);
 
 /**
  * Lens prints a null cell as "-". A single space renders as an empty cell (an empty string renders as
@@ -1290,12 +1288,13 @@ export const blankNull = (...cols) => `EVAL ${cols.map((c) => `${c} = COALESCE($
  *                        system-index panels a bare "No results found" at 1h, so the condition stays,
  *                        worded for every window.
  *
- * The description gains the matching sentence. Use it on every table or session that a verify render
- * at 1h (the default until 1.0.5, still one click away) shows empty on a healthy project. Keep the words short: they share the title line.
+ * The title carries the meaning alone: the description gains no sentence (1.0.5 — it repeated the title and
+ * pushed tooltips past TIP_MAX_WORDS). Use it on every table or session that a verify render at 1h (still one
+ * click away in the picker) shows empty on a healthy project. Keep the words short: they share the title line.
  */
 export const EMPTY = {
-  good: { title: '(empty = good)', desc: 'An empty panel means nothing matched in the time range, which is the healthy state; any row here is worth reading.' },
-  quiet: { title: '(empty when none in range)', desc: 'Often empty over the default hour on a healthy project; widen the time range to see older rows.' },
+  good: { title: '(empty = good)' },
+  quiet: { title: '(empty when none in range)' },
 };
 export const EMPTY_CONDITION = /^empty (when|if|without|unless) \S/;
 const emptyOf = (empty) => {
@@ -1303,10 +1302,9 @@ const emptyOf = (empty) => {
   if (!EMPTY_CONDITION.test(empty)) {
     throw new Error(`{ empty: "${empty}" } must be 'good', 'quiet', or a condition starting "empty when/if/without/unless …" — it is shown whether or not the panel has rows`);
   }
-  return { title: `(${empty})`, desc: `This panel is ${empty}.` };
+  return { title: `(${empty})` };
 };
 const withEmptyTitle = (title, empty) => (empty && emptyOf(empty).title ? `${title} ${emptyOf(empty).title}` : title);
-const withEmptyDesc = (desc, empty) => (empty ? `${desc || ''} ${emptyOf(empty).desc}`.trim() : desc);
 
 /**
  * COMPLETENESS. A table whose trailing LIMIT is clamped to fitRows() shows the top rows only, so a
@@ -1340,7 +1338,7 @@ export const table = (x, y, w, h, title, q, rows, metrics, desc, { scroll = fals
     lint: { limit, scroll: scroll || wrap, wrap, cut, ...(empty ? { empty } : {}) },
     config: {
       title: withEmptyTitle(withCut(title, query, { cut }), empty),
-      description: withScrollNote(withEmptyDesc(withIdNote(desc, r), empty), wrap || (scroll && limit > fitRows(h))),
+      description: withScrollNote(desc, wrap || (scroll && limit > fitRows(h))),
       type: 'data_table',
       data_source: { type: 'esql', query: nullSafe(query) },
       styling: { density: wrap ? DENSITY_WRAP : DENSITY },
@@ -1567,9 +1565,10 @@ export const prevSpec = (key) => {
 
 /**
  * A previous-period tile on a dashboard. The panel has no title, like the Lens metrics beside it: the
- * spec draws its own. `desc` is the tile's tooltip, and PREV_NOTE is appended to it.
+ * spec draws its own. `desc` is the tile's tooltip, and PREV_NOTE is appended to it (the line's forms —
+ * ▲/▼, ×, "no full prior …" — are in the README, Prior-period tiles).
  */
-export const PREV_NOTE = 'The line above the number compares it with the prior period: the same length of time just before the range (the day before, on the default 24 hours). ▲ or ▼ is the change, and a change of ten times or more reads “×”. “no full prior …” means the audit stream starts inside that earlier period, or that period begins more than 15 days ago, so there is nothing fair to compare with.';
+export const PREV_NOTE = 'The line above the number compares it with the prior period of the same length.';
 export const prevKpi = (x, y, w, h, key, desc) => {
   if (!PREV_TILES[key]) throw new Error(`no previous-period tile "${key}"`);
   return vega(x, y, w, h, prevRef(key), '', `${desc} ${PREV_NOTE}`);
@@ -1645,15 +1644,15 @@ export const writeTileSpecs = () => {
 };
 
 /**
- * A Discover session panel. Like table(), it explains an opaque Identity when the session shows one,
- * and takes `{ empty }` (see EMPTY STATES above) for a session that is often empty.
+ * A Discover session panel. Like table(), it takes `{ empty }` (see EMPTY STATES above) for a session that is
+ * often empty. `desc` is the tooltip on the dashboard; searches/<ref>.json carries its own description, which
+ * Discover shows (both within TIP_MAX_WORDS, checked by layout.mjs).
  */
 export const search = (x, y, w, h, ref, title, desc, { empty } = {}) => {
-  const cols = JSON.parse(readFileSync(join(ROOT, 'searches', `${ref}.json`), 'utf8')).columns || [];
-  const description = cols.includes('Identity') && !/opaque/i.test(desc || '') ? `${desc} ${OPAQUE_ID_NOTE}` : desc;
+  if (!existsSync(join(ROOT, 'searches', `${ref}.json`))) throw new Error(`search ${ref}: no searches/${ref}.json`);
   return {
     type: 'discover_session', id: nid('ds'), grid: { x, y, w, h }, ...(empty ? { lint: { empty } } : {}),
-    config: { ref_id: nsId(`cloud-audit-search-${ref}`), title: withEmptyTitle(title, empty), description: withEmptyDesc(description, empty) },
+    config: { ref_id: nsId(`cloud-audit-search-${ref}`), title: withEmptyTitle(title, empty), description: desc },
   };
 };
 
@@ -1705,6 +1704,19 @@ export const md = (x, y, w, h, content, { title, description } = {}) => {
  *
  * `headed: true` is an in-memory annotation: the layout check allows the heading there and nowhere else,
  * the post-pass finds the panel by it, and the API payload strips it.
+ *
+ * HOW TO READ (1.0.5). An intro may end with `howTo`, at most HOW_TO_MAX one-line bullets (~100 words in all)
+ * under a bold "How to read this page": the page-wide caveats a reader needs before trusting a number (what
+ * the noise gate drops, which panels ignore the picker, why two panels can differ by an event), which used to
+ * be repeated inside every tooltip. A tight list is 18px a line with no gap between items; the label is one
+ * more paragraph (14px above it). Each bullet stays on one line at 1440px (under ~200 characters) or costs
+ * 18px. Measure the height as for the intro itself.
+ *
+ * TOOLTIPS (1.0.5): two tiers. A panel's description (its ⓘ tooltip) says what the panel shows and the one
+ * thing needed to read it, in at most TIP_MAX_WORDS words (layout.mjs) — including anything a builder appends
+ * (SCROLL_NOTE, PREV_NOTE). Page-wide caveats go in the dashboard's How to read block; mechanics (field
+ * names, exact gate classes, why a count is shaped the way it is) go in the README, *Reading the panels*.
+ * Plain words: no ES|QL, no field paths a reader would not type, no release history.
  */
 export const INTRO_PT = 9;
 /**
@@ -1722,11 +1734,15 @@ export const discoverUrl = (ref) => {
   return `/app/discover#/view/${nsId(`cloud-audit-search-${ref}`)}`;
 };
 const searchLinks = (text) => text.replace(/\]\(@search:([\w-]+)\)/g, (_, ref) => `](${discoverUrl(ref)})`);
-export const introMd = (x, y, w, h, heading, paragraphs) => {
+export const HOW_TO_LABEL = 'How to read this page';
+export const HOW_TO_MAX = 6;
+export const introMd = (x, y, w, h, heading, paragraphs, howTo = []) => {
   if (/[.\n]$/.test(heading) || /^#/.test(heading)) throw new Error(`intro heading "${heading}": plain words, no trailing period`);
-  if (paragraphs.some((p) => p.includes('\n'))) throw new Error(`intro "${heading}": one source line per paragraph`);
-  if (paragraphs.some((p) => /<[a-z/]/i.test(p))) throw new Error(`intro "${heading}": no HTML (the legacy renderer escapes it)`);
-  const content = `### ${heading}\n\n${paragraphs.map(searchLinks).join('\n\n')}\n`;
+  if ([...paragraphs, ...howTo].some((p) => p.includes('\n'))) throw new Error(`intro "${heading}": one source line per paragraph or bullet`);
+  if ([...paragraphs, ...howTo].some((p) => /<[a-z/]/i.test(p))) throw new Error(`intro "${heading}": no HTML (the legacy renderer escapes it)`);
+  if (howTo.length > HOW_TO_MAX) throw new Error(`intro "${heading}": ${howTo.length} How to read bullets, ${HOW_TO_MAX} at most`);
+  const list = howTo.length ? `\n**${HOW_TO_LABEL}**\n\n${howTo.map((b) => `- ${searchLinks(b)}`).join('\n')}\n` : '';
+  const content = `### ${heading}\n\n${paragraphs.map(searchLinks).join('\n\n')}\n${list}`;
   return { type: 'markdown', id: nid('md'), grid: { x, y, w, h }, headed: true, config: { content } };
 };
 
@@ -1821,20 +1837,19 @@ export const NAV_H = 3;
  * side by side differed by whatever landed in between, and a description had to say so. A minute back,
  * nothing in range is still arriving. What is left is the sub-second spread between panels' `now`, at
  * BOTH ends of the range — a few events at most on an all-traffic count, none on anything quieter — which
- * EDGE_NOTE states for the panels that sit a total beside its parts. Not rounded (`now-1m/m`): rounding
+ * the How to read blocks state where a page sets a total beside its parts. Not rounded (`now-1m/m`): rounding
  * `to` up lands on the minute boundary, which can be under a second behind the clock, inside the window
  * events are still arriving in. verify.mjs renders with the same end, so a render is what viewers see.
  */
 export const TIME_TO = 'now-1m';
-export const EDGE_NOTE = 'The range ends a minute ago, so nothing in it is still arriving; each panel reads the clock for itself, up to a second apart, so two panels side by side can differ by the events of that second at either end of the range: usually none, a few on a busy all-traffic count or during a burst.';
 /**
- * `intro` is the dashboard's customer-facing intro ({ h, heading, paragraphs }, see INTRO TEXT): full
+ * `intro` is the dashboard's customer-facing intro ({ h, heading, paragraphs, howTo }, see INTRO TEXT): full
  * width, directly under the navigation strip, and every authored panel moves down by its height, so a
  * module authors its own panels from y=0 and the intro's height changes nothing else in it.
  */
 export const DEFAULT_FROM = 'now-24h';
 export const dash = (id, title, description, panels, { intro, timeFrom = DEFAULT_FROM } = {}) => {
-  const top = intro ? [introMd(0, NAV_H, 48, intro.h, intro.heading, intro.paragraphs)] : [];
+  const top = intro ? [introMd(0, NAV_H, 48, intro.h, intro.heading, intro.paragraphs, intro.howTo)] : [];
   const below = NAV_H + (intro ? intro.h : 0);
   return {
     title, description,

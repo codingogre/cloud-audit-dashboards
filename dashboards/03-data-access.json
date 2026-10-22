@@ -103,10 +103,10 @@
         "x": 0,
         "y": 3,
         "w": 48,
-        "h": 6
+        "h": 12
       },
       "config": {
-        "content": "### What data was read or written in Elasticsearch, and by whom\n\nSee which indices each identity uses, the kinds of requests they made, any denied requests, and every touch of system or hidden indices. Raw records: [All audit events](/app/discover#/view/cloud-audit-search-00-all-events), [Raw signal feed](/app/discover#/view/cloud-audit-search-10-raw-signal-feed).\n\nRelated indices are grouped into one family, so a data stream and its daily backing indices read as a single row. Use it to confirm that sensitive data is reached only by the people and keys you expect.\n\n**How to use it:** choose a Project, Person (email), API key or Client IP in the controls and set the time picker. Empty denied and system-index panels usually mean all is well.\n"
+        "content": "### What data was read or written in Elasticsearch, and by whom\n\nSee which indices each identity uses, the kinds of requests they made, any denied requests, and every touch of system or hidden indices. Raw records: [All audit events](/app/discover#/view/cloud-audit-search-00-all-events), [Raw signal feed](/app/discover#/view/cloud-audit-search-10-raw-signal-feed).\n\nRelated indices are grouped into one family, so a data stream and its daily backing indices read as a single row. Use it to confirm that sensitive data is reached only by the people and keys you expect.\n\n**How to use it:** choose a Project, Person (email), API key or Client IP in the controls and set the time picker. Empty denied and system-index panels usually mean all is well.\n\n**How to read this page**\n\n- This page counts all traffic, these dashboards’ own reads included: on a page about who reads what, those reads are the subject.\n- A request counts once per index it names; shard copies and internal sub-steps are left out. Ranked tables show the top rows; the tiles count everything.\n- Matrix: a blank cell means no reads, or too few to be among the 500 busiest identity–family pairs.\n- System and hidden index access is expected from Kibana and platform automation; from anyone else, look closer.\n- The chart legend’s totals leave out the partial bucket at the right edge, so they can run behind the tiles.\n"
       }
     },
     {
@@ -114,14 +114,14 @@
       "id": "vega-01",
       "grid": {
         "x": 0,
-        "y": 9,
+        "y": 15,
         "w": 8,
         "h": 5
       },
       "config": {
         "ref_id": "cloud-audit-vega-15-prev-es-events",
         "title": "",
-        "description": "All Elasticsearch audit events in range. The line above the number compares it with the prior period: the same length of time just before the range (the day before, on the default 24 hours). ▲ or ▼ is the change, and a change of ten times or more reads “×”. “no full prior …” means the audit stream starts inside that earlier period, or that period begins more than 15 days ago, so there is nothing fair to compare with."
+        "description": "All Elasticsearch audit events in range. The line above the number compares it with the prior period of the same length."
       }
     },
     {
@@ -129,13 +129,13 @@
       "id": "kpi-02",
       "grid": {
         "x": 8,
-        "y": 9,
+        "y": 15,
         "w": 8,
         "h": 5
       },
       "config": {
         "title": "",
-        "description": "Distinct index families named in audited requests — the rows Top index families and the matrix would list with no cut. A data stream and its backing indices are one family, as is a run of dated daily indices or of per-run indices stamped with a date and time (syn-tmp-20261014-152111-… is syn-tmp*), and system and hidden indices count once per area (.alerts*, .slo*, .kibana*…), the groups the ⚠️ table names. Wildcard and date-math expressions (*, -*, <…{now/d}>) are patterns, not indices, and are left out.",
+        "description": "Distinct index families named in requests. A data stream and its backing indices, or a run of dated indices, count as one family; system and hidden indices count once per area. Wildcard patterns are not counted.",
         "type": "metric",
         "data_source": {
           "type": "esql",
@@ -158,13 +158,13 @@
       "id": "kpi-03",
       "grid": {
         "x": 16,
-        "y": 9,
+        "y": 15,
         "w": 8,
         "h": 5
       },
       "config": {
         "title": "",
-        "description": "Distinct Elasticsearch transport actions (cluster:*, indices:*), with shard-level copies and ES|QL sub-steps folded away — the same actions Top transport actions lists, all traffic.",
+        "description": "Distinct Elasticsearch transport actions (cluster:*, indices:*), the same actions Top transport actions lists, all traffic.",
         "type": "metric",
         "data_source": {
           "type": "esql",
@@ -187,14 +187,14 @@
       "id": "vega-04",
       "grid": {
         "x": 24,
-        "y": 9,
+        "y": 15,
         "w": 8,
         "h": 5
       },
       "config": {
         "ref_id": "cloud-audit-vega-15-prev-esql-queries",
         "title": "",
-        "description": "ES|QL queries submitted — one per query, not per shard or sub-step. Includes the queries these dashboards run to draw themselves. Equals the indices:data/read/esql row in Top transport actions. The range ends a minute ago, so nothing in it is still arriving; each panel reads the clock for itself, up to a second apart, so two panels side by side can differ by the events of that second at either end of the range: usually none, a few on a busy all-traffic count or during a burst. The line above the number compares it with the prior period: the same length of time just before the range (the day before, on the default 24 hours). ▲ or ▼ is the change, and a change of ten times or more reads “×”. “no full prior …” means the audit stream starts inside that earlier period, or that period begins more than 15 days ago, so there is nothing fair to compare with."
+        "description": "ES|QL queries submitted, one per query rather than per shard or sub-step. Includes the queries these dashboards run to draw themselves. The line above the number compares it with the prior period of the same length."
       }
     },
     {
@@ -202,13 +202,13 @@
       "id": "kpi-05",
       "grid": {
         "x": 32,
-        "y": 9,
+        "y": 15,
         "w": 8,
         "h": 5
       },
       "config": {
         "title": "",
-        "description": "Requests touching dot-prefixed system and hidden indices (.kibana*, .security*, .slo-*, .alerts-*), counted once per index named. Backing indices of ordinary data streams (.ds-logs-…) are not system data and are left out, as are shard-level copies of a request.",
+        "description": "Requests touching system and hidden indices (.kibana*, .security*, .slo-*, .alerts-*), counted once per index named. Ordinary data-stream backing indices are not system data and are left out.",
         "type": "metric",
         "data_source": {
           "type": "esql",
@@ -231,14 +231,14 @@
       "id": "vega-06",
       "grid": {
         "x": 40,
-        "y": 9,
+        "y": 15,
         "w": 8,
         "h": 5
       },
       "config": {
         "ref_id": "cloud-audit-vega-15-prev-access-denied",
         "title": "",
-        "description": "Authorization denials. Sustained non-zero values mean a misconfigured client or a probe. The line above the number compares it with the prior period: the same length of time just before the range (the day before, on the default 24 hours). ▲ or ▼ is the change, and a change of ten times or more reads “×”. “no full prior …” means the audit stream starts inside that earlier period, or that period begins more than 15 days ago, so there is nothing fair to compare with."
+        "description": "Authorization denials. Sustained non-zero values mean a misconfigured client or a probe. The line above the number compares it with the prior period of the same length."
       }
     },
     {
@@ -246,13 +246,13 @@
       "id": "xy-07",
       "grid": {
         "x": 0,
-        "y": 14,
+        "y": 20,
         "w": 24,
         "h": 15
       },
       "config": {
         "title": "Data access over time by action family",
-        "description": "Every Elasticsearch request that names a transport action, by kind of action — all traffic, the searches and ES|QL these dashboards run among the reads. Shard-level copies, ES|QL sub-steps and the search an async search runs for itself are folded away so a request counts once, and authentication and connection events (which name no action) are left out, so it sums to less than the Elasticsearch events tile. The legend gives each family's total, so a family too small to see as a bar is still counted; Lens leaves the partial bucket at the right edge, the one the range's end cuts through, out of those totals (up to half an hour at 24h), so they run behind the bars and the tiles. A stretch with no bars means no audited Elasticsearch request in that span — on a wide range that includes the time before the project's audit stream began.",
+        "description": "Elasticsearch requests over time by kind of action (read, write, admin…), all traffic, including these dashboards’ own reads. Each request counts once. The legend gives each kind’s total; a gap means no audited requests then.",
         "type": "xy",
         "axis": {
           "x": {
@@ -376,14 +376,14 @@
       "id": "vega-08",
       "grid": {
         "x": 24,
-        "y": 14,
+        "y": 20,
         "w": 24,
         "h": 30
       },
       "config": {
         "ref_id": "cloud-audit-vega-04-actor-index-matrix",
         "title": "Who reads which index family · up to 10 identities",
-        "description": "The 10 busiest identities across the top, and down the side the index families they read, busiest first in the same order as Top index families (each family's events from every identity), up to 25; cell colour is audit events on a log scale, teal (fewest) through blue and purple to pink (most), and the line above the matrix says how many of each it shows. A data stream and its backing indices are one family, as is a run of dated daily indices or of per-run indices stamped with a date and time (syn-tmp-20261014-152111-… is syn-tmp*), and system and hidden indices are one family per area (.alerts*, .slo*, .kibana*…), the groups the ⚠️ table names; wildcard and date-math expressions are left out. A blank cell means that identity did not touch that family in range — or touched it too little to be among the 500 busiest identity/family pairs. Events counts a request once per index it names: shard-level copies and the ES|QL engine's per-shard steps name the same indices again and are left out, so it is the same count as Top index families. An identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key, which the audit stream records only by its opaque id. Cells keep a heatmap's size and pack to the top left when only a few identities or families are in range, so a sparse window draws a small matrix with its legend under it, not a few cells adrift in the panel; with three identities or fewer each column widens to fit its label."
+        "description": "The busiest identities (up to 10) across the top, the index families they read down the side. Color runs teal (fewest events) to pink (most), on a log scale. A blank cell means few or no reads."
       }
     },
     {
@@ -391,13 +391,13 @@
       "id": "tbl-09",
       "grid": {
         "x": 0,
-        "y": 29,
+        "y": 35,
         "w": 24,
         "h": 15
       },
       "config": {
         "title": "Top index families by events · 14 at most",
-        "description": "The busiest index families, all traffic; the Index families tile counts every one, so the rest are beyond this list. Identities is how many distinct identities touched the family, and Busiest identity is the one with the most events against it — over a quiet hour the list is often only the audit stream itself, read by the identity these dashboards run as. A data stream and its backing indices are one row, as is a run of dated daily indices or of per-run indices stamped with a date and time (syn-tmp-20261014-152111-… is syn-tmp*), and system and hidden indices are one row per area (.alerts*, .slo*, .kibana*…), as in the ⚠️ table: one request naming ten alert indices is one .alerts* row, not ten. Events counts a request once per index it names, so a system area's events per identity are the ⚠️ table's; shard-level copies and the ES|QL engine's per-shard steps name the same indices again and are left out (an ES|QL query counts once, by the step that resolves its indices). Wildcard and date-math expressions are left out. The same count the matrix beside it colours, and the matrix lists its families in this order. A Busiest identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key, which the audit stream records only by its opaque id.",
+        "description": "The busiest index families across all traffic, with how many identities touched each and the busiest one. Over a quiet range this is often just the audit stream, read by the identity these dashboards run as.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
@@ -444,13 +444,13 @@
       "id": "tbl-10",
       "grid": {
         "x": 0,
-        "y": 44,
+        "y": 50,
         "w": 48,
         "h": 14
       },
       "config": {
         "title": "Top transport actions · 13 at most",
-        "description": "The busiest Elasticsearch transport actions with their request class, all traffic — the searches and ES|QL reads these dashboards run included, since reads are what this page is about. The Distinct actions tile counts every action; the rest are beyond this list, and an action sent with two request classes is two rows. Shard-level copies, ES|QL sub-steps and the search an async search runs for itself are folded away, so a request counts once. Identities is how many distinct identities sent the action; Request \"—\" means the event named no request class. The range ends a minute ago, so nothing in it is still arriving; each panel reads the clock for itself, up to a second apart, so two panels side by side can differ by the events of that second at either end of the range: usually none, a few on a busy all-traffic count or during a burst.",
+        "description": "The busiest Elasticsearch actions with their request type and how many identities sent each, all traffic, including these dashboards’ own reads. Each request counts once. The Distinct actions tile counts every action, listed or not.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
@@ -502,13 +502,13 @@
       "id": "tbl-11",
       "grid": {
         "x": 0,
-        "y": 58,
+        "y": 64,
         "w": 48,
         "h": 12
       },
       "config": {
         "title": "Denied requests by identity · newest 10 at most (empty = good)",
-        "description": "Who was refused, newest first: one row per identity, with the action and index of its most recent denial, how many distinct actions and indices it was refused on, and its denials in range. When more identities were refused than the panel has rows, the last row (“N other identities”) holds the rest — their denials, the distinct actions and indices any of them was refused on, and the newest of their denials — so the Denials column always adds up to the Access denied tile. On index \"—\" with Indices 0 is a cluster-level request, with no index to count; <anonymous> with action \"—\" and Actions 0 is an HTTP call that carried no credentials, refused before it named an action. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email. An empty panel means nothing matched in the time range, which is the healthy state; any row here is worth reading.",
+        "description": "Who was refused, newest first: each identity’s latest denied action and index, how many actions and indices, and its denials. A last row “N other identities” holds the rest; index “—” is a cluster-level request.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
@@ -568,13 +568,13 @@
       "id": "tbl-12",
       "grid": {
         "x": 0,
-        "y": 70,
+        "y": 76,
         "w": 48,
         "h": 10
       },
       "config": {
         "title": "⚠️ Who touched system and hidden indices · newest 25 at most (empty when none in range)",
-        "description": "Who touched system and hidden indices — Kibana internals, the security index, alerting and SLO data — one row per identity, newest first: the index groups it touched (.alerts*, .slo*, .kibana*…), the kinds of transport action (read, write, index admin, monitor…), how many real indices, and its requests in range, which add up to the System index access tile when every identity is in view. The Discover session below names each index and action. Backing indices of ordinary data streams (.ds-logs-…) and shard-level copies of a request are left out. Expected from Kibana and platform automation; unexpected from anyone else, and a write from anyone else is worth a look. An identity that touched many groups wraps onto a second line rather than cutting the list short. Click an API key or Principal id to filter to it or open Actor 360; a Cloud API key's Principal id also covers the API keys it created. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email. Often empty over the default hour on a healthy project; widen the time range to see older rows. The table holds more rows than the panel shows: scroll it for the rest.",
+        "description": "Who touched system and hidden indices (Kibana internals, security, alerting, SLO data), with the index groups, kinds of action and request count. Expected from Kibana and platform automation; from anyone else, a write is worth a look. Scroll for more.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
@@ -641,14 +641,14 @@
       "id": "ds-13",
       "grid": {
         "x": 0,
-        "y": 80,
+        "y": 86,
         "w": 48,
         "h": 12
       },
       "config": {
         "ref_id": "cloud-audit-search-05-system-index-access",
         "title": "Raw system index requests · newest 1,000 at most (empty when none in range)",
-        "description": "The raw events behind the table above: the newest 1,000 requests against a system or hidden index, one row per index named, newest first — so a single request that names ten alert indices is ten rows with one timestamp here, and one .alerts* entry in the table above. It stops at 1,000, so it can hold fewer rows than the System index access tile counts — the \"1,000 results\" above the grid is that cap, not the total. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email. Often empty over the default hour on a healthy project; widen the time range to see older rows."
+        "description": "The raw requests behind the system index table above, one row per index named, newest first: one request naming ten indices is ten rows. Capped at 1,000, so it can show fewer than the tile counts."
       }
     }
   ]

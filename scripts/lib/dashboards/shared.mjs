@@ -31,9 +31,9 @@ export const WHO = filterable('user.email');
  * copy): Kibana's own heading, then small text, one source line per paragraph. It says in the reader's words
  * what NOISE gates (panels.mjs) — health checks, query internals ("the background requests behind each
  * search and page load"), API key lookups (API_KEY_READS), bulk sign-in records and SUITE_SELF — so a change
- * to the gate changes this sentence too. The exact list in field names is the Signal events tooltip; the
- * identity order is on Busiest identities and Distinct actors; network.forwarded_ip against source.ip is on
- * Geo & Network's Busiest client IPs and Proxy vs real client IP.
+ * to the gate changes this sentence too, and the Signal events tooltip, which names the same five in plain
+ * words. The exact list in field names, the identity order and network.forwarded_ip against source.ip are in
+ * the README, Reading the panels.
  * Never put sentence punctuation between two code chips: round 5's "the numeric `user.name`. `_4KEO…`"
  * rendered as two chips joined by a stray period and read as if user.name were the Cloud key.
  * It no longer carries CSS_NAV: the 9.6 markdown panel drops a style block before render (it never styled
@@ -76,23 +76,21 @@ export const ACTOR_KEYS = 'user.email, api_key.name, user.name';
  * name, user name), so the extra keys split a row only where one identity carries two principals.
  *
  * A Principal id pin is the principal, not the credential: on a Cloud API key it also matches the events of
- * every Elasticsearch API key that key minted, because Elasticsearch stamps the creator in user.name (PIN_NOTE
- * says so in each table's tip). `<anonymous>` has no user.name, so its row has nothing to pin.
+ * every Elasticsearch API key that key minted, because Elasticsearch stamps the creator in user.name (the How to
+ * read blocks of 00, 03 and 04 say so). `<anonymous>` has no user.name, so its row has nothing to pin.
  *
  * Widths, measured on a 1440px render: the longest principal the stream records is the placeholder
  * `<unauthenticated-cloud-access-token>` (36 characters, ~241px), so PIN_PRINCIPAL is 250px wide and keeps
  * 245 at 1440. Where no placeholder can appear — it never signs in, so it changes nothing and reads no index
  * — PIN_PRINCIPAL_SHORT is enough for a 20-character Cloud key id. Only where a row has room for both does
  * a table carry API key as well (PIN_COLS): it is mostly empty, and the API key control pins a named key
- * on any page; without it a named key's row pins the identity that created it (PIN_NOTE_ID).
+ * on any page; without it a named key's row pins the identity that created it (README, Reading the panels).
  */
 export const PIN_BY = 'api_key.name, user.name';
 export const PIN_KEY = filterable('api_key.name', { label: 'API key', width: 150, min: 120 });
 export const PIN_PRINCIPAL = filterable('user.name', { label: 'Principal id', width: 250, min: 245 });
 export const PIN_PRINCIPAL_SHORT = filterable('user.name', { label: 'Principal id', width: 165, min: 160 });
 export const PIN_COLS = [PIN_KEY, PIN_PRINCIPAL];
-export const PIN_NOTE = 'Click an API key or Principal id to filter to it or open Actor 360; a Cloud API key\'s Principal id also covers the API keys it created.';
-export const PIN_NOTE_ID = 'Click a Principal id to filter to it or open Actor 360; a Cloud API key\'s Principal id also covers the API keys it created, and a named key\'s row pins the identity that created it.';
 
 /**
  * The scoring events, counted before they are scored. RISK is a multi-branch CASE, and a CASE with

@@ -103,10 +103,10 @@
         "x": 0,
         "y": 3,
         "w": 48,
-        "h": 6
+        "h": 12
       },
       "config": {
-        "content": "### Where your users and API keys connect from\n\nSee activity by country and city, your busiest client addresses, and anyone seen in more than one country, a sign of a shared or stolen credential. Raw records: [All audit events](/app/discover#/view/cloud-audit-search-00-all-events), [Raw signal feed](/app/discover#/view/cloud-audit-search-10-raw-signal-feed).\n\nLocations come from each client's real address, not Elastic's own network hops. Country is reliable; city is often your internet provider's nearest hub. Private network addresses cannot be placed on a map.\n\n**How to use it:** choose a Project, Person (email), API key or Client IP in the controls and set the time picker. Click an address or email in a table to filter the whole suite to it.\n"
+        "content": "### Where your users and API keys connect from\n\nSee activity by country and city, your busiest client addresses, and anyone seen in more than one country, a sign of a shared or stolen credential. Raw records: [All audit events](/app/discover#/view/cloud-audit-search-00-all-events), [Raw signal feed](/app/discover#/view/cloud-audit-search-10-raw-signal-feed).\n\nLocations come from each client's real address, not Elastic's own network hops. Country is reliable; city is often your internet provider's nearest hub. Private network addresses cannot be placed on a map.\n\n**How to use it:** choose a Project, Person (email), API key or Client IP in the controls and set the time picker. Click an address or email in a table to filter the whole suite to it.\n\n**How to read this page**\n\n- Every address is the real client, forwarded by Elastic Cloud’s proxy; the proxy’s own address is never used for location.\n- Only placed events appear on maps; “Geo resolution of audited events” accounts for the rest.\n- Platform-internal (100.64/10) is Kibana calling Elasticsearch for a user, not a failed lookup; private and no-IP events cannot be placed.\n- Location lookup applies only to events after it was switched on, so an address’s older events count in All events, not Placed events.\n- Impossible travel lists people only; machines are multi-region by design.\n"
       }
     },
     {
@@ -114,13 +114,13 @@
       "id": "kpi-01",
       "grid": {
         "x": 0,
-        "y": 9,
+        "y": 15,
         "w": 8,
         "h": 5
       },
       "config": {
         "title": "",
-        "description": "Events with a resolved client location — the Resolved row of \"Geo resolution of audited events\", and the sum of Top client locations when every location fits. The range ends a minute ago, so nothing in it is still arriving; each panel reads the clock for itself, up to a second apart, so two panels side by side can differ by the events of that second at either end of the range: usually none, a few on a busy all-traffic count or during a burst.",
+        "description": "Events whose client location could be resolved: the Resolved row of “Geo resolution of audited events”.",
         "type": "metric",
         "data_source": {
           "type": "esql",
@@ -143,13 +143,13 @@
       "id": "kpi-02",
       "grid": {
         "x": 8,
-        "y": 9,
+        "y": 15,
         "w": 8,
         "h": 5
       },
       "config": {
         "title": "",
-        "description": "Share of audited events that resolve to a country — the honest denominator for every geographic panel here, and the same number as the map's title line and the Resolved share in \"Geo resolution of audited events\". It can be low: events with no forwarded IP, Kibana's own server-side calls into Elasticsearch (forwarded from a platform-internal 100.64/10 address), and private addresses cannot be placed by any geoip database. \"Geo resolution of audited events\" breaks it down.",
+        "description": "Share of events placed in a country: the honest denominator for every geographic panel here. It can be low, because events with no forwarded IP, Elastic’s internal hops and private addresses cannot be placed.",
         "type": "metric",
         "data_source": {
           "type": "esql",
@@ -172,13 +172,13 @@
       "id": "kpi-03",
       "grid": {
         "x": 16,
-        "y": 9,
+        "y": 15,
         "w": 8,
         "h": 5
       },
       "config": {
         "title": "",
-        "description": "Distinct client cities.",
+        "description": "Distinct client cities. City is often the internet provider’s nearest hub rather than the user’s location.",
         "type": "metric",
         "data_source": {
           "type": "esql",
@@ -201,13 +201,13 @@
       "id": "kpi-04",
       "grid": {
         "x": 24,
-        "y": 9,
+        "y": 15,
         "w": 8,
         "h": 5
       },
       "config": {
         "title": "",
-        "description": "Distinct forwarded client IPs, taken from network.forwarded_ip. The line beneath counts those in the platform-internal 100.64/10 range: not clients but a hop inside Elastic Cloud — on this project, Kibana's server calling Elasticsearch for a user whose real address is on the Kibana event. Busiest client IPs lists them as \"Platform-internal (100.64/10)\".",
+        "description": "Distinct real client IPs. The line above the number counts Elastic’s internal-network addresses: not clients but a hop inside Elastic Cloud, such as Kibana calling Elasticsearch for a user. Busiest client IPs labels them Platform-internal.",
         "type": "metric",
         "data_source": {
           "type": "esql",
@@ -234,13 +234,13 @@
       "id": "kpi-05",
       "grid": {
         "x": 32,
-        "y": 9,
+        "y": 15,
         "w": 8,
         "h": 5
       },
       "config": {
         "title": "",
-        "description": "Distinct source.ip values — these are Elastic Cloud's own proxies, not clients, which is why they sit in the platform-internal 100.64/10 range. Shown to make the difference explicit. The line beneath counts the ones that forwarded any client address: the rows of \"Proxy vs real client IP, by proxy\".",
+        "description": "Distinct proxy addresses: Elastic Cloud’s own network hops, not clients, shown to make the difference explicit. The line above the number counts the proxies that forwarded a client address.",
         "type": "metric",
         "data_source": {
           "type": "esql",
@@ -267,13 +267,13 @@
       "id": "kpi-06",
       "grid": {
         "x": 40,
-        "y": 9,
+        "y": 15,
         "w": 8,
         "h": 5
       },
       "config": {
         "title": "",
-        "description": "Human identities seen from more than one country in range — the impossible-travel signal. Service credentials are excluded: for machine credentials, multi-region is the normal case, not an anomaly. The line beneath says whether a 0 is a clean reading or just one country in view.",
+        "description": "People seen from more than one country in range: the impossible-travel signal. Service credentials are excluded, since multi-region is normal for machines. The line above the number says whether 0 is clean or just one country in view.",
         "type": "metric",
         "data_source": {
           "type": "esql",
@@ -300,14 +300,14 @@
       "id": "vega-07",
       "grid": {
         "x": 0,
-        "y": 14,
+        "y": 20,
         "w": 24,
         "h": 17
       },
       "config": {
         "ref_id": "cloud-audit-vega-06-geo-origin",
         "title": "Audited traffic by country",
-        "description": "Audited events by real client country: client.ip, which ingest takes from network.forwarded_ip and geo-resolves; source.ip is only the proxy hop. Once two or more countries are shaded, color is volume on a log scale, teal (few) through blue and purple to pink (most), with a legend; it is a quantity, so it does not match a country's colour in the time chart below, which is a name. A lone country has no range to read, so it is drawn in teal, the colour it has in that time chart. Hover a country for events, identities and its share. The title line states how much of the stream could be placed at all — the same number as the Geo coverage tile, computed the same way (the map fetches on its own, so in a busy last hour it can be a tenth of a point apart while new events land) — and \"Geo resolution of audited events\" beside it says where the rest went: absence on the map is not absence of traffic."
+        "description": "Events by real client country, shaded teal (few) to pink (most) on a log scale. Hover a country for details. The title line says how much traffic could be placed: a blank country is not proof of no traffic."
       }
     },
     {
@@ -315,13 +315,13 @@
       "id": "tbl-08",
       "grid": {
         "x": 24,
-        "y": 14,
+        "y": 20,
         "w": 24,
         "h": 8
       },
       "config": {
         "title": "Top client locations · 6 at most",
-        "description": "The busiest resolved client locations in range, counting placed events only — the events the map shades. They sum to the Geo-resolved events tile when every location fits. An address's events from before geo enrichment are not here; Busiest client IPs counts them at the address's place, so its Events can be higher by the \"Predates geo enrichment\" row, and its \"Placed events\" column is this one. City is often the ISP's point of presence rather than where the person sits; country is reliable. The range ends a minute ago, so nothing in it is still arriving; each panel reads the clock for itself, up to a second apart, so two panels side by side can differ by the events of that second at either end of the range: usually none, a few on a busy all-traffic count or during a burst.",
+        "description": "The busiest client locations in range, counting only events that could be placed (the ones the map shades). Country is reliable; city is often the internet provider’s nearest hub rather than where the person sits.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
@@ -368,13 +368,13 @@
       "id": "tbl-09",
       "grid": {
         "x": 24,
-        "y": 22,
+        "y": 28,
         "w": 24,
         "h": 9
       },
       "config": {
         "title": "Geo resolution of audited events",
-        "description": "Every audited event in range, by whether it could be placed on a map, with the addresses behind each row. The Resolved share is the Geo coverage tile and the map's title line, and only those events appear on any geographic panel. \"Platform-internal (100.64/10)\" is not a client that failed to resolve: the address is a hop inside Elastic Cloud — on this project, Kibana's server calling Elasticsearch on behalf of a user, whose real address is on the Kibana event for the same request. \"Private (RFC1918)\" and \"Loopback / link-local\" are clients reaching the project over a private network, which no geoip database can place; a \"Public, no geoip match\" row WOULD be a geoip problem worth chasing. \"Predates geo enrichment\" is events from an address that did resolve, sent before enrichment was in place (enrichment is forward-only). \"No client IP\" is mostly Elasticsearch transport traffic, which forwards no address at all. A \"-\" under Addresses means the row has no address of its own: none was forwarded, or its address is already counted on the Resolved row. Shares are rounded one by one, so they can sum to 99.9% or 100.1%. The range ends a minute ago, so nothing in it is still arriving; each panel reads the clock for itself, up to a second apart, so two panels side by side can differ by the events of that second at either end of the range: usually none, a few on a busy all-traffic count or during a burst.",
+        "description": "Every event in range, by whether it could be placed on a map, with the addresses behind each row. Platform-internal, private and no-IP rows are expected; a “Public, no geoip match” row is a real problem worth chasing.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
@@ -426,13 +426,13 @@
       "id": "tbl-10",
       "grid": {
         "x": 0,
-        "y": 31,
+        "y": 37,
         "w": 24,
         "h": 8
       },
       "config": {
         "title": "Countries per person (impossible travel) · no service credentials · top 6 at most",
-        "description": "People (identities with an email) whose traffic resolved to a country in range, most countries first. Only people, so it lists fewer identities than the Identities column of Top client locations, which counts service credentials too: API keys, Cloud API keys and Kibana's own service account. Two or more countries inside one window is the classic impossible-travel indicator — compare \"Countries seen\" with where the person actually is. \"One country\" on every row is the clean state. Service credentials are excluded, since multi-region is normal for machines, and a person whose every address is unplaceable (private egress) cannot appear here — see Geo coverage. Click an email to scope the suite to that person.",
+        "description": "People whose traffic resolved to a country, most countries first. Two or more countries in one window is the classic impossible-travel sign; “One country” on every row is clean. Click an email to scope the suite.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
@@ -484,13 +484,13 @@
       "id": "tbl-11",
       "grid": {
         "x": 24,
-        "y": 31,
+        "y": 37,
         "w": 24,
         "h": 8
       },
       "config": {
         "title": "Busiest client IPs · top 6 at most",
-        "description": "Forwarded client IPs, busiest first, with where each resolved; the Client IPs tile counts every one. All events is every event from the address; Placed events is the ones geoip resolved — the same column, by the same name, as in Top client locations, and what the map counts. The difference is the address's events from before geo enrichment. An IP shared by many identities is usually a NAT gateway or CI runner. \"Platform-internal (100.64/10)\" is not a client: it is a hop inside Elastic Cloud — on this project, Kibana's server calling Elasticsearch for a user whose real address is on the Kibana event. \"Not placeable\" means no event from the address ever resolved: a private address no geoip database can place, not an enrichment error. \"Geo resolution of audited events\" accounts for every one. Click an IP to scope the suite to it. Every address here is network.forwarded_ip, the real client; source.ip is only Elastic Cloud's proxy (Proxy vs real client IP shows both). The range ends a minute ago, so nothing in it is still arriving; each panel reads the clock for itself, up to a second apart, so two panels side by side can differ by the events of that second at either end of the range: usually none, a few on a busy all-traffic count or during a burst.",
+        "description": "Real client addresses, busiest first, with where each resolved. An address shared by many identities is usually a NAT gateway or CI runner. “Platform-internal” is Elastic’s own network hop, not a client. Click an IP to scope the suite.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
@@ -543,13 +543,13 @@
       "id": "xy-12",
       "grid": {
         "x": 0,
-        "y": 39,
+        "y": 45,
         "w": 24,
         "h": 13
       },
       "config": {
         "title": "Audited traffic over time, by client country",
-        "description": "Every audited event over time, split by the country its client address resolved to: events per bar, where each bar is a round interval sized so the range holds at most 75 of them (1 minute at 1h, 30 minutes at 24h, 3 hours at 7d). \"Not placed\" (grey) is every event that resolved to no country — platform-internal hops, private addresses, events from before geo enrichment and events with no client IP — so the coloured part of each bar is the Geo coverage tile over time, and \"Geo resolution of audited events\" breaks the grey down. A stretch with no bar at all had no audit events. Countries under 5% of placed events in range are folded into \"Other\".",
+        "description": "Audited events over time by the client’s country. Grey “Not placed” is events with no resolvable location, so the colored part is geo coverage over time. Countries under 5% of placed events fold into “Other”.",
         "type": "xy",
         "axis": {
           "x": {
@@ -625,13 +625,13 @@
       "id": "tbl-13",
       "grid": {
         "x": 24,
-        "y": 39,
+        "y": 45,
         "w": 24,
         "h": 13
       },
       "config": {
         "title": "Proxy vs real client IP, by proxy · top 12 at most",
-        "description": "Side-by-side proof that source.ip is a proxy and client.ip (from network.forwarded_ip) is the real origin: one row per proxy that forwarded any client address — the proxies the Proxy IPs tile's line counts — with the real client addresses it carried (in address order, up to three, then \"+N more\"). The proxies are Elastic Cloud's own, which is why they sit in the platform-internal 100.64/10 range. Analysing the wrong field would put every user in the datacentre. Busiest proxy first by Client events, which came from those real clients; Internal-hop events carried a platform-internal 100.64/10 address instead — not a client but, on this project, Kibana's server calling Elasticsearch on a user's behalf — and are kept out of the client list. The two add up to the proxy's whole traffic, and over every proxy to the All events of Busiest client IPs. Click a proxy to scope the suite to it; Busiest client IPs filters by client. The range ends a minute ago, so nothing in it is still arriving; each panel reads the clock for itself, up to a second apart, so two panels side by side can differ by the events of that second at either end of the range: usually none, a few on a busy all-traffic count or during a burst.",
+        "description": "Proof that the source address is an Elastic Cloud proxy and the forwarded address is the real client: one row per proxy, with the client addresses it carried. Click a proxy to scope the suite to it.",
         "type": "data_table",
         "data_source": {
           "type": "esql",

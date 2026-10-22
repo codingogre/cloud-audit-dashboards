@@ -61,7 +61,8 @@ Full fragment reference: [`esql/fragments.md`](esql/fragments.md).
 Every dashboard carries a horizontal navigation bar pinned at the top, a short customer-facing intro
 directly under it (what the page is for and how to use it, as a heading over small text), a default range of the last 24 hours
 ending a minute ago (`now-24h` → `now-1m`, `DEFAULT_FROM` and `TIME_TO`),
-auto-refresh off, and a hover tooltip on every panel explaining what it shows and how to read it.
+auto-refresh off, and a hover tooltip on every panel saying what it shows and how to read it (40 words at most;
+the intro's *How to read this page* list carries the page-wide caveats, and *Reading the panels* below the detail).
 The bar lists the deployed dashboards in one order on every page: Command Center, Actor 360,
 Identity & Access, Kibana Object Forensics, Elasticsearch Data Access, Security & Anomalies, Geo &
 Network, and Platform Volume last when it is deployed. The numbers below are source file names
@@ -203,7 +204,8 @@ STATS BY group keys and show them as narrow click-to-filter columns (`PIN_BY`, `
 account, a person's numeric id) everywhere, and **API key** (`api_key.name`) where a row has room for both
 (04's *Risk leaderboard* and *Config changes*, 03's system-index table). A click pins the field and offers
 *Open in Actor 360*; verified in Playwright on a private deploy (04 leaderboard and 01 Busiest API keys →
-Actor 360 with `user.name: <id>` pinned, every panel narrowed). Two things to know, both in the tooltips:
+Actor 360 with `user.name: <id>` pinned, every panel narrowed). Two things to know (the first is in the How to read
+blocks of 00, 03 and 04):
 - A Principal id pin is the principal, not the credential. On a Cloud API key it also matches every
   Elasticsearch API key that key created, because Elasticsearch stamps the creator in `user.name`; a named
   key's row, where there is no API key column, pins the identity that created it. The API key control pins
@@ -254,6 +256,108 @@ database may not be loaded yet: those events keep `client.ip`, get no geo, and c
 **Enrichment is forward-only.** Documents indexed before installation carry no geo. Verify it
 is actually running with `./audit --ingest-check`. Only public client IPs resolve: Kibana's own calls
 to Elasticsearch arrive from internal `100.64.0.0/10` addresses.
+
+---
+
+## Reading the panels
+
+The detail behind the tooltips (see *Tooltips — two tiers* under Presentation conventions). A tooltip says what a
+panel shows in 40 words; each dashboard's *How to read this page* list says what holds for the whole page; this is
+the rest, for whoever has to explain a number.
+
+**The noise gate, exactly.** `NOISE` drops: `cluster:monitor/main` and `elastic.maintenance` (health); search,
+ES\|QL, `field_caps` and async-search sub-requests (query internals); API key metadata reads
+(`security/api_key/get`, `/query`); Kibana `/internal/` page requests, the two page-load lookups (`config-global`
+get, `index-pattern` find), space lookups and point-in-time paging; this suite reading itself and its session-less
+install (`SUITE_SELF`); transport `connection_granted`; and bulk `authentication_success`. It is a test of *what*
+happened, never of who or where: creating or deleting a space, and everything Kibana deletes with it (its settings,
+usage counters and objects), stays, and so do test or probe objects, this suite's own review tooling included. The
+*Raw signal feed* session and 00's *Live signal feed* also leave out Kibana's key clean-up (`HOUSEKEEPING`), which
+still counts in *Signal events*. The two *Kibana saved-object* panels on 02 and its session also leave out
+`http_request` and logins, which name no object.
+
+**Identities.**
+- Identity is `COALESCE(user.email, api_key.name, user.name)`; an identity whose events disagree on its kind is one
+  treemap tile, in the most specific block any of them supports. Treemap blocks: named API key (labelled by the key,
+  owner underneath when there is room), person, Cloud API key, platform (Elastic's service accounts such as
+  `elastic/kibana`), user with no email, unattributed (`<anonymous>`, an unauthenticated token, a user name that
+  only ever failed to sign in). The top 12 by signal (down to 8 on a narrow screen) are drawn, the rest of each kind
+  folded into a grey *+N more* tile. Area is √events plus an equal floor, so the quietest identity keeps a readable
+  name but is never drawn larger than a busier one; colour is risk total on a √ scale. A key carrying its creator's
+  email is its own tile there and counts under the person in *Busiest identities*.
+- 01 *Identities*: the line above the number counts API key names among identities with no email (a Cloud API key
+  by its id); the rest are service accounts and built-in users, user names tried in a failed sign-in, and the
+  placeholders `<anonymous>` / `<unauthenticated-…>`. *API keys* counts ids, its line the names: a person's key
+  counts under the person in *Identities*, so names can exceed the keys there. *Key IDs* on *Busiest API keys* is how
+  many ids a name ran under. *SSO events* is the `cloud-saml-kibana` realm; its line counts `user_login` in range or
+  reads *signed in earlier*.
+- *API key inventory*: a Cloud API key's Owner reads *Cloud organization* (its creator is not in the stream). Kibana
+  records a call made with an Elasticsearch API key without the key id, so those calls count under the creator
+  elsewhere, not here. *Identity first and last seen* → *Located in*: *internal* (every address private or
+  carrier-NAT), *not located* (public, no geoip match) or *no IP*.
+- Realms on 01: `cloud-saml-kibana` (SAML SSO), `_es_api_key`, `_cloud_api_key` (an Elasticsearch key minted by a
+  Cloud key authenticates there), `_service_account`. Anonymous and unauthenticated requests carry no realm, so
+  *Events by authentication realm* sums to less than *Events by identity origin*. Credential type exists only on
+  Elasticsearch events, so the credential matrix leaves out identities seen only in Kibana or only anonymously.
+- A Principal id pin on a named key's row pins the identity that created the key; the API key control pins the key.
+  A key named `TaskManager: … - <id>` is one Kibana created to run a task for that identity: the id is its owner's.
+
+**Kibana objects (02, 07).** Type and name are recovered from the event message (`OBJ_GROK`, `OBJ_TYPE`) for
+workflows, ML jobs, agent-builder agents and tools, and secrets, which carry no `saved_object` fields. Kibana records
+one rule as `alert` or `alerting_rule` by code path, so both count as high-value. A workflow cancel, or a test of an
+unsaved draft, names only its run: *execution* plus the run id's first 8 characters. A usage counter's object leads
+with what it counts (*… (dashboard viewed counter, 2026-10-14)*); the advanced-settings object reads *Advanced
+settings 9.6.0*, one per space. Two objects with one title get the id appended; a renamed object is one row on
+*Busiest objects* and shows its old title on older rows of the sessions. Heatmap: *remove refs* is a tag being
+unlinked, *no action* an event Kibana logged without one (a Fleet policy deploy); past 13 types the rest fold into
+*N more types*, types with any write ranked first. The space row of *Object types* can exceed the *Spaces* tile: a
+space only created, or created and deleted, is an object touched but not a space with activity. Spaces show by id:
+Kibana writes no display name, not even on `space_get`. Suite views count in the space they are viewed from.
+
+**Sessions.** The session timeline (vega/13) and its records leave out what an open tab does on its own (internal UI
+requests, usage counters, space lookups, point-in-time paging), so a tab left open does not stretch a bar and every
+bar has records; public `/api/` calls (export, import) and views of this suite stay. A session already open at the
+window's start is labelled *or earlier*; the dashed line marks the latest API or Elasticsearch event. Click pins
+`kibana.session.id` and zooms the range to the session plus a minute either side; shift-click pins the email.
+
+**Data access (03, 07).** A request counts once per index it names. Shard and node copies (`search[phase/query]`,
+`bulk[s][p]`), the ES\|QL engine's per-shard steps and an async search's inner search are folded away (an ES\|QL
+query counts once, by the step that resolves its indices); wildcard and date-math patterns are not indices. Families
+fold a data stream's backing indices, dated daily indices and per-run timestamped indices
+(`syn-tmp-20261014-152111-…` → `syn-tmp*`); system and hidden indices fold per area (`.alerts*`, `.kibana*`); a
+`.ds-logs-…` backing index is ordinary data. The action-family chart leaves out authentication and connection events
+(no action), so it sums to less than *Elasticsearch events*; its legend totals leave out the partial bucket at the
+right edge (up to 30 minutes at 24h). The matrix shows up to 10 identities × 25 families from the 500 busiest
+identity–family pairs and packs to the top left when sparse. *Denied requests*: *N other identities* folds the rest so
+Denials adds up to the tile; index *—* with 0 indices is a cluster-level request; `<anonymous>` with action *—* is an
+HTTP call with no credentials.
+
+**Risk (04, 07).** `realm_authentication_failed` still scores, though the failure counts drop it so an attempt counts
+once. A failed Kibana change scores 40 whatever it changed, on its own *(failed)* row. *Config changes* → *Targets*:
+hundreds of invalidations over hundreds of keys is rotation, over one key a loop; a profile activation names no target
+(*(none named in the payload)*). The rare-actions chart shows the top 12 by severity, rarest first within a weight, so
+on a quiet range it reaches routine changes (25). *New* is *no* for an identity first seen in the opening twelfth of
+the range. *Client IPs* is 0 for platform identities and for `<unauthenticated-cloud-api-key>`, whose events carry
+only the proxy's address. 07's Risk tile and its receipts count whole minutes (`WHOLE_MINUTES`).
+
+**Geo (05, 07).** Every address is `client.ip`, which ingest lifts from `network.forwarded_ip`; `source.ip` is Elastic
+Cloud's proxy (`100.64.0.0/10`). *Geo resolution* rows: *Platform-internal* (Kibana calling Elasticsearch for a user,
+whose real address is on the Kibana event), *Private (RFC1918)* and *Loopback / link-local* (unplaceable by any
+database), *Public, no geoip match* (a real geoip problem), *Predates geo enrichment* (enrichment is forward-only),
+*No client IP* (mostly transport traffic); *-* under Addresses means the address is counted on another row; shares
+are rounded one by one. An address keeps its place when some events predate enrichment (`IP_GEO`). The map's title
+line is fetched separately from *Geo coverage* and can differ by a tenth of a point in a busy hour. Countries under 5%
+of placed events fold into *Other*. 07's map aggregates per city, so overlapping activity in two cities is marked as
+such rather than given an impossible speed.
+
+**Time and buckets.** `BUCKET` picks at most 75 bars per range (1 minute at 1h, 30 at 24h, 3 hours at 7d); 01's
+requests-per-minute bars are whole intervals counted back from the range's end, height = requests ÷ minutes. Each
+panel reads the clock for itself, up to a second apart, so a total and its parts can differ by an event at the edges.
+07's ① panels: baseline band = the interquartile range of the 7 observations for that hour, a point beyond 1.5× it
+marked, quartiles from the identity's first event, no band under three days of history; punchcard in UTC, the current
+hour outlined; cohort = the 40 busiest people by email in the projects in scope (approximate when several). 07's flow
+chart counts Kibana object events only (Elasticsearch events have no space or object), seven values per column plus
+*other (N)*. `event.category` is multi-valued, so 00's categories sum to more than the event total.
 
 ---
 
@@ -334,7 +438,8 @@ in shared code rather than at call sites.
 - *Titles carry no instructions and no window caveats.* A title is shown at every time range and every row
   count, so *"· scroll"* over a table with nothing to scroll and *"(may be empty at 1h)"* over 774 rows at
   24h were false there. A table that holds more rows than it shows (`{ scroll: true }` above `fitRows(h)`,
-  or `{ wrap: true }`) says so in its **description** (`SCROLL_NOTE`, appended by `table()`), and
+  or `{ wrap: true }`) says so in its **description** (`SCROLL_NOTE`, *"Scroll for more."*, appended by `table()`
+  unless the description already says *scroll*), and
   `{ empty: 'quiet' }` reads *"(empty when none in range)"*. `--lint` fails *scroll*, *(may be empty …)* and *at 1h* in any
   panel title, and a scrollable table whose description does not say *scroll*.
 - *Empty cells.* A null prints as `-`. On a display column, end the query with `blankNull(col)` after
@@ -350,9 +455,9 @@ in shared code rather than at call sites.
   without / unless* → *"(empty when no browser sessions)"* (anything else throws at build). `'quiet'` →
   *"(empty when none in range)"*: its old words, *"(may be empty at 1h)"*, named one window and read as
   wrong at every other. Round 3's *"· none is good"* and *"· empty without X"* read as a verdict on the rows
-  whenever the table was full; `--lint` rejects that form. `search()` takes the same option, and the
-  description gains the matching sentence. Use it on every panel a 1h render shows empty on a
-  healthy project (an hour is still one click in the picker; the default became 24 hours in 1.0.5).
+  whenever the table was full; `--lint` rejects that form. `search()` takes the same option. The description
+  gains nothing (it once repeated the title in a sentence, and pushed tooltips past 40 words). Use it on every
+  panel a 1h render shows empty on a healthy project (an hour is still one click in the picker).
 - *Completeness.* A title must not promise more than the panel shows. A LIMITed table whose title says
   *every*, *everything* or *all* fails `--lint` (`layout.mjs` `PROMISES_ALL`): say *top*, *busiest* or
   *most recent*, or pass `{ scroll: true }` when the LIMIT is a guard on a closed set (07's *Every scoring
@@ -361,7 +466,8 @@ in shared code rather than at call sites.
   Elastic Cloud API key: the stream records no name and no owner for it. It is shown the same way
   everywhere an identity is shown — **`_4KEO… · Cloud API key`** (first five characters, then the tag) —
   by `ACTOR_LABEL` in `panels.mjs` (the full id is in every *Principal id* column, in 01's *Busiest API keys*
-under *Key ID (Cloud) / creator*, and in API key inventory): `table()` appends it to every table showing `actor` (after the LIMIT,
+under *Key ID (Cloud) / creator*, and in API key inventory). What it means is said once per page, in Command Center's
+legend and the How to read blocks, not in each tooltip: `table()` appends the label to every table showing `actor` (after the LIMIT,
   so after the last `STATS BY actor`), and every Discover session and Vega spec that shows an identity
   embeds it verbatim (pinned by the drift check). A key-name or owner column that would print `-`,
   `0` or `(no name)` for such a key uses `cloudKeyLabel(col, otherwise)` instead (API key inventory). The
@@ -387,12 +493,24 @@ under *Key ID (Cloud) / creator*, and in API key inventory): `table()` appends i
   `CHANGE_PRED` and on every mutation list, and 04's *Scoring events* tile says *"excl. N suite installs"*.
   It tests the channel, not a key, so never narrow it to the deploy key's id.
 - *Failed sign-ins count once.* Every failure count uses `FAILED_OR_DENIED` (`panels.mjs`), which drops
-  the per-realm `realm_authentication_failed` traces; `SIGNIN_WORDS` says so in a description. 01 and 04
-  both use it, so their failure tiles are the same number.
+  the per-realm `realm_authentication_failed` traces; 01's How to read block and 04's Failures tooltip say an
+  attempt counts once. 01 and 04 both use it, so their failure tiles are the same number.
 - *Live edge.* Every saved range ends at `now-1m` (`TIME_TO` in `dash()`; `--verify` renders the same), so
   never describe a bar or a total as "still filling", or two panels as differing by "rows landing between
   the two queries". The last bucket covers only part of its interval. Where a page sets a total beside
-  its parts, `EDGE_NOTE` states the one gap left: panels read the clock up to a second apart.
+  its parts, its How to read block states the one gap left: panels read the clock up to a second apart.
+
+**Tooltips — two tiers, 40 words.** A panel's description is its ⓘ tooltip, and a reader hovers it to learn
+what the panel shows and the one thing needed to read it — not every caveat behind it. So it is **40 words at
+most** as deployed, counting what a builder appends (`SCROLL_NOTE`, `PREV_NOTE`); every Discover session's own
+description (`searches/*.json`, Discover's info panel) is held to the same. `checkTips` and `checkSearchTips` in
+`layout.mjs` fail `--lint` and `emit()` past it (a word is a token with a letter or digit, so *—*, *·* and *×* do not
+count). Caveats that hold for a whole page (what the noise gate drops, which panels ignore the picker, why two
+panels can differ by an event) go once in that page's **How to read** list (`intro.howTo`, below); mechanics
+— field names, exact gate classes, why a count is shaped as it is — go in *Reading the panels*. Plain words: no
+ES\|QL, no field path a reader would not type, no release history ("until 1.0.2"). A Vega panel's tooltip is its
+spec's `description`, so a spec shown on two pages (13, the session timeline) is worded for both. Until 1.0.5
+tooltips ran to 454 words and helpers appended the opaque-key and empty-state sentences to dozens of them.
 
 **KPI secondary lines — grouped digits.** A metric tile's secondary line is a string the query builds,
 and ES\|QL's `TO_STRING` prints *"2326"* beside tiles Lens prints as *"1,728,070"*. Every count in it goes
@@ -406,8 +524,10 @@ events*, 02 *Kibana events*, 03 *Elasticsearch events*, *ES\|QL queries* and *Ac
 change against the same length of time just before the range: *"▲ 34% vs prior 24h"*, *"▼ 50% …"*, *"▲ 15×
 …"* at ten times or more, *"none in prior 24h"*, and *"no full prior 24h"* when the audit stream (or the
 tiles' 15-day lookback) starts inside that earlier period, so a new project never shows a false rise. Lens
-cannot read outside the picker (*Platform constraints*), so each is a generated DSL Vega spec
-(`vega/15-prev-*.json` from `PREV_TILES` in `panels.mjs`; edit the table, never the files) drawn at a Lens
+cannot read outside the picker (*Platform constraints*), so each is a generated DSL Vega spec, and its tooltip
+ends with `PREV_NOTE` (*"The line above the number compares it with the prior period of the same length."*); the
+forms above are documented here, not in the tooltip. Each spec
+(`vega/15-prev-*.json` from `PREV_TILES` in `panels.mjs`; edit the table, never the files) is drawn at a Lens
 metric's sizes and offsets, measured at 1920 and 1440 in both themes. `PREV_TILES` holds each tile's ES\|QL
 `WHERE` and DSL clauses side by side, and `--lint` fails if the two count a different number of events over
 a fixed 14-day window. A tile whose filter is not plain DSL (the noise gate, risk, resolved identities,
@@ -464,7 +584,10 @@ each with a by-value legacy markdown visualization at `INTRO_PT` (9pt: 12px text
 between paragraphs). Size `h` by rendering at 1920 and at 1440 (`AUDIT_VERIFY_WIDTH=1440`): a 48-column
 intro with three one-line paragraphs is ~151px, so h=6; a paragraph that wraps at 1440 (over ~220
 characters) adds 18px. Too short shows a scrollbar, too tall a blank band, and no check sees either.
-Technical detail (field names, exceptions) goes in the panel tooltips, not in an intro.
+An intro ends with **How to read this page** (`intro.howTo`, at most `HOW_TO_MAX` = 6 bullets, ~100 words; five on
+most pages): a bold label and a tight list, 18px a line, each bullet one line at 1440px. With three one-line
+paragraphs and five bullets an intro is h=12 (328px, ~40px spare at 1920 and 1440); 07, two paragraphs, is h=11; 06,
+four bullets, h=11. Technical detail (field names, exceptions) goes in *Reading the panels*, not in an intro.
 Every intro (and so every dashboard) links to the raw events with `RAW_RECORDS` (`shared.mjs`): *"Raw records:
 All audit events, Raw signal feed"*, written `[words](@search:<ref>)` and resolved by `introMd()` to the
 relative `/app/discover#/view/<id>` through `nsId()`, so a private deploy links to its own sessions and no

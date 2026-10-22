@@ -53,6 +53,21 @@ conflict. This file is "where we are right now" and should be assumed stale.
   first whole minute inside the range: the old `DATE_TRUNC(?_tstart)` start was cut back to `_tstart` by the
   hidden filter, so the start edge never was whole minutes.
 
+- **Tooltips: two tiers, 40 words.** Every panel tooltip, as deployed, is at most 40 words (`TIP_MAX_WORDS`,
+  `checkTips` in `layout.mjs`; `checkSearchTips` holds `searches/*.json` descriptions to the same), counting what a
+  builder appends; `emit()` and `--lint` fail past it. They were up to 454 words. Rewritten from the review's
+  proposals (`build/review-105/raw.json` *tips*, mapped in `recon-tips.md`) and re-checked against this release's
+  changes (prior-period tiles, *Audit data held*, the Principal id columns, 07 *Who this is*, 02 *Editors*). Helpers:
+  the opaque-key sentence (`OPAQUE_ID_NOTE`, 42 words on ~25 tooltips) and the empty-state sentence (`EMPTY.*.desc`)
+  are no longer appended — the title carries the empty state, the legend and How to read blocks the Cloud-key form;
+  `SCROLL_NOTE` is *"Scroll for more."*; `PREV_NOTE` is 15 words. `EDGE_NOTE`, `SIGNIN_WORDS`, `GATE_NOTE`,
+  `SPACE_ID_NOTE`, `CLEANUP(_NOTE)`, `RACE_NOTE` and `PIN_NOTE(_ID)` are gone. Page-wide caveats moved into a
+  **How to read this page** list at the end of each intro (`intro.howTo`, `introMd()`, ≤6 bullets; five per page,
+  four on 06): intros are h=12 (07 and 06 h=11), measured on `rc105` at 1440 light and 1920 dark — no overflow, ~35–45px
+  spare. The detail went to README *Reading the panels* (new) and *Presentation conventions → Tooltips*. Vega
+  descriptions shortened for the specs used as tooltips (04, 08–13). Hovered 31 tooltips in Playwright on 00, 02, 04,
+  07 (and 06 on a throwaway `rc105pv`, since cleaned): full text shown, nothing cut.
+
 ## Release 1.0.4 — ECS field names, null-safe API key fields, Default space, 2026-10-22
 
 Product management's feedback on 1.0.3, plus two requests from the human.
