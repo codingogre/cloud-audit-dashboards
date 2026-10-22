@@ -3,6 +3,49 @@
 `CLAUDE.md`-style durable context lives in `README.md` and `esql/fragments.md` and wins on
 conflict. This file is "where we are right now" and should be assumed stale.
 
+## Release 1.0.4 — ECS field names, null-safe API key fields, Default space, 2026-10-22
+
+Product management's feedback on 1.0.3, plus two requests from the human.
+
+- **ECS field names.** Every query, control, filter and Vega spec names fields bare (`event.action`,
+  `user.email`, `service.name`), not by the OTel path (`attributes.event.action`,
+  `resource.attributes.service.name`). `attributes` (priority 20) and `resource.attributes` (40) are
+  passthrough objects, so results are identical; verified live. Untouched on purpose: the ingest
+  pipeline (it reads the stored literal keys) and saved-object `attributes.panelsJSON` etc.
+  `synth/fields.mjs` now scans bare ECS roots and treats `user.email` / `attributes.user.email` as one
+  field, so the drift check still covers the dashboards.
+- **API key fields no longer error on a fresh project.** `api_key.id` / `api_key.name` are mapped only
+  after the first API-key event, so every panel naming them failed with *Unknown column* until then
+  (the rename alone does not fix this: an unmapped field is unknown under both names). Every query that
+  names `api_key.*` — 30 dashboard queries via `nullSafe()` in `panels.mjs`, all 11 searches, Vega 01,
+  02, 04, 05, 06 — now starts with `SET unmapped_fields="nullify";`. Tested on Kibana 9.6 serverless
+  before applying, each surface against a non-SET twin: Dashboards API, export/import, Lens metric /
+  bar / xy / table, Vega ES|QL, Discover session panels, the Discover app (editor, histogram, field
+  list, filter-for), controls, cell filters, drilldowns. All matched; a never-mapped column read as
+  null where the twin showed the error. Only cosmetic catch: Discover's editor underlines a column with
+  no mapping yet as a warning ("1 warning"); the query still runs. `esql.mjs` `collect()` accepts a
+  leading `SET`, so `--lint` / `--perf` / the integration test still see all 102 queries (a unit test
+  pins that SET appears on exactly the api_key queries).
+- **Default space.** The suite installs into Kibana's Default space. `--space`, `scripts/space.mjs`,
+  `ingest/space.json` and `AUDIT_SPACE` are gone; `cfg.kbs` is the bare Kibana URL. Private renders
+  use `AUDIT_ID_NS` alone. The live `s_audit` space was emptied (31 suite objects deleted and confirmed
+  404) and deleted; it held nothing else but Kibana's own managed `logs-*` / `metrics-*` data views and
+  its settings object. A backup export was taken first (session scratchpad, not kept).
+- **Data view id `elastic_cloud-audit-logs`** (the human's choice), replacing `cloud-audit-dv`.
+  `--dashboards` deletes the retired id after every dashboard points at the new one; `--clean` too.
+- **`--clean` actually deletes now.** It used `_bulk_delete`, which serverless refuses with 400 while the
+  script reported success. It now deletes one object at a time through
+  `content_management/rpc/delete` (`kb.deleteObject`), checking each status. The `search` and
+  `index-pattern` content type ids, untested before, are verified.
+- **New Discover session `[Audit] All audit events`** (`searches/00-all-events.json`): every event, no
+  noise gate, newest 10,000 (Discover's ES|QL ceiling; verified it returns 10,000). Columns Time ·
+  Identity · Source · Action · Outcome · Object · Client IP · Message, with Transport action, Object
+  type, Space and Country in the field list. Explicit KEEP, because without it Discover lists both
+  passthrough twins of every field.
+
+Verified: 87 unit tests, `--lint` 102 ES|QL + 6 DSL, `--deploy` into Default, `--verify` at 24h (7
+dashboards, 0 broken panels, 0 Vega errors, screenshots read), the new session rendered in Discover.
+
 ## Release 1.0.3 — unnumbered ids, customer intros, 2026-10-15
 
 - **Dashboard ids drop their numbers** (the human's choice): `elastic_cloud-audit-<name>`, i.e.

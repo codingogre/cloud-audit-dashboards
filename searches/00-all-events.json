@@ -21,22 +21,22 @@
   "grid": {
     "columns": {
       "Time": {
-        "width": 212
+        "width": 215
       },
       "Identity": {
-        "width": 220
+        "width": 180
       },
       "Source": {
-        "width": 106
+        "width": 112
       },
       "Action": {
-        "width": 190
+        "width": 170
       },
       "Outcome": {
-        "width": 92
+        "width": 90
       },
       "Object": {
-        "width": 240
+        "width": 250
       },
       "Client IP": {
         "width": 170
