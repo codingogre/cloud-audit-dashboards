@@ -17,7 +17,7 @@
  * scenario caused scores 0" passed on the first event to arrive and missed a 40 landing a poll later.
  */
 import { es } from '../lib/http.mjs';
-import { RISK } from '../lib/panels.mjs';
+import { RISK, HOUSEKEEPING, SUITE_INSTALL, nullSafe } from '../lib/panels.mjs';
 import { F, SOURCE, STREAM, lit } from './fields.mjs';
 import { PERSONAS, newHire } from './personas.mjs';
 
@@ -44,7 +44,10 @@ export function buildQuery(exp, { from, to, runId, scenario }) {
     where.push(`${F.keyName} == ${lit(name)}`);
   }
   where.push(`(${exp.where})`);
-  return `FROM ${STREAM} | WHERE ${where.join(' AND ')} | ${RISK} | STATS n = COUNT(*) BY risk | SORT risk`;
+  // RISK reads two boolean keys a dashboard groups through RISK_KEYS; on raw events they are computed here,
+  // from the same fragments (without them the query fails with "Unknown column [housekeeping]").
+  return nullSafe(`FROM ${STREAM} | WHERE ${where.join(' AND ')} | EVAL housekeeping = ${HOUSEKEEPING}, ` +
+    `suite_install = ${SUITE_INSTALL} | ${RISK} | STATS n = COUNT(*) BY risk | SORT risk`);
 }
 
 /** Pure verdict over the risk-grouped rows, so the rules are unit-testable without a cluster. */

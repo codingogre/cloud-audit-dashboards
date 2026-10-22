@@ -329,12 +329,23 @@ export const RISK_MAX = 50;
  * invalidation by a person, a named key or a Cloud API key still weighs 45. `housekeeping` is the
  * boolean RISK_KEYS groups (HOUSEKEEPING reads user.name and api_key.name, which a scoring panel does not
  * otherwise group on), so RISK runs only after RISK_KEYS, as it always has.
+ *
+ * THE SUITE'S OWN INSTALL SCORES 0 (1.0.5). `./audit --objects/--dashboards` writes the suite's cloud-audit-*
+ * objects through the public API with a Cloud API key and no browser session. NOISE already kept it out of
+ * the feeds, but every risk panel scored it: measured live over 24h, about 4,500 of the deploying key's
+ * 5,400 severity was its own install, so 04's leaderboard ranked the deploy key first while 00's treemap
+ * (which runs NOISE first) did not. `suite_install` is SUITE_INSTALL as a RISK_KEYS boolean. Its branch sits
+ * AFTER the failure branch, so a denied write to a suite object still scores 40, and before every change
+ * weight. It tests the channel, so a person editing a suite dashboard in a browser still scores 25/30. The
+ * install stays in CHANGE_PRED (every mutation list still shows it) and 04's Scoring events tile counts it
+ * in its second line, so an unexpected spike of session-less writes to suite objects stays visible.
  */
 export const RISK =
   'EVAL risk = CASE(housekeeping, 0, event.action == "invalidate_apikeys", 45, ' +
   'event.action == "anonymous_access_denied", 35, ' +
   'elasticsearch.audit.security_config_change IS NOT NULL, 50, ' +
   'event.outcome == "failure", 40, ' +
+  'suite_install, 0, ' +
   `${CHANGE_PRED} AND event.action IN (${EXECUTIONS}), 10, ` +
   `${CHANGE_PRED} AND (event.type == "deletion" OR event.action == "rule_disable"), 30, ` +
   `${CHANGE_PRED}, 25, ` +
@@ -406,6 +417,22 @@ export const HOUSEKEEPING =
   `AND user.name IS NOT NULL AND user.name IN (${PLATFORM_ACTORS}) AND api_key.name IS NULL)`;
 export const PRIVILEGED =
   `WHERE elasticsearch.audit.security_config_change IS NOT NULL AND NOT ${HOUSEKEEPING}`;
+
+/**
+ * A suite object id, any AUDIT_ID_NS namespace. Null-guarded and left without outer parentheses, so
+ * SUITE_SELF below keeps its exact text (searches/04, 06, 10 and vega/01, 07 embed it verbatim through
+ * NOISE, KIBANA_INTERNALS and BAND_KEYS). Defined here, before RISK_KEYS reads it at module load.
+ */
+export const SUITE_ID_TEST =
+  'kibana.saved_object.id IS NOT NULL AND (kibana.saved_object.id LIKE "cloud-audit-*" OR kibana.saved_object.id LIKE "elastic_cloud-audit-*")';
+/**
+ * SUITE_INSTALL: a suite object touched with no Kibana browser session — `./audit --objects/--dashboards`
+ * through the public API. RISK scores it 0 (after the failure branch, so a DENIED write to a suite object
+ * still scores 40), through the `suite_install` key of RISK_KEYS. It stays in CHANGE_PRED, so 02 Mutations,
+ * 04 Mutation feed and 07 What they changed still list it; a person editing a suite dashboard in a browser
+ * has a session and still scores 25/30. A test of the channel, never of a key, like SUITE_SELF. Never null.
+ */
+export const SUITE_INSTALL = `(${SUITE_ID_TEST} AND kibana.session.id IS NULL)`;
 /**
  * A count as text with thousands separators ("1,618,996"), the form Lens prints every number beside it
  * in: a KPI's secondary line, a category label that carries its count. TO_STRING alone gave "2326 key
@@ -513,12 +540,13 @@ export const RISK_PREFILTER =
  *
  * `housekeeping` is HOUSEKEEPING as a boolean key (the kib_internal trick): RISK's first branch reads it,
  * so Kibana's key clean-up scores 0 without every scoring panel grouping on user.name and api_key.name.
- * Never null (every term guarded), so it never splits a group three ways.
+ * Never null (every term guarded), so it never splits a group three ways. `suite_install` is SUITE_INSTALL
+ * the same way: RISK scores the suite's own session-less install 0, and 04's Scoring events tile counts it.
  */
 export const RISK_KEYS =
   'event.action, scc = elasticsearch.audit.security_config_change IS NOT NULL, ' +
   'event.outcome, service.name, et = MV_CONCAT(event.type, ","), ' +
-  `housekeeping = ${HOUSEKEEPING}`;
+  `housekeeping = ${HOUSEKEEPING}, suite_install = ${SUITE_INSTALL}`;
 export const RISK_RESTORE =
   'EVAL event.type = SPLIT(et, ","), elasticsearch.audit.security_config_change = CASE(scc, "present")';
 
@@ -657,7 +685,7 @@ export const SUITE_INSTALL_URL = 'https?://[^/]+(/s/[^/]+)?/api/(saved_objects/(
  * session test is `IS NULL`, so it never yields null.
  */
 export const SUITE_SELF =
-  '(kibana.saved_object.id IS NOT NULL AND (kibana.saved_object.id LIKE "cloud-audit-*" OR kibana.saved_object.id LIKE "elastic_cloud-audit-*") ' +
+  `(${SUITE_ID_TEST} ` +
   'AND (event.action IN ("saved_object_get","saved_object_resolve","saved_object_find") OR kibana.session.id IS NULL))';
 
 export const KIBANA_INTERNALS =

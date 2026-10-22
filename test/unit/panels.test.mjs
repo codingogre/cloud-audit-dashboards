@@ -272,7 +272,50 @@ test('round 6: API key reads are query internals; key changes stay signal', asyn
 test('round 6: Kibana\'s key clean-up scores 0 in RISK, through a boolean key RISK_KEYS groups', async () => {
   const { RISK, RISK_KEYS, HOUSEKEEPING } = await import('../../scripts/lib/panels.mjs');
   assert.match(RISK, /^EVAL risk = CASE\(housekeeping, 0, /);
-  assert.ok(RISK_KEYS.endsWith(`housekeeping = ${HOUSEKEEPING}`));
+  assert.ok(RISK_KEYS.includes(`housekeeping = ${HOUSEKEEPING}, `));
+});
+
+test('1.0.5: SUITE_INSTALL — the session-less install scores 0 after failures, via a RISK_KEYS boolean; mutation lists keep it', async () => {
+  const { RISK, RISK_KEYS, SUITE_INSTALL, SUITE_SELF, SUITE_ID_TEST, NOISE, CHANGE_PRED } = await import('../../scripts/lib/panels.mjs');
+  assert.ok(RISK_KEYS.endsWith(`suite_install = ${SUITE_INSTALL}`));
+  assert.ok(RISK.includes('event.outcome == "failure", 40, suite_install, 0, '));
+  assert.ok(RISK.indexOf('suite_install, 0') < RISK.indexOf(CHANGE_PRED), 'before every change weight');
+  assert.equal(SUITE_INSTALL, `(${SUITE_ID_TEST} AND kibana.session.id IS NULL)`);
+  // SUITE_SELF text is frozen: five static copies embed it through NOISE / KIBANA_INTERNALS / BAND_KEYS.
+  assert.equal(SUITE_SELF, '(kibana.saved_object.id IS NOT NULL AND (kibana.saved_object.id LIKE "cloud-audit-*" OR kibana.saved_object.id LIKE "elastic_cloud-audit-*") AND (event.action IN ("saved_object_get","saved_object_resolve","saved_object_find") OR kibana.session.id IS NULL))');
+  assert.ok(NOISE.includes(SUITE_SELF));
+  assert.ok(!CHANGE_PRED.includes('cloud-audit'), 'CHANGE keeps the install');
+  assert.ok(!SUITE_INSTALL.includes('user.name') && !SUITE_INSTALL.includes('api_key'), 'a test of the channel, never of a key');
+});
+
+test('1.0.5: RISK, evaluated on events — the suite install scores 0, a browser edit or a denied write still scores', async () => {
+  const { RISK, HOUSEKEEPING, SUITE_INSTALL, CHANGE_PRED } = await import('../../scripts/lib/panels.mjs');
+  const { compile, evalBody } = await import('./esql-expr.mjs');
+  const hk = compile(HOUSEKEEPING), si = compile(SUITE_INSTALL), risk = compile(evalBody(RISK)), change = compile(CHANGE_PRED);
+  // Each RISK_KEYS boolean computed from the raw event, as the STATS groups it, then RISK on the result.
+  const score = (doc) => { const d = { ...doc, housekeeping: hk(doc), suite_install: si(doc) }; return risk(d); };
+  const kb = (o) => ({ 'service.name': 'serverless-kibana', 'event.outcome': 'success', 'user.name': '_4KEOqEBFWdu4E65tC03', ...o });
+  const create = kb({ 'event.action': 'saved_object_create', 'event.type': 'creation', 'kibana.saved_object.id': 'elastic_cloud-audit-security-anomalies' });
+
+  assert.equal(si(create), true);
+  assert.equal(score(create), 0, 'a session-less create of a suite object');
+  assert.equal(score({ ...create, 'kibana.saved_object.id': 'rc105-cloud-audit-x' }), 25, 'an id that only contains the prefix is not a suite id');
+  assert.equal(score(kb({ 'event.action': 'saved_object_create', 'event.type': 'creation', 'kibana.saved_object.id': 'cloud-audit-01-identity-access' })), 0, 'a cloud-audit-* object (Vega, Discover, data view)');
+  assert.equal(score({ ...create, 'event.action': 'saved_object_delete', 'event.type': 'deletion' }), 0, 'a session-less delete of a suite object');
+  assert.equal(change(create), true, 'still a change, so every mutation list keeps it');
+
+  const browser = { ...create, 'event.action': 'saved_object_update', 'event.type': 'change', 'kibana.session.id': 'sess-1', 'user.email': 'a@example.com' };
+  assert.equal(si(browser), false);
+  assert.equal(score(browser), 25, 'a person editing a suite dashboard in a browser still scores');
+  assert.equal(score({ ...browser, 'event.action': 'saved_object_delete', 'event.type': 'deletion' }), 30);
+
+  assert.equal(score({ ...create, 'event.outcome': 'failure' }), 40, 'a denied write to a suite object still scores 40');
+  assert.equal(score(kb({ 'event.action': 'saved_object_create', 'event.type': 'creation', 'kibana.saved_object.id': 'my-dashboard' })), 25, 'any other object keeps its weight');
+  // The space-delete cascade (ids like dashboard:cloud-audit-01-…:viewed:…) stays scored, by design.
+  assert.equal(score(kb({ 'event.action': 'saved_object_delete', 'event.type': 'deletion', 'kibana.saved_object.id': 'dashboard:cloud-audit-01-identity-access:viewed:server:20261014' })), 30);
+  // The evaluator agrees with the documented housekeeping rule, so it is reading RISK as ES|QL does.
+  assert.equal(score({ 'event.action': 'invalidate_apikeys', 'user.name': 'elastic/kibana', 'elasticsearch.audit.security_config_change': 'present' }), 0);
+  assert.equal(score({ 'event.action': 'invalidate_apikeys', 'user.name': 'someone', 'elasticsearch.audit.security_config_change': 'present' }), 45);
 });
 
 test('round 6: every dashboard range ends at now-1m', () => {

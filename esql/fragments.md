@@ -72,7 +72,7 @@ one of them is the bulk:
 | Query internals, Elasticsearch | search phases, `msearch`, `scroll`, PIT and reader contexts; **ES\|QL and every sub-request** (`esql/compute`, `esql/data`, `esql/search_shards`, `esql/resolve_fields`, `esql/async/get`, `indices:admin/esql/*`); `field_caps` and `field_caps[n]`; `async_search/*`; `indices:admin/resolve/*`; `indices:admin/shards/search_shards`; ES\|QL's query listing (`cluster:monitor/xpack/esql/*`); and the two cluster reads Kibana makes on every page load, `cluster:monitor/project/tags` and `cluster:monitor/xpack/inference/get` (24h: 1,707 and 1,704 against 1,666 page shells); **reads of API key metadata**, `cluster:admin/xpack/security/api_key/get` and `…/api_key/query` (`API_KEY_READS`, round 6: a client polling its own key, 12,595 a day live, 1,369 of 1,805 Signal events in one hour) | the machinery every dashboard, Discover tab and client runs to read data. With many viewers, each viewer's own panel queries were the top "signal" |
 | Query internals, Kibana | `http_request` to an `/internal/` route (with or without `/s/<space>`): `/internal/search/esql_async`, feature flags, controls options, session checks; the dashboard app's content-management reads (`/api/content_management/rpc/get`, `search`, `mget`, `bulkGet`); **page-load plumbing** — `/bootstrap.js`, `/bootstrap-anonymous.js`, `/translations/…`, the `/app/<app>` page shell, `/api/core/…`, `/api/licensing/…`, `/api/banners/…`, `/api/ui_counters/…` and the space picker's `/api/spaces/space` list; `saved_object_open/close_point_in_time`; `space_get` / `space_find` ("User has accessed space", once per page load) | what the browser calls to draw a page. A content-management read is also audited as its own `saved_object_*` event, and a change through a public route is audited again as its own event (`space_create`, `saved_object_create` …). Every other public `/api/` route, `/api/spaces/space/<id>`, an rpc create/update/delete, and a space create/update/delete stay signal |
 | Page-load lookups | `saved_object_get` of the `config` / `config-global` settings object; `saved_object_find` of `index-pattern` (the logs-\* / metrics-\* default data-view check, the workflows data views) | what every Kibana page load reads before it draws (24h: 2,021 each, one per page load, by every viewer and by the verify renderer). Resolving, creating or changing a particular data view stays signal |
-| The suite itself (`SUITE_SELF`) | on a `cloud-audit-*` (Vega, Discover, data view) or `elastic_cloud-audit-*` (every dashboard, from 1.0.3) object: a **read** (`saved_object_get` / `_resolve` / `_find`) by anyone; **any** event with no Kibana browser session (`kibana.session.id IS NULL`). And an `http_request` to `/api/saved_objects/_import` or `_export`, or to a public route that names a suite id (`PUT /api/dashboards/elastic_cloud-audit-…`) — `SUITE_INSTALL_URL`, session-blind | a read is the suite watching itself be watched, one per panel load per viewer. A session-less event is the automated install: `./audit --objects/--dashboards` imports, exports, creates, updates and deletes the suite's objects with an API key, and after a redeploy that was every row of the Live signal feed (24h: 10,368 events). Each object an import or export touches is audited again as its own `saved_object_*` event, so gating the request line loses no object. A person **editing** a suite dashboard does it in a browser session and stays signal; it is a test of the channel, never of a key. Every change, the install's included, stays in `CHANGE_PRED` (02 Mutations, 04 Mutation feed, 07 What they changed), and views stay on 02's all-traffic tiles, heatmap and Busiest object types |
+| The suite itself (`SUITE_SELF`) | on a `cloud-audit-*` (Vega, Discover, data view) or `elastic_cloud-audit-*` (every dashboard, from 1.0.3) object: a **read** (`saved_object_get` / `_resolve` / `_find`) by anyone; **any** event with no Kibana browser session (`kibana.session.id IS NULL`). And an `http_request` to `/api/saved_objects/_import` or `_export`, or to a public route that names a suite id (`PUT /api/dashboards/elastic_cloud-audit-…`) — `SUITE_INSTALL_URL`, session-blind | a read is the suite watching itself be watched, one per panel load per viewer. A session-less event is the automated install: `./audit --objects/--dashboards` imports, exports, creates, updates and deletes the suite's objects with an API key, and after a redeploy that was every row of the Live signal feed (24h: 10,368 events). Each object an import or export touches is audited again as its own `saved_object_*` event, so gating the request line loses no object. A person **editing** a suite dashboard does it in a browser session and stays signal; it is a test of the channel, never of a key. Every change, the install's included, stays in `CHANGE_PRED` (02 Mutations, 04 Mutation feed, 07 What they changed), and views stay on 02's all-traffic tiles, heatmap and Busiest object types. The session-less half also scores 0 in `RISK` (`SUITE_INSTALL`, see *Risk scoring*) unless it failed |
 | Connection / authn volume | `connection_granted`, `authentication_success` | one per transport connection / authenticated request |
 
 A read of a system index is not lost to the gate: `SYS_INDEX` selects on the index name and never
@@ -131,6 +131,10 @@ of the plumbing RLIKE (a second RLIKE behind a session test measured slower on t
   AND (event.action IN ("saved_object_get","saved_object_resolve","saved_object_find")
        OR kibana.session.id IS NULL))
 ```
+
+Its first half is `SUITE_ID_TEST` (the null-guarded id test, without outer parentheses so `SUITE_SELF`'s
+text, pinned in five static copies, did not change), and `SUITE_INSTALL` is
+`(<SUITE_ID_TEST> AND kibana.session.id IS NULL)`, the key `RISK` scores 0 (see *Risk scoring*).
 
 `KIBANA_PLUMBING_URL` — each alternative carries its own tail, so `api/spaces/space` matches the list a
 page load fetches and not `/api/spaces/space/<id>`; `[.]` rather than `\.` keeps the static copies free
@@ -257,6 +261,7 @@ the scorer and the change panels can never disagree.
     event.action == "anonymous_access_denied", 35,
     elasticsearch.audit.security_config_change IS NOT NULL, 50,
     event.outcome == "failure", 40,
+    suite_install, 0,                                  -- the suite's own session-less install; a key of RISK_KEYS
     <CHANGE_PRED> AND event.action IN ("workflow_run","workflow_test","workflow_execution_cancel"), 10,
     <CHANGE_PRED> AND (event.type == "deletion" OR event.action == "rule_disable"), 30,
     <CHANGE_PRED>, 25,
@@ -271,6 +276,22 @@ as a boolean key of `RISK_KEYS`, so it needs no `user.name` / `api_key.name` gro
 24h: 2,710 such events now score 0; `elastic/kibana` still scores for the keys it creates on a user's
 behalf (`create_apikey`, 325) and its profile writes. 7-day replica: every scoring panel within ±15ms
 (04 Mean severity 64 → 77ms, the leaderboard 84 → 90ms, the treemap 304 → 313ms, the scatter 87 → 92ms).
+
+**The suite's own install scores 0, after failures (1.0.5).** `suite_install` is `SUITE_INSTALL` — a
+`cloud-audit-*` or `elastic_cloud-audit-*` object id with no Kibana browser session (`kibana.session.id IS
+NULL`), the session-less half of `SUITE_SELF` — grouped as a boolean key of `RISK_KEYS`. `NOISE` already
+kept `./audit --objects/--dashboards` out of the feeds, but every `riskScored()` panel scored it: live, 24h,
+about 4,500 of the deploying Cloud key's 5,400 severity was its own install (125 creates at 25, 41 deletes
+at 30, 7 updates at 25), so 04's leaderboard ranked that key first while 00's treemap, which gates with
+`NOISE` first, did not. The branch sits **after** the failure branch, so a denied write to a suite object
+still scores 40, and before every change weight. It is a test of the channel, never of a key: a person
+editing a suite dashboard in a browser has a session and still scores 25 / 30. The install stays in
+`CHANGE_PRED` (02 Mutations, 04 Mutation feed, 07 What they changed), and 04's *Scoring events* tile
+counts it in its second line (*"excl. 173 suite installs"*), so an unexpected burst of session-less writes
+to suite objects stays visible. Kibana's cascade when a space is deleted (ids like
+`dashboard:cloud-audit-01-…:viewed:…`) does not start with the prefix and stays scored, by design: deleting
+a space is what an auditor wants to see. Residual risk: any API key that rewrites a suite object outside a
+browser scores 0; it is still listed on every mutation surface and counted on the tile.
 
 Three things about the change branches, each of which the order encodes:
 
@@ -301,7 +322,7 @@ point-in-time events that used to reach the CASE only to score 0.
 
 ### Counted, then scored
 
-`RISK` is a seven-branch `CASE`, so a scoring panel never evaluates it per event (see *Query shape
+`RISK` is a multi-branch `CASE`, so a scoring panel never evaluates it per event (see *Query shape
 decides cost*). It counts by the raw fields `RISK` reads, restores them, and scores the grouped rows;
 every count downstream is then `SUM(n)` and every severity `SUM(risk * n)`:
 
@@ -310,7 +331,7 @@ every count downstream is then `SUM(n)` and every severity `SUM(risk * n)`:
 | STATS n = COUNT(*) BY <panel keys>,
     event.action, scc = elasticsearch.audit.security_config_change IS NOT NULL,
     event.outcome, service.name, et = MV_CONCAT(event.type, ","),
-    housekeeping = <HOUSEKEEPING>
+    housekeeping = <HOUSEKEEPING>, suite_install = <SUITE_INSTALL>
 | EVAL event.type = SPLIT(et, ","),
        elasticsearch.audit.security_config_change = CASE(scc, "present")
 | <RISK>

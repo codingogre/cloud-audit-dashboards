@@ -54,7 +54,7 @@ export const legendPanel = (x, y, w, h) => introMd(x, y, w, h, 'How to read this
 export const ACTOR_KEYS = 'user.email, api_key.name, user.name';
 
 /**
- * The scoring events, counted before they are scored. RISK is a seven-branch CASE, and a CASE with
+ * The scoring events, counted before they are scored. RISK is a multi-branch CASE, and a CASE with
  * two or more conditions costs ~4µs per row however few branches match (panels.mjs, QUERY SHAPE),
  * so it runs on the rows of `STATS n = COUNT(*) BY <by>, RISK_KEYS` instead of on every event.
  *
@@ -64,6 +64,10 @@ export const ACTOR_KEYS = 'user.email, api_key.name, user.name';
  * Every row it leaves carries `n`, so downstream a count is SUM(n), a severity is SUM(risk * n), and
  * a timestamp is MIN/MAX of the carried aggregate. A STATS with no BY returns null rather than 0 for
  * SUM over no rows, so a KPI that has to read 0 COALESCEs after it.
+ *
+ * `WHERE risk > 0` drops what RISK scores 0 on purpose — Kibana's key clean-up (`housekeeping`) and the
+ * suite's own session-less install (`suite_install`), both keys of RISK_KEYS. 04's Scoring events tile
+ * spells this pipeline out without that WHERE so it can count the install in its second line.
  */
 export const riskScored = ({ by = '', aggs = '' } = {}) =>
   `${RISK_PREFILTER} | STATS n = COUNT(*)${aggs ? `, ${aggs}` : ''} BY ${by ? `${by}, ` : ''}${RISK_KEYS} ` +

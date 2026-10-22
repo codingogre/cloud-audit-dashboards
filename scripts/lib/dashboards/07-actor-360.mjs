@@ -92,7 +92,7 @@ const CASCADE_FOLD =
  * What each RISK weight means, in words, for the receipts table's "Why it scored" column. The Risk tile
  * names its worst weight as the NUMBER, which this column sits beside: a tile subtitle holds ~22
  * characters at a 1440px viewport, and "worst: security config change" after a count was cut there. A
- * seven-branch CASE, so it runs on the grouped rows of riskScored() — a handful per (action, weight) —
+ * multi-branch CASE, so it runs on the grouped rows of riskScored() — a handful per (action, weight) —
  * never per event.
  */
 const WEIGHT_WORDS = [[50, 'security config change'], [45, 'API keys invalidated'], [40, 'failed or denied'],
@@ -168,7 +168,7 @@ export function build() {
         { secondary: 'detail' })],
       [8, (x, y, w, h) => kpi(x, y, w, h,
         `FROM ${IDX} | ${WHOLE_MINUTES} | ${riskScored()} | STATS sev = SUM(risk * n) BY event.action, risk | STATS Risk = SUM(sev), worst = MAX(risk), kinds = COUNT(*) | EVAL detail = CASE(worst IS NULL, "nothing scored", CONCAT(${grouped('kinds')}, CASE(kinds == 1, " action · worst ", " actions · worst "), ${grouped('worst')})), Risk = COALESCE(Risk, 0) | KEEP Risk, detail`,
-        'Risk', 'Summed severity (weight × events) of everything that scored, how many scoring actions that was, and the highest weight among them (50 is a security config change; the table below names every weight in words). Routine activity scores zero, so this is not an event count in disguise. The receipts are in "Every scoring action" below: one row per action and weight, scrollable, and the Sum under its Risk column is this number; the count here is its number of rows. An action that scored at two weights (a create that succeeded, and one that failed) counts twice, as it is two rows there. ' + RACE_NOTE,
+        'Risk', 'Summed severity (weight × events) of everything that scored, how many scoring actions that was, and the highest weight among them (50 is a security config change; the table below names every weight in words). Routine activity scores zero, so this is not an event count in disguise. The suite\'s own install of its cloud-audit-* objects, made with no browser session, scores zero too. The receipts are in "Every scoring action" below: one row per action and weight, scrollable, and the Sum under its Risk column is this number; the count here is its number of rows. An action that scored at two weights (a create that succeeded, and one that failed) counts twice, as it is two rows there. ' + RACE_NOTE,
         { secondary: 'detail' })],
       // Families, not raw names, so the tile counts the same thing as "What they read, by index family"
       // below: a raw count put every dated daily index and its .ds- backing index in separately, and

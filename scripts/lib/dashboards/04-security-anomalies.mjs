@@ -1,7 +1,7 @@
 /** 04 Security & Anomalies — see scripts/lib/definitions.mjs for how the suite is assembled. */
 import {
   IDX, ACTOR_RESOLVE, RISK_INDEX_STATS, RISK_INDEX_EVAL, NOISE, TIME, BUCKET, SCOPE, PALETTE, PRIVILEGED,
-  privilegedKpi, FAILED_OR_DENIED, SIGNIN_WORDS, EDGE_NOTE, dash, kpi, xy, table, vega, search, sized, fitRows, resetIds
+  privilegedKpi, FAILED_OR_DENIED, RISK_PREFILTER, RISK_KEYS, RISK_RESTORE, RISK, grouped, SIGNIN_WORDS, EDGE_NOTE, dash, kpi, xy, table, vega, search, sized, fitRows, resetIds
 } from '../panels.mjs';
 import { rawId } from '../suite.mjs';
 import {
@@ -140,7 +140,15 @@ export function build() {
       { secondary: 'housekeeping_note' }),
     kpi(24, 0, 8, 5, `FROM ${IDX} | ${TIME} | ${FAILED_OR_DENIED} | STATS \`Failures\` = COUNT(*)`, 'Failures', `Events with a failure outcome: failed sign-ins (${SIGNIN_WORDS}), denials and any other failed action. Counted as on Identity & Access's Failed or denied tile, so the two agree.`),
     kpi(32, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE event.action == "anonymous_access_denied" | STATS \`Anonymous denials\` = COUNT(*)`, 'Anonymous denials', 'Unauthenticated requests that were rejected.'),
-    kpi(40, 0, 8, 5, `FROM ${IDX} | ${TIME} | ${riskScored()} | STATS scoring = SUM(n) | EVAL \`Scoring events\` = COALESCE(scoring, 0) | KEEP \`Scoring events\``, 'Scoring events', 'Number of events that carried any risk weight at all — the denominator of Mean severity, and the volume that severity is averaged over.'),
+    // riskScored() spelled out without its `WHERE risk > 0`, so the suite's own install (scored 0 through the
+    // suite_install key) can be counted in the second line, the way privilegedKpi() counts the cleanups.
+    kpi(40, 0, 8, 5, `FROM ${IDX} | ${TIME} | ${RISK_PREFILTER} | STATS n = COUNT(*) BY ${RISK_KEYS} | ${RISK_RESTORE} | ${RISK} ` +
+      '| STATS scoring = SUM(n) WHERE risk > 0, installs = SUM(n) WHERE suite_install AND risk == 0 ' +
+      '| EVAL `Scoring events` = COALESCE(scoring, 0), installs = COALESCE(installs, 0), ' +
+      `install_note = CASE(installs == 0, "no suite installs in range", CONCAT("excl. ", ${grouped('installs')}, " suite installs")) ` +
+      '| KEEP `Scoring events`, install_note', 'Scoring events',
+      'Number of events that carried any risk weight at all — the denominator of Mean severity, and the volume that severity is averaged over. The suite\'s own automated install (its cloud-audit-* objects written with no browser session) scores 0, so it is left out and counted in the second line instead; it is still listed in the Mutation feed.',
+      { secondary: 'install_note' }),
     // One row per identity and action, not per payload: grouped by the raw payload, every API key id
     // made its own one-event row (10 of 12 rows at 24h read "invalidate_apikeys · 1") and the JSON was
     // hard-clipped mid-glyph. The payload stays whole in the event feed at the foot of the page; here
@@ -179,7 +187,7 @@ export function build() {
       // Two-word headers get the width to stay on one line: wrapped, "Scoring events" and "Mean severity"
       // made the header row 16px taller, and the twelfth row of an h=13 table was cut through its glyphs.
       ['risk_total', sized('scoring_events', 120), { column: 'mean_severity', width: 120, format: { type: 'number', decimals: 1 } }, 'privileged', SCOPE_LAST],
-      `Identities ranked by total accumulated severity, so sustained behaviour outranks a single high-severity event; only the top of the ranking fits the panel. Scope separates tenant identities from Elastic platform automation and unauthenticated requests — without it elastic.maintenance can top this table, because Elastic platform automation performs routine security config changes itself. Privileged counts the identity's security config changes the way the Config changes tile does. Kibana's own API-key clean-up is left out of both columns: it scores 0, so the elastic/kibana service account appears here only for something else it did. Identity is the email for a person and the key name for a named API key. ${PIN_HINT}`),
+      `Identities ranked by total accumulated severity, so sustained behaviour outranks a single high-severity event; only the top of the ranking fits the panel. Scope separates tenant identities from Elastic platform automation and unauthenticated requests — without it elastic.maintenance can top this table, because Elastic platform automation performs routine security config changes itself. Privileged counts the identity's security config changes the way the Config changes tile does. Kibana's own API-key clean-up is left out of both columns: it scores 0, so the elastic/kibana service account appears here only for something else it did. The suite's own install of its cloud-audit-* objects, made with no browser session, scores 0 too, so the key that deploys the suite is ranked only for what else it did. Identity is the email for a person and the key name for a named API key. ${PIN_HINT}`),
     table(0, 51, 48, TH, 'Why these identities scored — top risky actions, with their weight',
       `FROM ${IDX} | ${TIME} | ${riskScored({ by: ACTOR_KEYS, aggs: 'last_ts = MAX(@timestamp)' })} | ${ACTOR_RESOLVE} | ${SCOPE} | STATS events = SUM(n), risk_total = SUM(risk * n), last_seen = MAX(last_ts) BY actor, actor_scope, action = event.action, weight = risk, failed = event.outcome == "failure" | ${FAILED_MARK} | SORT risk_total DESC, actor, action | LIMIT ${fitRows(TH)}`,
       // weight is a group key, but listed as a metric so it right-aligns with the numbers it multiplies.

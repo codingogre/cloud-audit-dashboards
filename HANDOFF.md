@@ -3,6 +3,20 @@
 `CLAUDE.md`-style durable context lives in `README.md` and `esql/fragments.md` and wins on
 conflict. This file is "where we are right now" and should be assumed stale.
 
+## Release 1.0.5 — in progress
+
+- **The suite's own install no longer scores.** `SUITE_INSTALL` (a `cloud-audit-*` / `elastic_cloud-audit-*`
+  object id with no `kibana.session.id`) is a new `RISK_KEYS` boolean, and `RISK` scores it 0 right after the
+  failure branch (`suite_install, 0`): a denied write to a suite object still scores 40, a browser edit still
+  25 / 30. Live, 24h: the deploy key's leaderboard total fell from about 5,430 to 900, now matching 00's
+  treemap; 07's Risk tile and its receipts agree (1,180 = the five rows). It stays in `CHANGE_PRED`; 04's
+  *Scoring events* tile shows *"excl. N suite installs"* (rendered at 1920 and 1440, no clipping). `SUITE_SELF`
+  is now built from `SUITE_ID_TEST` but its text is byte-identical, so `NOISE` and its static copies did not
+  move; vega/01 and vega/05 carry the new `RISK` / `RISK_KEYS` text. The space-delete cascade
+  (`dashboard:cloud-audit-…:viewed:…`) stays scored on purpose. Also fixed: `synth/verify.mjs` ran `RISK` on
+  raw events and had failed with *Unknown column [housekeeping]* since round 6; it now computes both keys
+  first. `test/unit/esql-expr.mjs` is a small three-valued evaluator so unit tests score events with `RISK`.
+
 ## Release 1.0.4 — ECS field names, null-safe API key fields, Default space, 2026-10-22
 
 Product management's feedback on 1.0.3, plus two requests from the human.
