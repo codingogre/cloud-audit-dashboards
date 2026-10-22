@@ -4,7 +4,7 @@ import {
   SYS_INDEX, fitRows
 } from '../panels.mjs';
 import { rawId } from '../suite.mjs';
-import { riskScored, CHANGED, CHANGED_KEYS, CHANGED_DERIVE, specDescription } from './shared.mjs';
+import { riskScored, CHANGED, CHANGED_KEYS, CHANGED_DERIVE, specDescription, RAW_RECORDS } from './shared.mjs';
 
 /**
  * One identity's whole footprint on one page — pick a person in the control bar and every panel
@@ -110,7 +110,7 @@ const INTRO = {
   h: 6,
   heading: 'Everything one person did, on one page',
   paragraphs: [
-    'Use it to check whether their activity is normal, see what they changed and read, and gather evidence for a review or investigation.',
+    `Use it to check whether their activity is normal, see what they changed and read, and gather evidence for a review or investigation. ${RAW_RECORDS}`,
     '**How to use it:** pick someone in the Person (email) control, or click an email in a table; with nobody selected, the page covers everyone. ① *Is this normal?* always looks at the last 7 days in UTC, ② *What they did* follows the time picker, and ③ *Evidence* ends in the raw records. Table times are in your time zone.',
   ],
 };
@@ -158,10 +158,14 @@ export function build() {
   resetIds();
   const P = stack([
     row(7, [
-      [16, (x, y, w, h) => table(x, y, w, h, 'Who this is — people, by email',
-        `FROM ${IDX} | ${TIME} | STATS events = COUNT(*), keys = COUNT_DISTINCT(api_key.name, 100) BY user.email | INLINE STATS all = SUM(events) | WHERE user.email IS NOT NULL | EVAL share = TO_DOUBLE(events) / all | DROP all | SORT events DESC | LIMIT 10`,
-        [filterable('user.email')], ['events', { column: 'share', label: '% of Events', width: 100, format: { type: 'percent', decimals: 1 } }, { column: 'keys', label: 'Own API keys' }],
-        'People only: `% of Events` is each person\'s share of the Events tile beside this table, so the rest of that tile — traffic with no person behind it — is visible here and not only in this note. Counts only events that carry a user email, so an organization-level Cloud API key (`_4KEO… · Cloud API key`), which belongs to no person, is never a row here even when it is the busiest credential in the flow below; and with nobody selected these rows add up to far less than the Events tile: API-key and service traffic with no email behind it has nothing to group on here, and is counted in the tile. The people in range, busiest first — click an email to pin that identity across the suite. `Own API keys` counts the named API keys acting under that email: Elasticsearch stamps a key\'s CREATOR on every event the key emits, so a person with keys may be carrying a machine\'s traffic. It reads 0 beside API-key credentials in the flow below when that key traffic carries no email.')],
+      // By email AND principal id (1.0.5), so the table is not empty under an API key or Cloud key pin: a Cloud
+      // API key has no email, and its full 20-character id is its user.name. Both are raw group keys, so both
+      // cells pin. % of Events and Own API keys gave their width to Principal id: at 16 columns a 1440px
+      // viewport holds an email, a 20-character id and one count, no more.
+      [16, (x, y, w, h) => table(x, y, w, h, 'Who this is — by email and principal id',
+        `FROM ${IDX} | ${TIME} | STATS events = COUNT(*) BY user.email, user.name | WHERE user.email IS NOT NULL OR NOT STARTS_WITH(user.name, "<") | SORT events DESC, user.email, user.name | LIMIT 10`,
+        [filterable('user.email'), filterable('user.name', { label: 'Principal id', width: 165, min: 160 })], ['events'],
+        'The identities behind the selection, busiest first: the email for a person, and the Principal id for every signed-in principal (a person\'s numeric id, a service account, or a Cloud API key\'s full id). An Elasticsearch API key\'s events carry the identity that created it. Click an email or Principal id to pin it across the suite; a Cloud API key\'s Principal id also covers the API keys it created. Requests with no identity (<anonymous>, <unauthenticated-…>) count in the Events tile but have no row.')],
       [8, (x, y, w, h) => kpi(x, y, w, h,
         `FROM ${IDX} | ${TIME} | STATS Events = COUNT(*), actions = COUNT_DISTINCT(event.action, 100), last_ts = MAX(@timestamp) | EVAL mins = DATE_DIFF("minutes", last_ts, NOW()) | EVAL detail = CASE(Events == 0, "no activity", CONCAT(${grouped('actions')}, CASE(actions == 1, " action", " actions"), " · ", CASE(mins < 1, "just now", mins < 60, CONCAT(${grouped('mins')}, "m ago"), CONCAT(TO_STRING(mins / 60), "h ago")))) | KEEP Events, detail`,
         'Events', 'Every audited event for the selection, how many different things that was, and how recently they were last seen. Unfiltered by the noise gate, so it includes connection housekeeping.',

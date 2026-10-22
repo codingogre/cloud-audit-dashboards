@@ -106,7 +106,7 @@
         "h": 6
       },
       "config": {
-        "content": "### See who did what across your Elastic Cloud projects\n\nThis overview shows how much activity there was, who was busiest, which identities carry the most risk, and the latest events as they arrive.\n\nStart here for a routine review or when something looks wrong, then use the links above to go deeper on one person, sign-ins, Kibana objects, data access, security or location.\n\n**How to use it:** choose a Project, Person (email) or Client IP in the controls to focus every panel, and set the period in the time picker.\n"
+        "content": "### See who did what across your Elastic Cloud projects\n\nThis overview shows how much activity there was, who was busiest, which identities carry the most risk, and the latest events as they arrive.\n\nStart here for a routine review or when something looks wrong, then use the links above to go deeper on one person, sign-ins, Kibana objects, data access, security or location.\n\n**How to use it:** choose a Project, Person (email), API key or Client IP in the controls to focus every panel, and set the time picker. Raw records: [All audit events](/app/discover#/view/cloud-audit-search-00-all-events), [Raw signal feed](/app/discover#/view/cloud-audit-search-10-raw-signal-feed).\n"
       }
     },
     {
@@ -538,11 +538,11 @@
       },
       "config": {
         "title": "Busiest identities · top 12 at most",
-        "description": "The identities generating the most signal traffic, and how varied their behaviour is; the rows sum to Signal events when they all fit, and fewer rows than the bound means every identity with signal is listed (Distinct actors counts the same set). Identity resolves to an email, then an API key name, then a user id. An identity’s treemap tile and its row here can differ by an event or two at the range’s edges, because each panel reads the clock for itself. Elasticsearch stamps an API key’s CREATOR’s email on every event the key emits, so any number of machines authenticating with one key resolve to one person: such a row reads “email · via key name” and is a credential’s traffic, not the person at a keyboard. To follow one person across the suite, pick them in the Person (email) control above. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email.",
+        "description": "The identities generating the most signal traffic; the rows sum to Signal events when they all fit, and fewer rows than the bound means every identity with signal is listed (Distinct actors counts the same set). Identity resolves to an email, then an API key name, then a user id. An identity’s treemap tile and its row here can differ by an event or two at the range’s edges, because each panel reads the clock for itself. Elasticsearch stamps an API key’s CREATOR’s email on every event the key emits, so any number of machines authenticating with one key resolve to one person: such a row reads “email · via key name” and is a credential’s traffic, not the person at a keyboard. To follow one person across the suite, pick them in the Person (email) control above, or click a Principal id to filter to it or open Actor 360; a Cloud API key's Principal id also covers the API keys it created, and a named key's row pins the identity that created it. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "SET unmapped_fields=\"nullify\"; FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE (elasticsearch.audit.action IS NULL OR NOT (elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\") OR elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR elasticsearch.audit.action LIKE \"indices:data/read/msearch*\" OR elasticsearch.audit.action LIKE \"indices:data/read/scroll*\" OR elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR elasticsearch.audit.action == \"indices:data/read/open_reader_context\" OR elasticsearch.audit.action LIKE \"indices:data/read/esql*\" OR elasticsearch.audit.action LIKE \"indices:admin/esql/*\" OR elasticsearch.audit.action LIKE \"indices:data/read/field_caps*\" OR elasticsearch.audit.action LIKE \"indices:data/read/async_search/*\" OR elasticsearch.audit.action LIKE \"indices:admin/resolve/*\" OR elasticsearch.audit.action == \"indices:admin/shards/search_shards\" OR elasticsearch.audit.action LIKE \"cluster:monitor/xpack/esql/*\" OR elasticsearch.audit.action IN (\"cluster:monitor/project/tags\", \"cluster:monitor/xpack/inference/get\", \"cluster:admin/xpack/security/api_key/get\", \"cluster:admin/xpack/security/api_key/query\"))) AND (event.action IS NULL OR NOT (event.action IN (\"authentication_success\",\"connection_granted\") OR event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\",\"space_get\",\"space_find\") OR (event.action == \"http_request\" AND url.original IS NOT NULL AND url.original RLIKE \"https?://[^/]+(/s/[^/]+)?/((internal|translations|app)/.*|api/content_management/rpc/(get|search|mget|bulkGet).*|bootstrap(-anonymous)?[.]js.*|api/(core|licensing|banners|ui_counters)/.*|api/spaces/space([?].*)?)|https?://[^/]+(/s/[^/]+)?/api/(saved_objects/(_import|_export)|[^?]*/(elastic_)?cloud-audit-).*\") OR (kibana.saved_object.type IS NOT NULL AND ((event.action == \"saved_object_get\" AND kibana.saved_object.type IN (\"config\",\"config-global\")) OR (event.action == \"saved_object_find\" AND kibana.saved_object.type == \"index-pattern\"))) OR (kibana.saved_object.id IS NOT NULL AND (kibana.saved_object.id LIKE \"cloud-audit-*\" OR kibana.saved_object.id LIKE \"elastic_cloud-audit-*\") AND (event.action IN (\"saved_object_get\",\"saved_object_resolve\",\"saved_object_find\") OR kibana.session.id IS NULL)))) | EVAL actor = COALESCE(user.email, api_key.name, user.name, \"<anonymous>\"), actor_kind = CASE(user.email IS NOT NULL, \"human\", \"service\") | STATS events = COUNT(*), actions = COUNT_DISTINCT(event.action), last_seen = MAX(@timestamp) BY actor, api_key.name | EVAL actor = CASE(api_key.name IS NOT NULL AND api_key.name != actor, CONCAT(actor, \" · via key \", api_key.name), actor) | SORT events DESC | LIMIT 12 | EVAL actor = CASE((LENGTH(actor) == 20 AND actor RLIKE \"[-_A-Za-z0-9]{20}\" AND NOT actor RLIKE \"[0-9]{20}\"), CONCAT(LEFT(actor, 5), \"… · Cloud API key\"), actor)"
+          "query": "SET unmapped_fields=\"nullify\"; FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE (elasticsearch.audit.action IS NULL OR NOT (elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\") OR elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR elasticsearch.audit.action LIKE \"indices:data/read/msearch*\" OR elasticsearch.audit.action LIKE \"indices:data/read/scroll*\" OR elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR elasticsearch.audit.action == \"indices:data/read/open_reader_context\" OR elasticsearch.audit.action LIKE \"indices:data/read/esql*\" OR elasticsearch.audit.action LIKE \"indices:admin/esql/*\" OR elasticsearch.audit.action LIKE \"indices:data/read/field_caps*\" OR elasticsearch.audit.action LIKE \"indices:data/read/async_search/*\" OR elasticsearch.audit.action LIKE \"indices:admin/resolve/*\" OR elasticsearch.audit.action == \"indices:admin/shards/search_shards\" OR elasticsearch.audit.action LIKE \"cluster:monitor/xpack/esql/*\" OR elasticsearch.audit.action IN (\"cluster:monitor/project/tags\", \"cluster:monitor/xpack/inference/get\", \"cluster:admin/xpack/security/api_key/get\", \"cluster:admin/xpack/security/api_key/query\"))) AND (event.action IS NULL OR NOT (event.action IN (\"authentication_success\",\"connection_granted\") OR event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\",\"space_get\",\"space_find\") OR (event.action == \"http_request\" AND url.original IS NOT NULL AND url.original RLIKE \"https?://[^/]+(/s/[^/]+)?/((internal|translations|app)/.*|api/content_management/rpc/(get|search|mget|bulkGet).*|bootstrap(-anonymous)?[.]js.*|api/(core|licensing|banners|ui_counters)/.*|api/spaces/space([?].*)?)|https?://[^/]+(/s/[^/]+)?/api/(saved_objects/(_import|_export)|[^?]*/(elastic_)?cloud-audit-).*\") OR (kibana.saved_object.type IS NOT NULL AND ((event.action == \"saved_object_get\" AND kibana.saved_object.type IN (\"config\",\"config-global\")) OR (event.action == \"saved_object_find\" AND kibana.saved_object.type == \"index-pattern\"))) OR (kibana.saved_object.id IS NOT NULL AND (kibana.saved_object.id LIKE \"cloud-audit-*\" OR kibana.saved_object.id LIKE \"elastic_cloud-audit-*\") AND (event.action IN (\"saved_object_get\",\"saved_object_resolve\",\"saved_object_find\") OR kibana.session.id IS NULL)))) | EVAL actor = COALESCE(user.email, api_key.name, user.name, \"<anonymous>\"), actor_kind = CASE(user.email IS NOT NULL, \"human\", \"service\") | STATS events = COUNT(*) BY actor, api_key.name, user.name | EVAL actor = CASE(api_key.name IS NOT NULL AND api_key.name != actor, CONCAT(actor, \" · via key \", api_key.name), actor) | SORT events DESC | LIMIT 12 | EVAL actor = CASE((LENGTH(actor) == 20 AND actor RLIKE \"[-_A-Za-z0-9]{20}\" AND NOT actor RLIKE \"[0-9]{20}\"), CONCAT(LEFT(actor, 5), \"… · Cloud API key\"), actor)"
         },
         "styling": {
           "density": {
@@ -559,6 +559,12 @@
           {
             "label": "Identity",
             "column": "actor"
+          },
+          {
+            "label": "Principal id",
+            "column": "user.name",
+            "click_filter": true,
+            "width": 250
           }
         ],
         "metrics": [
@@ -566,16 +572,6 @@
             "label": "Events",
             "width": 72,
             "column": "events"
-          },
-          {
-            "label": "Actions",
-            "width": 72,
-            "column": "actions"
-          },
-          {
-            "label": "Last seen",
-            "width": 190,
-            "column": "last_seen"
           }
         ]
       }

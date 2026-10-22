@@ -106,7 +106,7 @@
         "h": 6
       },
       "config": {
-        "content": "### Everything one person did, on one page\n\nUse it to check whether their activity is normal, see what they changed and read, and gather evidence for a review or investigation.\n\n**How to use it:** pick someone in the Person (email) control, or click an email in a table; with nobody selected, the page covers everyone. ① *Is this normal?* always looks at the last 7 days in UTC, ② *What they did* follows the time picker, and ③ *Evidence* ends in the raw records. Table times are in your time zone.\n"
+        "content": "### Everything one person did, on one page\n\nUse it to check whether their activity is normal, see what they changed and read, and gather evidence for a review or investigation. Raw records: [All audit events](/app/discover#/view/cloud-audit-search-00-all-events), [Raw signal feed](/app/discover#/view/cloud-audit-search-10-raw-signal-feed).\n\n**How to use it:** pick someone in the Person (email) control, or click an email in a table; with nobody selected, the page covers everyone. ① *Is this normal?* always looks at the last 7 days in UTC, ② *What they did* follows the time picker, and ③ *Evidence* ends in the raw records. Table times are in your time zone.\n"
       }
     },
     {
@@ -119,12 +119,12 @@
         "h": 7
       },
       "config": {
-        "title": "Who this is — people, by email · top 5 at most",
-        "description": "People only: `% of Events` is each person's share of the Events tile beside this table, so the rest of that tile — traffic with no person behind it — is visible here and not only in this note. Counts only events that carry a user email, so an organization-level Cloud API key (`_4KEO… · Cloud API key`), which belongs to no person, is never a row here even when it is the busiest credential in the flow below; and with nobody selected these rows add up to far less than the Events tile: API-key and service traffic with no email behind it has nothing to group on here, and is counted in the tile. The people in range, busiest first — click an email to pin that identity across the suite. `Own API keys` counts the named API keys acting under that email: Elasticsearch stamps a key's CREATOR on every event the key emits, so a person with keys may be carrying a machine's traffic. It reads 0 beside API-key credentials in the flow below when that key traffic carries no email.",
+        "title": "Who this is — by email and principal id · top 5 at most",
+        "description": "The identities behind the selection, busiest first: the email for a person, and the Principal id for every signed-in principal (a person's numeric id, a service account, or a Cloud API key's full id). An Elasticsearch API key's events carry the identity that created it. Click an email or Principal id to pin it across the suite; a Cloud API key's Principal id also covers the API keys it created. Requests with no identity (<anonymous>, <unauthenticated-…>) count in the Events tile but have no row.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "SET unmapped_fields=\"nullify\"; FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS events = COUNT(*), keys = COUNT_DISTINCT(api_key.name, 100) BY user.email | INLINE STATS all = SUM(events) | WHERE user.email IS NOT NULL | EVAL share = TO_DOUBLE(events) / all | DROP all | SORT events DESC | LIMIT 5"
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS events = COUNT(*) BY user.email, user.name | WHERE user.email IS NOT NULL OR NOT STARTS_WITH(user.name, \"<\") | SORT events DESC, user.email, user.name | LIMIT 5"
         },
         "styling": {
           "density": {
@@ -142,27 +142,19 @@
             "label": "Email",
             "column": "user.email",
             "click_filter": true
+          },
+          {
+            "label": "Principal id",
+            "column": "user.name",
+            "click_filter": true,
+            "width": 165
           }
         ],
         "metrics": [
           {
             "label": "Events",
-            "width": 86,
+            "width": 90,
             "column": "events"
-          },
-          {
-            "label": "% of Events",
-            "column": "share",
-            "width": 94,
-            "format": {
-              "type": "percent",
-              "decimals": 1
-            }
-          },
-          {
-            "label": "Own API keys",
-            "width": 86,
-            "column": "keys"
           }
         ]
       }

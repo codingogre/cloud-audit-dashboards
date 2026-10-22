@@ -1,10 +1,10 @@
 /** 01 Identity & Access — see scripts/lib/definitions.mjs for how the suite is assembled. */
 import {
   IDX, ACTOR_RESOLVE, ORG, CRED_TYPE_LABEL, CRED_TYPE_COLORS, TIME, dash, kpi, xy, table, sized,
-  vega, search, resetIds, bar, cloudKeyLabel, grouped, FAILED_OR_DENIED, SIGNIN_FAILED, SIGNIN_WORDS, EDGE_NOTE
+  vega, search, resetIds, bar, filterable, grouped, FAILED_OR_DENIED, SIGNIN_FAILED, SIGNIN_WORDS, EDGE_NOTE
 } from '../panels.mjs';
 import { rawId } from '../suite.mjs';
-import { WHO } from './shared.mjs';
+import { WHO, RAW_RECORDS } from './shared.mjs';
 
 // FAILED_OR_DENIED, SIGNIN_FAILED and SIGNIN_WORDS live in panels.mjs: 04's failure panels count the same way.
 
@@ -103,8 +103,8 @@ const INTRO = {
   heading: "Who signed in, how, and what failed",
   paragraphs: [
     "See which sign-in methods and credentials are in use, your busiest people and API keys, every key and when it was last used, and each failed or denied attempt.",
-    "Use it to check that access looks the way you expect, to review API keys, or to follow up on a run of failed sign-ins. Empty failure panels are good news.",
-    "**How to use it:** choose a Project, Person (email) or Client IP in the controls and set the time picker. Click an email in a table to filter the whole suite to that person.",
+    `Use it to check that access looks as expected, review API keys, or follow up on failed sign-ins. Empty failure panels are good news. ${RAW_RECORDS}`,
+    "**How to use it:** choose a Project, Person (email), API key or Client IP in the controls and set the time picker. Click an email in a table to filter the whole suite to that person.",
   ],
 };
 
@@ -200,14 +200,18 @@ export function build() {
     // because it IS the id of a Cloud API key, and for an Elasticsearch key it is the creator, so two
     // creators' keys that share a name stay two rows. A Cloud API key has no api_key.id, so it counts 0
     // distinct ids and is the one Kind "Cloud" row (one id: its own). The label runs on grouped rows,
-    // never per event. API key is assigned in ES|QL so a Cloud key reads "_4KEO… · Cloud API key", and
-    // Lens refuses click-to-filter on such a column; no control or drilldown keys on api_key.name.
-    // Events and IPs are sized: auto, they took ~240px of a 655px panel at a 1440px viewport and left a
-    // 36-character key name (syn-new-hire-it-20261014-141115-4426) touching "Elasticsearch" in Kind.
+    // never per event.
+    // 1.0.5: both key columns are the raw group keys, so both are click-to-filter and the table drills into
+    // Actor 360. Until then API key was assigned in ES|QL (COALESCE with the short Cloud key form), which Lens
+    // refuses to filter on. Now a Cloud key's row reads "-" under API key and its FULL id under "Key ID
+    // (Cloud) / creator" — the one place outside API key inventory that shows it whole — and an
+    // Elasticsearch key's row shows its creator's principal there. The Kind column gave its width to that
+    // column: at 24 columns a 1440px viewport cannot hold both beside a 36-character key name, and the "-"
+    // under API key says Cloud. Events and IPs are sized: auto, they took ~240px of a 655px panel at 1440.
     table(24, 17, 24, 12, 'Busiest API keys by name',
-      `FROM ${IDX} | ${TIME} | ${KEYED} | STATS events = COUNT(*), ips = COUNT_DISTINCT(client.ip), key_ids = COUNT_DISTINCT(api_key.id) BY api_key = api_key.name, user.name | EVAL kind = CASE(key_ids == 0, "Cloud", "Elasticsearch"), key_ids = GREATEST(key_ids, 1), api_key = COALESCE(api_key, ${cloudKeyLabel('user.name', '"(no name)"')}) | SORT events DESC, api_key | LIMIT 10`,
-      ['api_key', sized('kind', 105)], [sized('key_ids', 90, { label: 'Key IDs', min: 72 }), sized('events', 100), sized('ips', 56)],
-      `The busiest API keys of both kinds, one row per key name, with request volume and how many distinct client IPs used it. Kind is Cloud (an Elastic Cloud API key: it has no name and is recorded by its id, so it reads “_4KEO… · Cloud API key”, the first five characters of its id) or Elasticsearch (an Elasticsearch API key: id and name). A re-issued Elasticsearch key keeps its name under a new id, so Key IDs counts the ids a name ran under in range; API key inventory below has one row per id, with owner and first and last use. The API keys tile counts every id and every name in range, so past the ten busiest names the rows here add up to less than it; the rest are in the inventory. A key used from many IPs is worth investigating. ${EDGE_NOTE}`),
+      `FROM ${IDX} | ${TIME} | ${KEYED} | STATS events = COUNT(*), ips = COUNT_DISTINCT(client.ip), key_ids = COUNT_DISTINCT(api_key.id) BY api_key.name, user.name | EVAL key_ids = GREATEST(key_ids, 1) | SORT events DESC, api_key.name, user.name | LIMIT 10`,
+      [filterable('api_key.name', { label: 'API key' }), filterable('user.name', { label: 'Key ID (Cloud) / creator', width: 175, min: 165 })], [sized('key_ids', 90, { label: 'Key IDs', min: 72 }), sized('events', 100), sized('ips', 56)],
+      `The busiest API keys of both kinds, one row per key name, with request volume and how many distinct client IPs used it. An Elastic Cloud API key has no name, so its API key cell is empty and the next column holds its full id; for an Elasticsearch API key that column is the identity that created it (often a Cloud API key's id). A re-issued Elasticsearch key keeps its name under a new id, so Key IDs counts the ids a name ran under in range; API key inventory below has one row per id, with owner and first and last use. The API keys tile counts every id and every name in range, so past the ten busiest names the rows here add up to less than it; the rest are in the inventory. A key used from many IPs is worth investigating. Click a cell in either key column to filter to it or open Actor 360; a Cloud API key's id also covers the API keys it created. ${EDGE_NOTE}`),
     // Grouped on the email alone. user.full_name was a second key, but over 7 days it was empty on all
     // but 2 of ~11,600 events for the one SSO user, and on those 2 it held the email again — so it split
     // one person into two rows and otherwise filled a column with "-". The email is the person, and it

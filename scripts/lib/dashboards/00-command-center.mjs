@@ -4,7 +4,7 @@ import {
   resetIds, privilegedKpi, grouped, fitRows, EDGE_NOTE
 } from '../panels.mjs';
 import {
-  legendPanel, ACTOR_KEYS
+  legendPanel, ACTOR_KEYS, PIN_PRINCIPAL, RAW_RECORDS
 } from './shared.mjs';
 import { isDeployed, rawId } from '../suite.mjs';
 
@@ -57,7 +57,7 @@ const INTRO = {
   paragraphs: [
     "This overview shows how much activity there was, who was busiest, which identities carry the most risk, and the latest events as they arrive.",
     "Start here for a routine review or when something looks wrong, then use the links above to go deeper on one person, sign-ins, Kibana objects, data access, security or location.",
-    "**How to use it:** choose a Project, Person (email) or Client IP in the controls to focus every panel, and set the period in the time picker.",
+    `**How to use it:** choose a Project, Person (email), API key or Client IP in the controls to focus every panel, and set the time picker. ${RAW_RECORDS}`,
   ],
 };
 
@@ -133,11 +133,17 @@ export function build() {
      * row. The case it exists for is folded into Identity instead ("alice@x · via key ci-deploy"), so
      * it still reads where it happens and costs no width where it does not. `actor` is computed, so
      * relabelling it loses no click-filter (it never had one).
+     *
+     * Principal id (1.0.5, PIN_PRINCIPAL in shared.mjs) is the click-through: raw user.name, a group key, so a
+     * click pins the principal and offers Open in Actor 360. Only that one of the two pin columns fits 22
+     * columns at 1440px, and only in place of Last seen and Actions: Identity and Principal id each keep the
+     * ~245px the 36-character placeholder `<unauthenticated-cloud-access-token>` needs (both cut it at
+     * 165px, rendered). A named key's row pins its creator; the API key control pins the key itself.
      */
     table(13, 31, 22, TABLE_H, 'Busiest identities',
-      `FROM ${IDX} | ${TIME} | ${NOISE} | ${ACTOR} | STATS events = COUNT(*), actions = COUNT_DISTINCT(event.action), last_seen = MAX(@timestamp) BY actor, api_key.name | EVAL actor = CASE(api_key.name IS NOT NULL AND api_key.name != actor, CONCAT(actor, " · via key ", api_key.name), actor) | SORT events DESC | LIMIT ${fitRows(TABLE_H)}`,
-      ['actor'], [sized('events', COUNT_W, { min: COUNT_W }), sized('actions', COUNT_W, { min: COUNT_W }), 'last_seen'],
-      'The identities generating the most signal traffic, and how varied their behaviour is; the rows sum to Signal events when they all fit, and fewer rows than the bound means every identity with signal is listed (Distinct actors counts the same set). Identity resolves to an email, then an API key name, then a user id. An identity’s treemap tile and its row here can differ by an event or two at the range’s edges, because each panel reads the clock for itself. Elasticsearch stamps an API key’s CREATOR’s email on every event the key emits, so any number of machines authenticating with one key resolve to one person: such a row reads “email · via key name” and is a credential’s traffic, not the person at a keyboard. To follow one person across the suite, pick them in the Person (email) control above.'),
+      `FROM ${IDX} | ${TIME} | ${NOISE} | ${ACTOR} | STATS events = COUNT(*) BY actor, api_key.name, user.name | EVAL actor = CASE(api_key.name IS NOT NULL AND api_key.name != actor, CONCAT(actor, " · via key ", api_key.name), actor) | SORT events DESC | LIMIT ${fitRows(TABLE_H)}`,
+      ['actor', PIN_PRINCIPAL], [sized('events', COUNT_W, { min: COUNT_W })],
+      'The identities generating the most signal traffic; the rows sum to Signal events when they all fit, and fewer rows than the bound means every identity with signal is listed (Distinct actors counts the same set). Identity resolves to an email, then an API key name, then a user id. An identity’s treemap tile and its row here can differ by an event or two at the range’s edges, because each panel reads the clock for itself. Elasticsearch stamps an API key’s CREATOR’s email on every event the key emits, so any number of machines authenticating with one key resolve to one person: such a row reads “email · via key name” and is a credential’s traffic, not the person at a keyboard. To follow one person across the suite, pick them in the Person (email) control above, or click a Principal id to filter to it or open Actor 360; a Cloud API key\'s Principal id also covers the API keys it created, and a named key\'s row pins the identity that created it.'),
     // A bar rather than the donut it replaces: the donut's thin slices carried no label and it had no
     // legend, so the small categories could not be named. Grouping on the multi-valued field counts
     // an event once per category, as MV_EXPAND did, without materialising a row per value.

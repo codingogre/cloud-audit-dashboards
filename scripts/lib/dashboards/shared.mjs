@@ -50,8 +50,49 @@ export const legendPanel = (x, y, w, h) => introMd(x, y, w, h, 'How to read this
   "**Locations use the real client address,** not Elastic's own network hops. *Hover the ⓘ beside a panel title for details.*",
 ]);
 
+/**
+ * The intro sentence that links every dashboard to the raw events (1.0.5): the unfiltered "All audit events"
+ * Discover session and the gated "Raw signal feed". introMd() resolves `@search:` (panels.mjs, discoverUrl).
+ * Short on purpose: it shares a paragraph with other copy, and an intro paragraph stays on one line at
+ * 1440px up to ~220 visible characters (INTRO TEXT).
+ */
+export const RAW_RECORDS = 'Raw records: [All audit events](@search:00-all-events), [Raw signal feed](@search:10-raw-signal-feed).';
+
 /** The raw identity fields ACTOR_RESOLVE reads, for a STATS that has to resolve the actor afterwards. */
 export const ACTOR_KEYS = 'user.email, api_key.name, user.name';
+
+/**
+ * CLICK-THROUGH TO ACTOR 360 FROM AN IDENTITY TABLE (1.0.5). Identity (`actor`) is the ACTOR_RESOLVE
+ * COALESCE, computed in the query, so Lens builds no filter from it (checkClickFilters, layout.mjs) and a
+ * table showing only Identity offered neither a pin nor the Actor 360 drilldown. These tables now also
+ * group on the raw fields behind it and show them as two narrow click-to-filter columns:
+ *
+ *   API key        api_key.name — a named Elasticsearch API key
+ *   Principal id   user.name — the authenticated principal: a Cloud API key's full 20-character id, a
+ *                  service account, a person's numeric id
+ *
+ * Both are STATS BY group keys, never assigned, so the click reaches Lens as the real field and every such
+ * table drills into Actor 360 (hasFilterableColumn, drilldowns.mjs). `actor` is a function of (email, key
+ * name, user name), so the extra keys split a row only where one identity carries two principals.
+ *
+ * A Principal id pin is the principal, not the credential: on a Cloud API key it also matches the events of
+ * every Elasticsearch API key that key minted, because Elasticsearch stamps the creator in user.name (PIN_NOTE
+ * says so in each table's tip). `<anonymous>` has no user.name, so its row has nothing to pin.
+ *
+ * Widths, measured on a 1440px render: the longest principal the stream records is the placeholder
+ * `<unauthenticated-cloud-access-token>` (36 characters, ~241px), so PIN_PRINCIPAL is 250px wide and keeps
+ * 245 at 1440. Where no placeholder can appear — it never signs in, so it changes nothing and reads no index
+ * — PIN_PRINCIPAL_SHORT is enough for a 20-character Cloud key id. Only where a row has room for both does
+ * a table carry API key as well (PIN_COLS): it is mostly empty, and the API key control pins a named key
+ * on any page; without it a named key's row pins the identity that created it (PIN_NOTE_ID).
+ */
+export const PIN_BY = 'api_key.name, user.name';
+export const PIN_KEY = filterable('api_key.name', { label: 'API key', width: 150, min: 120 });
+export const PIN_PRINCIPAL = filterable('user.name', { label: 'Principal id', width: 250, min: 245 });
+export const PIN_PRINCIPAL_SHORT = filterable('user.name', { label: 'Principal id', width: 165, min: 160 });
+export const PIN_COLS = [PIN_KEY, PIN_PRINCIPAL];
+export const PIN_NOTE = 'Click an API key or Principal id to filter to it or open Actor 360; a Cloud API key\'s Principal id also covers the API keys it created.';
+export const PIN_NOTE_ID = 'Click a Principal id to filter to it or open Actor 360; a Cloud API key\'s Principal id also covers the API keys it created, and a named key\'s row pins the identity that created it.';
 
 /**
  * The scoring events, counted before they are scored. RISK is a multi-branch CASE, and a CASE with

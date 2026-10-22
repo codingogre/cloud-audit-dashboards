@@ -17,6 +17,21 @@ conflict. This file is "where we are right now" and should be assumed stale.
   raw events and had failed with *Unknown column [housekeeping]* since round 6; it now computes both keys
   first. `test/unit/esql-expr.mjs` is a small three-valued evaluator so unit tests score events with `RISK`.
 
+- **Navigation and identity.** (a) Identity tables on 00, 02, 03 and 04 group on raw `user.name` (and
+  `api_key.name` where a row has room) and show them as click-to-filter *Principal id* / *API key* columns
+  (`PIN_*` in `shared.mjs`), so each drills into Actor 360; clicked in Playwright on `rc105` (04 leaderboard and
+  01 Busiest API keys → Actor 360 with `user.name: _4KEO…` pinned, Risk 900 = the leaderboard row). Principal id
+  is 250px where the 36-character `<unauthenticated-cloud-access-token>` can appear, 165px elsewhere; only the
+  leaderboard, Config changes and 03's system-index table carry API key too (the rest did not fit 1440px).
+  00 Busiest identities gave up Last seen and Actions; 02 Mutations now wraps; 03 Denied requests has none
+  (`foldRest`). (b) Fourth control **API key** (`api_key.name`), third; all four `small` so they share one
+  row at 1440. (c) Every intro links *All audit events* and *Raw signal feed* (`RAW_RECORDS`, `@search:` resolved
+  by `introMd()` through `nsId()`, relative); clicked through to Discover. 02's intro is h=6 now (measured 25px
+  under the text, like the rest). (d) 01 Busiest API keys groups raw: API key + *Key ID (Cloud) / creator* (full
+  id), Kind dropped; 07 *Who this is* groups by email and principal id (placeholders left out), % of Events and
+  Own API keys dropped for width. Rendered 24h at 1920 dark and 1440 light: no clipping in the changed tables.
+  Not done: the optional treemap click-to-pin (vega/01).
+
 ## Release 1.0.4 — ECS field names, null-safe API key fields, Default space, 2026-10-22
 
 Product management's feedback on 1.0.3, plus two requests from the human.

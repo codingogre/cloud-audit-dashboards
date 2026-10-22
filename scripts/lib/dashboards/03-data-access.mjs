@@ -6,6 +6,7 @@ import {
   IDX, ACTOR_RESOLVE, TIME, BUCKET, ESS, INDEX_FAMILY, CONCRETE, SYS_INDEX, cloudKeyLabel, EDGE_NOTE, dash, kpi, xy, table, vega, search, sized, fitRows, resetIds
 } from '../panels.mjs';
 import { rawId } from '../suite.mjs';
+import { PIN_BY, PIN_KEY, PIN_PRINCIPAL_SHORT, PIN_NOTE, RAW_RECORDS } from './shared.mjs';
 
 /**
  * Transport fan-out, dropped AFTER aggregation so it costs nothing: shard/node copies (`…[s]`, `[n]`,
@@ -159,9 +160,9 @@ const INTRO = {
   h: 6,
   heading: "What data was read or written in Elasticsearch, and by whom",
   paragraphs: [
-    "See which indices each identity uses, the kinds of requests they made, any denied requests, and every touch of system or hidden indices.",
+    `See which indices each identity uses, the kinds of requests they made, any denied requests, and every touch of system or hidden indices. ${RAW_RECORDS}`,
     "Related indices are grouped into one family, so a data stream and its daily backing indices read as a single row. Use it to confirm that sensitive data is reached only by the people and keys you expect.",
-    "**How to use it:** choose a Project, Person (email) or Client IP in the controls and set the time picker. Empty denied and system-index panels usually mean all is well.",
+    "**How to use it:** choose a Project, Person (email), API key or Client IP in the controls and set the time picker. Empty denied and system-index panels usually mean all is well.",
   ],
 };
 
@@ -221,6 +222,8 @@ export function build() {
     // carried as one sortable string (ISO time first), so they belong to the same event as Last seen.
     // foldRest() folds every identity past the ninth newest into one last row, so the rows add up to
     // the Access denied tile at any count (round 4: ten of fifteen identities summed to 842 of 853).
+    // No API key / Principal id click columns here (PIN_COLS, shared.mjs): the folded row would need its raw
+    // keys nulled, and a column the query assigns cannot be clicked. The fold wins; the table below has them.
     table(0, 49, 48, 12, 'Denied requests by identity',
       `FROM ${IDX} | ${TIME} | WHERE event.action == "access_denied" OR event.action == "anonymous_access_denied" | STATS events = COUNT(*), seen = MAX(@timestamp) BY user.email, api_key.name, user.name, elasticsearch.audit.action, elasticsearch.audit.indices | ${ACTOR_RESOLVE}, k = CONCAT(TO_STRING(seen), "|", COALESCE(elasticsearch.audit.action, "—"), "|", COALESCE(elasticsearch.audit.indices, "—")) | STATS events = SUM(events), last_seen = MAX(seen), latest = MAX(k), actions = VALUES(elasticsearch.audit.action), indices = VALUES(elasticsearch.audit.indices) BY actor | ${foldRest(fitRows(12))} | EVAL latest_action = MV_SLICE(SPLIT(latest, "|"), 1), latest_index = MV_SLICE(SPLIT(latest, "|"), 2), actions = COALESCE(MV_COUNT(actions), 0), indices = COALESCE(MV_COUNT(indices), 0) | KEEP actor, latest_action, latest_index, actions, indices, events, last_seen | SORT last_seen DESC | LIMIT ${fitRows(12)}`,
       ['actor', { column: 'latest_action', label: 'Latest denied action' }, { column: 'latest_index', label: 'On index' }], [{ column: 'actions', label: 'Actions' }, 'indices', { column: 'events', label: 'Denials' }, 'last_seen'],
@@ -231,9 +234,9 @@ export function build() {
     // identity out of view, so the newest-first sort hid the one-off reads it exists to surface.
     // FAMILY runs on the grouped rows (identity × index × action), never per event.
     table(0, 61, 48, 10, '⚠️ Who touched system and hidden indices',
-      `FROM ${IDX} | ${TIME} | WHERE elasticsearch.audit.indices IS NOT NULL | MV_EXPAND elasticsearch.audit.indices | ${SYS_INDEX} | STATS n = COUNT(*), seen = MAX(@timestamp) BY user.email, api_key.name, user.name, elasticsearch.audit.indices, elasticsearch.audit.action | ${ACTOR_RESOLVE}, area = ${SYS_AREA} | ${FAMILY} | STATS events = SUM(n), indices = COUNT_DISTINCT(elasticsearch.audit.indices), groups = VALUES(area), kinds = VALUES(family), last_seen = MAX(seen) BY actor | EVAL groups = MV_CONCAT(MV_SORT(groups), ", "), kinds = MV_CONCAT(MV_SORT(kinds), ", ") | KEEP actor, groups, kinds, indices, events, last_seen | SORT last_seen DESC | LIMIT 25`,
-      ['actor', { column: 'groups', label: 'Index groups' }, sized('kinds', 240, { label: 'Kind of access' })], ['indices', 'events', 'last_seen'],
-      'Who touched system and hidden indices — Kibana internals, the security index, alerting and SLO data — one row per identity, newest first: the index groups it touched (.alerts*, .slo*, .kibana*…), the kinds of transport action (read, write, index admin, monitor…), how many real indices, and its requests in range, which add up to the System index access tile when every identity is in view. The Discover session below names each index and action. Backing indices of ordinary data streams (.ds-logs-…) and shard-level copies of a request are left out. Expected from Kibana and platform automation; unexpected from anyone else, and a write from anyone else is worth a look. An identity that touched many groups wraps onto a second line rather than cutting the list short.',
+      `FROM ${IDX} | ${TIME} | WHERE elasticsearch.audit.indices IS NOT NULL | MV_EXPAND elasticsearch.audit.indices | ${SYS_INDEX} | STATS n = COUNT(*), seen = MAX(@timestamp) BY user.email, api_key.name, user.name, elasticsearch.audit.indices, elasticsearch.audit.action | ${ACTOR_RESOLVE}, area = ${SYS_AREA} | ${FAMILY} | STATS events = SUM(n), indices = COUNT_DISTINCT(elasticsearch.audit.indices), groups = VALUES(area), kinds = VALUES(family), last_seen = MAX(seen) BY actor, ${PIN_BY} | EVAL groups = MV_CONCAT(MV_SORT(groups), ", "), kinds = MV_CONCAT(MV_SORT(kinds), ", ") | KEEP actor, api_key.name, user.name, groups, kinds, indices, events, last_seen | SORT last_seen DESC | LIMIT 25`,
+      ['actor', PIN_KEY, PIN_PRINCIPAL_SHORT, { column: 'groups', label: 'Index groups' }, sized('kinds', 240, { label: 'Kind of access' })], ['indices', 'events', 'last_seen'],
+      'Who touched system and hidden indices — Kibana internals, the security index, alerting and SLO data — one row per identity, newest first: the index groups it touched (.alerts*, .slo*, .kibana*…), the kinds of transport action (read, write, index admin, monitor…), how many real indices, and its requests in range, which add up to the System index access tile when every identity is in view. The Discover session below names each index and action. Backing indices of ordinary data streams (.ds-logs-…) and shard-level copies of a request are left out. Expected from Kibana and platform automation; unexpected from anyone else, and a write from anyone else is worth a look. An identity that touched many groups wraps onto a second line rather than cutting the list short. ' + PIN_NOTE,
       { empty: 'quiet', wrap: true }),
     search(0, 71, 48, 12, '05-system-index-access', 'Raw system index requests · newest 1,000 at most',
       'The raw events behind the table above: the newest 1,000 requests against a system or hidden index, one row per index named, newest first — so a single request that names ten alert indices is ten rows with one timestamp here, and one .alerts* entry in the table above. It stops at 1,000, so it can hold fewer rows than the System index access tile counts — the "1,000 results" above the grid is that cap, not the total.',

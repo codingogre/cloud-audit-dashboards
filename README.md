@@ -157,16 +157,18 @@ reloads the panel and drops the filter (clicked in Playwright: the pill never ap
 the reload the filter itself causes has already replaced the view and the zoom is lost. Double-clicking
 the flow clears every pill on the page.
 
-**The control bar** — three option-list dropdowns on every dashboard, defined in
-`scripts/lib/controls.mjs`:
+**The control bar** — four option-list dropdowns on every dashboard, defined in
+`scripts/lib/controls.mjs` (width `small` with grow, so the four share one row at 1440px and at 1920px):
 
 | Control | Field | Why |
 |---|---|---|
 | Project | `project.name` | The serverless project that **emitted** the event. An audit project usually collects the audit streams of several projects; this narrows the whole dashboard — and, through hierarchical chaining, every dropdown after it — to one of them. Populated on every Elasticsearch and Kibana event. Names are not unique in Elastic Cloud, so projects that share a name share an option. **Actor 360's cohort rank follows Project and nothing else:** it ranks against everyone active in the projects the selection is active in, so a Person or Client IP selection highlights that identity instead of shrinking the cohort to one. Exact across all projects or within one; across several (not all) it sums events and takes each distinct count's per-project maximum, and its title says *approximate*. |
 | Person (email) | `user.email` | The identity control: the reliable identity key, never null for a human. |
+| API key | `api_key.name` | A named Elasticsearch API key. A Cloud API key has no name, so it is not listed: pin one from a *Principal id* cell instead (below). After Person in the chain, so choosing a person narrows it to keys whose events carry that email, which is usually none. A runtime "identity" field was tried instead and rejected: its pill is a filter on a field the index does not have, and every ES\|QL panel went empty. On a project where no API key has been used yet the field is unmapped and the list is simply empty. |
 | Client IP | `client.ip` | Can hold more distinct addresses than anyone could eyeball, which is the point of a searchable dropdown. |
 
-`user.name` is deliberately not offered — it is a numeric id, not a name. Nor is
+`user.name` is deliberately not offered as a dropdown — it is a numeric id, not a name; it is reachable
+from the *Principal id* click columns instead. Nor is
 `user.full_name` (a *Person (name)* control until 1.0.2): it is null for some identities,
 so a name dropdown silently missed people the email dropdown finds.
 
@@ -193,6 +195,26 @@ The older click-to-filter path still exists and needs neither:
   the 9.6 `esql` expression function compiles dashboard pills through `buildEsQuery` into the ES
   `filter` parameter;
 - the nav bar's `dashboardLink`s carry `use_filters: true`.
+
+**Identity tables click through to Actor 360** (1.0.5). An identity table shows *Identity*, the computed
+`actor`, which cannot be clicked. Beside it, the tables on 00, 02, 03 and 04 carry the raw fields behind it as
+STATS BY group keys and show them as narrow click-to-filter columns (`PIN_BY`, `PIN_KEY`, `PIN_PRINCIPAL` in
+`scripts/lib/dashboards/shared.mjs`): **Principal id** (`user.name`: a Cloud API key's full id, a service
+account, a person's numeric id) everywhere, and **API key** (`api_key.name`) where a row has room for both
+(04's *Risk leaderboard* and *Config changes*, 03's system-index table). A click pins the field and offers
+*Open in Actor 360*; verified in Playwright on a private deploy (04 leaderboard and 01 Busiest API keys →
+Actor 360 with `user.name: <id>` pinned, every panel narrowed). Two things to know, both in the tooltips:
+- A Principal id pin is the principal, not the credential. On a Cloud API key it also matches every
+  Elasticsearch API key that key created, because Elasticsearch stamps the creator in `user.name`; a named
+  key's row, where there is no API key column, pins the identity that created it. The API key control pins
+  the key itself.
+- *Principal id* is 250px where `<unauthenticated-cloud-access-token>` (36 characters) can appear, and 165px
+  where it cannot (it never signs in, so it changes nothing and reads no index). 00's *Busiest identities*
+  gave Last seen and Actions to it.
+03's *Denied requests by identity* has none: its last row folds the rest (`foldRest`), and nulling the raw
+keys there would mean assigning them. 07's *Who this is* groups by email **and** principal id, so it is not
+empty under a key or Cloud-key pill. The extra group keys split a row only where one identity carries two
+principals, so a table can hold a row more than the distinct count beside it.
 
 So clicking an identity pins it, and it stays pinned across every dashboard. Verified at the
 data layer: a `match_phrase` filter on `user.email` and a native ES|QL `WHERE` return
@@ -336,7 +358,8 @@ in shared code rather than at call sites.
 - *Opaque identities — one form.* An Identity that resolves to a 20-character id is an organisation-level
   Elastic Cloud API key: the stream records no name and no owner for it. It is shown the same way
   everywhere an identity is shown — **`_4KEO… · Cloud API key`** (first five characters, then the tag) —
-  by `ACTOR_LABEL` in `panels.mjs`: `table()` appends it to every table showing `actor` (after the LIMIT,
+  by `ACTOR_LABEL` in `panels.mjs` (the full id is in every *Principal id* column, in 01's *Busiest API keys*
+under *Key ID (Cloud) / creator*, and in API key inventory): `table()` appends it to every table showing `actor` (after the LIMIT,
   so after the last `STATS BY actor`), and every Discover session and Vega spec that shows an identity
   embeds it verbatim (pinned by the drift check). A key-name or owner column that would print `-`,
   `0` or `(no name)` for such a key uses `cloudKeyLabel(col, otherwise)` instead (API key inventory). The
@@ -423,9 +446,14 @@ heading in the panel with no trailing period and no panel title, then one source
 HTML. They are PUT as plain markdown, which is what `dashboards/*.json` shows, and the post-pass replaces
 each with a by-value legacy markdown visualization at `INTRO_PT` (9pt: 12px text on an 18px line, 14px
 between paragraphs). Size `h` by rendering at 1920 and at 1440 (`AUDIT_VERIFY_WIDTH=1440`): a 48-column
-intro with three one-line paragraphs is ~151px, so h=6; a paragraph that wraps at 1440 (over ~205
+intro with three one-line paragraphs is ~151px, so h=6; a paragraph that wraps at 1440 (over ~220
 characters) adds 18px. Too short shows a scrollbar, too tall a blank band, and no check sees either.
 Technical detail (field names, exceptions) goes in the panel tooltips, not in an intro.
+Every intro (and so every dashboard) links to the raw events with `RAW_RECORDS` (`shared.mjs`): *"Raw records:
+All audit events, Raw signal feed"*, written `[words](@search:<ref>)` and resolved by `introMd()` to the
+relative `/app/discover#/view/<id>` through `nsId()`, so a private deploy links to its own sessions and no
+Kibana URL is committed. Clicking it opens the Discover session (verified). The nav strip stays dashboards
+only: a Links-panel `externalLink` carries neither the pills nor the time range.
 
 **Discover sessions — `searches/*.json`.** End the ES\|QL with `| RENAME field AS Header, …` after
 every drift-checked fragment, list the new names in `columns` and `sort`, and put `@timestamp` first

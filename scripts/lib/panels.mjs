@@ -49,7 +49,7 @@
  *      queries; that was the multi-condition CASE of rule 1.)
  */
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { cfg, nsId, ROOT } from './env.mjs';
 import { deployed } from './suite.mjs';
@@ -1454,20 +1454,36 @@ export const md = (x, y, w, h, content, { title, description } = {}) => {
  * renderer escapes HTML, so an intro carries none.
  *
  * HEIGHT is measured, not estimated: a 48-column intro at fontSize 9 is ~151px for a 37px heading and three
- * one-line paragraphs, so h=6 (160px) holds it at 1920 and at 1440 (a paragraph stays on one line up to ~205
- * characters at 1440). A paragraph that wraps at 1440 costs 18px: 02 needs h=7 (169px), and 07, two
- * paragraphs with one that wraps, h=6 (137px). Probe with `AUDIT_VERIFY_WIDTH=1440` after any copy change:
+ * one-line paragraphs, so h=6 (160px) holds it at 1920 and at 1440 (a paragraph stays on one line up to ~220
+ * visible characters at 1440: 02's 215- and 220-character paragraphs did, measured in 1.0.5, with 25px left
+ * under the text as on every other intro). A paragraph that wraps at 1440 costs 18px; 07, two paragraphs with
+ * one that wraps, is h=6 (137px). A link's URL does not count, only its words. Probe with `AUDIT_VERIFY_WIDTH=1440` after any copy change:
  * a panel that is too short shows a scrollbar, and the layout check cannot see it.
  *
  * `headed: true` is an in-memory annotation: the layout check allows the heading there and nowhere else,
  * the post-pass finds the panel by it, and the API payload strips it.
  */
 export const INTRO_PT = 9;
+/**
+ * LINKS TO A DISCOVER SESSION (1.0.5). An intro may link to one of the suite's own Discover sessions as
+ * `[words](@search:<ref>)`, `<ref>` a searches/*.json name. introMd() turns it into the relative link
+ * `/app/discover#/view/<id>` at build time, with the id through nsId(), so a private deploy
+ * (AUDIT_ID_NS) links to its own copy and production to production. Relative, so no Kibana URL is written
+ * into dashboards/*.json; the suite installs into the Default space, so no /s/<space> prefix is needed.
+ * The legacy markdown visualization renders links (openLinksInNewTab: false keeps Kibana's own tab). An
+ * `externalLink` on the nav strip was the alternative: it carries neither the pills nor the time range, the
+ * serverless schema for it could not be read, and the strip would wrap at 1440px.
+ */
+export const discoverUrl = (ref) => {
+  if (!existsSync(join(ROOT, 'searches', `${ref}.json`))) throw new Error(`@search:${ref}: no searches/${ref}.json`);
+  return `/app/discover#/view/${nsId(`cloud-audit-search-${ref}`)}`;
+};
+const searchLinks = (text) => text.replace(/\]\(@search:([\w-]+)\)/g, (_, ref) => `](${discoverUrl(ref)})`);
 export const introMd = (x, y, w, h, heading, paragraphs) => {
   if (/[.\n]$/.test(heading) || /^#/.test(heading)) throw new Error(`intro heading "${heading}": plain words, no trailing period`);
   if (paragraphs.some((p) => p.includes('\n'))) throw new Error(`intro "${heading}": one source line per paragraph`);
   if (paragraphs.some((p) => /<[a-z/]/i.test(p))) throw new Error(`intro "${heading}": no HTML (the legacy renderer escapes it)`);
-  const content = `### ${heading}\n\n${paragraphs.join('\n\n')}\n`;
+  const content = `### ${heading}\n\n${paragraphs.map(searchLinks).join('\n\n')}\n`;
   return { type: 'markdown', id: nid('md'), grid: { x, y, w, h }, headed: true, config: { content } };
 };
 

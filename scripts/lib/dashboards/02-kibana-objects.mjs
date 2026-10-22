@@ -5,7 +5,7 @@ import {
 } from '../panels.mjs';
 import { rawId } from '../suite.mjs';
 import {
-  CHANGED, CHANGED_KEYS, CHANGED_DERIVE, specDescription
+  CHANGED, CHANGED_KEYS, CHANGED_DERIVE, specDescription, PIN_PRINCIPAL_SHORT, RAW_RECORDS
 } from './shared.mjs';
 
 /**
@@ -110,12 +110,12 @@ const SERIES_ORDER = 'SORT verb != "create", verb != "update", verb != "delete"'
 
 /** The intro (draft 4 of the 1.0.3 customer copy; INTRO TEXT in panels.mjs). */
 const INTRO = {
-  h: 7,
+  h: 6,
   heading: "Every change to your Kibana content, and who made it",
   paragraphs: [
-    "Dashboards, visualizations, data views, alert rules, SLOs, workflows and other saved objects: what was created, edited, deleted or opened, in which space, and by whom.",
+    `Dashboards, visualizations, data views, alert rules, SLOs, workflows and other saved objects: what was created, edited, deleted or opened, in which space, and by whom. ${RAW_RECORDS}`,
     "Use it to answer questions such as \"Who deleted that dashboard?\" or \"What changed before the alert stopped firing?\" Panels marked *noise gate applied* skip these audit dashboards' own activity, so you see your team's work.",
-    "**How to use it:** choose a Project, Person (email) or Client IP in the controls and set the time picker. The session view at the bottom replays one browser session step by step. Click a session bar or a session ID to see exactly what happened in that browser session.",
+    "**How to use it:** choose a Project, Person (email), API key or Client IP in the controls and set the time picker. At the bottom, click a session bar or a session ID to replay that browser session step by step.",
   ],
 };
 
@@ -136,12 +136,14 @@ export function build() {
     // result, over the whole range — so "the 30 most recent state changes" over a row reading Events 17
     // promised 30 changes and showed up to 30 × 17 (round-5 review). The title says it is grouped.
     table(0, 5, 48, 14, '⚠️ Mutations — most recent Kibana state changes, repeats grouped into one row',
-      `FROM ${IDX} | ${TIME} | ${CHANGED} | ${EXEC_FLAG} | ${ACTOR} | STATS n = COUNT(*), last_ts = MAX(@timestamp) BY actor, ${CHANGED_KEYS}, obj_name, space = kibana.space.id, result, is_exec | ${CHANGED_DERIVE} | STATS events = SUM(n), last_change = MAX(last_ts) BY actor, verb, type = obj_type, name = obj_name, space, result, is_exec | SORT last_change DESC | LIMIT 30 | ${EXEC_LABEL} | ${objLabel('name', 'type')}`,
-      [sized('actor', 260), 'verb', sized('type', 200, { label: 'Object type' }), sized('name', 430, { label: 'Object' }),
+      `FROM ${IDX} | ${TIME} | ${CHANGED} | ${EXEC_FLAG} | ${ACTOR} | STATS n = COUNT(*), last_ts = MAX(@timestamp) BY actor, user.name, ${CHANGED_KEYS}, obj_name, space = kibana.space.id, result, is_exec | ${CHANGED_DERIVE} | STATS events = SUM(n), last_change = MAX(last_ts) BY actor, user.name, verb, type = obj_type, name = obj_name, space, result, is_exec | SORT last_change DESC | LIMIT 30 | ${EXEC_LABEL} | ${objLabel('name', 'type')}`,
+      [sized('actor', 230), PIN_PRINCIPAL_SHORT, 'verb', sized('type', 160, { label: 'Object type' }), sized('name', 430, { label: 'Object' }),
         'space', 'result'], ['events', 'last_change'],
-      'The single most important panel in the suite: state changes in Kibana, with who did it, what it was called, and which space it lives in. Each row groups the same change made again: one identity, one operation, one object, one space and one result over the whole time range. Events is how many times that happened and Last change is the newest of them, so a row reading Events 17 is seventeen changes, and the Mutations tile counts each one. The table holds the 30 groups changed most recently; every change in range is in "All mutations" on Security & Anomalies, and the "Kibana saved-object activity" session further down this page lists reads and changes together. Two columns to read carefully. Object type and Object are the real saved-object fields where Kibana records them and are otherwise recovered from the event message, because workflows, ML jobs and agent-builder objects carry no saved_object fields. A workflow cancel, or a test of an unsaved draft, names only its run, so it reads "execution" and the run id\'s first 8 characters. Result is "attempted" where Kibana logged the attempt rather than the outcome — that is how the saved-object path records things, so it is normal, and a "failure" here is a change that was denied.',
+      'The single most important panel in the suite: state changes in Kibana, with who did it, what it was called, and which space it lives in. Each row groups the same change made again: one identity, one operation, one object, one space and one result over the whole time range. Events is how many times that happened and Last change is the newest of them, so a row reading Events 17 is seventeen changes, and the Mutations tile counts each one. The table holds the 30 groups changed most recently; every change in range is in "All mutations" on Security & Anomalies, and the "Kibana saved-object activity" session further down this page lists reads and changes together. Two columns to read carefully. Object type and Object are the real saved-object fields where Kibana records them and are otherwise recovered from the event message, because workflows, ML jobs and agent-builder objects carry no saved_object fields. A workflow cancel, or a test of an unsaved draft, names only its run, so it reads "execution" and the run id\'s first 8 characters. Result is "attempted" where Kibana logged the attempt rather than the outcome — that is how the saved-object path records things, so it is normal, and a "failure" here is a change that was denied. Click a Principal id to filter to it or open Actor 360; a Cloud API key\'s Principal id also covers the API keys it created.',
       // Thirty is the bound the title states ("30 at most"), so the LIMIT stays above the 13 rows the panel shows.
-      { scroll: true }),
+      // Wrapped since 1.0.5: Principal id (raw user.name, the click-through to Actor 360) took 165px, and at a
+      // 1440px viewport Object would otherwise be hard-cut at ~150px; at 1920 rows stay on one line.
+      { wrap: true }),
     vega(0, 19, 24, 13, '03-object-verb-heatmap', 'Object type × operation',
       'Saved-object type against operation, writes first; all Kibana traffic, reads included. Cell colour is the event count on a log scale, running teal (fewest) through blue and purple to pink (most); the legend spans exactly the counts drawn and labels both its ends. Every cell has an outline, so a single create, update or delete stays visible beside thousands of reads: the write columns are the forensic signal. An operation outside these words keeps Kibana\'s own, between the changes and the reads: "remove refs" (saved_object_remove_references) is a tag being unlinked from the objects it labelled, and it is one of the "other change" bars beside; "no action" is an event Kibana recorded without one (a Fleet policy deploy). Past 13 object types the rest share one "N more types" row at the bottom; types with any write rank first, so a rare change is never the one folded away. Hover a cell for its count and how many distinct objects it covers.'),
     xy(24, 19, 24, 13, 'Kibana state changes over time · reads in the heatmap',

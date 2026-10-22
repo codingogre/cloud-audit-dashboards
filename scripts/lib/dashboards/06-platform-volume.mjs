@@ -4,6 +4,7 @@ import {
   dash, kpi, xy, table, vega, filterable, resetIds, cloudKeyLabel, isCloudKeyId, grouped
 } from '../panels.mjs';
 import { rawId } from '../suite.mjs';
+import { RAW_RECORDS } from './shared.mjs';
 
 /**
  * SIGNAL VS NOISE OVER TIME is one full-Vega panel (vega/07), not a Vega stream above a Lens share chart.
@@ -93,9 +94,9 @@ const INTRO = {
   h: 6,
   heading: 'All audit traffic, with nothing left out',
   paragraphs: [
-    'The other dashboards hide routine background traffic so the meaningful events stand out. This page counts everything, split into four groups that add up to the total.',
+    `The other dashboards hide routine traffic so the meaningful events stand out. This page counts everything, in four groups that add up to the total. ${RAW_RECORDS}`,
     "**Signal** is what the other dashboards show. **Auth success** is logged once for every authenticated request. **Query internals** are the background steps behind searches and page loads. **Infra health** is Elastic's own monitoring.",
-    'Use it to understand audit volume and to see how busy each API key is. **How to use it:** choose a Project, Person (email) or Client IP in the controls and set the time picker.',
+    'Use it to understand audit volume and to see how busy each API key is. **How to use it:** choose a Project, Person (email), API key or Client IP in the controls and set the time picker.',
   ],
 };
 

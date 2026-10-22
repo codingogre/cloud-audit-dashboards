@@ -5,7 +5,7 @@ import {
 } from '../panels.mjs';
 import { rawId } from '../suite.mjs';
 import {
-  ACTOR_KEYS, riskScored
+  ACTOR_KEYS, riskScored, PIN_BY, PIN_COLS, PIN_KEY, PIN_PRINCIPAL, PIN_PRINCIPAL_SHORT, PIN_NOTE, PIN_NOTE_ID, RAW_RECORDS
 } from './shared.mjs';
 
 /**
@@ -78,10 +78,9 @@ const CLEANUP_NOTE = `${CLEANUP}; the second line says how many such events the 
  * No Email column on this page's identity tables. On every render (1h and 24h) it held only dashes:
  * the identities that score are API keys, service accounts and unauthenticated principals, and
  * Identity already IS the email for a person. The README rule for a click-to-filter column of dashes
- * applies (drop it). The cost is the click-to-pin and the Actor 360 drilldown from these tables;
- * the Person (email) control pins a person on this page and carries to Actor 360.
+ * applies (drop it). The click-to-pin and the Actor 360 drilldown come from the API key and Principal id
+ * columns instead (PIN_COLS, shared.mjs, 1.0.5), which are filled for exactly those identities.
  */
-const PIN_HINT = 'To follow one person, pick them in the Person (email) control; the pin carries to Actor 360.';
 
 /**
  * ROW READING on the full-width identity tables. Lens gives any column without a width all the slack,
@@ -95,6 +94,14 @@ const PIN_HINT = 'To follow one person, pick them in the Person (email) control;
  */
 const IDENTITY_W = 300;
 const ACTION_W = 290;
+/**
+ * 1.0.5: the API key and Principal id click columns (PIN_COLS) take ~315px of these rows, so table() shrinks
+ * the fixed columns at a 1440px viewport (fitWidths) — and Lens widths are absolute, so 1920 gets the same.
+ * Identity keeps 245px there (`<unauthenticated-cloud-access-token>`, 36 characters, needs ~241px) and an
+ * action name 185px (`realm_authentication_failed`, `saved_object_create (failed)`).
+ */
+const WHO_COL = sized('actor', IDENTITY_W, { min: 245 });
+const WHAT_COL = sized('action', ACTION_W, { min: 185 });
 const SCOPE_LAST = { column: 'actor_scope', width: undefined, alignment: 'left' };
 
 /**
@@ -118,9 +125,9 @@ const INTRO = {
   h: 6,
   heading: "The activity most worth a second look",
   paragraphs: [
-    "Each sensitive action earns a risk weight, from 10 for a workflow run up to 50 for a security setting change, while routine work scores zero.",
+    `Each sensitive action earns a risk weight, from 10 for a workflow run up to 50 for a security setting change, while routine work scores zero. ${RAW_RECORDS}`,
     "Panels rank identities by that risk, show newly seen identities, and list every security configuration change. Elastic's own routine API key clean-up is counted separately, so it never hides real changes.",
-    "**How to use it:** choose a Project, Person (email) or Client IP in the controls and set the time picker. Hover the ⓘ beside a panel title to see how it is scored.",
+    "**How to use it:** choose a Project, Person (email), API key or Client IP in the controls and set the time picker. Hover the ⓘ beside a panel title to see how it is scored.",
   ],
 };
 
@@ -154,10 +161,10 @@ export function build() {
     // hard-clipped mid-glyph. The payload stays whole in the event feed at the foot of the page; here
     // it is reduced to what it names. Full width so that name is never the column that clips.
     table(0, 5, 48, 7, `🚨 Config changes · up to ${fitRows(7)} identity–action pairs, latest first`,
-      `FROM ${IDX} | ${TIME} | ${PRIVILEGED} | ${TARGET} | ${ACTOR_RESOLVE} | STATS events = COUNT(*), targets = COUNT_DISTINCT(SPLIT(target, ",")), latest = LAST(target, @timestamp), last_change = MAX(@timestamp) BY actor, action = event.action | SORT last_change DESC | ${SCOPE} | ${TARGET_SHOW} | LIMIT ${fitRows(7)}`,
-      [sized('actor', 220), 'actor_scope', sized('action', 190), { column: 'latest', label: 'Latest target' }],
+      `FROM ${IDX} | ${TIME} | ${PRIVILEGED} | ${TARGET} | ${ACTOR_RESOLVE} | STATS events = COUNT(*), targets = COUNT_DISTINCT(SPLIT(target, ",")), latest = LAST(target, @timestamp), last_change = MAX(@timestamp) BY actor, ${PIN_BY}, action = event.action | SORT last_change DESC | ${SCOPE} | ${TARGET_SHOW} | LIMIT ${fitRows(7)}`,
+      [sized('actor', 220, { min: 200 }), PIN_KEY, PIN_PRINCIPAL_SHORT, 'actor_scope', sized('action', 190, { min: 145 }), { column: 'latest', label: 'Latest target' }],
       [sized('targets', 90, { label: 'Targets' }), 'events', 'last_change'],
-      `Security configuration changes grouped by identity and action, the most recently active first; in a busy range the quieter pairs are beyond the rows shown, so Events here add up to the Config changes tile only when every pair fits. ${CLEANUP}. Latest target is what the newest of those changes named (the API key, the key ids of an invalidation, the role, or the user profile), and Targets counts the different ones named across all of them: hundreds of invalidations over hundreds of keys is rotation, hundreds over one key is a loop. A profile activation names no target (it is the signed-in user's own profile), so it reads "(none named in the payload)" and 0. A key named "TaskManager: … - <id>" is one Kibana created to run a task on that identity's behalf: the id at its end is its owner's, not a name for it. The full JSON payload of every change is in the Config-change event feed at the foot of the page.`,
+      `Security configuration changes grouped by identity and action, the most recently active first; in a busy range the quieter pairs are beyond the rows shown, so Events here add up to the Config changes tile only when every pair fits. ${CLEANUP}. Latest target is what the newest of those changes named (the API key, the key ids of an invalidation, the role, or the user profile), and Targets counts the different ones named across all of them: hundreds of invalidations over hundreds of keys is rotation, hundreds over one key is a loop. A profile activation names no target (it is the signed-in user's own profile), so it reads "(none named in the payload)" and 0. A key named "TaskManager: … - <id>" is one Kibana created to run a task on that identity's behalf: the id at its end is its owner's, not a name for it. The full JSON payload of every change is in the Config-change event feed at the foot of the page. ${PIN_NOTE}`,
       { empty: 'good' }),
     vega(0, 12, 24, 13, '05-rare-event-scatter', 'Highest-severity actions, by how rare',
       'The highest-severity scoring actions in range, one row per action and weight, placed by how often each happened: rarer is further left, so the top-left is rare and high-severity — look there first. Shows the top 12 by severity, rarest first within a weight; the subtitle says how many actions scored in all. On a quiet range the top 12 reach down to routine Kibana changes (weight 25), which can be frequent: rare is a position on this chart, not a filter. Each row ends with its severity weight, which the colour repeats: one colour per weight, blue for 10 up to deep red for 50, keyed below the chart (the key lists only the weights the chart shows). A failed action gets its own row, marked (failed) unless its name already says so, as in Why these identities scored; a failed Kibana change scores 40 whatever it changed. Hover a point for how many identities did it and when. Routine activity scores 0 and is not shown. Kibana\'s own API-key clean-up scores 0, as it is left out of the Key invalidations tile, so invalidate_apikeys here counts the same invalidations that tile does (with a failed one, if any, on its own (failed) row).'),
@@ -175,24 +182,24 @@ export function build() {
     // The LIMIT stays last so table() can lower it to the rows the panel shows (it only matches a
     // trailing LIMIT); the EVALs between it and the SORT are per-row and do not stop the top-N.
     table(0, 25, 48, TH, 'Identities by first appearance in range',
-      `FROM ${IDX} | ${TIME} | ${NOISE} | ${ACTOR_RESOLVE} | STATS first_seen = MIN(@timestamp), last_seen = MAX(@timestamp), events = COUNT(*), ips = COUNT_DISTINCT(client.ip) BY actor | SORT first_seen DESC, actor | ${SCOPE} | ${NEW_IN_RANGE} | LIMIT ${fitRows(TH)}`,
-      [sized('actor', IDENTITY_W), sized('new_in_range', 70, { label: 'New' })], ['first_seen', 'last_seen', 'events', { column: 'ips', label: 'Client IPs' }, SCOPE_LAST],
-      'Identities ordered by their first event inside the selected range, latest first, from signal events only (query internals are left out, as on every gated panel). First seen is within the range, not ever: an identity that was already active when the range opened also shows a first-seen near its start. New reads "no" for those (first seen in the opening twelfth of the range) and "yes" otherwise; on a project whose audit history is shorter than the range, every identity reads "yes". A "yes" near the top is an identity worth a question; widen the range to tell a new identity from a returning one. Client IPs is 0 for an identity none of whose events recorded a client address: the Kibana service account and platform automation, which call from inside the platform, and a sign-in rejected before its caller was identified — <unauthenticated-cloud-api-key> events carry only the platform proxy\'s address, so they have no client address to count.'),
+      `FROM ${IDX} | ${TIME} | ${NOISE} | STATS first_seen = MIN(@timestamp), last_seen = MAX(@timestamp), events = COUNT(*), ips = COUNT_DISTINCT(client.ip) BY user.email, ${PIN_BY} | ${ACTOR_RESOLVE} | SORT first_seen DESC, actor | ${SCOPE} | ${NEW_IN_RANGE} | LIMIT ${fitRows(TH)}`,
+      [WHO_COL, PIN_PRINCIPAL, sized('new_in_range', 70, { label: 'New' })], ['first_seen', 'last_seen', 'events', { column: 'ips', label: 'Client IPs' }, SCOPE_LAST],
+      `Identities ordered by their first event inside the selected range, latest first, from signal events only (query internals are left out, as on every gated panel). First seen is within the range, not ever: an identity that was already active when the range opened also shows a first-seen near its start. New reads "no" for those (first seen in the opening twelfth of the range) and "yes" otherwise; on a project whose audit history is shorter than the range, every identity reads "yes". A "yes" near the top is an identity worth a question; widen the range to tell a new identity from a returning one. Client IPs is 0 for an identity none of whose events recorded a client address: the Kibana service account and platform automation, which call from inside the platform, and a sign-in rejected before its caller was identified — <unauthenticated-cloud-api-key> events carry only the platform proxy\'s address, so they have no client address to count. ${PIN_NOTE_ID}`),
     // Full width because Identity is free text: at half width a 36-character identity
     // (<unauthenticated-cloud-access-token>, a long persona name) was cut. One decimal on
     // the mean throughout, since "40" beside "26.4" reads as two kinds of number.
     table(0, 38, 48, TH, 'Risk leaderboard — top identities by total severity',
-      `FROM ${IDX} | ${TIME} | ${riskScored({ by: ACTOR_KEYS })} | ${ACTOR_RESOLVE} | ${SCOPE} | STATS ${RISK_INDEX_STATS}, privileged = SUM(CASE(scc, n, 0)) BY actor, actor_scope | ${RISK_INDEX_EVAL} | SORT risk_total DESC, actor | LIMIT ${fitRows(TH)}`,
-      [sized('actor', IDENTITY_W)],
+      `FROM ${IDX} | ${TIME} | ${riskScored({ by: ACTOR_KEYS })} | ${ACTOR_RESOLVE} | ${SCOPE} | STATS ${RISK_INDEX_STATS}, privileged = SUM(CASE(scc, n, 0)) BY actor, actor_scope, ${PIN_BY} | ${RISK_INDEX_EVAL} | SORT risk_total DESC, actor | LIMIT ${fitRows(TH)}`,
+      [WHO_COL, ...PIN_COLS],
       // Two-word headers get the width to stay on one line: wrapped, "Scoring events" and "Mean severity"
       // made the header row 16px taller, and the twelfth row of an h=13 table was cut through its glyphs.
       ['risk_total', sized('scoring_events', 120), { column: 'mean_severity', width: 120, format: { type: 'number', decimals: 1 } }, 'privileged', SCOPE_LAST],
-      `Identities ranked by total accumulated severity, so sustained behaviour outranks a single high-severity event; only the top of the ranking fits the panel. Scope separates tenant identities from Elastic platform automation and unauthenticated requests — without it elastic.maintenance can top this table, because Elastic platform automation performs routine security config changes itself. Privileged counts the identity's security config changes the way the Config changes tile does. Kibana's own API-key clean-up is left out of both columns: it scores 0, so the elastic/kibana service account appears here only for something else it did. The suite's own install of its cloud-audit-* objects, made with no browser session, scores 0 too, so the key that deploys the suite is ranked only for what else it did. Identity is the email for a person and the key name for a named API key. ${PIN_HINT}`),
+      `Identities ranked by total accumulated severity, so sustained behaviour outranks a single high-severity event; only the top of the ranking fits the panel. Scope separates tenant identities from Elastic platform automation and unauthenticated requests — without it elastic.maintenance can top this table, because Elastic platform automation performs routine security config changes itself. Privileged counts the identity's security config changes the way the Config changes tile does. Kibana's own API-key clean-up is left out of both columns: it scores 0, so the elastic/kibana service account appears here only for something else it did. The suite's own install of its cloud-audit-* objects, made with no browser session, scores 0 too, so the key that deploys the suite is ranked only for what else it did. Identity is the email for a person and the key name for a named API key. ${PIN_NOTE}`),
     table(0, 51, 48, TH, 'Why these identities scored — top risky actions, with their weight',
-      `FROM ${IDX} | ${TIME} | ${riskScored({ by: ACTOR_KEYS, aggs: 'last_ts = MAX(@timestamp)' })} | ${ACTOR_RESOLVE} | ${SCOPE} | STATS events = SUM(n), risk_total = SUM(risk * n), last_seen = MAX(last_ts) BY actor, actor_scope, action = event.action, weight = risk, failed = event.outcome == "failure" | ${FAILED_MARK} | SORT risk_total DESC, actor, action | LIMIT ${fitRows(TH)}`,
+      `FROM ${IDX} | ${TIME} | ${riskScored({ by: ACTOR_KEYS, aggs: 'last_ts = MAX(@timestamp)' })} | ${ACTOR_RESOLVE} | ${SCOPE} | STATS events = SUM(n), risk_total = SUM(risk * n), last_seen = MAX(last_ts) BY actor, actor_scope, ${PIN_BY}, action = event.action, weight = risk, failed = event.outcome == "failure" | ${FAILED_MARK} | SORT risk_total DESC, actor, action | LIMIT ${fitRows(TH)}`,
       // weight is a group key, but listed as a metric so it right-aligns with the numbers it multiplies.
-      [sized('actor', IDENTITY_W), sized('action', ACTION_W)], ['weight', 'events', 'risk_total', 'last_seen', SCOPE_LAST],
-      `The receipts behind the leaderboard: the identity and action pairs that contributed the most risk, with what each action weighed, how many times it happened, and when it last did. Risk total is weight × events, the same quantity the leaderboard sums. A failed action is its own row, marked (failed) unless its name already says so (access_denied, authentication_failed): for a pair that also appears in Top failures and denials, that row's Events is the same number, and the unmarked row beside it is the pair's successes. realm_authentication_failed, the trace Elasticsearch writes for each realm a failed sign-in tried, still scores here, though the failure counts leave it out so that an attempt counts once. Only the largest contributions fit the panel, so a rare action can be missing here: Highest-severity actions, by how rare lists the actions by severity instead. ${PIN_HINT}`),
+      [WHO_COL, PIN_PRINCIPAL, WHAT_COL], ['weight', 'events', 'risk_total', 'last_seen', SCOPE_LAST],
+      `The receipts behind the leaderboard: the identity and action pairs that contributed the most risk, with what each action weighed, how many times it happened, and when it last did. Risk total is weight × events, the same quantity the leaderboard sums. A failed action is its own row, marked (failed) unless its name already says so (access_denied, authentication_failed): for a pair that also appears in Top failures and denials, that row's Events is the same number, and the unmarked row beside it is the pair's successes. realm_authentication_failed, the trace Elasticsearch writes for each realm a failed sign-in tried, still scores here, though the failure counts leave it out so that an attempt counts once. Only the largest contributions fit the panel, so a rare action can be missing here: Highest-severity actions, by how rare lists the actions by severity instead. ${PIN_NOTE_ID}`),
     // Full width: identity and the action name are variable-length text, and at half width the
     // action — the column the panel exists for — was the one cut. One row per identity and action:
     // grouped by source IP as well (round 4), elastic and admin took two rows each and a pair's count
@@ -201,10 +208,13 @@ export function build() {
     // count of how many there were; LAST and COUNT_DISTINCT run on the failure subset only.
     // The platform hop is tagged "(internal)" as 05 does, on the grouped rows (one condition, after the STATS);
     // the newest anonymous denial came through it, so untagged it read as the prober's address.
+    // Principal id only of the two pin columns (1.0.5): with API key as well, Latest IP, Client IPs and Scope
+    // no longer fit a 1440px viewport. A named key's failures pin the identity that created it.
+    // The same holds for first appearance and Why: only the leaderboard has room for both.
     table(0, 64, 48, TH, 'Top failures and denials by identity and action',
-      `FROM ${IDX} | ${TIME} | ${FAILED_OR_DENIED} | ${ACTOR_RESOLVE} | STATS events = COUNT(*), ips = COUNT_DISTINCT(client.ip), ip = LAST(client.ip, @timestamp), last_seen = MAX(@timestamp) BY actor, action = event.action | SORT events DESC, actor, action | ${SCOPE} | EVAL ip = COALESCE(CASE(CIDR_MATCH(ip, "100.64.0.0/10"), CONCAT(TO_STRING(ip), " (internal)"), TO_STRING(ip)), "none recorded") | LIMIT ${fitRows(TH)}`,
-      [sized('actor', IDENTITY_W), sized('action', ACTION_W), { column: 'ip', label: 'Latest IP', width: 200 }], [{ column: 'ips', label: 'Client IPs' }, 'events', 'last_seen', SCOPE_LAST],
-      `Failed and denied operations, one row per identity and action, the most frequent first; only the top rows fit the panel. These are the events the Failures tile counts (every denial and failed sign-in carries a failure outcome), and the Anonymous denials tile is their anonymous_access_denied rows. A failure is scored on a row of its own in Why these identities scored, marked (failed) unless the action's name already says so, so where a pair appears in both, Events here is the same number as on that row. Latest IP is the client address of the newest of those events ("none recorded" when none of them carried one, as for <unauthenticated-cloud-api-key>, whose events record only the platform proxy) and Client IPs counts the different addresses they came from: many addresses behind one identity is a spray, one address behind many identities is one source trying names. An address tagged (internal) is the platform-internal hop (100.64/10), as on Geo & Network: the platform calling on the client's behalf, not the client, and Client IPs counts it too. Scope separates unauthenticated probes from tenant identities and Elastic platform automation. API keys and native users (elastic, admin) carry no email, so an Identity that is not an email does not mean an external probe — read Scope. ${PIN_HINT}`, { empty: 'good' }),
+      `FROM ${IDX} | ${TIME} | ${FAILED_OR_DENIED} | ${ACTOR_RESOLVE} | STATS events = COUNT(*), ips = COUNT_DISTINCT(client.ip), ip = LAST(client.ip, @timestamp), last_seen = MAX(@timestamp) BY actor, user.name, action = event.action | SORT events DESC, actor, action | ${SCOPE} | EVAL ip = COALESCE(CASE(CIDR_MATCH(ip, "100.64.0.0/10"), CONCAT(TO_STRING(ip), " (internal)"), TO_STRING(ip)), "none recorded") | LIMIT ${fitRows(TH)}`,
+      [WHO_COL, PIN_PRINCIPAL, WHAT_COL, { column: 'ip', label: 'Latest IP', width: 200, min: 170 }], [{ column: 'ips', label: 'Client IPs' }, 'events', 'last_seen', SCOPE_LAST],
+      `Failed and denied operations, one row per identity and action, the most frequent first; only the top rows fit the panel. These are the events the Failures tile counts (every denial and failed sign-in carries a failure outcome), and the Anonymous denials tile is their anonymous_access_denied rows. A failure is scored on a row of its own in Why these identities scored, marked (failed) unless the action's name already says so, so where a pair appears in both, Events here is the same number as on that row. Latest IP is the client address of the newest of those events ("none recorded" when none of them carried one, as for <unauthenticated-cloud-api-key>, whose events record only the platform proxy) and Client IPs counts the different addresses they came from: many addresses behind one identity is a spray, one address behind many identities is one source trying names. An address tagged (internal) is the platform-internal hop (100.64/10), as on Geo & Network: the platform calling on the client's behalf, not the client, and Client IPs counts it too. Scope separates unauthenticated probes from tenant identities and Elastic platform automation. API keys and native users (elastic, admin) carry no email, so an Identity that is not an email does not mean an external probe — read Scope. ${PIN_NOTE_ID}`, { empty: 'good' }),
     // Discover in ES|QL mode returns at most 1,000 rows and prints that as "1,000 results", which on a
     // 24h range sat under a Config changes tile reading 1,976. The cap is the reason, so the title says it.
     //

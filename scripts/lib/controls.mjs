@@ -1,5 +1,6 @@
 /**
- * The dashboard control bar — three dropdowns that scope the whole suite: Project, Person (email), Client IP.
+ * The dashboard control bar — four dropdowns that scope the whole suite: Project, Person (email), API key,
+ * Client IP.
  *
  * Why this lives outside the dashboard definitions: `PUT /api/dashboards/{id}` is
  * Zod-strict and silently drops `controlGroupInput`, so the control bar cannot travel
@@ -17,6 +18,11 @@
  * Field choices are driven by what the audit stream actually carries:
  *   project.name    the emitting serverless project — see CONTROLS below
  *   user.email      the identity control: the reliable key, never null for a human
+ *   api_key.name    a named Elasticsearch API key (1.0.5). A Cloud API key has no name, so it is not
+ *                   listed; it is pinned from the Principal id click columns instead. An options list on a
+ *                   field not mapped yet (no API key used on the project) simply offers nothing.
+ *                   A runtime "identity" field (the actor COALESCE) was tried and rejected: its pill is DSL
+ *                   on a field the index does not have, so every ES|QL panel and DSL Vega spec went empty.
  *   client.ip                  high-cardinality — too many to eyeball, which is the point of
  *                              a searchable dropdown rather than a table
  * `user.name` is deliberately NOT offered: it is a numeric id (e.g. 1234567890), not
@@ -51,8 +57,8 @@ export const dataViewObject = () => ({
  * Order is deliberate. Project leads because an audit project usually collects the audit
  * streams of SEVERAL serverless projects, and the chaining below is HIERARCHICAL: picking a
  * project narrows every dropdown after it to the people and addresses seen in that project.
- * Then email, the identity control, because it is what actually resolves a person; IP last
- * because it answers a different question ("who was at this address") rather than "what did
+ * Then email, the identity control, because it is what actually resolves a person; then the API
+ * key, the other identity a person can choose by name; IP last because it answers a different question ("who was at this address") rather than "what did
  * this person do".
  *
  * project.* names the project that EMITTED the event, not the audit project that
@@ -65,12 +71,17 @@ export const dataViewObject = () => ({
  * bar to a DSL dataset as all-or-nothing, so the spec works out the projects in scope itself; see
  * TWO_DATASET_SPECS in layout.mjs.
  */
+// width 'small' with grow: four 'medium' controls wrapped Client IP onto a second row at a 1440px viewport
+// (rendered, 1.0.5); 'small' is a minimum, and grow shares the row out evenly at any width.
 export const CONTROLS = [
-  { field: 'project.name',   title: 'Project',        width: 'medium', search: 'prefix' },
-  { field: 'user.email',     title: 'Person (email)', width: 'medium', search: 'prefix' },
+  { field: 'project.name',   title: 'Project',        width: 'small', search: 'prefix' },
+  { field: 'user.email',     title: 'Person (email)', width: 'small', search: 'prefix' },
+  // After Person, so choosing a person narrows it to keys whose events carry that email (usually none:
+  // most keys' events carry no email), and choosing a key leaves the people list alone.
+  { field: 'api_key.name',   title: 'API key',        width: 'small', search: 'prefix' },
   // 'wildcard', not 'prefix': prefix search on an `ip` field only matches whole octets, so
   // typing "100.64" returns nothing while "100.64.0.10" works. Wildcard matches substrings.
-  { field: 'client.ip',                 title: 'Client IP',      width: 'medium', search: 'wildcard' },
+  { field: 'client.ip',                 title: 'Client IP',      width: 'small', search: 'wildcard' },
 ];
 
 /** Deterministic per field, so redeploys do not churn control ids (and therefore do not

@@ -84,6 +84,7 @@ test('--with platform-volume: eight dashboards, its tab last on every nav strip,
 
 test('every dashboard opens with a full-width intro under the nav strip: an in-panel heading, then small text', async () => {
   const { smallMarkdown, INTRO_PT } = await import('../../scripts/lib/panels.mjs');
+  const { nsId } = await import('../../scripts/lib/env.mjs');
   const vis = smallMarkdown('### x\n\ny\n');
   assert.deepEqual([vis.hidePanelTitles, vis.savedVis.type, vis.savedVis.params.fontSize, vis.savedVis.params.markdown], [true, 'markdown', INTRO_PT, '### x\n\ny\n']);
   for (const AUDIT_WITH of [undefined, 'platform-volume']) {
@@ -95,7 +96,13 @@ test('every dashboard opens with a full-width intro under the nav strip: an in-p
         assert.deepEqual([intro.grid.x, intro.grid.y, intro.grid.w], [0, nav.grid.h, 48], `${name}: intro full width under the nav`);
         assert.equal(intro.config.title, undefined, `${name}: the heading is the title`);
         assert.ok(intro.headed, `${name}: the post-pass turns it into small text`);
-        assert.match(intro.config.content, /^### [^\n.]+\n\n[^\n#<]+(\n\n[^\n#<]+)+\n$/, name);
+        // A paragraph may carry a link whose URL has a # in it (/app/discover#/view/…), but never starts with one.
+        assert.match(intro.config.content, /^### [^\n.]+\n\n(?!#)[^\n<]+(\n\n(?!#)[^\n<]+)+\n$/, name);
+        // Every intro links to the raw events: both Discover sessions, by their ids in this namespace.
+        for (const ref of ['00-all-events', '10-raw-signal-feed']) {
+          assert.ok(intro.config.content.includes(`](/app/discover#/view/${nsId(`cloud-audit-search-${ref}`)})`), `${name}: links to ${ref}`);
+        }
+        assert.doesNotMatch(intro.config.content, /@search:|https?:/, `${name}: links resolved and relative`);
         const below = def.panels.slice(2).map((p) => p.grid.y);
         assert.equal(Math.min(...below), intro.grid.y + intro.grid.h, `${name}: nothing overlaps or gaps under the intro`);
       }
@@ -114,7 +121,10 @@ test('no markdown panel carries an em dash, in either set', () => {
 test('AUDIT_ID_NS namespaces Command Center too, so a private deploy never touches elastic_cloud-audit-dashboard', () => {
   withEnv({ AUDIT_WITH: undefined, AUDIT_ID_NS: 'pm1' }, () => {
     assert.equal(dashId('00-command-center'), 'elastic_cloud-audit-pm1-dashboard');
-    const nav = navOf(buildAll()['07-actor-360']);
+    const built = buildAll();
+    const nav = navOf(built['07-actor-360']);
+    // The intro's raw-event links point at the private copy of each Discover session, not production's.
+    assert.match(built['00-command-center'].panels[1].config.content, /\]\(\/app\/discover#\/view\/cloud-audit-pm1-search-00-all-events\)/);
     assert.deepEqual(nav.slice(0, 2).map((l) => l.destination), ['elastic_cloud-audit-pm1-dashboard', 'elastic_cloud-audit-pm1-actor-360']);
     assert.ok(nav.every((l) => /^elastic_cloud-audit-pm1-[a-z0-9-]+$/.test(l.destination)));
     assert.equal(new Set(nav.map((l) => l.destination)).size, nav.length, 'namespaced ids stay unique');
@@ -154,10 +164,11 @@ test('--with is folded into AUDIT_WITH, adds to .env, and an unknown name is ref
   assert.deepEqual(SUITE.filter((d) => d.optional).map((d) => d.name), ['06-platform-volume']);
 });
 
-test('control bar (1.0.2): Project, Person (email), Client IP; no full_name; ids keyed on the field, chaining hierarchical', async () => {
+test('control bar (1.0.5): Project, Person (email), API key, Client IP; no full_name; ids keyed on the field, chaining hierarchical', async () => {
   const { CONTROLS, controlGroup } = await import('../../scripts/lib/controls.mjs');
   const { stableUuid } = await import('../../scripts/lib/ids.mjs');
-  assert.deepEqual(CONTROLS.map((c) => c.title), ['Project', 'Person (email)', 'Client IP']);
+  assert.deepEqual(CONTROLS.map((c) => c.title), ['Project', 'Person (email)', 'API key', 'Client IP']);
+  assert.deepEqual(CONTROLS.map((c) => c.field), ['project.name', 'user.email', 'api_key.name', 'client.ip']);
   assert.ok(!CONTROLS.some((c) => c.field === 'user.full_name'));
   const g = controlGroup();
   assert.equal(g.controlGroupInput.chainingSystem, 'HIERARCHICAL');
@@ -168,8 +179,8 @@ test('control bar (1.0.2): Project, Person (email), Client IP; no full_name; ids
     assert.equal(panels[id].explicitInput.fieldName, c.field);
     assert.equal(panels[id].order, i);
   }
-  assert.equal(Object.keys(panels).length, 3);
-  assert.equal(g.references.length, 3);
+  assert.equal(Object.keys(panels).length, CONTROLS.length);
+  assert.equal(g.references.length, CONTROLS.length);
 });
 
 test('a dashboard drilldown carries the reference Kibana navigates by, so "Open in …" never lands on #/create', async () => {
@@ -193,5 +204,45 @@ test('data view (1.0.4): public id elastic_cloud-audit-logs, namespaced like the
   withEnv({ AUDIT_ID_NS: 'pm1' }, () => {
     assert.equal(nsId('elastic_cloud-audit-logs'), 'elastic_cloud-audit-pm1-logs');
     assert.equal(nsId('cloud-audit-dv'), 'cloud-audit-pm1-dv');
+  });
+});
+
+test('identity tables (1.0.5): a raw Principal id / API key click column on each, so each drills into Actor 360', async () => {
+  const { checkClickFilters } = await import('../../scripts/lib/layout.mjs');
+  const { discoverUrl } = await import('../../scripts/lib/panels.mjs');
+  withEnv({ AUDIT_WITH: undefined, AUDIT_ID_NS: undefined }, () => {
+    const all = buildAll();
+    const find = (name, title) => all[name].panels.find((p) => p.config?.title?.startsWith(title));
+    const clicks = (p) => p.config.rows.filter((r) => r.click_filter).map((r) => r.column);
+    const want = {
+      '00-command-center': { 'Busiest identities': ['user.name'] },
+      '01-identity-access': { 'Busiest API keys by name': ['api_key.name', 'user.name'] },
+      '02-kibana-objects': { '⚠️ Mutations': ['user.name'] },
+      '03-data-access': { '⚠️ Who touched system and hidden indices': ['api_key.name', 'user.name'] },
+      '04-security-anomalies': {
+        '🚨 Config changes': ['api_key.name', 'user.name'], 'Identities by first appearance': ['user.name'],
+        'Risk leaderboard': ['api_key.name', 'user.name'], 'Why these identities scored': ['user.name'],
+        'Top failures and denials': ['user.name'],
+      },
+      '07-actor-360': { 'Who this is': ['user.email', 'user.name'] },
+    };
+    for (const [name, tables] of Object.entries(want)) {
+      for (const [title, cols] of Object.entries(tables)) {
+        const p = find(name, title);
+        assert.ok(p, `${name}: ${title}`);
+        assert.deepEqual(clicks(p), cols, `${name}: ${title} click columns`);
+        assert.ok(hasFilterableColumn(p), `${name}: ${title} gets a drilldown`);
+        // Each click column is a STATS BY group key the query never assigns.
+        for (const c of cols) assert.match(p.config.data_source.query, new RegExp(`BY [^|]*\\b${c.replace('.', '\\.')}\\b`), `${name}: ${title} groups on ${c}`);
+        const problems = []; checkClickFilters(name, [p], problems);
+        assert.deepEqual(problems, []);
+      }
+    }
+    // The folded table cannot carry them (its last row would need the raw keys nulled).
+    assert.ok(!hasFilterableColumn(find('03-data-access', 'Denied requests by identity')));
+    // Actor 360's Who this is leaves the placeholders out, so its 165px Principal id never cuts one.
+    assert.match(find('07-actor-360', 'Who this is').config.data_source.query, /NOT STARTS_WITH\(user\.name, "<"\)/);
+    assert.equal(discoverUrl('00-all-events'), '/app/discover#/view/cloud-audit-search-00-all-events');
+    assert.throws(() => discoverUrl('99-nope'), /no searches\/99-nope\.json/);
   });
 });

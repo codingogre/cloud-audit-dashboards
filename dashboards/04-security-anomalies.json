@@ -106,7 +106,7 @@
         "h": 6
       },
       "config": {
-        "content": "### The activity most worth a second look\n\nEach sensitive action earns a risk weight, from 10 for a workflow run up to 50 for a security setting change, while routine work scores zero.\n\nPanels rank identities by that risk, show newly seen identities, and list every security configuration change. Elastic's own routine API key clean-up is counted separately, so it never hides real changes.\n\n**How to use it:** choose a Project, Person (email) or Client IP in the controls and set the time picker. Hover the ⓘ beside a panel title to see how it is scored.\n"
+        "content": "### The activity most worth a second look\n\nEach sensitive action earns a risk weight, from 10 for a workflow run up to 50 for a security setting change, while routine work scores zero. Raw records: [All audit events](/app/discover#/view/cloud-audit-search-00-all-events), [Raw signal feed](/app/discover#/view/cloud-audit-search-10-raw-signal-feed).\n\nPanels rank identities by that risk, show newly seen identities, and list every security configuration change. Elastic's own routine API key clean-up is counted separately, so it never hides real changes.\n\n**How to use it:** choose a Project, Person (email), API key or Client IP in the controls and set the time picker. Hover the ⓘ beside a panel title to see how it is scored.\n"
       }
     },
     {
@@ -306,11 +306,11 @@
       },
       "config": {
         "title": "🚨 Config changes · up to 5 identity–action pairs, latest first (empty = good)",
-        "description": "Security configuration changes grouped by identity and action, the most recently active first; in a busy range the quieter pairs are beyond the rows shown, so Events here add up to the Config changes tile only when every pair fits. Kibana's own API-key clean-up (invalidate_apikeys by the elastic/kibana service account through no named key, every few seconds) is left out, as on Command Center's Privileged ops. Latest target is what the newest of those changes named (the API key, the key ids of an invalidation, the role, or the user profile), and Targets counts the different ones named across all of them: hundreds of invalidations over hundreds of keys is rotation, hundreds over one key is a loop. A profile activation names no target (it is the signed-in user's own profile), so it reads \"(none named in the payload)\" and 0. A key named \"TaskManager: … - <id>\" is one Kibana created to run a task on that identity's behalf: the id at its end is its owner's, not a name for it. The full JSON payload of every change is in the Config-change event feed at the foot of the page. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email. An empty panel means nothing matched in the time range, which is the healthy state; any row here is worth reading.",
+        "description": "Security configuration changes grouped by identity and action, the most recently active first; in a busy range the quieter pairs are beyond the rows shown, so Events here add up to the Config changes tile only when every pair fits. Kibana's own API-key clean-up (invalidate_apikeys by the elastic/kibana service account through no named key, every few seconds) is left out, as on Command Center's Privileged ops. Latest target is what the newest of those changes named (the API key, the key ids of an invalidation, the role, or the user profile), and Targets counts the different ones named across all of them: hundreds of invalidations over hundreds of keys is rotation, hundreds over one key is a loop. A profile activation names no target (it is the signed-in user's own profile), so it reads \"(none named in the payload)\" and 0. A key named \"TaskManager: … - <id>\" is one Kibana created to run a task on that identity's behalf: the id at its end is its owner's, not a name for it. The full JSON payload of every change is in the Config-change event feed at the foot of the page. Click an API key or Principal id to filter to it or open Actor 360; a Cloud API key's Principal id also covers the API keys it created. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email. An empty panel means nothing matched in the time range, which is the healthy state; any row here is worth reading.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "SET unmapped_fields=\"nullify\"; FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE elasticsearch.audit.security_config_change IS NOT NULL AND NOT (event.action IS NOT NULL AND event.action == \"invalidate_apikeys\" AND user.name IS NOT NULL AND user.name IN (\"elastic.maintenance\",\"autoscaling\",\"elasticsearch-controller\",\"elastic/fleet-server\",\"elastic/kibana\") AND api_key.name IS NULL) | GROK elasticsearch.audit.security_config_change \"\"\"\"name\":\"%{DATA:t_name}\"\"\"\" | GROK elasticsearch.audit.security_config_change \"\"\"\"ids\":\\[%{DATA:t_ids}\\]\"\"\" | GROK elasticsearch.audit.security_config_change \"\"\"\"id\":\"%{DATA:t_id}\"\"\"\" | GROK elasticsearch.audit.security_config_change \"\"\"\"uid\":\"%{DATA:t_uid}\"\"\"\" | EVAL target = COALESCE(t_name, REPLACE(t_ids, \"\\\"\", \"\"), t_id, t_uid) | EVAL actor = COALESCE(user.email, api_key.name, user.name, \"<anonymous>\") | STATS events = COUNT(*), targets = COUNT_DISTINCT(SPLIT(target, \",\")), latest = LAST(target, @timestamp), last_change = MAX(@timestamp) BY actor, action = event.action | SORT last_change DESC | EVAL actor_scope = CASE(actor IN (\"elastic.maintenance\",\"autoscaling\",\"elasticsearch-controller\",\"elastic/fleet-server\",\"elastic/kibana\"), \"platform\", actor IN (\"<anonymous>\",\"<unauthenticated-cloud-access-token>\",\"<unauthenticated-saml-user>\",\"<unauthenticated-cloud-api-key>\"), \"unauthenticated\", \"tenant\") | EVAL latest = REPLACE(latest, \",\", \", \") | EVAL latest = CASE(LENGTH(latest) > 72, CONCAT(LEFT(latest, 71), \"…\"), latest) | EVAL latest = COALESCE(latest, \"(none named in the payload)\") | LIMIT 5 | EVAL actor = CASE((LENGTH(actor) == 20 AND actor RLIKE \"[-_A-Za-z0-9]{20}\" AND NOT actor RLIKE \"[0-9]{20}\"), CONCAT(LEFT(actor, 5), \"… · Cloud API key\"), actor)"
+          "query": "SET unmapped_fields=\"nullify\"; FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE elasticsearch.audit.security_config_change IS NOT NULL AND NOT (event.action IS NOT NULL AND event.action == \"invalidate_apikeys\" AND user.name IS NOT NULL AND user.name IN (\"elastic.maintenance\",\"autoscaling\",\"elasticsearch-controller\",\"elastic/fleet-server\",\"elastic/kibana\") AND api_key.name IS NULL) | GROK elasticsearch.audit.security_config_change \"\"\"\"name\":\"%{DATA:t_name}\"\"\"\" | GROK elasticsearch.audit.security_config_change \"\"\"\"ids\":\\[%{DATA:t_ids}\\]\"\"\" | GROK elasticsearch.audit.security_config_change \"\"\"\"id\":\"%{DATA:t_id}\"\"\"\" | GROK elasticsearch.audit.security_config_change \"\"\"\"uid\":\"%{DATA:t_uid}\"\"\"\" | EVAL target = COALESCE(t_name, REPLACE(t_ids, \"\\\"\", \"\"), t_id, t_uid) | EVAL actor = COALESCE(user.email, api_key.name, user.name, \"<anonymous>\") | STATS events = COUNT(*), targets = COUNT_DISTINCT(SPLIT(target, \",\")), latest = LAST(target, @timestamp), last_change = MAX(@timestamp) BY actor, api_key.name, user.name, action = event.action | SORT last_change DESC | EVAL actor_scope = CASE(actor IN (\"elastic.maintenance\",\"autoscaling\",\"elasticsearch-controller\",\"elastic/fleet-server\",\"elastic/kibana\"), \"platform\", actor IN (\"<anonymous>\",\"<unauthenticated-cloud-access-token>\",\"<unauthenticated-saml-user>\",\"<unauthenticated-cloud-api-key>\"), \"unauthenticated\", \"tenant\") | EVAL latest = REPLACE(latest, \",\", \", \") | EVAL latest = CASE(LENGTH(latest) > 72, CONCAT(LEFT(latest, 71), \"…\"), latest) | EVAL latest = COALESCE(latest, \"(none named in the payload)\") | LIMIT 5 | EVAL actor = CASE((LENGTH(actor) == 20 AND actor RLIKE \"[-_A-Za-z0-9]{20}\" AND NOT actor RLIKE \"[0-9]{20}\"), CONCAT(LEFT(actor, 5), \"… · Cloud API key\"), actor)"
         },
         "styling": {
           "density": {
@@ -327,7 +327,19 @@
           {
             "label": "Identity",
             "column": "actor",
-            "width": 220
+            "width": 210
+          },
+          {
+            "label": "API key",
+            "column": "api_key.name",
+            "click_filter": true,
+            "width": 135
+          },
+          {
+            "label": "Principal id",
+            "column": "user.name",
+            "click_filter": true,
+            "width": 162
           },
           {
             "label": "Scope",
@@ -337,7 +349,7 @@
           {
             "label": "Action",
             "column": "action",
-            "width": 190
+            "width": 168
           },
           {
             "label": "Latest target",
@@ -348,11 +360,11 @@
           {
             "label": "Targets",
             "column": "targets",
-            "width": 90
+            "width": 81
           },
           {
             "label": "Events",
-            "width": 90,
+            "width": 81,
             "column": "events"
           },
           {
@@ -483,11 +495,11 @@
       },
       "config": {
         "title": "Identities by first appearance in range · newest 12 at most",
-        "description": "Identities ordered by their first event inside the selected range, latest first, from signal events only (query internals are left out, as on every gated panel). First seen is within the range, not ever: an identity that was already active when the range opened also shows a first-seen near its start. New reads \"no\" for those (first seen in the opening twelfth of the range) and \"yes\" otherwise; on a project whose audit history is shorter than the range, every identity reads \"yes\". A \"yes\" near the top is an identity worth a question; widen the range to tell a new identity from a returning one. Client IPs is 0 for an identity none of whose events recorded a client address: the Kibana service account and platform automation, which call from inside the platform, and a sign-in rejected before its caller was identified — <unauthenticated-cloud-api-key> events carry only the platform proxy's address, so they have no client address to count. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email.",
+        "description": "Identities ordered by their first event inside the selected range, latest first, from signal events only (query internals are left out, as on every gated panel). First seen is within the range, not ever: an identity that was already active when the range opened also shows a first-seen near its start. New reads \"no\" for those (first seen in the opening twelfth of the range) and \"yes\" otherwise; on a project whose audit history is shorter than the range, every identity reads \"yes\". A \"yes\" near the top is an identity worth a question; widen the range to tell a new identity from a returning one. Client IPs is 0 for an identity none of whose events recorded a client address: the Kibana service account and platform automation, which call from inside the platform, and a sign-in rejected before its caller was identified — <unauthenticated-cloud-api-key> events carry only the platform proxy's address, so they have no client address to count. Click a Principal id to filter to it or open Actor 360; a Cloud API key's Principal id also covers the API keys it created, and a named key's row pins the identity that created it. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "SET unmapped_fields=\"nullify\"; FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE (elasticsearch.audit.action IS NULL OR NOT (elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\") OR elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR elasticsearch.audit.action LIKE \"indices:data/read/msearch*\" OR elasticsearch.audit.action LIKE \"indices:data/read/scroll*\" OR elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR elasticsearch.audit.action == \"indices:data/read/open_reader_context\" OR elasticsearch.audit.action LIKE \"indices:data/read/esql*\" OR elasticsearch.audit.action LIKE \"indices:admin/esql/*\" OR elasticsearch.audit.action LIKE \"indices:data/read/field_caps*\" OR elasticsearch.audit.action LIKE \"indices:data/read/async_search/*\" OR elasticsearch.audit.action LIKE \"indices:admin/resolve/*\" OR elasticsearch.audit.action == \"indices:admin/shards/search_shards\" OR elasticsearch.audit.action LIKE \"cluster:monitor/xpack/esql/*\" OR elasticsearch.audit.action IN (\"cluster:monitor/project/tags\", \"cluster:monitor/xpack/inference/get\", \"cluster:admin/xpack/security/api_key/get\", \"cluster:admin/xpack/security/api_key/query\"))) AND (event.action IS NULL OR NOT (event.action IN (\"authentication_success\",\"connection_granted\") OR event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\",\"space_get\",\"space_find\") OR (event.action == \"http_request\" AND url.original IS NOT NULL AND url.original RLIKE \"https?://[^/]+(/s/[^/]+)?/((internal|translations|app)/.*|api/content_management/rpc/(get|search|mget|bulkGet).*|bootstrap(-anonymous)?[.]js.*|api/(core|licensing|banners|ui_counters)/.*|api/spaces/space([?].*)?)|https?://[^/]+(/s/[^/]+)?/api/(saved_objects/(_import|_export)|[^?]*/(elastic_)?cloud-audit-).*\") OR (kibana.saved_object.type IS NOT NULL AND ((event.action == \"saved_object_get\" AND kibana.saved_object.type IN (\"config\",\"config-global\")) OR (event.action == \"saved_object_find\" AND kibana.saved_object.type == \"index-pattern\"))) OR (kibana.saved_object.id IS NOT NULL AND (kibana.saved_object.id LIKE \"cloud-audit-*\" OR kibana.saved_object.id LIKE \"elastic_cloud-audit-*\") AND (event.action IN (\"saved_object_get\",\"saved_object_resolve\",\"saved_object_find\") OR kibana.session.id IS NULL)))) | EVAL actor = COALESCE(user.email, api_key.name, user.name, \"<anonymous>\") | STATS first_seen = MIN(@timestamp), last_seen = MAX(@timestamp), events = COUNT(*), ips = COUNT_DISTINCT(client.ip) BY actor | SORT first_seen DESC, actor | EVAL actor_scope = CASE(actor IN (\"elastic.maintenance\",\"autoscaling\",\"elasticsearch-controller\",\"elastic/fleet-server\",\"elastic/kibana\"), \"platform\", actor IN (\"<anonymous>\",\"<unauthenticated-cloud-access-token>\",\"<unauthenticated-saml-user>\",\"<unauthenticated-cloud-api-key>\"), \"unauthenticated\", \"tenant\") | EVAL new_in_range = CASE(TO_LONG(first_seen) - TO_LONG(TO_DATETIME(?_tstart)) > (TO_LONG(TO_DATETIME(?_tend)) - TO_LONG(TO_DATETIME(?_tstart))) / 12, \"yes\", \"no\") | LIMIT 12 | EVAL actor = CASE((LENGTH(actor) == 20 AND actor RLIKE \"[-_A-Za-z0-9]{20}\" AND NOT actor RLIKE \"[0-9]{20}\"), CONCAT(LEFT(actor, 5), \"… · Cloud API key\"), actor)"
+          "query": "SET unmapped_fields=\"nullify\"; FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE (elasticsearch.audit.action IS NULL OR NOT (elasticsearch.audit.action IN (\"cluster:monitor/main\", \"elastic.maintenance\") OR elasticsearch.audit.action LIKE \"indices:data/read/search*\" OR elasticsearch.audit.action LIKE \"indices:data/read/msearch*\" OR elasticsearch.audit.action LIKE \"indices:data/read/scroll*\" OR elasticsearch.audit.action LIKE \"indices:data/read/*point_in_time\" OR elasticsearch.audit.action == \"indices:data/read/open_reader_context\" OR elasticsearch.audit.action LIKE \"indices:data/read/esql*\" OR elasticsearch.audit.action LIKE \"indices:admin/esql/*\" OR elasticsearch.audit.action LIKE \"indices:data/read/field_caps*\" OR elasticsearch.audit.action LIKE \"indices:data/read/async_search/*\" OR elasticsearch.audit.action LIKE \"indices:admin/resolve/*\" OR elasticsearch.audit.action == \"indices:admin/shards/search_shards\" OR elasticsearch.audit.action LIKE \"cluster:monitor/xpack/esql/*\" OR elasticsearch.audit.action IN (\"cluster:monitor/project/tags\", \"cluster:monitor/xpack/inference/get\", \"cluster:admin/xpack/security/api_key/get\", \"cluster:admin/xpack/security/api_key/query\"))) AND (event.action IS NULL OR NOT (event.action IN (\"authentication_success\",\"connection_granted\") OR event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\",\"space_get\",\"space_find\") OR (event.action == \"http_request\" AND url.original IS NOT NULL AND url.original RLIKE \"https?://[^/]+(/s/[^/]+)?/((internal|translations|app)/.*|api/content_management/rpc/(get|search|mget|bulkGet).*|bootstrap(-anonymous)?[.]js.*|api/(core|licensing|banners|ui_counters)/.*|api/spaces/space([?].*)?)|https?://[^/]+(/s/[^/]+)?/api/(saved_objects/(_import|_export)|[^?]*/(elastic_)?cloud-audit-).*\") OR (kibana.saved_object.type IS NOT NULL AND ((event.action == \"saved_object_get\" AND kibana.saved_object.type IN (\"config\",\"config-global\")) OR (event.action == \"saved_object_find\" AND kibana.saved_object.type == \"index-pattern\"))) OR (kibana.saved_object.id IS NOT NULL AND (kibana.saved_object.id LIKE \"cloud-audit-*\" OR kibana.saved_object.id LIKE \"elastic_cloud-audit-*\") AND (event.action IN (\"saved_object_get\",\"saved_object_resolve\",\"saved_object_find\") OR kibana.session.id IS NULL)))) | STATS first_seen = MIN(@timestamp), last_seen = MAX(@timestamp), events = COUNT(*), ips = COUNT_DISTINCT(client.ip) BY user.email, api_key.name, user.name | EVAL actor = COALESCE(user.email, api_key.name, user.name, \"<anonymous>\") | SORT first_seen DESC, actor | EVAL actor_scope = CASE(actor IN (\"elastic.maintenance\",\"autoscaling\",\"elasticsearch-controller\",\"elastic/fleet-server\",\"elastic/kibana\"), \"platform\", actor IN (\"<anonymous>\",\"<unauthenticated-cloud-access-token>\",\"<unauthenticated-saml-user>\",\"<unauthenticated-cloud-api-key>\"), \"unauthenticated\", \"tenant\") | EVAL new_in_range = CASE(TO_LONG(first_seen) - TO_LONG(TO_DATETIME(?_tstart)) > (TO_LONG(TO_DATETIME(?_tend)) - TO_LONG(TO_DATETIME(?_tstart))) / 12, \"yes\", \"no\") | LIMIT 12 | EVAL actor = CASE((LENGTH(actor) == 20 AND actor RLIKE \"[-_A-Za-z0-9]{20}\" AND NOT actor RLIKE \"[0-9]{20}\"), CONCAT(LEFT(actor, 5), \"… · Cloud API key\"), actor)"
         },
         "styling": {
           "density": {
@@ -504,7 +516,13 @@
           {
             "label": "Identity",
             "column": "actor",
-            "width": 300
+            "width": 282
+          },
+          {
+            "label": "Principal id",
+            "column": "user.name",
+            "click_filter": true,
+            "width": 248
           },
           {
             "label": "New",
@@ -525,12 +543,12 @@
           },
           {
             "label": "Events",
-            "width": 90,
+            "width": 84,
             "column": "events"
           },
           {
             "label": "Client IPs",
-            "width": 90,
+            "width": 84,
             "column": "ips"
           },
           {
@@ -552,11 +570,11 @@
       },
       "config": {
         "title": "Risk leaderboard — top identities by total severity · 12 at most",
-        "description": "Identities ranked by total accumulated severity, so sustained behaviour outranks a single high-severity event; only the top of the ranking fits the panel. Scope separates tenant identities from Elastic platform automation and unauthenticated requests — without it elastic.maintenance can top this table, because Elastic platform automation performs routine security config changes itself. Privileged counts the identity's security config changes the way the Config changes tile does. Kibana's own API-key clean-up is left out of both columns: it scores 0, so the elastic/kibana service account appears here only for something else it did. The suite's own install of its cloud-audit-* objects, made with no browser session, scores 0 too, so the key that deploys the suite is ranked only for what else it did. Identity is the email for a person and the key name for a named API key. To follow one person, pick them in the Person (email) control; the pin carries to Actor 360. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email.",
+        "description": "Identities ranked by total accumulated severity, so sustained behaviour outranks a single high-severity event; only the top of the ranking fits the panel. Scope separates tenant identities from Elastic platform automation and unauthenticated requests — without it elastic.maintenance can top this table, because Elastic platform automation performs routine security config changes itself. Privileged counts the identity's security config changes the way the Config changes tile does. Kibana's own API-key clean-up is left out of both columns: it scores 0, so the elastic/kibana service account appears here only for something else it did. The suite's own install of its cloud-audit-* objects, made with no browser session, scores 0 too, so the key that deploys the suite is ranked only for what else it did. Identity is the email for a person and the key name for a named API key. Click an API key or Principal id to filter to it or open Actor 360; a Cloud API key's Principal id also covers the API keys it created. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "SET unmapped_fields=\"nullify\"; FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE elasticsearch.audit.security_config_change IS NOT NULL OR event.outcome == \"failure\" OR event.action IN (\"invalidate_apikeys\",\"anonymous_access_denied\") OR (service.name == \"serverless-kibana\" AND ((event.type IN (\"change\",\"creation\",\"deletion\") AND (event.action IS NULL OR NOT (event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR event.action IN (\"rule_run_soon\",\"secret_create\"))) | STATS n = COUNT(*) BY user.email, api_key.name, user.name, event.action, scc = elasticsearch.audit.security_config_change IS NOT NULL, event.outcome, service.name, et = MV_CONCAT(event.type, \",\"), housekeeping = (event.action IS NOT NULL AND event.action == \"invalidate_apikeys\" AND user.name IS NOT NULL AND user.name IN (\"elastic.maintenance\",\"autoscaling\",\"elasticsearch-controller\",\"elastic/fleet-server\",\"elastic/kibana\") AND api_key.name IS NULL), suite_install = (kibana.saved_object.id IS NOT NULL AND (kibana.saved_object.id LIKE \"cloud-audit-*\" OR kibana.saved_object.id LIKE \"elastic_cloud-audit-*\") AND kibana.session.id IS NULL) | EVAL event.type = SPLIT(et, \",\"), elasticsearch.audit.security_config_change = CASE(scc, \"present\") | EVAL risk = CASE(housekeeping, 0, event.action == \"invalidate_apikeys\", 45, event.action == \"anonymous_access_denied\", 35, elasticsearch.audit.security_config_change IS NOT NULL, 50, event.outcome == \"failure\", 40, suite_install, 0, (service.name == \"serverless-kibana\" AND ((event.type IN (\"change\",\"creation\",\"deletion\") AND (event.action IS NULL OR NOT (event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR event.action IN (\"rule_run_soon\",\"secret_create\"))) AND event.action IN (\"workflow_run\",\"workflow_test\",\"workflow_execution_cancel\"), 10, (service.name == \"serverless-kibana\" AND ((event.type IN (\"change\",\"creation\",\"deletion\") AND (event.action IS NULL OR NOT (event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR event.action IN (\"rule_run_soon\",\"secret_create\"))) AND (event.type == \"deletion\" OR event.action == \"rule_disable\"), 30, (service.name == \"serverless-kibana\" AND ((event.type IN (\"change\",\"creation\",\"deletion\") AND (event.action IS NULL OR NOT (event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR event.action IN (\"rule_run_soon\",\"secret_create\"))), 25, 0) | WHERE risk > 0 | EVAL actor = COALESCE(user.email, api_key.name, user.name, \"<anonymous>\") | EVAL actor_scope = CASE(actor IN (\"elastic.maintenance\",\"autoscaling\",\"elasticsearch-controller\",\"elastic/fleet-server\",\"elastic/kibana\"), \"platform\", actor IN (\"<anonymous>\",\"<unauthenticated-cloud-access-token>\",\"<unauthenticated-saml-user>\",\"<unauthenticated-cloud-api-key>\"), \"unauthenticated\", \"tenant\") | STATS risk_total = SUM(risk * n), scoring_events = SUM(n), privileged = SUM(CASE(scc, n, 0)) BY actor, actor_scope | EVAL mean_severity = ROUND(1.0 * risk_total / scoring_events, 1) | SORT risk_total DESC, actor | LIMIT 12 | EVAL actor = CASE((LENGTH(actor) == 20 AND actor RLIKE \"[-_A-Za-z0-9]{20}\" AND NOT actor RLIKE \"[0-9]{20}\"), CONCAT(LEFT(actor, 5), \"… · Cloud API key\"), actor)"
+          "query": "SET unmapped_fields=\"nullify\"; FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE elasticsearch.audit.security_config_change IS NOT NULL OR event.outcome == \"failure\" OR event.action IN (\"invalidate_apikeys\",\"anonymous_access_denied\") OR (service.name == \"serverless-kibana\" AND ((event.type IN (\"change\",\"creation\",\"deletion\") AND (event.action IS NULL OR NOT (event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR event.action IN (\"rule_run_soon\",\"secret_create\"))) | STATS n = COUNT(*) BY user.email, api_key.name, user.name, event.action, scc = elasticsearch.audit.security_config_change IS NOT NULL, event.outcome, service.name, et = MV_CONCAT(event.type, \",\"), housekeeping = (event.action IS NOT NULL AND event.action == \"invalidate_apikeys\" AND user.name IS NOT NULL AND user.name IN (\"elastic.maintenance\",\"autoscaling\",\"elasticsearch-controller\",\"elastic/fleet-server\",\"elastic/kibana\") AND api_key.name IS NULL), suite_install = (kibana.saved_object.id IS NOT NULL AND (kibana.saved_object.id LIKE \"cloud-audit-*\" OR kibana.saved_object.id LIKE \"elastic_cloud-audit-*\") AND kibana.session.id IS NULL) | EVAL event.type = SPLIT(et, \",\"), elasticsearch.audit.security_config_change = CASE(scc, \"present\") | EVAL risk = CASE(housekeeping, 0, event.action == \"invalidate_apikeys\", 45, event.action == \"anonymous_access_denied\", 35, elasticsearch.audit.security_config_change IS NOT NULL, 50, event.outcome == \"failure\", 40, suite_install, 0, (service.name == \"serverless-kibana\" AND ((event.type IN (\"change\",\"creation\",\"deletion\") AND (event.action IS NULL OR NOT (event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR event.action IN (\"rule_run_soon\",\"secret_create\"))) AND event.action IN (\"workflow_run\",\"workflow_test\",\"workflow_execution_cancel\"), 10, (service.name == \"serverless-kibana\" AND ((event.type IN (\"change\",\"creation\",\"deletion\") AND (event.action IS NULL OR NOT (event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR event.action IN (\"rule_run_soon\",\"secret_create\"))) AND (event.type == \"deletion\" OR event.action == \"rule_disable\"), 30, (service.name == \"serverless-kibana\" AND ((event.type IN (\"change\",\"creation\",\"deletion\") AND (event.action IS NULL OR NOT (event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR event.action IN (\"rule_run_soon\",\"secret_create\"))), 25, 0) | WHERE risk > 0 | EVAL actor = COALESCE(user.email, api_key.name, user.name, \"<anonymous>\") | EVAL actor_scope = CASE(actor IN (\"elastic.maintenance\",\"autoscaling\",\"elasticsearch-controller\",\"elastic/fleet-server\",\"elastic/kibana\"), \"platform\", actor IN (\"<anonymous>\",\"<unauthenticated-cloud-access-token>\",\"<unauthenticated-saml-user>\",\"<unauthenticated-cloud-api-key>\"), \"unauthenticated\", \"tenant\") | STATS risk_total = SUM(risk * n), scoring_events = SUM(n), privileged = SUM(CASE(scc, n, 0)) BY actor, actor_scope, api_key.name, user.name | EVAL mean_severity = ROUND(1.0 * risk_total / scoring_events, 1) | SORT risk_total DESC, actor | LIMIT 12 | EVAL actor = CASE((LENGTH(actor) == 20 AND actor RLIKE \"[-_A-Za-z0-9]{20}\" AND NOT actor RLIKE \"[0-9]{20}\"), CONCAT(LEFT(actor, 5), \"… · Cloud API key\"), actor)"
         },
         "styling": {
           "density": {
@@ -574,6 +592,18 @@
             "label": "Identity",
             "column": "actor",
             "width": 300
+          },
+          {
+            "label": "API key",
+            "column": "api_key.name",
+            "click_filter": true,
+            "width": 150
+          },
+          {
+            "label": "Principal id",
+            "column": "user.name",
+            "click_filter": true,
+            "width": 250
           }
         ],
         "metrics": [
@@ -620,11 +650,11 @@
       },
       "config": {
         "title": "Why these identities scored — top risky actions, with their weight · 12 at most",
-        "description": "The receipts behind the leaderboard: the identity and action pairs that contributed the most risk, with what each action weighed, how many times it happened, and when it last did. Risk total is weight × events, the same quantity the leaderboard sums. A failed action is its own row, marked (failed) unless its name already says so (access_denied, authentication_failed): for a pair that also appears in Top failures and denials, that row's Events is the same number, and the unmarked row beside it is the pair's successes. realm_authentication_failed, the trace Elasticsearch writes for each realm a failed sign-in tried, still scores here, though the failure counts leave it out so that an attempt counts once. Only the largest contributions fit the panel, so a rare action can be missing here: Highest-severity actions, by how rare lists the actions by severity instead. To follow one person, pick them in the Person (email) control; the pin carries to Actor 360. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email.",
+        "description": "The receipts behind the leaderboard: the identity and action pairs that contributed the most risk, with what each action weighed, how many times it happened, and when it last did. Risk total is weight × events, the same quantity the leaderboard sums. A failed action is its own row, marked (failed) unless its name already says so (access_denied, authentication_failed): for a pair that also appears in Top failures and denials, that row's Events is the same number, and the unmarked row beside it is the pair's successes. realm_authentication_failed, the trace Elasticsearch writes for each realm a failed sign-in tried, still scores here, though the failure counts leave it out so that an attempt counts once. Only the largest contributions fit the panel, so a rare action can be missing here: Highest-severity actions, by how rare lists the actions by severity instead. Click a Principal id to filter to it or open Actor 360; a Cloud API key's Principal id also covers the API keys it created, and a named key's row pins the identity that created it. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "SET unmapped_fields=\"nullify\"; FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE elasticsearch.audit.security_config_change IS NOT NULL OR event.outcome == \"failure\" OR event.action IN (\"invalidate_apikeys\",\"anonymous_access_denied\") OR (service.name == \"serverless-kibana\" AND ((event.type IN (\"change\",\"creation\",\"deletion\") AND (event.action IS NULL OR NOT (event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR event.action IN (\"rule_run_soon\",\"secret_create\"))) | STATS n = COUNT(*), last_ts = MAX(@timestamp) BY user.email, api_key.name, user.name, event.action, scc = elasticsearch.audit.security_config_change IS NOT NULL, event.outcome, service.name, et = MV_CONCAT(event.type, \",\"), housekeeping = (event.action IS NOT NULL AND event.action == \"invalidate_apikeys\" AND user.name IS NOT NULL AND user.name IN (\"elastic.maintenance\",\"autoscaling\",\"elasticsearch-controller\",\"elastic/fleet-server\",\"elastic/kibana\") AND api_key.name IS NULL), suite_install = (kibana.saved_object.id IS NOT NULL AND (kibana.saved_object.id LIKE \"cloud-audit-*\" OR kibana.saved_object.id LIKE \"elastic_cloud-audit-*\") AND kibana.session.id IS NULL) | EVAL event.type = SPLIT(et, \",\"), elasticsearch.audit.security_config_change = CASE(scc, \"present\") | EVAL risk = CASE(housekeeping, 0, event.action == \"invalidate_apikeys\", 45, event.action == \"anonymous_access_denied\", 35, elasticsearch.audit.security_config_change IS NOT NULL, 50, event.outcome == \"failure\", 40, suite_install, 0, (service.name == \"serverless-kibana\" AND ((event.type IN (\"change\",\"creation\",\"deletion\") AND (event.action IS NULL OR NOT (event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR event.action IN (\"rule_run_soon\",\"secret_create\"))) AND event.action IN (\"workflow_run\",\"workflow_test\",\"workflow_execution_cancel\"), 10, (service.name == \"serverless-kibana\" AND ((event.type IN (\"change\",\"creation\",\"deletion\") AND (event.action IS NULL OR NOT (event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR event.action IN (\"rule_run_soon\",\"secret_create\"))) AND (event.type == \"deletion\" OR event.action == \"rule_disable\"), 30, (service.name == \"serverless-kibana\" AND ((event.type IN (\"change\",\"creation\",\"deletion\") AND (event.action IS NULL OR NOT (event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR event.action IN (\"rule_run_soon\",\"secret_create\"))), 25, 0) | WHERE risk > 0 | EVAL actor = COALESCE(user.email, api_key.name, user.name, \"<anonymous>\") | EVAL actor_scope = CASE(actor IN (\"elastic.maintenance\",\"autoscaling\",\"elasticsearch-controller\",\"elastic/fleet-server\",\"elastic/kibana\"), \"platform\", actor IN (\"<anonymous>\",\"<unauthenticated-cloud-access-token>\",\"<unauthenticated-saml-user>\",\"<unauthenticated-cloud-api-key>\"), \"unauthenticated\", \"tenant\") | STATS events = SUM(n), risk_total = SUM(risk * n), last_seen = MAX(last_ts) BY actor, actor_scope, action = event.action, weight = risk, failed = event.outcome == \"failure\" | EVAL action = CASE(failed AND NOT (action LIKE \"*fail*\" OR action LIKE \"*denied*\"), CONCAT(action, \" (failed)\"), action) | DROP failed | SORT risk_total DESC, actor, action | LIMIT 12 | EVAL actor = CASE((LENGTH(actor) == 20 AND actor RLIKE \"[-_A-Za-z0-9]{20}\" AND NOT actor RLIKE \"[0-9]{20}\"), CONCAT(LEFT(actor, 5), \"… · Cloud API key\"), actor)"
+          "query": "SET unmapped_fields=\"nullify\"; FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE elasticsearch.audit.security_config_change IS NOT NULL OR event.outcome == \"failure\" OR event.action IN (\"invalidate_apikeys\",\"anonymous_access_denied\") OR (service.name == \"serverless-kibana\" AND ((event.type IN (\"change\",\"creation\",\"deletion\") AND (event.action IS NULL OR NOT (event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR event.action IN (\"rule_run_soon\",\"secret_create\"))) | STATS n = COUNT(*), last_ts = MAX(@timestamp) BY user.email, api_key.name, user.name, event.action, scc = elasticsearch.audit.security_config_change IS NOT NULL, event.outcome, service.name, et = MV_CONCAT(event.type, \",\"), housekeeping = (event.action IS NOT NULL AND event.action == \"invalidate_apikeys\" AND user.name IS NOT NULL AND user.name IN (\"elastic.maintenance\",\"autoscaling\",\"elasticsearch-controller\",\"elastic/fleet-server\",\"elastic/kibana\") AND api_key.name IS NULL), suite_install = (kibana.saved_object.id IS NOT NULL AND (kibana.saved_object.id LIKE \"cloud-audit-*\" OR kibana.saved_object.id LIKE \"elastic_cloud-audit-*\") AND kibana.session.id IS NULL) | EVAL event.type = SPLIT(et, \",\"), elasticsearch.audit.security_config_change = CASE(scc, \"present\") | EVAL risk = CASE(housekeeping, 0, event.action == \"invalidate_apikeys\", 45, event.action == \"anonymous_access_denied\", 35, elasticsearch.audit.security_config_change IS NOT NULL, 50, event.outcome == \"failure\", 40, suite_install, 0, (service.name == \"serverless-kibana\" AND ((event.type IN (\"change\",\"creation\",\"deletion\") AND (event.action IS NULL OR NOT (event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR event.action IN (\"rule_run_soon\",\"secret_create\"))) AND event.action IN (\"workflow_run\",\"workflow_test\",\"workflow_execution_cancel\"), 10, (service.name == \"serverless-kibana\" AND ((event.type IN (\"change\",\"creation\",\"deletion\") AND (event.action IS NULL OR NOT (event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR event.action IN (\"rule_run_soon\",\"secret_create\"))) AND (event.type == \"deletion\" OR event.action == \"rule_disable\"), 30, (service.name == \"serverless-kibana\" AND ((event.type IN (\"change\",\"creation\",\"deletion\") AND (event.action IS NULL OR NOT (event.action IN (\"saved_object_open_point_in_time\",\"saved_object_close_point_in_time\")))) OR event.action IN (\"rule_run_soon\",\"secret_create\"))), 25, 0) | WHERE risk > 0 | EVAL actor = COALESCE(user.email, api_key.name, user.name, \"<anonymous>\") | EVAL actor_scope = CASE(actor IN (\"elastic.maintenance\",\"autoscaling\",\"elasticsearch-controller\",\"elastic/fleet-server\",\"elastic/kibana\"), \"platform\", actor IN (\"<anonymous>\",\"<unauthenticated-cloud-access-token>\",\"<unauthenticated-saml-user>\",\"<unauthenticated-cloud-api-key>\"), \"unauthenticated\", \"tenant\") | STATS events = SUM(n), risk_total = SUM(risk * n), last_seen = MAX(last_ts) BY actor, actor_scope, api_key.name, user.name, action = event.action, weight = risk, failed = event.outcome == \"failure\" | EVAL action = CASE(failed AND NOT (action LIKE \"*fail*\" OR action LIKE \"*denied*\"), CONCAT(action, \" (failed)\"), action) | DROP failed | SORT risk_total DESC, actor, action | LIMIT 12 | EVAL actor = CASE((LENGTH(actor) == 20 AND actor RLIKE \"[-_A-Za-z0-9]{20}\" AND NOT actor RLIKE \"[0-9]{20}\"), CONCAT(LEFT(actor, 5), \"… · Cloud API key\"), actor)"
         },
         "styling": {
           "density": {
@@ -641,28 +671,34 @@
           {
             "label": "Identity",
             "column": "actor",
-            "width": 300
+            "width": 262
+          },
+          {
+            "label": "Principal id",
+            "column": "user.name",
+            "click_filter": true,
+            "width": 246
           },
           {
             "label": "Action",
             "column": "action",
-            "width": 290
+            "width": 218
           }
         ],
         "metrics": [
           {
             "label": "Weight",
-            "width": 90,
+            "width": 77,
             "column": "weight"
           },
           {
             "label": "Events",
-            "width": 90,
+            "width": 77,
             "column": "events"
           },
           {
             "label": "Risk total",
-            "width": 90,
+            "width": 77,
             "column": "risk_total"
           },
           {
@@ -689,11 +725,11 @@
       },
       "config": {
         "title": "Top failures and denials by identity and action · 12 at most (empty = good)",
-        "description": "Failed and denied operations, one row per identity and action, the most frequent first; only the top rows fit the panel. These are the events the Failures tile counts (every denial and failed sign-in carries a failure outcome), and the Anonymous denials tile is their anonymous_access_denied rows. A failure is scored on a row of its own in Why these identities scored, marked (failed) unless the action's name already says so, so where a pair appears in both, Events here is the same number as on that row. Latest IP is the client address of the newest of those events (\"none recorded\" when none of them carried one, as for <unauthenticated-cloud-api-key>, whose events record only the platform proxy) and Client IPs counts the different addresses they came from: many addresses behind one identity is a spray, one address behind many identities is one source trying names. An address tagged (internal) is the platform-internal hop (100.64/10), as on Geo & Network: the platform calling on the client's behalf, not the client, and Client IPs counts it too. Scope separates unauthenticated probes from tenant identities and Elastic platform automation. API keys and native users (elastic, admin) carry no email, so an Identity that is not an email does not mean an external probe — read Scope. To follow one person, pick them in the Person (email) control; the pin carries to Actor 360. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email. An empty panel means nothing matched in the time range, which is the healthy state; any row here is worth reading.",
+        "description": "Failed and denied operations, one row per identity and action, the most frequent first; only the top rows fit the panel. These are the events the Failures tile counts (every denial and failed sign-in carries a failure outcome), and the Anonymous denials tile is their anonymous_access_denied rows. A failure is scored on a row of its own in Why these identities scored, marked (failed) unless the action's name already says so, so where a pair appears in both, Events here is the same number as on that row. Latest IP is the client address of the newest of those events (\"none recorded\" when none of them carried one, as for <unauthenticated-cloud-api-key>, whose events record only the platform proxy) and Client IPs counts the different addresses they came from: many addresses behind one identity is a spray, one address behind many identities is one source trying names. An address tagged (internal) is the platform-internal hop (100.64/10), as on Geo & Network: the platform calling on the client's behalf, not the client, and Client IPs counts it too. Scope separates unauthenticated probes from tenant identities and Elastic platform automation. API keys and native users (elastic, admin) carry no email, so an Identity that is not an email does not mean an external probe — read Scope. Click a Principal id to filter to it or open Actor 360; a Cloud API key's Principal id also covers the API keys it created, and a named key's row pins the identity that created it. An Identity shown as “_4KEO… · Cloud API key” is an organization-level Elastic Cloud API key: the audit stream records it only by its opaque 20-character id, shown here by its first five characters; it has no name and no owner email. An empty panel means nothing matched in the time range, which is the healthy state; any row here is worth reading.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "SET unmapped_fields=\"nullify\"; FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE event.action IN (\"authentication_failed\",\"anonymous_access_denied\") OR (event.outcome == \"failure\" AND (event.action IS NULL OR event.action != \"realm_authentication_failed\")) | EVAL actor = COALESCE(user.email, api_key.name, user.name, \"<anonymous>\") | STATS events = COUNT(*), ips = COUNT_DISTINCT(client.ip), ip = LAST(client.ip, @timestamp), last_seen = MAX(@timestamp) BY actor, action = event.action | SORT events DESC, actor, action | EVAL actor_scope = CASE(actor IN (\"elastic.maintenance\",\"autoscaling\",\"elasticsearch-controller\",\"elastic/fleet-server\",\"elastic/kibana\"), \"platform\", actor IN (\"<anonymous>\",\"<unauthenticated-cloud-access-token>\",\"<unauthenticated-saml-user>\",\"<unauthenticated-cloud-api-key>\"), \"unauthenticated\", \"tenant\") | EVAL ip = COALESCE(CASE(CIDR_MATCH(ip, \"100.64.0.0/10\"), CONCAT(TO_STRING(ip), \" (internal)\"), TO_STRING(ip)), \"none recorded\") | LIMIT 12 | EVAL actor = CASE((LENGTH(actor) == 20 AND actor RLIKE \"[-_A-Za-z0-9]{20}\" AND NOT actor RLIKE \"[0-9]{20}\"), CONCAT(LEFT(actor, 5), \"… · Cloud API key\"), actor)"
+          "query": "SET unmapped_fields=\"nullify\"; FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE event.action IN (\"authentication_failed\",\"anonymous_access_denied\") OR (event.outcome == \"failure\" AND (event.action IS NULL OR event.action != \"realm_authentication_failed\")) | EVAL actor = COALESCE(user.email, api_key.name, user.name, \"<anonymous>\") | STATS events = COUNT(*), ips = COUNT_DISTINCT(client.ip), ip = LAST(client.ip, @timestamp), last_seen = MAX(@timestamp) BY actor, user.name, action = event.action | SORT events DESC, actor, action | EVAL actor_scope = CASE(actor IN (\"elastic.maintenance\",\"autoscaling\",\"elasticsearch-controller\",\"elastic/fleet-server\",\"elastic/kibana\"), \"platform\", actor IN (\"<anonymous>\",\"<unauthenticated-cloud-access-token>\",\"<unauthenticated-saml-user>\",\"<unauthenticated-cloud-api-key>\"), \"unauthenticated\", \"tenant\") | EVAL ip = COALESCE(CASE(CIDR_MATCH(ip, \"100.64.0.0/10\"), CONCAT(TO_STRING(ip), \" (internal)\"), TO_STRING(ip)), \"none recorded\") | LIMIT 12 | EVAL actor = CASE((LENGTH(actor) == 20 AND actor RLIKE \"[-_A-Za-z0-9]{20}\" AND NOT actor RLIKE \"[0-9]{20}\"), CONCAT(LEFT(actor, 5), \"… · Cloud API key\"), actor)"
         },
         "styling": {
           "density": {
@@ -710,28 +746,34 @@
           {
             "label": "Identity",
             "column": "actor",
-            "width": 296
+            "width": 245
+          },
+          {
+            "label": "Principal id",
+            "column": "user.name",
+            "click_filter": true,
+            "width": 245
           },
           {
             "label": "Action",
             "column": "action",
-            "width": 286
+            "width": 185
           },
           {
             "label": "Latest IP",
-            "width": 197,
+            "width": 170,
             "column": "ip"
           }
         ],
         "metrics": [
           {
             "label": "Client IPs",
-            "width": 89,
+            "width": 72,
             "column": "ips"
           },
           {
             "label": "Events",
-            "width": 89,
+            "width": 72,
             "column": "events"
           },
           {

@@ -106,7 +106,7 @@
         "h": 6
       },
       "config": {
-        "content": "### Who signed in, how, and what failed\n\nSee which sign-in methods and credentials are in use, your busiest people and API keys, every key and when it was last used, and each failed or denied attempt.\n\nUse it to check that access looks the way you expect, to review API keys, or to follow up on a run of failed sign-ins. Empty failure panels are good news.\n\n**How to use it:** choose a Project, Person (email) or Client IP in the controls and set the time picker. Click an email in a table to filter the whole suite to that person.\n"
+        "content": "### Who signed in, how, and what failed\n\nSee which sign-in methods and credentials are in use, your busiest people and API keys, every key and when it was last used, and each failed or denied attempt.\n\nUse it to check that access looks as expected, review API keys, or follow up on failed sign-ins. Empty failure panels are good news. Raw records: [All audit events](/app/discover#/view/cloud-audit-search-00-all-events), [Raw signal feed](/app/discover#/view/cloud-audit-search-10-raw-signal-feed).\n\n**How to use it:** choose a Project, Person (email), API key or Client IP in the controls and set the time picker. Click an email in a table to filter the whole suite to that person.\n"
       }
     },
     {
@@ -584,11 +584,11 @@
       },
       "config": {
         "title": "Busiest API keys by name · top 10 at most",
-        "description": "The busiest API keys of both kinds, one row per key name, with request volume and how many distinct client IPs used it. Kind is Cloud (an Elastic Cloud API key: it has no name and is recorded by its id, so it reads “_4KEO… · Cloud API key”, the first five characters of its id) or Elasticsearch (an Elasticsearch API key: id and name). A re-issued Elasticsearch key keeps its name under a new id, so Key IDs counts the ids a name ran under in range; API key inventory below has one row per id, with owner and first and last use. The API keys tile counts every id and every name in range, so past the ten busiest names the rows here add up to less than it; the rest are in the inventory. A key used from many IPs is worth investigating. The range ends a minute ago, so nothing in it is still arriving; each panel reads the clock for itself, up to a second apart, so two panels side by side can differ by the events of that second at either end of the range: usually none, a few on a busy all-traffic count or during a burst.",
+        "description": "The busiest API keys of both kinds, one row per key name, with request volume and how many distinct client IPs used it. An Elastic Cloud API key has no name, so its API key cell is empty and the next column holds its full id; for an Elasticsearch API key that column is the identity that created it (often a Cloud API key's id). A re-issued Elasticsearch key keeps its name under a new id, so Key IDs counts the ids a name ran under in range; API key inventory below has one row per id, with owner and first and last use. The API keys tile counts every id and every name in range, so past the ten busiest names the rows here add up to less than it; the rest are in the inventory. A key used from many IPs is worth investigating. Click a cell in either key column to filter to it or open Actor 360; a Cloud API key's id also covers the API keys it created. The range ends a minute ago, so nothing in it is still arriving; each panel reads the clock for itself, up to a second apart, so two panels side by side can differ by the events of that second at either end of the range: usually none, a few on a busy all-traffic count or during a burst.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "SET unmapped_fields=\"nullify\"; FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE api_key.id IS NOT NULL OR user.domain == \"_cloud_api_key\" | STATS events = COUNT(*), ips = COUNT_DISTINCT(client.ip), key_ids = COUNT_DISTINCT(api_key.id) BY api_key = api_key.name, user.name | EVAL kind = CASE(key_ids == 0, \"Cloud\", \"Elasticsearch\"), key_ids = GREATEST(key_ids, 1), api_key = COALESCE(api_key, CASE((LENGTH(user.name) == 20 AND user.name RLIKE \"[-_A-Za-z0-9]{20}\" AND NOT user.name RLIKE \"[0-9]{20}\"), CONCAT(LEFT(user.name, 5), \"… · Cloud API key\"), \"(no name)\")) | SORT events DESC, api_key | LIMIT 10"
+          "query": "SET unmapped_fields=\"nullify\"; FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE api_key.id IS NOT NULL OR user.domain == \"_cloud_api_key\" | STATS events = COUNT(*), ips = COUNT_DISTINCT(client.ip), key_ids = COUNT_DISTINCT(api_key.id) BY api_key.name, user.name | EVAL key_ids = GREATEST(key_ids, 1) | SORT events DESC, api_key.name, user.name | LIMIT 10"
         },
         "styling": {
           "density": {
@@ -604,12 +604,14 @@
         "rows": [
           {
             "label": "API key",
-            "column": "api_key"
+            "column": "api_key.name",
+            "click_filter": true
           },
           {
-            "label": "Kind",
-            "column": "kind",
-            "width": 105
+            "label": "Key ID (Cloud) / creator",
+            "column": "user.name",
+            "click_filter": true,
+            "width": 175
           }
         ],
         "metrics": [
