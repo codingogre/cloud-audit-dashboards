@@ -325,7 +325,7 @@
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE client.geo.country_iso_code IS NOT NULL | EVAL actor = COALESCE(user.email, api_key.name, user.name, \"<anonymous>\") | STATS events = COUNT(*), actors = COUNT_DISTINCT(actor), ips = COUNT_DISTINCT(client.ip) BY city = client.geo.city_name, country = client.geo.country_name | EVAL location = CONCAT(COALESCE(city, \"city unknown\"), \", \", country) | SORT events DESC | LIMIT 6"
+          "query": "SET unmapped_fields=\"nullify\"; FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE client.geo.country_iso_code IS NOT NULL | EVAL actor = COALESCE(user.email, api_key.name, user.name, \"<anonymous>\") | STATS events = COUNT(*), actors = COUNT_DISTINCT(actor), ips = COUNT_DISTINCT(client.ip) BY city = client.geo.city_name, country = client.geo.country_name | EVAL location = CONCAT(COALESCE(city, \"city unknown\"), \", \", country) | SORT events DESC | LIMIT 6"
         },
         "styling": {
           "density": {
@@ -494,7 +494,7 @@
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE client.ip IS NOT NULL | EVAL actor = COALESCE(user.email, api_key.name, user.name, \"<anonymous>\") | STATS events = COUNT(*), actors = COUNT_DISTINCT(actor), country = MAX(client.geo.country_name), city = MAX(client.geo.city_name), placed = COUNT(client.geo.country_iso_code) BY client.ip | EVAL location = CASE(country IS NOT NULL, CONCAT(COALESCE(city, \"city unknown\"), \", \", country), CIDR_MATCH(client.ip, \"100.64.0.0/10\"), \"Platform-internal (100.64/10)\", CONCAT(\"Not placeable — \", CASE(CIDR_MATCH(client.ip, \"100.64.0.0/10\"), \"Platform-internal (100.64/10)\", CIDR_MATCH(client.ip, \"10.0.0.0/8\", \"172.16.0.0/12\", \"192.168.0.0/16\"), \"Private (RFC1918)\", CIDR_MATCH(client.ip, \"127.0.0.0/8\", \"169.254.0.0/16\"), \"Loopback / link-local\", \"Public, no geoip match\"))) | SORT events DESC | LIMIT 6"
+          "query": "SET unmapped_fields=\"nullify\"; FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE client.ip IS NOT NULL | EVAL actor = COALESCE(user.email, api_key.name, user.name, \"<anonymous>\") | STATS events = COUNT(*), actors = COUNT_DISTINCT(actor), country = MAX(client.geo.country_name), city = MAX(client.geo.city_name), placed = COUNT(client.geo.country_iso_code) BY client.ip | EVAL location = CASE(country IS NOT NULL, CONCAT(COALESCE(city, \"city unknown\"), \", \", country), CIDR_MATCH(client.ip, \"100.64.0.0/10\"), \"Platform-internal (100.64/10)\", CONCAT(\"Not placeable — \", CASE(CIDR_MATCH(client.ip, \"100.64.0.0/10\"), \"Platform-internal (100.64/10)\", CIDR_MATCH(client.ip, \"10.0.0.0/8\", \"172.16.0.0/12\", \"192.168.0.0/16\"), \"Private (RFC1918)\", CIDR_MATCH(client.ip, \"127.0.0.0/8\", \"169.254.0.0/16\"), \"Loopback / link-local\", \"Public, no geoip match\"))) | SORT events DESC | LIMIT 6"
         },
         "styling": {
           "density": {

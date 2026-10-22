@@ -18,7 +18,7 @@ import { cfg, ROOT } from './lib/env.mjs';
 import { deployed, isDeployed, dashId } from './lib/suite.mjs';
 import { es } from './lib/http.mjs';
 import { success, info, detail, warn } from './lib/log.mjs';
-import { IDX, NOISE, BAND, BAND_KEYS, ACTOR, ACTOR_RESOLVE, CHANGE, TIME_TO } from './lib/panels.mjs';
+import { IDX, NOISE, BAND, BAND_KEYS, ACTOR, ACTOR_RESOLVE, CHANGE, TIME_TO, nullSafe } from './lib/panels.mjs';
 import { riskScored, ACTOR_KEYS } from './lib/dashboards/shared.mjs';
 import {
   CSS, COPY_JS, esc, rich, fmt, codeblock, talk, check, callout, a, rows, useCase,
@@ -47,7 +47,7 @@ const link = (name) => `${cfg.kbs}/app/dashboards#/view/${dashId(name)}?_g=(time
 /** Discover, with an ES|QL query already applied — the "show me this identity's hour" path. */
 const discover = (query) =>
   `${cfg.kbs}/app/discover#/?_g=(time:(from:${WINDOW},to:${TIME_TO}))&_a=(dataSource:(type:esql),query:(esql:'${
-    query.replace(/'/g, "''")}'))`;
+    nullSafe(query).replace(/'/g, "''")}'))`;
 
 const W = `WHERE @timestamp <= NOW() AND @timestamp > NOW() - ${HOURS} hours`;
 
@@ -77,7 +77,7 @@ const compact = (n) => {
 async function q(label, query) {
   const t = Date.now();
   try {
-    const r = await es.esql(query);
+    const r = await es.esql(nullSafe(query));
     detail(`${label} — ${((Date.now() - t) / 1000).toFixed(1)}s, ${r.values?.length ?? 0} row(s)`);
     return r.values || [];
   } catch (err) {

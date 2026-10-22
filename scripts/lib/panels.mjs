@@ -58,6 +58,20 @@ import { deployed } from './suite.mjs';
 export const IDX = cfg.dataStream;
 
 /**
+ * NULL-SAFE API KEY FIELDS. `api_key.id` and `api_key.name` get a mapping only when the first
+ * API-key event arrives, so on a project where no key has been used yet any query naming them fails
+ * with "Unknown column" and the panel shows an error. `SET unmapped_fields="nullify"` makes an
+ * unmapped column read as null instead. It applies to the whole query, so it is added only where a
+ * query names `api_key.*` (most actor queries, through ACTOR_RESOLVE): a typo anywhere else still
+ * fails loudly. Verified on Kibana 9.6 serverless (1.0.4) on every surface the suite uses — Lens,
+ * Vega, Discover sessions and the Discover app, controls, cell filters and drilldowns; Discover's
+ * editor underlines a column that is not mapped yet as a warning, and the query still runs.
+ * searches/*.json and vega/*.json carry the same prefix written out.
+ */
+export const NULL_SAFE = 'SET unmapped_fields="nullify";';
+export const nullSafe = (q) => (/(?<![\w.])api_key\./.test(q) && !q.trimStart().startsWith('SET ') ? `${NULL_SAFE} ${q}` : q);
+
+/**
  * Identity resolution, split from actor_kind because the Discover sessions need the first half and
  * not the second. Keeping it as its own constant is what lets the drift check assert that every
  * static ES|QL file resolves identity the same way — this is the fallback chain the whole suite
@@ -810,7 +824,7 @@ export const kpi = (x, y, w, h, q, col, desc, { fmt = 'number', dec = 0, seconda
   type: 'vis', id: nid('kpi'), grid: { x, y, w, h },
   config: {
     title: '', description: desc, type: 'metric',
-    data_source: { type: 'esql', query: q },
+    data_source: { type: 'esql', query: nullSafe(q) },
     metrics: [{ type: 'primary', column: col, format: { type: fmt, decimals: dec } },
       ...(secondary ? [{ type: 'secondary', column: secondary }] : [])],
   },
@@ -916,7 +930,7 @@ const LEGEND = {
 export const xy = (x, y, w, h, title, q, ycol, desc,
   { kind = 'bar_stacked', breakdown, xcol, label = '@timestamp', temporal = true, legend, colors, values = false, yScale, yTitle } = {}) => {
   const layer = {
-    type: kind, data_source: { type: 'esql', query: q },
+    type: kind, data_source: { type: 'esql', query: nullSafe(q) },
     x: { column: xcol || BUCKET, label }, y: [{ column: ycol }],
   };
   if (breakdown) layer.breakdown_by = { column: breakdown, color: colorMapping(colors) };
@@ -1287,7 +1301,7 @@ export const table = (x, y, w, h, title, q, rows, metrics, desc, { scroll = fals
       title: withEmptyTitle(withCut(title, query, { cut }), empty),
       description: withScrollNote(withEmptyDesc(withIdNote(desc, r), empty), wrap || (scroll && limit > fitRows(h))),
       type: 'data_table',
-      data_source: { type: 'esql', query },
+      data_source: { type: 'esql', query: nullSafe(query) },
       styling: { density: wrap ? DENSITY_WRAP : DENSITY },
       rows: r, metrics: m,
     },
@@ -1335,7 +1349,7 @@ export const pie = (x, y, w, h, title, q, sliceCol, metricCol, desc,
   if (!PIE_LEGEND[legend]) throw new Error(`pie "${title}": legend must be one of ${Object.keys(PIE_LEGEND).join(', ')}`);
   const config = {
     title, description: desc, type: kind,
-    data_source: { type: 'esql', query: q },
+    data_source: { type: 'esql', query: nullSafe(q) },
     metrics: [{ column: metricCol }], group_by: [{ column: sliceCol, color: colorMapping(colors) }],
     legend: PIE_LEGEND[legend],
     styling: { labels: { visible: true, position: labels }, values: { visible: true, mode: 'percentage', percent_decimals } },
@@ -1348,7 +1362,7 @@ export const regionMap = (x, y, w, h, title, q, regionCol, metricCol, desc) => (
   type: 'vis', id: nid('map'), grid: { x, y, w, h },
   config: {
     title, description: desc, type: 'region_map',
-    data_source: { type: 'esql', query: q },
+    data_source: { type: 'esql', query: nullSafe(q) },
     region: { column: regionCol }, metric: { column: metricCol },
   },
 });

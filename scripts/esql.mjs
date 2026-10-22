@@ -52,7 +52,7 @@ function collect(node, out) {
   if (Array.isArray(node)) { node.forEach((n) => collect(n, out)); return; }
   if (node && typeof node === 'object') {
     for (const [k, v] of Object.entries(node)) {
-      if ((k === 'query' || k === 'esql') && typeof v === 'string' && /^\s*FROM\s/i.test(v)) out.push(v);
+      if ((k === 'query' || k === 'esql') && typeof v === 'string' && /^\s*(SET\s[^;]*;\s*)*FROM\s/i.test(v)) out.push(v);
       else collect(v, out);
     }
   }

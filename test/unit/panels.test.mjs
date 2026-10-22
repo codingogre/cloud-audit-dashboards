@@ -301,3 +301,30 @@ test('checkClickFilters() rejects a click-to-filter column the query assigns, an
   assert.equal(run(`FROM x | INLINE STATS m = MIN(${F}) BY family | WHERE ${F} == m | STATS n = MAX(n) BY ${F}, family`, F).length, 0);
   assert.equal(run('FROM x | STATS events = COUNT(*) BY user.email | SORT events DESC', 'user.email').length, 0);
 });
+
+test('nullSafe (1.0.4): SET unmapped_fields="nullify" on exactly the queries that name api_key.*', async () => {
+  const { nullSafe, NULL_SAFE } = await import('../../scripts/lib/panels.mjs');
+  assert.equal(NULL_SAFE, 'SET unmapped_fields="nullify";');
+  const q = 'FROM x | EVAL actor = COALESCE(user.email, api_key.name, user.name)';
+  assert.equal(nullSafe(q), `${NULL_SAFE} ${q}`);
+  assert.equal(nullSafe(nullSafe(q)), nullSafe(q), 'idempotent');
+  assert.equal(nullSafe('FROM x | KEEP user.email'), 'FROM x | KEEP user.email', 'no api_key field, no SET');
+  assert.equal(nullSafe('FROM x | KEEP my_api_key.name'), 'FROM x | KEEP my_api_key.name');
+});
+
+test('nullSafe (1.0.4): every shipped query that names api_key.* carries the SET, and none other does', async () => {
+  const { gatherQueries } = await import('../../scripts/esql.mjs');
+  const items = gatherQueries();
+  assert.ok(items.length >= 102, `collector still sees every query (${items.length})`);
+  const names = (q) => /(?<![\w.])api_key\./.test(q);
+  for (const { src, q } of items) {
+    assert.equal(q.startsWith('SET unmapped_fields="nullify"; FROM '), names(q), `${src}: SET iff api_key.*`);
+  }
+  assert.ok(items.filter(({ q }) => q.startsWith('SET ')).length >= 45);
+});
+
+test('bounded() keeps SET first and splices the time bound after FROM', async () => {
+  const { bounded } = await import('../../scripts/esql.mjs');
+  const b = bounded('SET unmapped_fields="nullify"; FROM x | STATS n = COUNT(*) BY api_key.name');
+  assert.match(b, /^SET unmapped_fields="nullify"; FROM x \| WHERE .*\| STATS n = COUNT\(\*\) BY api_key\.name$/);
+});
