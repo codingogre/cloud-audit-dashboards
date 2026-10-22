@@ -32,6 +32,27 @@ conflict. This file is "where we are right now" and should be assumed stale.
   Own API keys dropped for width. Rendered 24h at 1920 dark and 1440 light: no clipping in the changed tables.
   Not done: the optional treemap click-to-pin (vega/01).
 
+- **Time.** (a) Every dashboard opens on the last 24 hours (`DEFAULT_FROM` in `panels.mjs`, still ending at
+  `now-1m`); `--verify` defaults to the same window. The demo guide keeps its own `AUDIT_DEMO_WINDOW` (1h) and
+  tells the presenter to set it. (b) **Prior-period tiles**: 00 Total / Failed events, 02 Kibana events, 03
+  Elasticsearch events / ES|QL queries / Access denied are DSL Vega specs generated from `PREV_TILES`
+  (`vega/15-prev-*.json`, written by `emit()` and `--objects`; a unit test fails when a file is stale). Each
+  takes its own range from a 15-day lookback to `{"%timefilter%":"max"}` and splits events into prior and
+  current with a script `range` aggregation over the picker's min/max; a `global` min of `@timestamp` gives
+  *"no full prior 24h"* when the stream starts inside the prior window. `--lint` *parity* runs each tile's DSL
+  and its ES|QL `WHERE` over the same fixed 14 days and fails on any difference (live: all six equal, from 856
+  access denials to 2,983,456 events). Sizes and offsets match a Lens metric to the pixel at 1920 and 1440,
+  both themes; the words are Kibana's subdued Vega text colour, a step softer than Lens (no theme-aware way
+  round it: every Vega style gets that one colour, and `background` reads "transparent"). Lens cannot do
+  this at all: **every Lens ES|QL request carries a hidden `@timestamp` filter for the picker's window**
+  (recon `build/review-105/recon-time.md`; now in `panels.mjs` TIME BINDING and README *Platform
+  constraints*). (c) **Audit data held** (00, under the legend; Audit volume grew to 16 rows beside the pair):
+  days since the stream's first event, read live by a DSL min/max with no control-bar clauses
+  (`WHOLE_STREAM_SPECS` in `layout.mjs` asserts that), and the retention `--objects` reads from
+  `_data_stream/<stream>/_lifecycle` ("No retention limit set" here). (d) 07's `WHOLE_MINUTES` now starts at the
+  first whole minute inside the range: the old `DATE_TRUNC(?_tstart)` start was cut back to `_tstart` by the
+  hidden filter, so the start edge never was whole minutes.
+
 ## Release 1.0.4 — ECS field names, null-safe API key fields, Default space, 2026-10-22
 
 Product management's feedback on 1.0.3, plus two requests from the human.

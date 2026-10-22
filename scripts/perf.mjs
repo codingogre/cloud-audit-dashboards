@@ -346,10 +346,12 @@ async function cmdSeed(args) {
  * Bind a DSL spec as Kibana would for a given picker window. es_query_parser.ts applies the picker
  * ONLY when the spec sets %timefield%; otherwise the spec's own explicit range is the whole truth and
  * the picker changes nothing (see the TIME BINDING table in panels.mjs). Every DSL spec in the repo
- * today is in the second group — they show fixed 24h/7d windows on purpose.
+ * today is in the second group — they show fixed windows on purpose — though the previous-period tiles
+ * read the picker's min/max through %timefilter% placeholders, which are bound to `win` here.
  */
 export function bindDsl(body, timefield, stripContext, win, now = Date.now()) {
-  const b = stripContext(body);
+  // A {"%timefilter%": "min"|"max"} (the previous-period tiles) is the picker's window, as in Kibana.
+  const b = stripContext(body, { min: now - win.ms, max: now });
   if (!timefield) return b;
   const range = { range: { [timefield]: { gte: new Date(now - win.ms).toISOString(), lte: new Date(now).toISOString(), format: 'strict_date_optional_time' } } };
   return { ...b, query: { bool: { filter: [range, ...(b.query ? [b.query] : [])] } } };

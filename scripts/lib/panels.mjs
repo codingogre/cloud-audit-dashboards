@@ -16,8 +16,21 @@
  *                                      explicit @timestamp range and the %dashboard_context-*%
  *                                      placeholders keeps the control-bar filters AND its own window
  *
- * That last row is the only way a panel on a now-1h dashboard can show a 7-day baseline. It was read
- * from the 9.6 source (es_query_parser.ts / esql_query_parser.ts).
+ * That last row is the only way a panel on a now-24h dashboard can show a 7-day baseline, a previous
+ * period (PREV_TILES) or the stream's first event (vega/14). It was read from the 9.6 source
+ * (es_query_parser.ts / esql_query_parser.ts).
+ *
+ * THE HIDDEN LENS TIME FILTER (1.0.5, captured in the browser). "Lens ES|QL always follows the time
+ * picker" is stronger than it sounds: every Lens ES|QL request carries a DSL range filter on @timestamp
+ * for exactly [_tstart, _tend], beside the ?_tstart/?_tend params, WHETHER OR NOT the query compares
+ * @timestamp with them. Kibana's esql expression (data/common/search/expressions/esql.ts) always adds
+ * getTime() for the layer's time field; Lens takes that field from the column the query first compares
+ * with ?_tstart/?_tend, and falls back to @timestamp at run time when there is none (07's WHOLE_MINUTES
+ * layers are stored with no timeField and are still sent the filter). Pointing the comparison at another
+ * field only moves the filter there. So no Lens panel can read an event outside the picker: a
+ * `WHERE @timestamp > ?_tstart - 1 day` previous-period count comes back 0, and a lower bound below
+ * ?_tstart is silently cut at ?_tstart. A previous period, or anything outside the range, is a DSL
+ * Vega spec (last row above) or nothing.
  *
  * QUERY SHAPE decides cost far more than window size on the audit stream. Measured on the 2.6M-event
  * perf replica (`./audit --perf`), alternating runs on a quiet cluster:
@@ -49,9 +62,9 @@
  *      queries; that was the multi-condition CASE of rule 1.)
  */
 
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { cfg, nsId, ROOT } from './env.mjs';
+import { cfg, nsId, ROOT, DEFAULT_STREAM } from './env.mjs';
 import { deployed } from './suite.mjs';
 
 /** The audit stream, from config — one definition, so a rename is an .env change, not a code change. */
@@ -1278,7 +1291,7 @@ export const blankNull = (...cols) => `EVAL ${cols.map((c) => `${c} = COALESCE($
  *                        worded for every window.
  *
  * The description gains the matching sentence. Use it on every table or session that a verify render
- * at the default 1h shows empty on a healthy project. Keep the words short: they share the title line.
+ * at 1h (the default until 1.0.5, still one click away) shows empty on a healthy project. Keep the words short: they share the title line.
  */
 export const EMPTY = {
   good: { title: '(empty = good)', desc: 'An empty panel means nothing matched in the time range, which is the healthy state; any row here is worth reading.' },
@@ -1400,6 +1413,236 @@ export const vega = (x, y, w, h, ref, title, desc) => ({
   type: 'vis', id: nid('vega'), grid: { x, y, w, h },
   config: { ref_id: nsId(`cloud-audit-vega-${ref}`), title, description: desc },
 });
+
+/**
+ * PREVIOUS-PERIOD TILES (1.0.5). A headline count with a second line comparing it with the period of the
+ * same length just before the range: "▲ 34% vs prior 24h". Lens cannot do this (THE HIDDEN LENS TIME
+ * FILTER, above), so each is a DSL Vega spec drawn to look like the Lens metric tiles beside it — title
+ * top left at 16px/500, the number bottom right at 36px/500, the comparison right-aligned above it at
+ * 16px, the sizes and offsets read off a rendered Lens metric — with theme colours from the guide-title /
+ * guide-label styles.
+ *
+ * Only tiles whose filter is a plain DSL query are ported, and THIS TABLE IS THE ONE PLACE each one's two
+ * forms sit side by side: `esql` is the ES|QL WHERE the Lens tile used (empty for every event) and `dsl`
+ * the DSL clauses the spec filters on. `./audit --lint` counts both over the same fixed window and fails
+ * if they differ by a single event (scripts/esql.mjs, parity), so the two cannot drift. NOISE, RISK,
+ * resolved identities and COUNT_DISTINCT tiles stay Lens: their predicate would have to be written twice
+ * with nothing to check it. Identity & Access's Failed or denied is one (REALM_TRACE), and it already
+ * carries a detail line.
+ *
+ * How the spec works (vega/15-prev-*.json, generated from this table by writeTileSpecs(); never edit
+ * them by hand — `npm test` fails when a file and the table disagree):
+ *   - no %timefield%, so the picker does not bind it; its own range runs from PREV_LOOKBACK through
+ *     {"%timefilter%": "max"}, which Kibana replaces with the picker's end in ms (es_query_parser.ts,
+ *     _injectContextVars), and the %dashboard_context-*% placeholders keep the control bar;
+ *   - a range aggregation over a script splits each event by the picker's min/max into previous
+ *     (2·min−max, min] and current (min, max] — the same open-start, closed-end window as TIME, so the
+ *     current count equals the Lens tile's ES|QL count to the event;
+ *   - a `range` bucket echoes min and max back, so the spec knows the window's length ("24h", "7d");
+ *   - a `global` min over @timestamp finds the stream's first event whatever the pills say. When the
+ *     previous period starts before it, or before the lookback, the line reads "no full prior 24h"
+ *     instead of a rise against a period the stream was not recording. ≥10× prints as "▲ 12×". "prior",
+ *     not "previous": an 8-column tile at 1440px holds ~20 characters, and "▲ 418× vs previous 1h" was
+ *     cut to "previous …" (rendered).
+ * Cost: the script runs on every event in the lookback, whatever the picker: ~0.7s over 15 days of
+ * this project's ~3M events (1.0.5, live). PREV_LOOKBACK caps the comparable range at 7 days.
+ */
+export const PREV_LOOKBACK_DAYS = 15;
+export const PREV_TILES = {
+  'total-events': { title: 'Total events · all traffic', esql: '', dsl: [] },
+  'failed-events': {
+    title: 'Failed events · all traffic',
+    esql: 'WHERE event.outcome == "failure" OR event.action == "anonymous_access_denied"',
+    dsl: [{ bool: { should: [{ term: { 'event.outcome': 'failure' } }, { term: { 'event.action': 'anonymous_access_denied' } }], minimum_should_match: 1 } }],
+  },
+  'es-events': { title: 'Elasticsearch events', esql: ESS, dsl: [{ term: { 'service.name': 'serverless-elasticsearch' } }] },
+  'esql-queries': {
+    title: 'ES|QL queries',
+    esql: 'WHERE elasticsearch.audit.action == "indices:data/read/esql"',
+    dsl: [{ term: { 'elasticsearch.audit.action': 'indices:data/read/esql' } }],
+  },
+  'access-denied': {
+    title: 'Access denied',
+    esql: 'WHERE event.action == "access_denied" OR event.action == "anonymous_access_denied"',
+    dsl: [{ terms: { 'event.action': ['access_denied', 'anonymous_access_denied'] } }],
+  },
+  'kibana-events': { title: 'Kibana events', esql: KIB, dsl: [{ term: { 'service.name': 'serverless-kibana' } }] },
+};
+export const prevRef = (key) => `15-prev-${key}`;
+/** The ES|QL count a previous-period tile's current number must equal (the parity lint runs it). */
+export const prevEsql = (key) => `FROM ${IDX} | ${TIME}${PREV_TILES[key].esql ? ` | ${PREV_TILES[key].esql}` : ''} | STATS n = COUNT(*)`;
+
+/** The metric tile's look, shared by the previous-period and data coverage specs. */
+// Lens' own stack for a metric (computed style, 1.0.5): "Elastic UI Numeric" covers digits and a few
+// marks in a monospaced face with a slashed zero, and the letters fall through to Inter — on a canvas
+// exactly as in Lens, so "101,329" and "ES|QL" print as they do in the tiles beside these.
+const TILE_FONT = '"Elastic UI Numeric", Inter, system-ui, sans-serif';
+const tileText = (name, style, size, update) => ({
+  type: 'text', name, style, from: { data: 'tile' },
+  encode: { enter: { font: { value: TILE_FONT }, fontSize: { value: size }, fontWeight: { value: 500 } }, update },
+});
+/**
+ * Offsets measured on a rendered Lens metric at 1920 and 1440 (1.0.5): the title's line box starts 16px
+ * in from the panel's top-left, the number's 43px line box ends 16px above the bottom, and the secondary
+ * line's 19px box ends 4px above the number. Kibana insets a Vega view 8px inside its panel, hence
+ * TILE_PAD 8; the y offsets were then nudged until the glyph rows matched a Lens tile's to the pixel in
+ * both themes at 1920 and 1440. What cannot match is the colour: Kibana gives every Vega guide style the
+ * theme's subdued text colour (measured: rgb(152,168,195) dark, rgb(81,99,129) light, the same for
+ * guide-title, guide-label, group-title and titles), where a Lens metric prints its title and number in
+ * the full text colour, and a spec has no way to read the theme. So these tiles' words are a step
+ * softer than their neighbours'; the README themes row is why they stay on the theme styles.
+ */
+export const tileMarks = (title, { bottomLeft = false } = {}) => [
+  tileText('title', 'guide-title', 16, { x: { signal: 'pad' }, y: { signal: 'pad + 2.5' }, baseline: { value: 'top' }, text: { value: title }, limit: { signal: 'width - 2 * pad' } }),
+  tileText('value', 'guide-title', 36, { x: { signal: 'width - pad' }, y: { signal: 'height - pad - 36.6' }, align: { value: 'right' }, baseline: { value: 'top' }, text: { field: 'value' } }),
+  tileText('detail', 'guide-label', 16, { x: { signal: 'width - pad' }, y: { signal: 'height - pad - 63.3' }, align: { value: 'right' }, baseline: { value: 'top' }, text: { field: 'detail' }, limit: { signal: 'width - 2 * pad' } }),
+  ...(bottomLeft ? [tileText('note', 'guide-label', 14, { x: { signal: 'pad' }, y: { signal: 'height - pad - 12' }, baseline: { value: 'alphabetic' }, text: { field: 'note' }, limit: { signal: 'width - 2 * pad - 140' } })] : []),
+];
+export const TILE_PAD = 8;
+
+/**
+ * The window's length as the line prints it: minutes under 55m, hours under 47.5h, days after. The
+ * dashboards end their range a minute ago (TIME_TO), so "Last 1 hour" is a 59-minute window and must
+ * still read "1h", and "Last 24 hours" 23h59m reads "24h".
+ */
+const SPAN = "(datum.len < 3300 ? round(datum.len / 60) + 'm' : datum.len < 171000 ? round(datum.len / 3600) + 'h' : round(datum.len / 86400) + 'd')";
+const PREV_LINE =
+  "!datum.full ? 'no full prior ' + datum.span"
+  + " : datum.prev === 0 ? (datum.cur === 0 ? '0 in prior ' + datum.span + ' too' : 'none in prior ' + datum.span)"
+  + " : datum.cur >= 10 * datum.prev ? '▲ ' + round(datum.cur / datum.prev) + '× vs prior ' + datum.span"
+  + " : datum.cur === datum.prev ? 'same as prior ' + datum.span"
+  + " : (datum.cur > datum.prev ? '▲ ' : '▼ ') + (abs(datum.pct) < 1 ? '<1' : abs(datum.pct)) + '% vs prior ' + datum.span";
+
+export const prevSpec = (key) => {
+  const t = PREV_TILES[key];
+  if (!t) throw new Error(`no previous-period tile "${key}"`);
+  return {
+    $schema: 'https://vega.github.io/schema/vega/v5.json',
+    description: `${t.title}, with the change against the previous period of the same length. Generated from PREV_TILES in scripts/lib/panels.mjs: do not edit.`,
+    autosize: { type: 'fit', contains: 'padding' },
+    padding: 0,
+    signals: [{ name: 'pad', value: TILE_PAD }, { name: 'lookbackMs', value: PREV_LOOKBACK_DAYS * 864e5 }],
+    data: [{
+      name: 'tile',
+      url: {
+        index: DEFAULT_STREAM,
+        body: {
+          size: 0, track_total_hits: false,
+          query: { bool: {
+            must: ['%dashboard_context-must_clause%',
+              { range: { '@timestamp': { gte: `now-${PREV_LOOKBACK_DAYS}d`, lte: { '%timefilter%': 'max' }, format: 'epoch_millis' } } }],
+            must_not: ['%dashboard_context-must_not_clause%'],
+            filter: ['%dashboard_context-filter_clause%', ...t.dsl],
+          } },
+          aggs: {
+            split: { range: {
+              script: {
+                source: "long t = doc['@timestamp'].value.toInstant().toEpochMilli(); long s = params.s; long e = params.e; return t > e ? 2 : (t > s ? 1 : (t > s - (e - s) ? 0 : -1));",
+                params: { s: { '%timefilter%': 'min' }, e: { '%timefilter%': 'max' } },
+              },
+              keyed: true,
+              ranges: [{ key: 'prev', from: 0, to: 1 }, { key: 'cur', from: 1, to: 2 }],
+            } },
+            window: { range: { field: '@timestamp', keyed: true, ranges: [{ key: 'w', from: { '%timefilter%': 'min' }, to: { '%timefilter%': 'max' } }] } },
+            stream: { global: {}, aggs: { first: { min: { field: '@timestamp' } } } },
+          },
+        },
+      },
+      format: { property: 'aggregations' },
+      transform: [
+        { type: 'formula', as: 'cur', expr: 'datum.split.buckets.cur.doc_count' },
+        { type: 'formula', as: 'prev', expr: 'datum.split.buckets.prev.doc_count' },
+        { type: 'formula', as: 's', expr: 'datum.window.buckets.w.from' },
+        { type: 'formula', as: 'len', expr: '(datum.window.buckets.w.to - datum.s) / 1000' },
+        { type: 'formula', as: 'span', expr: SPAN },
+        { type: 'formula', as: 'full', expr: 'isValid(datum.stream.first.value) && datum.s - datum.len * 1000 >= max(datum.stream.first.value, now() - lookbackMs)' },
+        { type: 'formula', as: 'pct', expr: 'datum.prev > 0 ? round((datum.cur - datum.prev) * 100 / datum.prev) : 0' },
+        { type: 'formula', as: 'value', expr: "format(datum.cur, ',d')" },
+        { type: 'formula', as: 'detail', expr: PREV_LINE },
+      ],
+    }],
+    marks: tileMarks(t.title),
+  };
+};
+
+/**
+ * A previous-period tile on a dashboard. The panel has no title, like the Lens metrics beside it: the
+ * spec draws its own. `desc` is the tile's tooltip, and PREV_NOTE is appended to it.
+ */
+export const PREV_NOTE = 'The line above the number compares it with the prior period: the same length of time just before the range (the day before, on the default 24 hours). ▲ or ▼ is the change, and a change of ten times or more reads “×”. “no full prior …” means the audit stream starts inside that earlier period, or that period begins more than 15 days ago, so there is nothing fair to compare with.';
+export const prevKpi = (x, y, w, h, key, desc) => {
+  if (!PREV_TILES[key]) throw new Error(`no previous-period tile "${key}"`);
+  return vega(x, y, w, h, prevRef(key), '', `${desc} ${PREV_NOTE}`);
+};
+
+/**
+ * DATA COVERAGE (vega/14, 1.0.5): how far back the audit stream goes. The first event is read live — a
+ * date written at deploy time would be a day stale tomorrow — by a DSL min/max with no %timefield% and
+ * none of the %dashboard_context% placeholders, so it describes the whole stream whatever the picker and
+ * the pills say (layout.mjs, WHOLE_STREAM_SPECS). Lens could not: its hidden time filter would make the
+ * "first event" the picker's start. Retention can only come from the lifecycle API, which Vega cannot
+ * call, so it is the `retention` signal, set when --objects deploys the spec (retentionText()).
+ */
+export const COVERAGE_REF = '14-data-coverage';
+export const COVERAGE_TITLE = 'Audit data held';
+export const COVERAGE_DEFAULT_RETENTION = 'Retention not checked';
+export const coverageSpec = () => ({
+  $schema: 'https://vega.github.io/schema/vega/v5.json',
+  description: 'How far back the audit stream goes: its first event and the days since, with the retention set on the data stream when the suite was installed. Generated by coverageSpec() in scripts/lib/panels.mjs: do not edit.',
+  autosize: { type: 'fit', contains: 'padding' },
+  padding: 0,
+  signals: [{ name: 'pad', value: TILE_PAD }, { name: 'retention', value: COVERAGE_DEFAULT_RETENTION }],
+  data: [{
+    name: 'tile',
+    url: {
+      index: DEFAULT_STREAM,
+      body: {
+        size: 0, track_total_hits: false,
+        query: { bool: { filter: [{ range: { '@timestamp': { gte: 'now-100y', lte: 'now' } } }] } },
+        aggs: { first: { min: { field: '@timestamp' } }, last: { max: { field: '@timestamp' } } },
+      },
+    },
+    format: { property: 'aggregations' },
+    transform: [
+      { type: 'formula', as: 't0', expr: 'datum.first.value' },
+      { type: 'formula', as: 'days', expr: 'isValid(datum.t0) ? (datum.last.value - datum.t0) / 864e5 : 0' },
+      { type: 'formula', as: 'value', expr: "!isValid(datum.t0) ? 'none yet' : datum.days < 1 ? format(datum.days * 24, '.1f') + ' hours' : format(datum.days, '.1f') + ' days'" },
+      { type: 'formula', as: 'detail', expr: "isValid(datum.t0) ? 'since ' + timeFormat(datum.t0, '%b %-d, %Y @ %H:%M') : ''" },
+      { type: 'formula', as: 'note', expr: 'retention' },
+    ],
+  }],
+  marks: tileMarks(COVERAGE_TITLE, { bottomLeft: true }),
+});
+
+/**
+ * The retention line, from `GET _data_stream/<stream>/_lifecycle?include_defaults=true`: the effective
+ * retention when the project sets one (the stream's own data_retention, or the project's global default),
+ * otherwise "No retention limit set" — the case on this project in 1.0.5, where only the failure store
+ * has a 30-day default. A stream not managed by a data stream lifecycle names no retention here at all.
+ */
+export const retentionText = (res) => {
+  const ds = res?.data_streams?.[0];
+  if (!ds) return COVERAGE_DEFAULT_RETENTION;
+  const lc = ds.lifecycle;
+  if (!lc || lc.enabled === false) return 'Retention set outside the data stream';
+  const r = lc.effective_retention || lc.data_retention || res.global_retention?.default_retention;
+  if (!r) return 'No retention limit set';
+  const m = /^(\d+)([dh])$/.exec(r);
+  if (!m) return `Kept for ${r}`;
+  const n = Number(m[1]), unit = m[2] === 'd' ? 'day' : 'hour';
+  return `Kept for ${n} ${unit}${n === 1 ? '' : 's'}`;
+};
+
+/** The generated specs: every previous-period tile and the coverage tile, keyed by vega/ file name. */
+export const tileSpecs = () => ({
+  ...Object.fromEntries(Object.keys(PREV_TILES).map((key) => [prevRef(key), prevSpec(key)])),
+  [COVERAGE_REF]: coverageSpec(),
+});
+export const writeTileSpecs = () => {
+  for (const [name, spec] of Object.entries(tileSpecs())) {
+    writeFileSync(join(ROOT, 'vega', `${name}.json`), JSON.stringify(spec, null, 2) + '\n');
+  }
+};
 
 /**
  * A Discover session panel. Like table(), it explains an opaque Identity when the session shows one,
@@ -1561,14 +1804,15 @@ export const NAV_H = 3;
 /**
  * Navigation always goes on top: pin the links bar at y=0 and shift authored panels down.
  *
- * Default range is 1h. That used to be justified here as a hard limit — "2h, 3h and 4h exceed 60s;
- * 24h exceeds 110s" — and those numbers were real but misattributed. They were taken back to back:
- * a synchronous ES|QL query outlives the client that gave up on it and cannot be cancelled on
- * serverless, so a measurement taken after a timeout may have been sharing the cluster with it.
- * Re-measured on the perf replica, the busiest-identities panel returns in 84–106ms over 24h and
- * ~0.3s over 7 days. 1h stays the default because it is the readable view of "right now"; what makes
- * a wide window expensive is query shape, not width — see QUERY SHAPE above.
- * `./audit --lint` times every query, so this claim is checked rather than asserted.
+ * Default range is the last 24 hours (DEFAULT_FROM, 1.0.5; it was 1h until then). 1h was once justified
+ * here as a hard limit — "2h, 3h and 4h exceed 60s; 24h exceeds 110s" — and those numbers were real but
+ * misattributed. They were taken back to back: a synchronous ES|QL query outlives the client that gave
+ * up on it and cannot be cancelled on serverless, so a measurement taken after a timeout may have been
+ * sharing the cluster with it. Re-measured on the perf replica, the busiest-identities panel returns in
+ * 84–106ms over 24h and ~0.3s over 7 days; what makes a wide window expensive is query shape, not width —
+ * see QUERY SHAPE above. A day is the review a viewer opens the suite for: an hour was often empty on a
+ * quiet project, and a day gives the previous-period tiles (PREV_TILES) a whole day to compare with.
+ * `./audit --lint` times every query, so the cost claim is checked rather than asserted.
  *
  * THE RANGE ENDS AT now-1m (TIME_TO), on every dashboard — the human's decision, round 6. Ending at `now`
  * put the live edge inside every panel: audit events become searchable seconds after they happen (a
@@ -1588,7 +1832,8 @@ export const EDGE_NOTE = 'The range ends a minute ago, so nothing in it is still
  * width, directly under the navigation strip, and every authored panel moves down by its height, so a
  * module authors its own panels from y=0 and the intro's height changes nothing else in it.
  */
-export const dash = (id, title, description, panels, { intro, timeFrom = 'now-1h' } = {}) => {
+export const DEFAULT_FROM = 'now-24h';
+export const dash = (id, title, description, panels, { intro, timeFrom = DEFAULT_FROM } = {}) => {
   const top = intro ? [introMd(0, NAV_H, 48, intro.h, intro.heading, intro.paragraphs)] : [];
   const below = NAV_H + (intro ? intro.h : 0);
   return {

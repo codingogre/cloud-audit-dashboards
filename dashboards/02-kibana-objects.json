@@ -2,7 +2,7 @@
   "title": "[Audit] 🗂️ Kibana Object Forensics",
   "description": "Every Kibana saved-object read and change, by type, name, space and actor.",
   "time_range": {
-    "from": "now-1h",
+    "from": "now-24h",
     "to": "now-1m"
   },
   "refresh_interval": {
@@ -111,7 +111,7 @@
     },
     {
       "type": "vis",
-      "id": "kpi-01",
+      "id": "vega-01",
       "grid": {
         "x": 0,
         "y": 9,
@@ -119,23 +119,9 @@
         "h": 5
       },
       "config": {
+        "ref_id": "cloud-audit-vega-15-prev-kibana-events",
         "title": "",
-        "description": "All Kibana audit events. Usually a small fraction of raw stream volume, but most of the forensic value — this is where saved objects, spaces and sessions are recorded.",
-        "type": "metric",
-        "data_source": {
-          "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE service.name == \"serverless-kibana\" | STATS `Kibana events` = COUNT(*)"
-        },
-        "metrics": [
-          {
-            "type": "primary",
-            "column": "Kibana events",
-            "format": {
-              "type": "number",
-              "decimals": 0
-            }
-          }
-        ]
+        "description": "All Kibana audit events. Usually a small fraction of raw stream volume, but most of the forensic value — this is where saved objects, spaces and sessions are recorded. The line above the number compares it with the prior period: the same length of time just before the range (the day before, on the default 24 hours). ▲ or ▼ is the change, and a change of ten times or more reads “×”. “no full prior …” means the audit stream starts inside that earlier period, or that period begins more than 15 days ago, so there is nothing fair to compare with."
       }
     },
     {

@@ -2,7 +2,7 @@
   "title": "[Audit] 🔎 Elasticsearch Data Access",
   "description": "What data was read, by whom, through which transport action — including system indices.",
   "time_range": {
-    "from": "now-1h",
+    "from": "now-24h",
     "to": "now-1m"
   },
   "refresh_interval": {
@@ -111,7 +111,7 @@
     },
     {
       "type": "vis",
-      "id": "kpi-01",
+      "id": "vega-01",
       "grid": {
         "x": 0,
         "y": 9,
@@ -119,23 +119,9 @@
         "h": 5
       },
       "config": {
+        "ref_id": "cloud-audit-vega-15-prev-es-events",
         "title": "",
-        "description": "All Elasticsearch audit events in range.",
-        "type": "metric",
-        "data_source": {
-          "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE service.name == \"serverless-elasticsearch\" | STATS `Elasticsearch events` = COUNT(*)"
-        },
-        "metrics": [
-          {
-            "type": "primary",
-            "column": "Elasticsearch events",
-            "format": {
-              "type": "number",
-              "decimals": 0
-            }
-          }
-        ]
+        "description": "All Elasticsearch audit events in range. The line above the number compares it with the prior period: the same length of time just before the range (the day before, on the default 24 hours). ▲ or ▼ is the change, and a change of ten times or more reads “×”. “no full prior …” means the audit stream starts inside that earlier period, or that period begins more than 15 days ago, so there is nothing fair to compare with."
       }
     },
     {
@@ -198,7 +184,7 @@
     },
     {
       "type": "vis",
-      "id": "kpi-04",
+      "id": "vega-04",
       "grid": {
         "x": 24,
         "y": 9,
@@ -206,23 +192,9 @@
         "h": 5
       },
       "config": {
+        "ref_id": "cloud-audit-vega-15-prev-esql-queries",
         "title": "",
-        "description": "ES|QL queries submitted — one per query, not per shard or sub-step. Includes the queries these dashboards run to draw themselves. Equals the indices:data/read/esql row in Top transport actions. The range ends a minute ago, so nothing in it is still arriving; each panel reads the clock for itself, up to a second apart, so two panels side by side can differ by the events of that second at either end of the range: usually none, a few on a busy all-traffic count or during a burst.",
-        "type": "metric",
-        "data_source": {
-          "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE elasticsearch.audit.action == \"indices:data/read/esql\" | STATS `ES|QL queries` = COUNT(*)"
-        },
-        "metrics": [
-          {
-            "type": "primary",
-            "column": "ES|QL queries",
-            "format": {
-              "type": "number",
-              "decimals": 0
-            }
-          }
-        ]
+        "description": "ES|QL queries submitted — one per query, not per shard or sub-step. Includes the queries these dashboards run to draw themselves. Equals the indices:data/read/esql row in Top transport actions. The range ends a minute ago, so nothing in it is still arriving; each panel reads the clock for itself, up to a second apart, so two panels side by side can differ by the events of that second at either end of the range: usually none, a few on a busy all-traffic count or during a burst. The line above the number compares it with the prior period: the same length of time just before the range (the day before, on the default 24 hours). ▲ or ▼ is the change, and a change of ten times or more reads “×”. “no full prior …” means the audit stream starts inside that earlier period, or that period begins more than 15 days ago, so there is nothing fair to compare with."
       }
     },
     {
@@ -256,7 +228,7 @@
     },
     {
       "type": "vis",
-      "id": "kpi-06",
+      "id": "vega-06",
       "grid": {
         "x": 40,
         "y": 9,
@@ -264,23 +236,9 @@
         "h": 5
       },
       "config": {
+        "ref_id": "cloud-audit-vega-15-prev-access-denied",
         "title": "",
-        "description": "Authorization denials. Sustained non-zero values mean a misconfigured client or a probe.",
-        "type": "metric",
-        "data_source": {
-          "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE event.action == \"access_denied\" OR event.action == \"anonymous_access_denied\" | STATS `Access denied` = COUNT(*)"
-        },
-        "metrics": [
-          {
-            "type": "primary",
-            "column": "Access denied",
-            "format": {
-              "type": "number",
-              "decimals": 0
-            }
-          }
-        ]
+        "description": "Authorization denials. Sustained non-zero values mean a misconfigured client or a probe. The line above the number compares it with the prior period: the same length of time just before the range (the day before, on the default 24 hours). ▲ or ▼ is the change, and a change of ten times or more reads “×”. “no full prior …” means the audit stream starts inside that earlier period, or that period begins more than 15 days ago, so there is nothing fair to compare with."
       }
     },
     {

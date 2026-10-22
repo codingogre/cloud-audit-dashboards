@@ -156,7 +156,7 @@ async function cmdRun(args) {
 
 /**
  * Demo tempo: production cadences (security changes every 12h, SLOs daily) leave most panels dark in
- * a dashboard's default 1h window. `--demo` compresses every cadence so each scenario recurs inside
+ * a 1h window (the dashboards' default until 1.0.5; 24h since). `--demo` compresses every cadence so each scenario recurs inside
  * the hour — 1-20 minutes — while keeping their relative order: noisy things stay frequent, rare
  * things stay comparatively rare. Each wait is jittered ±30% so activity does not look metronomic.
  */

@@ -8,16 +8,22 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { cfg, ROOT, withStream, nsId } from './lib/env.mjs';
-import { kb } from './lib/http.mjs';
+import { kb, es } from './lib/http.mjs';
+import { writeTileSpecs, retentionText, COVERAGE_DEFAULT_RETENTION } from './lib/panels.mjs';
 import { dataViewObject } from './lib/controls.mjs';
 import { stableUuid } from './lib/ids.mjs';
-import { success, detail } from './lib/log.mjs';
+import { success, detail, warn } from './lib/log.mjs';
 
 const titleCase = (s) => s.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
-export function vegaObject(file) {
+/**
+ * `signals` sets the value of a spec's named signals at deploy time — the coverage tile's `retention`
+ * (panels.mjs, DATA COVERAGE), which only the lifecycle API knows and Vega cannot call.
+ */
+export function vegaObject(file, signals = {}) {
   const name = basename(file, '.json');
   const spec = JSON.parse(withStream(readFileSync(file, 'utf8')));
+  for (const s of spec.signals || []) if (s.name in signals) s.value = signals[s.name];
   const t = spec.title;
   // Spec titles are intentionally blank — the Kibana panel title supplies the heading —
   // so fall back to a readable name derived from the filename. A title may also be an
@@ -99,10 +105,23 @@ function searchObject(file) {
 
 const listJson = (dir) => readdirSync(join(ROOT, dir)).filter((f) => f.endsWith('.json')).sort().map((f) => join(ROOT, dir, f));
 
+/** The coverage tile's retention line, read from the stream's lifecycle now (see retentionText). */
+async function retention() {
+  try {
+    return retentionText(await es.get(`/_data_stream/${cfg.dataStream}/_lifecycle?include_defaults=true`));
+  } catch (e) {
+    warn(`data stream lifecycle not readable (${String(e.message || e).slice(0, 120)}): the coverage tile says "${COVERAGE_DEFAULT_RETENTION}"`);
+    return COVERAGE_DEFAULT_RETENTION;
+  }
+}
+
 export async function run() {
+  writeTileSpecs();
+  const signals = { retention: await retention() };
+  detail(`coverage tile: ${signals.retention}`);
   const objects = [
     dataViewObject(),
-    ...listJson('vega').map(vegaObject),
+    ...listJson('vega').map((f) => vegaObject(f, signals)),
     ...listJson('searches').map(searchObject),
   ];
   const res = await kb.importObjects(objects);

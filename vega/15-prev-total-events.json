@@ -1,0 +1,281 @@
+{
+  "$schema": "https://vega.github.io/schema/vega/v5.json",
+  "description": "Total events · all traffic, with the change against the previous period of the same length. Generated from PREV_TILES in scripts/lib/panels.mjs: do not edit.",
+  "autosize": {
+    "type": "fit",
+    "contains": "padding"
+  },
+  "padding": 0,
+  "signals": [
+    {
+      "name": "pad",
+      "value": 8
+    },
+    {
+      "name": "lookbackMs",
+      "value": 1296000000
+    }
+  ],
+  "data": [
+    {
+      "name": "tile",
+      "url": {
+        "index": "logs-elastic_cloud.serverless_audit.otel-default",
+        "body": {
+          "size": 0,
+          "track_total_hits": false,
+          "query": {
+            "bool": {
+              "must": [
+                "%dashboard_context-must_clause%",
+                {
+                  "range": {
+                    "@timestamp": {
+                      "gte": "now-15d",
+                      "lte": {
+                        "%timefilter%": "max"
+                      },
+                      "format": "epoch_millis"
+                    }
+                  }
+                }
+              ],
+              "must_not": [
+                "%dashboard_context-must_not_clause%"
+              ],
+              "filter": [
+                "%dashboard_context-filter_clause%"
+              ]
+            }
+          },
+          "aggs": {
+            "split": {
+              "range": {
+                "script": {
+                  "source": "long t = doc['@timestamp'].value.toInstant().toEpochMilli(); long s = params.s; long e = params.e; return t > e ? 2 : (t > s ? 1 : (t > s - (e - s) ? 0 : -1));",
+                  "params": {
+                    "s": {
+                      "%timefilter%": "min"
+                    },
+                    "e": {
+                      "%timefilter%": "max"
+                    }
+                  }
+                },
+                "keyed": true,
+                "ranges": [
+                  {
+                    "key": "prev",
+                    "from": 0,
+                    "to": 1
+                  },
+                  {
+                    "key": "cur",
+                    "from": 1,
+                    "to": 2
+                  }
+                ]
+              }
+            },
+            "window": {
+              "range": {
+                "field": "@timestamp",
+                "keyed": true,
+                "ranges": [
+                  {
+                    "key": "w",
+                    "from": {
+                      "%timefilter%": "min"
+                    },
+                    "to": {
+                      "%timefilter%": "max"
+                    }
+                  }
+                ]
+              }
+            },
+            "stream": {
+              "global": {},
+              "aggs": {
+                "first": {
+                  "min": {
+                    "field": "@timestamp"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "format": {
+        "property": "aggregations"
+      },
+      "transform": [
+        {
+          "type": "formula",
+          "as": "cur",
+          "expr": "datum.split.buckets.cur.doc_count"
+        },
+        {
+          "type": "formula",
+          "as": "prev",
+          "expr": "datum.split.buckets.prev.doc_count"
+        },
+        {
+          "type": "formula",
+          "as": "s",
+          "expr": "datum.window.buckets.w.from"
+        },
+        {
+          "type": "formula",
+          "as": "len",
+          "expr": "(datum.window.buckets.w.to - datum.s) / 1000"
+        },
+        {
+          "type": "formula",
+          "as": "span",
+          "expr": "(datum.len < 3300 ? round(datum.len / 60) + 'm' : datum.len < 171000 ? round(datum.len / 3600) + 'h' : round(datum.len / 86400) + 'd')"
+        },
+        {
+          "type": "formula",
+          "as": "full",
+          "expr": "isValid(datum.stream.first.value) && datum.s - datum.len * 1000 >= max(datum.stream.first.value, now() - lookbackMs)"
+        },
+        {
+          "type": "formula",
+          "as": "pct",
+          "expr": "datum.prev > 0 ? round((datum.cur - datum.prev) * 100 / datum.prev) : 0"
+        },
+        {
+          "type": "formula",
+          "as": "value",
+          "expr": "format(datum.cur, ',d')"
+        },
+        {
+          "type": "formula",
+          "as": "detail",
+          "expr": "!datum.full ? 'no full prior ' + datum.span : datum.prev === 0 ? (datum.cur === 0 ? '0 in prior ' + datum.span + ' too' : 'none in prior ' + datum.span) : datum.cur >= 10 * datum.prev ? '▲ ' + round(datum.cur / datum.prev) + '× vs prior ' + datum.span : datum.cur === datum.prev ? 'same as prior ' + datum.span : (datum.cur > datum.prev ? '▲ ' : '▼ ') + (abs(datum.pct) < 1 ? '<1' : abs(datum.pct)) + '% vs prior ' + datum.span"
+        }
+      ]
+    }
+  ],
+  "marks": [
+    {
+      "type": "text",
+      "name": "title",
+      "style": "guide-title",
+      "from": {
+        "data": "tile"
+      },
+      "encode": {
+        "enter": {
+          "font": {
+            "value": "\"Elastic UI Numeric\", Inter, system-ui, sans-serif"
+          },
+          "fontSize": {
+            "value": 16
+          },
+          "fontWeight": {
+            "value": 500
+          }
+        },
+        "update": {
+          "x": {
+            "signal": "pad"
+          },
+          "y": {
+            "signal": "pad + 2.5"
+          },
+          "baseline": {
+            "value": "top"
+          },
+          "text": {
+            "value": "Total events · all traffic"
+          },
+          "limit": {
+            "signal": "width - 2 * pad"
+          }
+        }
+      }
+    },
+    {
+      "type": "text",
+      "name": "value",
+      "style": "guide-title",
+      "from": {
+        "data": "tile"
+      },
+      "encode": {
+        "enter": {
+          "font": {
+            "value": "\"Elastic UI Numeric\", Inter, system-ui, sans-serif"
+          },
+          "fontSize": {
+            "value": 36
+          },
+          "fontWeight": {
+            "value": 500
+          }
+        },
+        "update": {
+          "x": {
+            "signal": "width - pad"
+          },
+          "y": {
+            "signal": "height - pad - 36.6"
+          },
+          "align": {
+            "value": "right"
+          },
+          "baseline": {
+            "value": "top"
+          },
+          "text": {
+            "field": "value"
+          }
+        }
+      }
+    },
+    {
+      "type": "text",
+      "name": "detail",
+      "style": "guide-label",
+      "from": {
+        "data": "tile"
+      },
+      "encode": {
+        "enter": {
+          "font": {
+            "value": "\"Elastic UI Numeric\", Inter, system-ui, sans-serif"
+          },
+          "fontSize": {
+            "value": 16
+          },
+          "fontWeight": {
+            "value": 500
+          }
+        },
+        "update": {
+          "x": {
+            "signal": "width - pad"
+          },
+          "y": {
+            "signal": "height - pad - 63.3"
+          },
+          "align": {
+            "value": "right"
+          },
+          "baseline": {
+            "value": "top"
+          },
+          "text": {
+            "field": "detail"
+          },
+          "limit": {
+            "signal": "width - 2 * pad"
+          }
+        }
+      }
+    }
+  ]
+}

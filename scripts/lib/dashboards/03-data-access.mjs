@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ROOT } from '../env.mjs';
 import {
-  IDX, ACTOR_RESOLVE, TIME, BUCKET, ESS, INDEX_FAMILY, CONCRETE, SYS_INDEX, cloudKeyLabel, EDGE_NOTE, dash, kpi, xy, table, vega, search, sized, fitRows, resetIds
+  IDX, ACTOR_RESOLVE, TIME, BUCKET, ESS, INDEX_FAMILY, CONCRETE, SYS_INDEX, cloudKeyLabel, EDGE_NOTE, dash, kpi, prevKpi, xy, table, vega, search, sized, fitRows, resetIds
 } from '../panels.mjs';
 import { rawId } from '../suite.mjs';
 import { PIN_BY, PIN_KEY, PIN_PRINCIPAL_SHORT, PIN_NOTE, RAW_RECORDS } from './shared.mjs';
@@ -169,19 +169,20 @@ const INTRO = {
 export function build() {
   resetIds();
   const P = [
-    kpi(0, 0, 8, 5, `FROM ${IDX} | ${TIME} | ${ESS} | STATS \`Elasticsearch events\` = COUNT(*)`, 'Elasticsearch events', 'All Elasticsearch audit events in range.'),
+    // Three DSL Vega tiles with a previous-period line (PREV_TILES in panels.mjs, held to their ES|QL by --lint).
+    prevKpi(0, 0, 8, 5, 'es-events', 'All Elasticsearch audit events in range.'),
     kpi(8, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE elasticsearch.audit.indices IS NOT NULL AND ${COPIES} | STATS BY elasticsearch.audit.indices | ${CONCRETE} | EVAL family = ${INDEX_FAMILY} | ${fold('family')} | STATS \`Index families\` = COUNT_DISTINCT(family)`,
       'Index families', 'Distinct index families named in audited requests — the rows Top index families and the matrix would list with no cut. A data stream and its backing indices are one family, as is a run of dated daily indices or of per-run indices stamped with a date and time (syn-tmp-20261014-152111-… is syn-tmp*), and system and hidden indices count once per area (.alerts*, .slo*, .kibana*…), the groups the ⚠️ table names. Wildcard and date-math expressions (*, -*, <…{now/d}>) are patterns, not indices, and are left out.'),
     kpi(16, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE elasticsearch.audit.action IS NOT NULL | STATS BY elasticsearch.audit.action | WHERE NOT ${FANOUT} | STATS \`Distinct actions\` = COUNT(*)`, 'Distinct actions',
       'Distinct Elasticsearch transport actions (cluster:*, indices:*), with shard-level copies and ES|QL sub-steps folded away — the same actions Top transport actions lists, all traffic.'),
-    // The top-level request only. `LIKE "*esql*"` also counted the engine's own fan-out (compute,
+    // The top-level request only (PREV_TILES esql-queries). `LIKE "*esql*"` also counted the engine's own fan-out (compute,
     // data, search_shards, resolve_fields, async polling) and read ~9x the queries actually run —
     // a figure that grew with shard count, not with anyone's activity. `==` also pushes down.
-    kpi(24, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE elasticsearch.audit.action == "indices:data/read/esql" | STATS \`ES|QL queries\` = COUNT(*)`, 'ES|QL queries',
+    prevKpi(24, 0, 8, 5, 'esql-queries',
       `ES|QL queries submitted — one per query, not per shard or sub-step. Includes the queries these dashboards run to draw themselves. Equals the indices:data/read/esql row in Top transport actions. ${LIVE_EDGE}`),
     kpi(32, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE elasticsearch.audit.indices IS NOT NULL | MV_EXPAND elasticsearch.audit.indices | ${SYS_INDEX} | STATS \`System index access\` = COUNT(*)`, 'System index access',
       'Requests touching dot-prefixed system and hidden indices (.kibana*, .security*, .slo-*, .alerts-*), counted once per index named. Backing indices of ordinary data streams (.ds-logs-…) are not system data and are left out, as are shard-level copies of a request.'),
-    kpi(40, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE event.action == "access_denied" OR event.action == "anonymous_access_denied" | STATS \`Access denied\` = COUNT(*)`, 'Access denied', 'Authorization denials. Sustained non-zero values mean a misconfigured client or a probe.'),
+    prevKpi(40, 0, 8, 5, 'access-denied', 'Authorization denials. Sustained non-zero values mean a misconfigured client or a probe.'),
     withTotals(xy(0, 5, 24, 15, 'Data access over time by action family',
       `FROM ${IDX} | ${TIME} | WHERE elasticsearch.audit.action IS NOT NULL | STATS n = COUNT(*) BY time = ${BUCKET}, elasticsearch.audit.action, request = elasticsearch.audit.request.name | WHERE NOT ${FANOUT} AND NOT ${ASYNC_INNER} | ${FAMILY} | STATS events = SUM(n) BY time, family | SORT family`,
       'events', 'Every Elasticsearch request that names a transport action, by kind of action — all traffic, the searches and ES|QL these dashboards run among the reads. Shard-level copies, ES|QL sub-steps and the search an async search runs for itself are folded away so a request counts once, and authentication and connection events (which name no action) are left out, so it sums to less than the Elasticsearch events tile. The legend gives each family\'s total, so a family too small to see as a bar is still counted; Lens leaves the partial bucket at the right edge, the one the range\'s end cuts through, out of those totals (up to half an hour at 24h), so they run behind the bars and the tiles. A stretch with no bars means no audited Elasticsearch request in that span — on a wide range that includes the time before the project\'s audit stream began.',

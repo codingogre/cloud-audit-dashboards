@@ -21,7 +21,7 @@ import { CONTROLS } from './controls.mjs';
 import {
   NAV_H, NOISE, BAND, BAND_KEYS, RISK, RISK_KEYS, RISK_RESTORE, VERB, ACTOR_RESOLVE, OBJ, OBJ_ID, OBJ_TYPE, CHANGE_PRED, CRED, OBJ_PRESENT,
   CRED_TYPE_LABEL, INDEX_FAMILY, CONCRETE, SYS_INDEX, ACTOR_LABEL, MAGNITUDE_RAMP, SEVERITY_RAMP, fitRows, tableLimit,
-  KIBANA_INTERNALS, BOUNDED, BARE_COUNT, grouped, FAILED_OR_DENIED,
+  KIBANA_INTERNALS, BOUNDED, BARE_COUNT, grouped, FAILED_OR_DENIED, PREV_TILES, prevRef, COVERAGE_REF,
 } from './panels.mjs';
 
 export const GRID_W = 48;
@@ -166,7 +166,17 @@ const DSL_SPECS = new Set([
   'vega/09-activity-punchcard.json',
   'vega/12-actor-cohort.json',
   'vega/13-session-gantt.json',
+  `vega/${COVERAGE_REF}.json`,
+  // Generated from PREV_TILES (panels.mjs); --lint checks each one's count against its ES|QL twin.
+  ...Object.keys(PREV_TILES).map((k) => `vega/${prevRef(k)}.json`),
 ]);
+
+/**
+ * DSL specs that describe the WHOLE stream on purpose and so carry none of the control-bar clauses: the
+ * coverage tile's first event is the stream's, not the selected person's. Asserted rather than exempted,
+ * so a placeholder added to it later (which would make "first event" mean something else) fails.
+ */
+const WHOLE_STREAM_SPECS = new Set([`vega/${COVERAGE_REF}.json`]);
 
 /**
  * DSL specs that deliberately hold one dataset scoped by the control bar and estate-wide datasets
@@ -307,6 +317,10 @@ function checkVega(problems) {
         if (!body(d).includes(projectField)) {
           problems.push(`vega: ${file} dataset ${d.name} does not aggregate on ${CONTROLS[0].field} — the cohort would stop following the ${CONTROLS[0].title} control`);
         }
+      }
+    } else if (WHOLE_STREAM_SPECS.has(file)) {
+      if (dsl.some((d) => CONTEXT_CLAUSES.some((c) => JSON.stringify(d.url.body).includes(c)))) {
+        problems.push(`vega: ${file} describes the whole stream but carries a %dashboard_context% clause — the control bar would narrow it`);
       }
     } else if (dsl.length && scoped !== dsl.length) {
       problems.push(`vega: ${file} has a DSL dataset without %dashboard_context-must_clause% — the control bar would not scope it`);

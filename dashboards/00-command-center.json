@@ -2,7 +2,7 @@
   "title": "[Audit] 🎛️ Command Center",
   "description": "Entry point for Cloud Audit Dashboards. KPIs, volume, actor risk and the live signal feed.",
   "time_range": {
-    "from": "now-1h",
+    "from": "now-24h",
     "to": "now-1m"
   },
   "refresh_interval": {
@@ -12,7 +12,7 @@
   "panels": [
     {
       "type": "links",
-      "id": "nav-16",
+      "id": "nav-17",
       "grid": {
         "x": 0,
         "y": 0,
@@ -98,7 +98,7 @@
     },
     {
       "type": "markdown",
-      "id": "md-15",
+      "id": "md-16",
       "grid": {
         "x": 0,
         "y": 3,
@@ -111,7 +111,7 @@
     },
     {
       "type": "vis",
-      "id": "kpi-01",
+      "id": "vega-01",
       "grid": {
         "x": 0,
         "y": 9,
@@ -119,23 +119,9 @@
         "h": 5
       },
       "config": {
+        "ref_id": "cloud-audit-vega-15-prev-total-events",
         "title": "",
-        "description": "Every audited event in range, including machine noise. Compare with Signal to see how much the noise gate removes.",
-        "type": "metric",
-        "data_source": {
-          "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS `Total events · all traffic` = COUNT(*)"
-        },
-        "metrics": [
-          {
-            "type": "primary",
-            "column": "Total events · all traffic",
-            "format": {
-              "type": "number",
-              "decimals": 0
-            }
-          }
-        ]
+        "description": "Every audited event in range, including machine noise. Compare with Signal to see how much the noise gate removes. The line above the number compares it with the prior period: the same length of time just before the range (the day before, on the default 24 hours). ▲ or ▼ is the change, and a change of ten times or more reads “×”. “no full prior …” means the audit stream starts inside that earlier period, or that period begins more than 15 days ago, so there is nothing fair to compare with."
       }
     },
     {
@@ -260,7 +246,7 @@
     },
     {
       "type": "vis",
-      "id": "kpi-06",
+      "id": "vega-06",
       "grid": {
         "x": 39,
         "y": 9,
@@ -268,23 +254,9 @@
         "h": 5
       },
       "config": {
+        "ref_id": "cloud-audit-vega-15-prev-failed-events",
         "title": "",
-        "description": "Failed outcomes plus anonymous access denials over all traffic, not only signal: a failure is worth seeing even when it is a health check or a query internal. The first place to look during an incident.",
-        "type": "metric",
-        "data_source": {
-          "type": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE event.outcome == \"failure\" OR event.action == \"anonymous_access_denied\" | STATS `Failed events · all traffic` = COUNT(*)"
-        },
-        "metrics": [
-          {
-            "type": "primary",
-            "column": "Failed events · all traffic",
-            "format": {
-              "type": "number",
-              "decimals": 0
-            }
-          }
-        ]
+        "description": "Failed outcomes plus anonymous access denials over all traffic, not only signal: a failure is worth seeing even when it is a health check or a query internal. The first place to look during an incident. The line above the number compares it with the prior period: the same length of time just before the range (the day before, on the default 24 hours). ▲ or ▼ is the change, and a change of ten times or more reads “×”. “no full prior …” means the audit stream starts inside that earlier period, or that period begins more than 15 days ago, so there is nothing fair to compare with."
       }
     },
     {
@@ -294,7 +266,7 @@
         "x": 0,
         "y": 14,
         "w": 32,
-        "h": 11
+        "h": 16
       },
       "config": {
         "title": "Audit volume by source · all traffic",
@@ -381,8 +353,23 @@
       "type": "vis",
       "id": "vega-09",
       "grid": {
-        "x": 0,
+        "x": 32,
         "y": 25,
+        "w": 16,
+        "h": 5
+      },
+      "config": {
+        "ref_id": "cloud-audit-vega-14-data-coverage",
+        "title": "",
+        "description": "How far back this project's audit stream goes: its first stored event and the days since. It ignores the time picker and the controls. The retention line is the data stream's setting, read when the dashboards were installed."
+      }
+    },
+    {
+      "type": "vis",
+      "id": "vega-10",
+      "grid": {
+        "x": 0,
+        "y": 30,
         "w": 24,
         "h": 15
       },
@@ -394,10 +381,10 @@
     },
     {
       "type": "vis",
-      "id": "xy-10",
+      "id": "xy-11",
       "grid": {
         "x": 24,
-        "y": 25,
+        "y": 30,
         "w": 24,
         "h": 15
       },
@@ -481,10 +468,10 @@
     },
     {
       "type": "vis",
-      "id": "tbl-11",
+      "id": "tbl-12",
       "grid": {
         "x": 0,
-        "y": 40,
+        "y": 45,
         "w": 13,
         "h": 13
       },
@@ -529,10 +516,10 @@
     },
     {
       "type": "vis",
-      "id": "tbl-12",
+      "id": "tbl-13",
       "grid": {
         "x": 13,
-        "y": 40,
+        "y": 45,
         "w": 22,
         "h": 13
       },
@@ -578,10 +565,10 @@
     },
     {
       "type": "vis",
-      "id": "xy-13",
+      "id": "xy-14",
       "grid": {
         "x": 35,
-        "y": 40,
+        "y": 45,
         "w": 13,
         "h": 13
       },
@@ -632,10 +619,10 @@
     },
     {
       "type": "discover_session",
-      "id": "ds-14",
+      "id": "ds-15",
       "grid": {
         "x": 0,
-        "y": 53,
+        "y": 58,
         "w": 48,
         "h": 25
       },

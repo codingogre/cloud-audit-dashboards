@@ -15,7 +15,7 @@ import { riskScored, CHANGED, CHANGED_KEYS, CHANGED_DERIVE, specDescription, RAW
  * reader has to know which window each panel shows:
  *
  *   ① Is this normal?   fixed 7 days — DSL Vega, which keeps the control-bar filters but ignores
- *                        the picker, so a baseline and a weekly rhythm are possible on a now-1h page
+ *                        the picker, so a baseline and a weekly rhythm are possible whatever the picker reads
  *   ② What they did     follows the time picker
  *   ③ Evidence          a 24-hour session timeline over the raw records
  *
@@ -150,9 +150,16 @@ const INTRO = {
  * load in sixty for a one-second spread, where TIME let any traffic at either edge show. The cost is that
  * these two panels stop at the last whole minute, up to a minute short of the panels around them, which
  * their descriptions say. A one-condition WHERE on constants: free.
+ *
+ * The START is rounded UP, to the first whole minute inside the range (1.0.5). Until then it was
+ * DATE_TRUNC(?_tstart), the minute boundary at or BEFORE the range's start — but Kibana sends every Lens
+ * ES|QL request a hidden `@timestamp >= _tstart` filter (THE HIDDEN LENS TIME FILTER, panels.mjs), which
+ * silently cut those up-to-59 seconds back off. So the real window began at each panel's own _tstart,
+ * the start edge was not whole minutes at all, and the two panels could still differ by whatever landed
+ * in the second between their starts. Rounded up, the start is inside the filter and the same for both.
  */
-const WHOLE_MINUTES = 'WHERE @timestamp < DATE_TRUNC(1 minute, TO_DATETIME(?_tend)) AND @timestamp >= DATE_TRUNC(1 minute, TO_DATETIME(?_tstart))';
-const RACE_NOTE = 'This tile and "Every scoring action" both count whole minutes only — from the first whole minute of the range to the last — so two fetches a few seconds apart still read the same window; they can stop up to a minute short of the panels around them.';
+const WHOLE_MINUTES = 'WHERE @timestamp < DATE_TRUNC(1 minute, TO_DATETIME(?_tend)) AND @timestamp >= DATE_TRUNC(1 minute, TO_DATETIME(?_tstart)) + 1 minute';
+const RACE_NOTE = 'This tile and "Every scoring action" both count whole minutes only — from the first whole minute of the range to the last — so two fetches a few seconds apart still read the same window; they can start and stop up to a minute inside the panels around them.';
 
 export function build() {
   resetIds();

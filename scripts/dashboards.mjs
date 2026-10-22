@@ -28,7 +28,7 @@ import { buildAll } from './lib/definitions.mjs';
 import { controlGroup, dataViewObject, isControlRef, CONTROLS, RETIRED_DATA_VIEW_IDS } from './lib/controls.mjs';
 import { panelDrilldown, hasFilterableColumn, ACTOR_360, drilldownRefs, isDrilldownRef } from './lib/drilldowns.mjs';
 import { checkLayout } from './lib/layout.mjs';
-import { smallMarkdown } from './lib/panels.mjs';
+import { smallMarkdown, writeTileSpecs } from './lib/panels.mjs';
 
 /**
  * The Dashboards API payload: the definitions minus the in-memory annotations the post-pass and the
@@ -41,6 +41,10 @@ const payload = (def) => ({ ...def, panels: def.panels.map(({ drill, narrow1440,
 
 /** Write the generated definitions to disk so they are diffable in review. */
 export function emit() {
+  // The previous-period and coverage specs are generated from panels.mjs (PREV_TILES, coverageSpec), so
+  // they are written first and the layout check below reads the current ones. Their text carries no id,
+  // so a private AUDIT_ID_NS run writes the same bytes.
+  writeTileSpecs();
   const all = buildAll();
   // --dashboards is runnable without --lint, and this is the command that actually writes and
   // PUTs the definitions. Belt and braces.

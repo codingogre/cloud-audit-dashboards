@@ -572,6 +572,6 @@ through one `CONCAT` measured 484ms and is not worth it.
 | Keys inside `attributes` are literal dotted strings | matters for ingest processors, not for ES\|QL |
 | Root mapping is `dynamic: false` | enriched fields must be explicitly mapped (see `ingest/`) |
 | Filter pills bind to a **source field**, not a derived column | `click_filter` goes on `user.email`; a pill on the `actor` COALESCE matches nothing |
-| Wide windows used to "time out past `now-1h`" | that timing was confounded: the queries ran back to back — a synchronous query outlives its client and cannot be cancelled on serverless. Dashboards stay at 1h as the readable default; see *Query shape decides cost* for what actually costs |
+| Wide windows used to "time out past `now-1h`" | that timing was confounded: the queries ran back to back — a synchronous query outlives its client and cannot be cancelled on serverless. Dashboards defaulted to 1h until 1.0.5 and to 24h since; see *Query shape decides cost* for what actually costs |
 | `_field_caps` reports `url.path` / `url.original` as `keyword` | they are `wildcard` in the backing index mapping — read `_mapping`, and never group on them unguarded |
 | `LAST` is reserved | `last = MAX(@timestamp)` is a parse error; use `last_ts` |

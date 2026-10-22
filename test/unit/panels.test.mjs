@@ -358,7 +358,8 @@ test('nullSafe (1.0.4): SET unmapped_fields="nullify" on exactly the queries tha
 test('nullSafe (1.0.4): every shipped query that names api_key.* carries the SET, and none other does', async () => {
   const { gatherQueries } = await import('../../scripts/esql.mjs');
   const items = gatherQueries();
-  assert.ok(items.length >= 102, `collector still sees every query (${items.length})`);
+  // 96 since 1.0.5: six headline counts became DSL Vega tiles (PREV_TILES), which carry no ES|QL.
+  assert.ok(items.length >= 96, `collector still sees every query (${items.length})`);
   const names = (q) => /(?<![\w.])api_key\./.test(q);
   for (const { src, q } of items) {
     assert.equal(q.startsWith('SET unmapped_fields="nullify"; FROM '), names(q), `${src}: SET iff api_key.*`);

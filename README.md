@@ -38,7 +38,7 @@ design decision that follows.
 | The gate's old `NOT (field IN (...))` form was **null for every Kibana event**, and `WHERE null` drops the row | Both halves are explicitly null-guarded. Before the fix the "Signal events" KPI excluded 100% of Kibana audit. |
 | Composition depends on the workload, so no single noise class can be assumed to be the bulk — health checks (`cluster:monitor/main`), **search-phase internals** and transport **`connection_granted`** are all targeted | The gate and the volume bands share one vocabulary (`NOISE_ES_ACTIONS`, `NOISE_ES_QUERY_INTERNALS`, `NOISE_EVENT_ACTIONS`) so they cannot disagree. |
 | **Reading the audit stream is audited.** Every dashboard panel, Discover tab and API client that queries data emits ES\|QL sub-requests (`esql/compute`, `esql/data`, `esql/search_shards`, `resolve_fields`), `field_caps`, `async_search`, Kibana `/internal/*`, content-management and page-load requests (`bootstrap.js`, `/app/…`, capabilities, licensing), "User has accessed space" and "User has accessed dashboard" reads — with thousands of viewers, the viewers' own queries were the top "signal" | All of it is **Query internals**, gated out with search phases (`KIBANA_INTERNALS` covers the Kibana half). So are reads of API key metadata (`security/api_key/get` and `/query`): a client polling its own key, which on this project is the suite's own tooling key; creating, granting, updating and invalidating a key stay signal. The two lookups every page load makes (`config-global` get, `index-pattern` find) are noise. So is the suite's own traffic (`SUITE_SELF`): a get/resolve/find of a `cloud-audit-*` object by anyone, and any event on one with no Kibana browser session — the automated install, with its `_import` / `_export` request lines. A person editing a suite dashboard in a browser stays signal, and every change, the install's included, stays in `CHANGE_PRED`. The session-less install also scores 0 in the risk model (`SUITE_INSTALL`) unless it failed; 04's *Scoring events* tile counts it in its second line. Unfiltered counts stay on Command Center's *all traffic* panels, on 02's object panels and, when it is deployed, on Platform Volume. 7-day replica: signal 1.54M → 0.38M of 2.6M events. |
-| Wide time windows once looked unservable — "2h, 3h and 4h all exceed 60s" | Those readings were taken back to back, and a synchronous ES\|QL query outlives the client that gave up on it and **cannot be cancelled** on serverless. Every query this repo runs now goes through a cancellable, budgeted call, and `--lint` reports its timings. What actually costs is query *shape* — see [`esql/fragments.md`](esql/fragments.md). Measured with `./audit --perf` on a 2.6M-event, 7-day replica, every panel query now returns in under 0.7s at 7 days and every dashboard loads in under 3.5s (see *Performance*). Dashboards still default to `now-1h` as the readable view of right now, ending at `now-1m` so nothing in range is still arriving. |
+| Wide time windows once looked unservable — "2h, 3h and 4h all exceed 60s" | Those readings were taken back to back, and a synchronous ES\|QL query outlives the client that gave up on it and **cannot be cancelled** on serverless. Every query this repo runs now goes through a cancellable, budgeted call, and `--lint` reports its timings. What actually costs is query *shape* — see [`esql/fragments.md`](esql/fragments.md). Measured with `./audit --perf` on a 2.6M-event, 7-day replica, every panel query now returns in under 0.7s at 7 days and every dashboard loads in under 3.5s (see *Performance*). Dashboards default to the last 24 hours (`now-24h`, `DEFAULT_FROM` since 1.0.5; it was `now-1h`), ending at `now-1m` so nothing in range is still arriving. |
 | `source.ip` is the **internal proxy** (`100.64.x.x` CGNAT, `10.x.x.x` mesh) | All geography uses `network.forwarded_ip`, the real public client IP. Using the obvious field would place every user in the datacentre. |
 | `event.category` / `.type` are **arrays** | `MV_EXPAND` before any `STATS ... BY`. |
 | `event.type` is **single-valued on Kibana** but **multi-valued on Elasticsearch** (`access_granted` = `["access","allowed"]`), and ES\|QL returns **null, not false**, for `IN` on a multi-value operand | The "what changed" predicate selects on `event.type` and is therefore implicitly Kibana-only. It carries an explicit `service.name` test so that is visible rather than accidental, and it is fail-closed everywhere else. |
@@ -59,8 +59,8 @@ Full fragment reference: [`esql/fragments.md`](esql/fragments.md).
 ## The dashboards
 
 Every dashboard carries a horizontal navigation bar pinned at the top, a short customer-facing intro
-directly under it (what the page is for and how to use it, as a heading over small text), a default range of the last hour
-ending a minute ago (`now-1h` → `now-1m`, `TIME_TO`),
+directly under it (what the page is for and how to use it, as a heading over small text), a default range of the last 24 hours
+ending a minute ago (`now-24h` → `now-1m`, `DEFAULT_FROM` and `TIME_TO`),
 auto-refresh off, and a hover tooltip on every panel explaining what it shows and how to read it.
 The bar lists the deployed dashboards in one order on every page: Command Center, Actor 360,
 Identity & Access, Kibana Object Forensics, Elasticsearch Data Access, Security & Anomalies, Geo &
@@ -69,7 +69,7 @@ Network, and Platform Volume last when it is deployed. The numbers below are sou
 
 | # | Dashboard | What it answers |
 | --- | --- | --- |
-| 00 | 🎛️ **Command Center** (`elastic_cloud-audit-dashboard`) | Entry point. Six KPIs, volume by source, actor-risk treemap, signal-vs-noise stream, live signal feed. |
+| 00 | 🎛️ **Command Center** (`elastic_cloud-audit-dashboard`) | Entry point. Six KPIs (Total and Failed events compare with the prior period), volume by source, how far back the audit data goes, actor-risk treemap, signal-vs-noise stream, live signal feed. |
 | 01 | 🔐 **Identity & Access** | Who authenticated, with which credential type, from where, and what failed. API key inventory with ownership. |
 | 02 | 🗂️ **Kibana Object Forensics** | Every Kibana read and state change by type, name, space and actor. Changes are surfaced first, full width — they are rare and always worth reading individually. Ends with Actor 360's 24-hour session timeline over Session reconstruction: a click on a session bar narrows the records to that session. |
 | 03 | 🔎 **Elasticsearch Data Access** | What data was read, by whom, through which transport action, including dot-prefixed system indices. |
@@ -276,9 +276,11 @@ Probed against Kibana 9.6 serverless. Several are undocumented and cost real tim
 | Metric items accept no per-item `color` | Styling lives at config root |
 | `dashboardLink` targets must already exist | Dashboards deploy in two passes |
 | Reporting API rejects `pngV2` / `printablePdfV2` | Verification drives Chromium directly |
-| An ES\|QL Vega spec **always** follows the time picker — omitting `%timefield%` does not opt out | A panel that needs its own window (a 7-day baseline on a 1h dashboard) is a **DSL** Vega spec: `url.index` + `url.body` with an explicit `@timestamp` range and the `%dashboard_context-*%` placeholders keeps the control-bar filters and ignores the picker. Confirmed on a live dashboard |
+| **Every Lens ES\|QL request carries a hidden `@timestamp` range filter for exactly the picker's window**, whether or not the query uses `?_tstart`/`?_tend` (captured in the browser: `"filter":{"bool":{"filter":[{"range":{"@timestamp":{"gte":…,"lte":…}}}]}}` beside the params, on a query that never compares `@timestamp` with `?_tstart`). Kibana adds it for the layer's time field — the column first compared with the params, else `@timestamp` at run time; another column only moves it | No Lens panel can read outside the range: a previous-period count comes back 0, and a lower bound below `?_tstart` is silently cut there (it was on Actor 360's whole-minute window until 1.0.5). The prior-period tiles and *Audit data held* are DSL Vega specs instead (`PREV_TILES`, `coverageSpec()` in `panels.mjs`) |
+| A DSL Vega body can read the picker without being bound to it: `{"%timefilter%": "min"}` / `"max"` anywhere in `body.query` or `body.aggs` becomes the window's start or end in ms (a script's `params` included) | The prior-period tiles take their own range from a 15-day lookback through `"max"`, and split events into prior and current by `min`/`max` in a script `range` aggregation. `--lint` binds the placeholders to a fixed window and checks each tile's count against its ES\|QL twin (*parity*) |
+| An ES\|QL Vega spec **always** follows the time picker — omitting `%timefield%` does not opt out | A panel that needs its own window (a 7-day baseline on a 24h dashboard) is a **DSL** Vega spec: `url.index` + `url.body` with an explicit `@timestamp` range and the `%dashboard_context-*%` placeholders keeps the control-bar filters and ignores the picker. Confirmed on a live dashboard |
 | Two **unnamed** DSL datasets in one Vega spec cross their responses — the second gets nothing and the panel shows a bare "Error" | Every DSL dataset carries a unique `name`; `layout.mjs` fails the build otherwise. (Kibana's `es_query_parser` matches results by the result's index, not the request's) |
-| Kibana themes axis, legend and title text, but **not text marks** — an unstyled text mark is `#000` on the dark theme | Full Vega text marks take `style: "guide-label"` / `"guide-title"`, which Kibana colours per theme. Vega-Lite `style` does not reach text marks at all; there, words go in a `title` whose `text` is an expression |
+| Kibana themes axis, legend and title text, but **not text marks** — an unstyled text mark is `#000` on the dark theme | Full Vega text marks take `style: "guide-label"` / `"guide-title"`, which Kibana colours per theme. Vega-Lite `style` does not reach text marks at all; there, words go in a `title` whose `text` is an expression. Every themed Vega style is the same *subdued* text colour (measured: `rgb(152,168,195)` dark, `rgb(81,99,129)` light), a step softer than a Lens metric's title and number, and a spec cannot read the theme, so the Vega metric tiles' words are that step softer than the Lens tiles beside them |
 | `kibanaAddFilter(query, index)` resolves `index` by data view **title** | Pass `logs-elastic_cloud.serverless_audit.otel-default`; the id `elastic_cloud-audit-logs` renders *Index "elastic_cloud-audit-logs" not found* |
 | External URLs are blocked in Vega on serverless | The basemap is Elastic Maps Service: `{"%type%": "emsfile", "name": "World Countries"}` with `format: {type: "topojson", feature: "data"}` — not `property: "features"`, which yields one useless row |
 | Vega errors render inside the panel as `li.vgaVis__message--err`, often as a bare "Error" | `--verify` counts those elements in addition to reading text |
@@ -349,8 +351,8 @@ in shared code rather than at call sites.
   *"(empty when none in range)"*: its old words, *"(may be empty at 1h)"*, named one window and read as
   wrong at every other. Round 3's *"· none is good"* and *"· empty without X"* read as a verdict on the rows
   whenever the table was full; `--lint` rejects that form. `search()` takes the same option, and the
-  description gains the matching sentence. Use it on every panel a default 1h render shows empty on a
-  healthy project.
+  description gains the matching sentence. Use it on every panel a 1h render shows empty on a
+  healthy project (an hour is still one click in the picker; the default became 24 hours in 1.0.5).
 - *Completeness.* A title must not promise more than the panel shows. A LIMITed table whose title says
   *every*, *everything* or *all* fails `--lint` (`layout.mjs` `PROMISES_ALL`): say *top*, *busiest* or
   *most recent*, or pass `{ scroll: true }` when the LIMIT is a guard on a closed set (07's *Every scoring
@@ -398,6 +400,20 @@ through `grouped(col)` in `panels.mjs` — `CONCAT(${grouped('signin')}, " faile
 single row the STATS returns (a multi-branch CASE, so never per event). Keep the line short (an 8-column
 tile shows ~22 characters at 1440px) and quiet, a qualifier of the number under it. `--lint` fails a
 secondary line that stringifies a column without `grouped()`.
+
+**Prior-period tiles (1.0.5).** Six headline counts whose filter is plain — 00 *Total events* and *Failed
+events*, 02 *Kibana events*, 03 *Elasticsearch events*, *ES\|QL queries* and *Access denied* — show the
+change against the same length of time just before the range: *"▲ 34% vs prior 24h"*, *"▼ 50% …"*, *"▲ 15×
+…"* at ten times or more, *"none in prior 24h"*, and *"no full prior 24h"* when the audit stream (or the
+tiles' 15-day lookback) starts inside that earlier period, so a new project never shows a false rise. Lens
+cannot read outside the picker (*Platform constraints*), so each is a generated DSL Vega spec
+(`vega/15-prev-*.json` from `PREV_TILES` in `panels.mjs`; edit the table, never the files) drawn at a Lens
+metric's sizes and offsets, measured at 1920 and 1440 in both themes. `PREV_TILES` holds each tile's ES\|QL
+`WHERE` and DSL clauses side by side, and `--lint` fails if the two count a different number of events over
+a fixed 14-day window. A tile whose filter is not plain DSL (the noise gate, risk, resolved identities,
+distinct counts) stays Lens. *Audit data held* (00, `vega/14`) is the same kind of tile over the whole
+stream: days since the first stored event, ignoring the picker and the controls, with the retention the
+data stream's lifecycle reported at `--objects` time.
 
 **Numbers that sit together must reconcile.** A KPI and the table beside or below it, two tables
 counting "the same" identities or events, or a tile and the chart under it must agree, or say on the
@@ -523,12 +539,12 @@ legends over an empty domain, decade axes, solid placeholder cells, a flat line 
 ./audit --ingest-check   Assert enrichment is actually flowing on live data
 ./audit --lint           Execute every query in the repo — ES|QL and the DSL behind Vega specs — under a
                          time budget that cancels overruns; fails the build on any error
-./audit --objects        Deploy the data view, 13 Vega visualizations and 11 Discover sessions
+./audit --objects        Deploy the data view, 20 Vega visualizations and 11 Discover sessions
 ./audit --dashboards     Generate dashboards/*.json and deploy every dashboard
 ./audit --verify         Render every dashboard in Chromium and inspect for broken panels
                          AUDIT_VERIFY_THEME=light renders light mode (default: dark)
-                         AUDIT_VERIFY_RANGE=now-24h widens the window (default: now-1h); every
-                         range ends at now-1m, as the dashboards' saved range does
+                         AUDIT_VERIFY_RANGE=now-1h sets the window (default: now-24h, the
+                         dashboards' saved range); every range ends at now-1m, as theirs does
                          AUDIT_VERIFY_WIDTH=1440 narrows the viewport (default: 1920)
                          AUDIT_VERIFY_ONLY=00,07 renders only dashboards whose name contains one
 ./audit --perf <sub>     Time every query at production volume on a replica: seed | run | clean
@@ -579,7 +595,9 @@ than 5s, which is how a panel that passes today is noticed before it times out o
 
 Before any query runs, `--lint` checks structure offline: exact grid tessellation, fragment drift
 between the Lens panels and the static ES|QL in Vega and Discover, and the Vega rules above — every
-spec registered, DSL specs windowed, scoped and named, text marks readable in both themes.
+spec registered, DSL specs windowed, scoped and named, text marks readable in both themes. After the
+queries it runs the prior-period *parity* check: each `PREV_TILES` tile's DSL and ES\|QL counts over the same
+fixed window must be equal.
 
 `--verify` exists because static checks cannot see a panel that renders empty, clipped or
 mid-load. It screenshots every dashboard to a fresh timestamped directory under
@@ -589,8 +607,8 @@ viewport. Stuck loading states and panel counts are *recorded* in `report.json` 
 they are noisy on a healthy dashboard. `AUDIT_VERIFY_THEME=light` renders light mode; the Vega
 specs are theme-aware and a dark-only verifier cannot see a regression in the other half.
 `AUDIT_VERIFY_WIDTH=1440` renders at a laptop viewport, where Lens' fixed pixel column widths clip what
-1920 does not (see *Presentation conventions*), and `AUDIT_VERIFY_RANGE=now-24h` renders a populated
-suite when synthetic traffic has been idle for the last hour.
+1920 does not (see *Presentation conventions*). The window defaults to the dashboards' own 24 hours;
+`AUDIT_VERIFY_RANGE=now-1h` renders the sparse view an hour gives.
 Three failures it was built to catch, all real:
 
 - a selector-based check reported zero broken panels while every Vega chart displayed
@@ -647,7 +665,7 @@ audit stream.
 ```
 ./audit --synth run    [--only ids] [--no-verify] [--keep] [--timeout-min n]
 ./audit --synth loop   [--minutes n] [--only ids] [--demo]   continuous traffic; --demo compresses cadences so
-                                                      every scenario recurs inside a 1h dashboard window
+                                                      every scenario recurs inside a 1h window
 ./audit --synth schema                                field drift: referenced fields vs the live stream
 ./audit --synth list                                  personas, scenarios, weights, cadence
 ./audit --synth clean  [--dry-run] [--only ids]       remove syn-* resources
@@ -704,7 +722,7 @@ scripts/
     html.mjs                Presenter-guide markup and stylesheet
     env.mjs http.mjs log.mjs
 dashboards/*.json           Generated definitions, committed for review
-vega/*.json                 13 Vega specs (4 full Vega, 9 Vega-Lite)
+vega/*.json                 20 Vega specs (13 full Vega, 7 Vega-Lite); 14 and 15-prev-* are generated
 searches/*.json             11 ES|QL Discover sessions (00 is every event, unfiltered)
 ingest/*.json               Pipeline, templates, mappings
 esql/fragments.md           Canonical query fragments

@@ -2,7 +2,7 @@
   "title": "[Audit] 🚨 Security & Anomalies",
   "description": "Mean-severity risk scoring, privileged operations, failures and newly seen identities.",
   "time_range": {
-    "from": "now-1h",
+    "from": "now-24h",
     "to": "now-1m"
   },
   "refresh_interval": {

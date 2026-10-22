@@ -13,6 +13,7 @@ import { es } from './lib/http.mjs';
 import { success, fail, detail, warn } from './lib/log.mjs';
 import { buildAll } from './lib/definitions.mjs';
 import { checkLayout } from './lib/layout.mjs';
+import { PREV_TILES, PREV_LOOKBACK_DAYS, prevSpec, prevEsql } from './lib/panels.mjs';
 
 /**
  * Every query runs through es.esqlRun(), which cancels it on overrun — a plain /_query keeps
@@ -80,10 +81,51 @@ function collectDsl(node, out) {
  */
 const CONTEXT_CLAUSES = new Set(['%dashboard_context-must_clause%', '%dashboard_context-must_not_clause%',
   '%dashboard_context-filter_clause%']);
-export function stripContext(node) {
-  if (Array.isArray(node)) return node.filter((v) => !CONTEXT_CLAUSES.has(v)).map(stripContext);
-  if (node && typeof node === 'object') return Object.fromEntries(Object.entries(node).map(([k, v]) => [k, stripContext(v)]));
+/**
+ * `{"%timefilter%": "min" | "max"}` is the picker's start or end in ms, which Kibana substitutes anywhere
+ * in a DSL body (the previous-period tiles, PREV_TILES in panels.mjs). Unreplaced, Elasticsearch rejects
+ * the body, so the lint binds it to `win` — by default the dashboards' own range, the last 24 hours ending
+ * a minute ago. Kibana's `shift`/`unit` options are not used by any spec, so they are refused here.
+ */
+export const lintWindow = (ms = 864e5, end = Date.now() - 60e3) => ({ min: end - ms, max: end });
+export function stripContext(node, win = lintWindow()) {
+  if (Array.isArray(node)) return node.filter((v) => !CONTEXT_CLAUSES.has(v)).map((v) => stripContext(v, win));
+  if (node && typeof node === 'object') {
+    if ('%timefilter%' in node) {
+      if (Object.keys(node).length !== 1 || !(node['%timefilter%'] in win)) throw new Error(`unsupported %timefilter% ${JSON.stringify(node)}`);
+      return win[node['%timefilter%']];
+    }
+    return Object.fromEntries(Object.entries(node).map(([k, v]) => [k, stripContext(v, win)]));
+  }
   return node;
+}
+
+/**
+ * PARITY (1.0.5). A previous-period tile is a DSL spec standing in for a Lens ES|QL count, so the two
+ * forms PREV_TILES holds for it must count the same events. Both run over one fixed window — the 14
+ * days ending five minutes ago, on whole seconds, so nothing in it is still arriving — and any
+ * difference, even one event, fails the lint. Fourteen days rather than the dashboards' one, because
+ * a quiet filter (access denials) is often 0 for days, and 0 = 0 proves nothing; fourteen is the most
+ * that fits inside the tiles' 15-day lookback (PREV_LOOKBACK_DAYS), which would otherwise cut the DSL side.
+ */
+export async function prevParity({ budgetMs = BUDGET_MS } = {}) {
+  const end = Math.floor((Date.now() - 300e3) / 1000) * 1000;
+  const win = { min: end - (PREV_LOOKBACK_DAYS - 1) * 864e5, max: end };
+  const params = [{ _tstart: new Date(win.min).toISOString() }, { _tend: new Date(win.max).toISOString() }];
+  const out = [];
+  for (const key of Object.keys(PREV_TILES)) {
+    const spec = JSON.parse(withStream(JSON.stringify(prevSpec(key))));
+    const { index, body } = spec.data[0].url;
+    const [q, d] = await Promise.all([
+      es.esqlRun(prevEsql(key), params, { budgetMs }),
+      es.searchRun(index, stripContext(body, win), { budgetMs }),
+    ]);
+    const esql = q.ok ? q.body.values?.[0]?.[0] : undefined;
+    const dsl = d.ok ? d.body.aggregations?.split?.buckets?.cur?.doc_count : undefined;
+    out.push({ key, esql, dsl, ok: esql !== undefined && esql === dsl, ms: Math.max(q.ms || 0, d.ms || 0),
+      error: !q.ok ? `ES|QL: ${JSON.stringify(q.body).slice(0, 160)}` : !d.ok ? `DSL: ${JSON.stringify(d.body).slice(0, 160)}` : undefined });
+  }
+  return out;
 }
 
 const resolvePath = (obj, path) => path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj);
@@ -158,7 +200,14 @@ export async function run() {
     fail(`${src}[dsl ${i}] ${String(reason).replace(/\n/g, ' ').slice(0, 220)}`);
   }
 
-  const total = items.length + dsl.length;
+  for (const r of await prevParity()) {
+    timings.push({ src: `parity ${r.key}`, ms: r.ms });
+    if (r.ok) { detail(`parity ${r.key}: ${r.esql} = ${r.dsl}`); continue; }
+    bad++;
+    fail(`parity ${r.key}: ES|QL counts ${r.esql}, the DSL tile ${r.dsl}${r.error ? ` (${r.error})` : ''} — PREV_TILES in scripts/lib/panels.mjs holds both forms; make them select the same events`);
+  }
+
+  const total = items.length + dsl.length + Object.keys(PREV_TILES).length;
   const slow = timings.filter((t) => t.ms >= SLOW_MS).sort((a, b) => b.ms - a.ms);
   slow.slice(0, 10).forEach((t) => warn(`slow: ${(t.ms / 1000).toFixed(1)}s  ${t.src}`));
   if (bad) throw new Error(`${bad}/${total} queries failed — fix before deploying`);

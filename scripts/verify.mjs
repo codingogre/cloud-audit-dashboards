@@ -18,7 +18,7 @@ import { dashId } from './lib/suite.mjs';
 import { success, fail, detail, info, warn } from './lib/log.mjs';
 import { buildAll } from './lib/definitions.mjs';
 import { CONTROLS } from './lib/controls.mjs';
-import { TIME_TO } from './lib/panels.mjs';
+import { TIME_TO, DEFAULT_FROM } from './lib/panels.mjs';
 
 /**
  * Kibana emits exactly six console errors on every FULL page load of any dashboard.
@@ -59,13 +59,14 @@ export async function run(argv = []) {
   const theme = process.env.AUDIT_VERIFY_THEME === 'light' ? 'light' : 'dark';
   /**
    * The window and the viewport are overridable because each hides a different class of defect. The
-   * default now-1h is what a viewer opens, but when synthetic traffic is idle it renders half the suite
-   * empty: AUDIT_VERIFY_RANGE=now-24h shows the panels populated. And Lens column widths are absolute
+   * default is the dashboards' own saved range (DEFAULT_FROM, now-24h since 1.0.5), so a render is what a
+   * viewer opens; AUDIT_VERIFY_RANGE=now-1h shows the sparse, often-empty view an hour gives, and wider
+   * ranges show the previous-period tiles reading "no full prior …". And Lens column widths are absolute
    * pixels, so truncation that a 1920px pass never sees appears at AUDIT_VERIFY_WIDTH=1440.
    * The range ends where every dashboard's saved range ends (TIME_TO, now-1m), so a render shows what a
    * viewer opening the dashboard sees, and two panels side by side reconcile the way they do for them.
    */
-  const range = process.env.AUDIT_VERIFY_RANGE || 'now-1h';
+  const range = process.env.AUDIT_VERIFY_RANGE || DEFAULT_FROM;
   if (!/^now-\d+[smhdwMy]$/.test(range)) throw new Error(`AUDIT_VERIFY_RANGE "${range}" is not a relative range like now-24h`);
   const width = Number(process.env.AUDIT_VERIFY_WIDTH || 1920);
   if (!Number.isInteger(width) || width < 800 || width > 3840) throw new Error(`AUDIT_VERIFY_WIDTH "${process.env.AUDIT_VERIFY_WIDTH}" is not a pixel width between 800 and 3840`);

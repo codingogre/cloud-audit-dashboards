@@ -1,6 +1,6 @@
 /** 02 Kibana Object Forensics — see scripts/lib/definitions.mjs for how the suite is assembled. */
 import {
-  IDX, ACTOR, TIME, BUCKET, KIB, VERB, CHANGE, OBJ_GROK, OBJ_NAME, OBJ_ID, OBJ_TYPE, PALETTE, KIBANA_INTERNALS, dash, kpi, xy, bar, table,
+  IDX, ACTOR, TIME, BUCKET, KIB, VERB, CHANGE, OBJ_GROK, OBJ_NAME, OBJ_ID, OBJ_TYPE, PALETTE, KIBANA_INTERNALS, dash, kpi, prevKpi, xy, bar, table,
   vega, search, resetIds, sized
 } from '../panels.mjs';
 import { rawId } from '../suite.mjs';
@@ -122,7 +122,8 @@ const INTRO = {
 export function build() {
   resetIds();
   const P = [
-    kpi(0, 0, 8, 5, `FROM ${IDX} | ${TIME} | ${KIB} | STATS \`Kibana events\` = COUNT(*)`, 'Kibana events', 'All Kibana audit events. Usually a small fraction of raw stream volume, but most of the forensic value — this is where saved objects, spaces and sessions are recorded.'),
+    // A DSL Vega tile with a previous-period line (PREV_TILES in panels.mjs, held to its ES|QL by --lint).
+    prevKpi(0, 0, 8, 5, 'kibana-events', 'All Kibana audit events. Usually a small fraction of raw stream volume, but most of the forensic value — this is where saved objects, spaces and sessions are recorded.'),
     kpi(8, 0, 8, 5, `FROM ${IDX} | ${TIME} | ${CHANGE} | STATS \`Mutations\` = COUNT(*)`, 'Mutations',
       'Every Kibana state change in range, selected by ECS event.type rather than by an action-name suffix. That matters: a suffix test cannot see rule_enable, rule_disable, the whole case_user_action family, or anything the workflow, ML and agent-builder features emit, because none of those action names end in _create/_update/_delete. Point-in-time open/close are ECS-tagged creation/deletion but are query internals, and are excluded by name.'),
     kpi(16, 0, 8, 5, `FROM ${IDX} | ${TIME} | ${KIB} | ${OBJ_ID} | STATS \`Objects touched\` = COUNT_DISTINCT(obj_id)`, 'Objects touched',
