@@ -131,7 +131,7 @@ export const kb = {
   get:  (p, o)    => request(`${cfg.kibana}${p}`, o),
   post: (p, body) => request(`${cfg.kibana}${p}`, { method: 'POST', body, headers: KB_WRITE }),
   raw:  (p, o)    => request(`${cfg.kibana}${p}`, { ...o, raw: true, headers: { ...KB_WRITE, ...(o?.headers || {}) } }),
-  /** Space-scoped helpers — everything this project deploys lives inside one space. */
+  /** Helpers for the space the suite lives in (the Default space; see cfg.kbs). */
   sGet:  (p, o)    => request(`${cfg.kbs}${p}`, { ...o, headers: { ...KB_API, ...(o?.headers || {}) } }),
   sPost: (p, body) => request(`${cfg.kbs}${p}`, { method: 'POST', body, headers: { ...KB_WRITE, ...KB_API } }),
   sPut:  (p, body) => request(`${cfg.kbs}${p}`, { method: 'PUT', body, headers: { ...KB_WRITE, ...KB_API } }),
@@ -154,6 +154,20 @@ export const kb = {
       throw new Error(`saved object import failed: ${errs}`);
     }
     return out;
+  },
+  /**
+   * Deletes one saved object. The generic saved-objects CRUD and _bulk_delete are disabled on
+   * serverless (400, which an unchecked call reports as success); content management's rpc delete
+   * works. Resolves to the HTTP status; 404 means it was already gone. `base` targets another space.
+   */
+  async deleteObject(contentTypeId, id, base = cfg.kbs) {
+    const res = await fetch(`${base}/api/content_management/rpc/delete`, {
+      method: 'POST',
+      headers: { ...auth(), 'kbn-xsrf': 'true', 'x-elastic-internal-origin': 'kibana',
+        'elastic-api-version': '1', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contentTypeId, id, version: 1 }),
+    });
+    return res.status;
   },
   async exportObjects(objects) {
     const res = await fetch(`${cfg.kbs}/api/saved_objects/_export`, {

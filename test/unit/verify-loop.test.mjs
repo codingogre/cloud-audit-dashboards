@@ -95,9 +95,18 @@ test('classify(): every drift status', () => {
 });
 
 test('classify(): a field present only under another path is reported as a move candidate', () => {
-  const { fields } = classify({ queryable: new Set(['user.email']), emitted: new Map(), wanted: ['attributes.user.email'] });
+  const { fields } = classify({ queryable: new Set(['client.user.email']), emitted: new Map(), wanted: ['user.email'] });
   assert.equal(fields[0].status, 'candidate');
-  assert.deepEqual(fields[0].candidates, ['user.email']);
+  assert.deepEqual(fields[0].candidates, ['client.user.email']);
+});
+
+test('classify(): a bare ECS name and its stored passthrough path are one field', () => {
+  // field_caps lists both forms; _source stores the literal keys under attributes / resource.attributes.
+  const queryable = new Set(['user.email', 'attributes.user.email', 'service.name', 'resource.attributes.service.name', 'api_key.name']);
+  const emitted = new Map([['attributes.user.email', 4], ['resource.attributes.service.name', 9]]);
+  const { fields } = classify({ queryable, emitted, wanted: ['user.email', 'service.name', 'api_key.name'] });
+  const st = Object.fromEntries(fields.map((f) => [f.path, f.status]));
+  assert.deepEqual(st, { 'api_key.name': 'mapped-empty', 'service.name': 'mapped', 'user.email': 'mapped' });
 });
 
 test('teardown(runIds): deletes only what names this run, never another run\'s resources', async () => {

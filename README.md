@@ -9,16 +9,19 @@ Everything here is version-controlled and idempotent: `./audit --deploy` is safe
 
 ```bash
 cp .env.example .env      # fill in EC_URL, KB_URL, EC_API_KEY
-./audit --deploy          # space -> ingest -> lint -> objects -> dashboards
+./audit --deploy          # ingest -> lint -> objects -> dashboards, into the Default space
 ./audit --verify          # render every deployed dashboard in Chromium and inspect for broken panels
 ```
 
 Command Center, the entry point, deploys at the saved-object id **`elastic_cloud-audit-dashboard`**:
-`<kibana>/s/<space>/app/dashboards#/view/elastic_cloud-audit-dashboard`. The Cloud UI's *Log delivery* page
+`<kibana>/app/dashboards#/view/elastic_cloud-audit-dashboard`. The suite installs into Kibana's **Default space**, so
+that link needs no `/s/<space>` prefix. The Cloud UI's *Log delivery* page
 links to that id, so it is fixed. Every other dashboard is `elastic_cloud-audit-<name>`, with no number:
 `elastic_cloud-audit-actor-360`, `-identity-access`, `-kibana-objects`, `-data-access`, `-security-anomalies`,
 `-geo-network` and, when deployed, `-platform-volume`. The numbered ids of 1.0.2 and earlier
-(`cloud-audit-<NN>-<name>`) are retired: `--dashboards` removes them from the space it deploys to.
+(`cloud-audit-<NN>-<name>`) are retired: `--dashboards` removes them. The data view the controls use is
+**`elastic_cloud-audit-logs`**; it replaced `cloud-audit-dv` in 1.0.4, and `--dashboards` removes the old one.
+Releases up to 1.0.3 installed into a dedicated `audit` space; 1.0.4 and later install into Default.
 
 ---
 
@@ -30,22 +33,23 @@ design decision that follows.
 | Fact | Consequence |
 | --- | --- |
 | One stream carries **two** audit sources: `serverless-elasticsearch` (named `elasticsearch-serverless` before the 2026 schema change) and `serverless-kibana` | Every panel states which source it reads. Kibana events are usually a small slice of the volume but carry nearly all of the forensic value. |
-| `attributes.user.name` is a **numeric id** (`1234567890`), not a name | Every actor-facing panel resolves identity through `COALESCE(user.email, api_key.name, user.name)`. Without it the whole suite shows integers. |
+| `user.name` is a **numeric id** (`1234567890`), not a name | Every actor-facing panel resolves identity through `COALESCE(user.email, api_key.name, user.name)`. Without it the whole suite shows integers. |
 | **A single high-volume API key can dominate the stream**, and Elasticsearch stamps that key's **creator** on every event it emits | A noise gate is ON by default everywhere except the panels titled *all traffic* and the opt-in Platform Volume dashboard. Actor-facing panels also carry the `api_key` column, so an automated workload is never mistaken for the person who minted its credential. |
 | The gate's old `NOT (field IN (...))` form was **null for every Kibana event**, and `WHERE null` drops the row | Both halves are explicitly null-guarded. Before the fix the "Signal events" KPI excluded 100% of Kibana audit. |
 | Composition depends on the workload, so no single noise class can be assumed to be the bulk — health checks (`cluster:monitor/main`), **search-phase internals** and transport **`connection_granted`** are all targeted | The gate and the volume bands share one vocabulary (`NOISE_ES_ACTIONS`, `NOISE_ES_QUERY_INTERNALS`, `NOISE_EVENT_ACTIONS`) so they cannot disagree. |
 | **Reading the audit stream is audited.** Every dashboard panel, Discover tab and API client that queries data emits ES\|QL sub-requests (`esql/compute`, `esql/data`, `esql/search_shards`, `resolve_fields`), `field_caps`, `async_search`, Kibana `/internal/*`, content-management and page-load requests (`bootstrap.js`, `/app/…`, capabilities, licensing), "User has accessed space" and "User has accessed dashboard" reads — with thousands of viewers, the viewers' own queries were the top "signal" | All of it is **Query internals**, gated out with search phases (`KIBANA_INTERNALS` covers the Kibana half). So are reads of API key metadata (`security/api_key/get` and `/query`): a client polling its own key, which on this project is the suite's own tooling key; creating, granting, updating and invalidating a key stay signal. The two lookups every page load makes (`config-global` get, `index-pattern` find) are noise. So is the suite's own traffic (`SUITE_SELF`): a get/resolve/find of a `cloud-audit-*` object by anyone, and any event on one with no Kibana browser session — the automated install, with its `_import` / `_export` request lines. A person editing a suite dashboard in a browser stays signal, and every change, the install's included, stays in `CHANGE_PRED`. Unfiltered counts stay on Command Center's *all traffic* panels, on 02's object panels and, when it is deployed, on Platform Volume. 7-day replica: signal 1.54M → 0.38M of 2.6M events. |
 | Wide time windows once looked unservable — "2h, 3h and 4h all exceed 60s" | Those readings were taken back to back, and a synchronous ES\|QL query outlives the client that gave up on it and **cannot be cancelled** on serverless. Every query this repo runs now goes through a cancellable, budgeted call, and `--lint` reports its timings. What actually costs is query *shape* — see [`esql/fragments.md`](esql/fragments.md). Measured with `./audit --perf` on a 2.6M-event, 7-day replica, every panel query now returns in under 0.7s at 7 days and every dashboard loads in under 3.5s (see *Performance*). Dashboards still default to `now-1h` as the readable view of right now, ending at `now-1m` so nothing in range is still arriving. |
-| `attributes.source.ip` is the **internal proxy** (`100.64.x.x` CGNAT, `10.x.x.x` mesh) | All geography uses `attributes.network.forwarded_ip`, the real public client IP. Using the obvious field would place every user in the datacentre. |
-| `attributes.event.category` / `.type` are **arrays** | `MV_EXPAND` before any `STATS ... BY`. |
-| `attributes.event.type` is **single-valued on Kibana** but **multi-valued on Elasticsearch** (`access_granted` = `["access","allowed"]`), and ES\|QL returns **null, not false**, for `IN` on a multi-value operand | The "what changed" predicate selects on `event.type` and is therefore implicitly Kibana-only. It carries an explicit `service.name` test so that is visible rather than accidental, and it is fail-closed everywhere else. |
+| `source.ip` is the **internal proxy** (`100.64.x.x` CGNAT, `10.x.x.x` mesh) | All geography uses `network.forwarded_ip`, the real public client IP. Using the obvious field would place every user in the datacentre. |
+| `event.category` / `.type` are **arrays** | `MV_EXPAND` before any `STATS ... BY`. |
+| `event.type` is **single-valued on Kibana** but **multi-valued on Elasticsearch** (`access_granted` = `["access","allowed"]`), and ES\|QL returns **null, not false**, for `IN` on a multi-value operand | The "what changed" predicate selects on `event.type` and is therefore implicitly Kibana-only. It carries an explicit `service.name` test so that is visible rather than accidental, and it is fail-closed everywhere else. |
 | Kibana populates `kibana.saved_object.{id,type,name}` **only on the saved-objects audit path** — workflows, agent-builder, ML, product docs and secrets populate none of them | Object identity is recovered from `body.text`, which is never null on a Kibana event. Before this, every such change rendered as a blank row. |
 | Kibana logs an **attempt** (`outcome: unknown`, *"User is creating…"*) on the saved-objects path and a **completion** (`outcome: success`, *"User updated…"*) on the newer feature path | Change panels relabel `unknown` to "attempted" rather than showing it raw, which reads as a defect. |
-| `attributes.elasticsearch.audit.security_config_change` is a **JSON string**, not an object | Rendered verbatim as text; its internals are never aggregated. |
+| `elasticsearch.audit.security_config_change` is a **JSON string**, not an object | Rendered verbatim as text; its internals are never aggregated. |
 | `body.text` carries pre-rendered prose, but **only on Kibana events** | Always paired with the `serverless-kibana` source filter. |
 | Keys inside `attributes` are **literal dotted strings** (`attributes['network.forwarded_ip']`) | Ingest processors cannot reach them by dot-path; the geoip pipeline lifts the IP with a script processor. |
+| `attributes` and `resource.attributes` are **passthrough** objects, so every field under them is also queryable by its bare ECS name (`event.action` reads `attributes.event.action`, `service.name` reads `resource.attributes.service.name`) | Every query, control and filter uses the ECS names. The stored paths appear only in the ingest pipeline. A field that is not mapped yet is unknown under both names. |
 | Index mapping is `dynamic: false`, and a dynamic template maps `attributes.*` to `flattened` | Enriched fields must be explicitly mapped at the **top level** (`client.*`), not under `attributes.*`. |
-| `attributes.http.request.body.size` / `response.body.size` are mapped but **never populated** | Byte-volume KPIs are impossible; Platform Volume uses distinct HTTP request ids and a signal-share percentage instead. |
+| `http.request.body.size` / `response.body.size` are mapped but **never populated** | Byte-volume KPIs are impossible; Platform Volume uses distinct HTTP request ids and a signal-share percentage instead. |
 
 Full fragment reference: [`esql/fragments.md`](esql/fragments.md).
 
@@ -144,7 +148,7 @@ but a click opens nothing, drilldown included. `layout.mjs` fails such a column 
 
 **Vega panels filter too.** On Actor 360, clicking a credential or a space in the flow, or
 shift-clicking a session, pins it across the suite. Clicking a session (on Actor 360 and on Kibana
-Object Forensics) pins a `session: …` pill on `attributes.kibana.session.id` AND sets the time range to
+Object Forensics) pins a `session: …` pill on `kibana.session.id` AND sets the time range to
 the session plus a minute either side, because the records under the timeline follow the picker while
 the timeline is fixed at 24 hours. The zoom is sent 0.7s and 1.4s after the click, from a Vega timer:
 `kibanaAddFilter` resolves its data view over the network before it fires, and a time change sent first
@@ -157,15 +161,15 @@ the flow clears every pill on the page.
 
 | Control | Field | Why |
 |---|---|---|
-| Project | `attributes.project.name` | The serverless project that **emitted** the event. An audit project usually collects the audit streams of several projects; this narrows the whole dashboard — and, through hierarchical chaining, every dropdown after it — to one of them. Populated on every Elasticsearch and Kibana event. Names are not unique in Elastic Cloud, so projects that share a name share an option. **Actor 360's cohort rank follows Project and nothing else:** it ranks against everyone active in the projects the selection is active in, so a Person or Client IP selection highlights that identity instead of shrinking the cohort to one. Exact across all projects or within one; across several (not all) it sums events and takes each distinct count's per-project maximum, and its title says *approximate*. |
-| Person (email) | `attributes.user.email` | The identity control: the reliable identity key, never null for a human. |
+| Project | `project.name` | The serverless project that **emitted** the event. An audit project usually collects the audit streams of several projects; this narrows the whole dashboard — and, through hierarchical chaining, every dropdown after it — to one of them. Populated on every Elasticsearch and Kibana event. Names are not unique in Elastic Cloud, so projects that share a name share an option. **Actor 360's cohort rank follows Project and nothing else:** it ranks against everyone active in the projects the selection is active in, so a Person or Client IP selection highlights that identity instead of shrinking the cohort to one. Exact across all projects or within one; across several (not all) it sums events and takes each distinct count's per-project maximum, and its title says *approximate*. |
+| Person (email) | `user.email` | The identity control: the reliable identity key, never null for a human. |
 | Client IP | `client.ip` | Can hold more distinct addresses than anyone could eyeball, which is the point of a searchable dropdown. |
 
-`attributes.user.name` is deliberately not offered — it is a numeric id, not a name. Nor is
-`attributes.user.full_name` (a *Person (name)* control until 1.0.2): it is null for some identities,
+`user.name` is deliberately not offered — it is a numeric id, not a name. Nor is
+`user.full_name` (a *Person (name)* control until 1.0.2): it is null for some identities,
 so a name dropdown silently missed people the email dropdown finds.
 
-Controls need a real data view, so `cloud-audit-dv` is deployed as an `index-pattern` saved
+Controls need a real data view, so `elastic_cloud-audit-logs` is deployed as an `index-pattern` saved
 object; the Discover sessions keep their inline ad-hoc one. State shape was settled empirically
 against 9.6.0 serverless (import a throwaway dashboard, export it back): control state is
 **wrapped in `explicitInput`**, and the data view arrives by reference named
@@ -174,13 +178,13 @@ against 9.6.0 serverless (import a throwaway dashboard, export it back): control
 **What "sticky across dashboards" actually means**, measured end to end in a browser: selecting
 an identity scopes every panel, KPIs included, and clicking through the nav bar
 carries the *filter* to the destination, where every panel is correctly scoped and a pill reads
-`attributes.user.email: <identity>`. The destination's **dropdown itself reads "Any"** — control
+`user.email: <identity>`. The destination's **dropdown itself reads "Any"** — control
 selections live in dashboard app state, which `use_filters` does not carry. The numbers are
 right everywhere; the widget does not re-display the selection. Read the pill, not the dropdown.
 
 The older click-to-filter path still exists and needs neither:
 
-- identity columns are `click_filter: true` on the **real** `attributes.user.email` field, never
+- identity columns are `click_filter: true` on the **real** `user.email` field, never
   on the derived `actor` COALESCE, which has nothing behind it in `_source`;
 - every ES|QL panel already carries `ignoreGlobalFilters: false` — Kibana materialises it itself
   as a Lens datasource-layer property (verified in a real `_export`: 11 of 11 ES|QL layers), so
@@ -190,12 +194,12 @@ The older click-to-filter path still exists and needs neither:
 - the nav bar's `dashboardLink`s carry `use_filters: true`.
 
 So clicking an identity pins it, and it stays pinned across every dashboard. Verified at the
-data layer: a `match_phrase` filter on `attributes.user.email` and a native ES|QL `WHERE` return
+data layer: a `match_phrase` filter on `user.email` and a native ES|QL `WHERE` return
 identical counts.
 
 ## Geo enrichment
 
-`attributes.network.forwarded_ip` holds the real public client IP. An **audit-scoped**
+`network.forwarded_ip` holds the real public client IP. An **audit-scoped**
 ingest pipeline lifts it to `client.ip` and geo-resolves `client.geo.*`.
 
 Scoping matters. The obvious hook, `logs@custom`, fires for *every* `logs-*` data stream in
@@ -243,7 +247,7 @@ Probed against Kibana 9.6 serverless. Several are undocumented and cost real tim
 | XY split key is `breakdown_by`, not `breakdown` | — |
 | Partition charts use `metrics[]` + `group_by[]`, not `slice_by`/`metric` | — |
 | A `data_table` with an empty `metrics` array crashes the API | Raw event listings are aggregated, or shipped as Discover panels |
-| A Lens table prints a null cell as `-` (a clickable, underlined `-` in a click-to-filter column) and an empty string as `(blank)`; a column the query assigns — even `EVAL attributes.user.email = COALESCE(…)` — loses click-to-filter (*"relies on a field created at query time"*) | `blankNull()` blanks display columns only; a filter column keeps its nulls, or is dropped where they dominate |
+| A Lens table prints a null cell as `-` (a clickable, underlined `-` in a click-to-filter column) and an empty string as `(blank)`; a column the query assigns — even `EVAL user.email = COALESCE(…)` — loses click-to-filter (*"relies on a field created at query time"*) | `blankNull()` blanks display columns only; a filter column keeps its nulls, or is dropped where they dominate |
 | A pie's outside slice labels are dropped for small slices when the panel is short | `pie()` always draws a legend (`right`, size `l`), so every category is named somewhere |
 | On an ES\|QL Vega spec, `"domain": {"%timefilter%": true}` renders the bare "Error" | Echo `?_tstart` / `?_tend` after the `STATS` and draw them as an invisible mark, so the axis spans the whole window (vega/07) |
 | Metric items accept no per-item `color` | Styling lives at config root |
@@ -252,10 +256,10 @@ Probed against Kibana 9.6 serverless. Several are undocumented and cost real tim
 | An ES\|QL Vega spec **always** follows the time picker — omitting `%timefield%` does not opt out | A panel that needs its own window (a 7-day baseline on a 1h dashboard) is a **DSL** Vega spec: `url.index` + `url.body` with an explicit `@timestamp` range and the `%dashboard_context-*%` placeholders keeps the control-bar filters and ignores the picker. Confirmed on a live dashboard |
 | Two **unnamed** DSL datasets in one Vega spec cross their responses — the second gets nothing and the panel shows a bare "Error" | Every DSL dataset carries a unique `name`; `layout.mjs` fails the build otherwise. (Kibana's `es_query_parser` matches results by the result's index, not the request's) |
 | Kibana themes axis, legend and title text, but **not text marks** — an unstyled text mark is `#000` on the dark theme | Full Vega text marks take `style: "guide-label"` / `"guide-title"`, which Kibana colours per theme. Vega-Lite `style` does not reach text marks at all; there, words go in a `title` whose `text` is an expression |
-| `kibanaAddFilter(query, index)` resolves `index` by data view **title** | Pass `logs-elastic_cloud.serverless_audit.otel-default`; the id `cloud-audit-dv` renders *Index "cloud-audit-dv" not found* |
+| `kibanaAddFilter(query, index)` resolves `index` by data view **title** | Pass `logs-elastic_cloud.serverless_audit.otel-default`; the id `elastic_cloud-audit-logs` renders *Index "elastic_cloud-audit-logs" not found* |
 | External URLs are blocked in Vega on serverless | The basemap is Elastic Maps Service: `{"%type%": "emsfile", "name": "World Countries"}` with `format: {type: "topojson", feature: "data"}` — not `property: "features"`, which yields one useless row |
 | Vega errors render inside the panel as `li.vgaVis__message--err`, often as a bare "Error" | `--verify` counts those elements in addition to reading text |
-| Dashboards, visualizations, searches and data views are **multiple-isolated**: an id is unique across all spaces | With the suite deployed in one space, a second space's `PUT /api/dashboards/elastic_cloud-audit-…` is a 409 and `_import` silently re-ids the Vega and Discover objects. For a private render set `AUDIT_ID_NS` alongside `AUDIT_SPACE` (`AUDIT_SPACE=x AUDIT_ID_NS=x ./audit --objects`, then `--dashboards`, `--verify`) and every id is namespaced: `cloud-audit-x-…` for the Vega and Discover objects and the data view, `elastic_cloud-audit-x-…` for the dashboards (`elastic_cloud-audit-x-dashboard`, `elastic_cloud-audit-x-actor-360`, …) |
+| Dashboards, visualizations, searches and data views are **multiple-isolated**: an id is unique across all spaces | With the suite deployed in one space, a second space's `PUT /api/dashboards/elastic_cloud-audit-…` is a 409 and `_import` silently re-ids the Vega and Discover objects. The suite lives in the Default space, so a private render sits beside production under its own ids: set `AUDIT_ID_NS` (`AUDIT_ID_NS=x ./audit --objects`, then `--dashboards`, `--verify`) and every id is namespaced: `cloud-audit-x-…` for the Vega and Discover objects, `elastic_cloud-audit-x-…` for the dashboards and the data view (`elastic_cloud-audit-x-dashboard`, `elastic_cloud-audit-x-logs`, …) |
 | `data_table` rows and metrics take `label` and `width` natively (stored as the Lens `customLabel` and column width) | `table()` titles every column and sizes it by role; see *Presentation conventions*. A label never changes the filtered field |
 | An `xy` chart's legend defaults to `hidden`, even with a `breakdown_by` | `xy()` emits `config.legend` (`bottom` list by default when there is a split) and the `eui_amsterdam` palette; Kibana's `default` palette pairs each hue with a pale tint that vanishes on white |
 | Markdown panels have no font-size setting, `###` renders at ~20px, and raw HTML is **dropped** before render: a `<style>` block or a `<div class>` never reaches the page (probed: no style element in the DOM; the old `CSS_NAV` block on Command Center never styled anything) | `md()` lifts a leading heading into the panel title; `layout.mjs` rejects `#`–`###` anywhere else. The intros need small text, which only the legacy markdown *visualization* has (`fontSize` in pt), so the post-pass swaps each intro for a by-value one at 9pt: 12px paragraphs, a 17px `###` heading, theme colours (see *Presentation conventions*) |
@@ -272,9 +276,9 @@ in shared code rather than at call sites.
 **Lens tables — `table()` in `scripts/lib/panels.mjs`.**
 - *Headers.* Name ES\|QL columns for the query (snake_case aliases, raw fields) and let `table()`
   title them: `COLUMNS` maps the suite vocabulary (`actor` → Identity, `last_seen` → Last seen,
-  `attributes.user.email` → Email …) and anything unlisted is humanised. `sized(col, w, { label })` or
+  `user.email` → Email …) and anything unlisted is humanised. `sized(col, w, { label })` or
   `filterable(col, { label })` overrides. A label is a Lens custom label, so a click-to-filter column
-  labelled "Email" still pins `attributes.user.email` — never alias a filter column in ES\|QL.
+  labelled "Email" still pins `user.email` — never alias a filter column in ES\|QL.
 - *Widths are roles.* Dates, counts, IPs and short enums have fixed widths from `COLUMNS`, on metrics as
   well as rows; text columns flex and share the rest. Lens hard-clips a cell without an ellipsis, so
   width is the only defence. Give a text column `sized()` only to stop a sibling taking all the slack.
@@ -369,7 +373,7 @@ panel why not. Two things make them disagree, and both are rules:
 - *Same gate.* Both are gated by `NOISE`, or neither is. A presence panel (rule 4 of QUERY SHAPE) is
   ungated by design; one beside a gated panel says *all traffic* in its title, as 00's do.
 - *Same resolution.* Both count the same key: the `actor` COALESCE (`ACTOR_RESOLVE`), or the raw
-  `attributes.user.email`, or `attributes.api_key.name` — not one of each. The email groups an API key's
+  `user.email`, or `api_key.name` — not one of each. The email groups an API key's
   events under its creator; the COALESCE gives the key its own row. A distinct count
   (`COUNT_DISTINCT(actor)`) counts what the table beside it groups by. (The review that set this rule
   found 32 identities in a KPI over a 28-row table, and one person at 12,649 events in one panel and
@@ -421,7 +425,7 @@ every drift-checked fragment, list the new names in `columns` and `sort`, and pu
 loses its filter-for/out cell actions, because no index field stands behind the new name; in the
 Discover app filter-for still works — it appends `| WHERE \`Header\` == …`. The suite's pivots are
 the control bar and the Lens click-to-filter columns, so sessions rename everything they show, with
-one exception: `searches/09` keeps `attributes.kibana.session.id` raw, under its field name, so a
+one exception: `searches/09` keeps `kibana.session.id` raw, under its field name, so a
 session cell offers Filter for/out on the dashboard. There is no friendlier header to be had: the saved
 search's `grid.columns.<name>` is a closed schema in 9.6 (import rejects `display`, `displayAsText`,
 `label`, `customLabel`, `displayName` and `name`; only `width` passes), and `fieldAttrs.customLabel` is
@@ -478,12 +482,11 @@ legends over an empty domain, decade axes, solid placeholder cells, a flat line 
 ## Commands
 
 ```
-./audit --space          Create the Kibana space (default: audit; override with AUDIT_SPACE)
 ./audit --ingest         Install the audit-scoped geoip pipeline, templates and client.* mappings
 ./audit --ingest-check   Assert enrichment is actually flowing on live data
 ./audit --lint           Execute every query in the repo — ES|QL and the DSL behind Vega specs — under a
                          time budget that cancels overruns; fails the build on any error
-./audit --objects        Deploy the data view, 13 Vega visualizations and 10 Discover sessions
+./audit --objects        Deploy the data view, 13 Vega visualizations and 11 Discover sessions
 ./audit --dashboards     Generate dashboards/*.json and deploy every dashboard
 ./audit --verify         Render every dashboard in Chromium and inspect for broken panels
                          AUDIT_VERIFY_THEME=light renders light mode (default: dark)
@@ -520,7 +523,7 @@ it: the Command Center legend's "Platform Volume shows everything" and the two t
 point at it appear only when it is deployed. The Vega spec it shares with Command Center (signal vs
 noise) deploys either way.
 
-`--dashboards` deploys exactly that set. A suite dashboard left in the space by an earlier deploy and
+`--dashboards` deploys exactly that set. A suite dashboard left by an earlier deploy and
 not in this run's set is read and removed: Platform Volume after a deploy without `--with`, and
 every retired id in `RETIRED_IDS` (`lib/suite.mjs`): Command Center's pre-1.0.2 `cloud-audit-00-command-center`
 and the numbered `cloud-audit-<NN>-<name>` ids of 1.0.2, Platform Volume's included. `--clean dashboards`
@@ -647,7 +650,7 @@ backfilled — run `loop` for a week).
 audit                       Dependency-free CLI entry point
 scripts/
   main.mjs                  Command dispatch
-  space.mjs ingest.mjs      Provisioning
+  ingest.mjs                Provisioning
   esql.mjs                  Query linter: ES|QL and Vega DSL, budgeted and timed
   queries.mjs               What is running on the cluster right now
   objects.mjs               Data view + Vega + Discover sessions -> _import (stable ids)
@@ -665,8 +668,8 @@ scripts/
     env.mjs http.mjs log.mjs
 dashboards/*.json           Generated definitions, committed for review
 vega/*.json                 13 Vega specs (4 full Vega, 9 Vega-Lite)
-searches/*.json             10 ES|QL Discover sessions
-ingest/*.json               Pipeline, templates, mappings, space
+searches/*.json             11 ES|QL Discover sessions (00 is every event, unfiltered)
+ingest/*.json               Pipeline, templates, mappings
 esql/fragments.md           Canonical query fragments
 ```
 
@@ -680,5 +683,5 @@ changes show up as readable diffs in review.
 - Node.js ≥ 22 (`process.loadEnvFile`, and glob patterns in `node --test`)
 - An Elastic Cloud Serverless project with Cloud audit logging enabled
 - An API key with `manage_index_templates`, `manage_ingest_pipelines`, read on the audit data
-  stream, and Kibana write access to the target space
+  stream, and Kibana write access to the Default space
 - `--verify` only: `npm install playwright && npx playwright install chromium`

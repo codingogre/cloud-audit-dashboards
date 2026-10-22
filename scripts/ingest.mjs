@@ -131,7 +131,7 @@ export async function check() {
   if (!tpl.ok) throw new Error(tpl.reason);
   detail(`index template current with ${BASE_TEMPLATE}`);
   const q = `FROM ${cfg.dataStream} | WHERE @timestamp > NOW() - 5 minutes ` +
-            `| STATS total = COUNT(*), fwd = COUNT(attributes.network.forwarded_ip), ` +
+            `| STATS total = COUNT(*), fwd = COUNT(network.forwarded_ip), ` +
             `ip = COUNT(client.ip), geo = COUNT(client.geo.country_iso_code)`;
   const r = await es.esql(q);
   const [total, fwd, ip, geo] = r.values[0] || [0, 0, 0, 0];

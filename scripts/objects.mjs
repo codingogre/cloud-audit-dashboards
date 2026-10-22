@@ -106,7 +106,7 @@ export async function run() {
     ...listJson('searches').map(searchObject),
   ];
   const res = await kb.importObjects(objects);
-  detail(`${res.successCount} objects imported into space "${cfg.space}"`);
+  detail(`${res.successCount} objects imported into the Default space`);
   success(`${objects.filter((o) => o.type === 'visualization').length} Vega visualizations, ${objects.filter((o) => o.type === 'search').length} Discover sessions`);
   return objects;
 }

@@ -16,14 +16,14 @@ export const specDescription = (ref) => JSON.parse(readFileSync(join(ROOT, 'vega
 
 /**
  * The identity column, click-to-filter. Clicking a cell pins a filter pill on the real
- * attributes.user.email field, which every ES|QL panel honours and the nav bar carries across
+ * user.email field, which every ES|QL panel honours and the nav bar carries across
  * every dashboard — the path from any panel to what one actor actually did.
  *
  * Deliberately NOT aliased to a friendly name: Kibana builds the filter from the column's
  * underlying field, so the column has to BE the literal field. An alias, or the derived `actor`
  * COALESCE, has nothing behind it in _source and the pill would match nothing.
  */
-export const WHO = filterable('attributes.user.email');
+export const WHO = filterable('user.email');
 
 /**
  * The suite legend on Command Center, "How to read this suite" (16 columns beside Audit volume: ~560px wide
@@ -51,7 +51,7 @@ export const legendPanel = (x, y, w, h) => introMd(x, y, w, h, 'How to read this
 ]);
 
 /** The raw identity fields ACTOR_RESOLVE reads, for a STATS that has to resolve the actor afterwards. */
-export const ACTOR_KEYS = 'attributes.user.email, attributes.api_key.name, attributes.user.name';
+export const ACTOR_KEYS = 'user.email, api_key.name, user.name';
 
 /**
  * The scoring events, counted before they are scored. RISK is a seven-branch CASE, and a CASE with
@@ -89,5 +89,5 @@ export const CHANGED = `${CHANGE} | ${OBJ_GROK} | ${OBJ_NAME} | ${OUTCOME} | EVA
  * a change panel groups by CHANGED_KEYS first and applies CHANGED_DERIVE to the grouped rows, then
  * re-aggregates by verb/obj_type (SUM the counts, MAX the timestamps).
  */
-export const CHANGED_KEYS = 'attributes.event.action, attributes.kibana.saved_object.type';
+export const CHANGED_KEYS = 'event.action, kibana.saved_object.type';
 export const CHANGED_DERIVE = `${VERB} | ${OBJ_TYPE}`;

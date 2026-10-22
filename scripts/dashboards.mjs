@@ -20,12 +20,12 @@
  */
 import { writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { cfg, ROOT } from './lib/env.mjs';
+import { cfg, ROOT, nsId } from './lib/env.mjs';
 import { dashId, strays, SUITE } from './lib/suite.mjs';
 import { kb } from './lib/http.mjs';
 import { success, detail, info } from './lib/log.mjs';
 import { buildAll } from './lib/definitions.mjs';
-import { controlGroup, dataViewObject, isControlRef, CONTROLS } from './lib/controls.mjs';
+import { controlGroup, dataViewObject, isControlRef, CONTROLS, RETIRED_DATA_VIEW_IDS } from './lib/controls.mjs';
 import { panelDrilldown, hasFilterableColumn, ACTOR_360, drilldownRefs, isDrilldownRef } from './lib/drilldowns.mjs';
 import { checkLayout } from './lib/layout.mjs';
 import { smallMarkdown } from './lib/panels.mjs';
@@ -136,7 +136,7 @@ async function applyImportOnlyState(all) {
 }
 
 /**
- * A suite dashboard this run does not deploy must not stay behind in the space: its nav strip would
+ * A suite dashboard this run does not deploy must not stay behind: its nav strip would
  * still list the old set, and a retired id still links to dashboards by their old ids. That is every
  * RETIRED_IDS entry (lib/suite.mjs: the pre-1.0.2 Command Center id cloud-audit-00-command-center and the
  * numbered pre-1.0.3 ids cloud-audit-<NN>-<name>), and Platform Volume when it is not opted in. Only those
@@ -149,6 +149,13 @@ async function removeStrays() {
     const d = await kb.sRaw(`/api/dashboards/${id}`, { method: 'DELETE' });
     if (!d.ok && d.status !== 404) throw new Error(`could not remove stray dashboard ${id}: ${d.status}`);
     info(`removed ${id}: not in this deploy's set (retired id, or an opt-in left out)`);
+  }
+  // Earlier releases' data view. Removed only after every dashboard points at the current one.
+  for (const id of RETIRED_DATA_VIEW_IDS.map(nsId)) {
+    const status = await kb.deleteObject('index-pattern', id);
+    if (status === 404) continue;
+    if (status >= 300) throw new Error(`could not remove retired data view ${id}: ${status}`);
+    info(`removed retired data view ${id}`);
   }
 }
 
@@ -165,7 +172,7 @@ export async function run() {
   for (const name of Object.keys(all)) detail(dashId(name));
 
   const { vegaTotal, drillTotal } = await applyImportOnlyState(all);
-  success(`${Object.keys(all).length} dashboards deployed to space "${cfg.space}"`
+  success(`${Object.keys(all).length} dashboards deployed to the Default space`
     + ` (${vegaTotal} Vega re-pointed, ${CONTROLS.length} controls each, ${drillTotal} drilldowns)`);
   await removeStrays();
   info(`Open: ${cfg.kbs}/app/dashboards#/view/${dashId('00-command-center')}`);

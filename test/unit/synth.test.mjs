@@ -101,7 +101,7 @@ test('judge(): lower bound, upper bound and exact risk', () => {
 test('buildQuery(): ES expectations are scoped to the scenario opaque id, Kibana ones are not', () => {
   const win = { from: '2026-10-14T00:00:00Z', to: '2026-10-14T01:00:00Z', runId: 'syn-R', scenario: 'es.x' };
   const esq = buildQuery({ source: 'es', persona: 'sre', where: 'true' }, win);
-  assert.match(esq, /MV_FIRST\(`attributes\.http\.request\.header\.x-opaque-id`\) LIKE "syn-R\/es\.x\/\*"/);
+  assert.match(esq, /MV_FIRST\(`http\.request\.header\.x-opaque-id`\) LIKE "syn-R\/es\.x\/\*"/);
   assert.match(esq, new RegExp(`${F.keyName.replace(/\./g, '\\.')} == "${PERSONAS.sre.name}"`));
   assert.match(esq, new RegExp(`"${SOURCE.es}"`));
   assert.ok(esq.includes(RISK), 'must score with the dashboards\' own RISK');
@@ -120,7 +120,7 @@ test('every scenario expectation builds a query over mapped-style paths only', (
       assert.equal(typeof e.where, 'string', `${s.id}/${e.name}: where must be a string`);
       // The noise gate's own `kibana.session.id IS NULL` test is exempt: it holds on every synthetic event
       // (synth signs in with keys, never a browser), which is what the claim relies on.
-      assert.ok(!/attributes\.user\.email|kibana\.session\.id/.test(e.where.replaceAll(KIBANA_INTERNALS, '')), `${s.id}/${e.name}: references a field the stream does not map`);
+      assert.ok(!/(?<![\w.])user\.email\b|kibana\.session\.id/.test(e.where.replaceAll(KIBANA_INTERNALS, '')), `${s.id}/${e.name}: references a field the stream does not map`);
       if (e.kind) assert.ok(['must', 'finding'].includes(e.kind), `${s.id}/${e.name}: bad kind`);
     }
   }
@@ -132,7 +132,7 @@ test('lit() escapes quotes and backslashes for ES|QL', () => {
 
 test('referencedFields() sees the dashboards\' field vocabulary', () => {
   const r = referencedFields();
-  for (const f of ['attributes.event.action', 'resource.attributes.service.name', 'attributes.elasticsearch.audit.action']) assert.ok(r.includes(f), f);
+  for (const f of ['event.action', 'service.name', 'elasticsearch.audit.action']) assert.ok(r.includes(f), f);
 });
 
 test('matches(): expectation classes', () => {

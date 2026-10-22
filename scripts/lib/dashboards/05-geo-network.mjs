@@ -112,13 +112,13 @@ const GEO_RESOLUTION =
  * round-5 review) and nothing on the panel said why one proxy outranked another.
  */
 const PROXIES =
-  `FROM ${IDX} | ${TIME} | WHERE client.ip IS NOT NULL | STATS n = COUNT(*) BY attributes.source.ip, client.ip ` +
+  `FROM ${IDX} | ${TIME} | WHERE client.ip IS NOT NULL | STATS n = COUNT(*) BY source.ip, client.ip ` +
   `| EVAL hop = ${INTERNAL_NET}, real = CASE(hop, null, TO_STRING(client.ip)) ` +
-  `| STATS events = SUM(n), hop_events = SUM(n) WHERE hop, clients = COUNT(real), cs = VALUES(real) BY attributes.source.ip ` +
+  `| STATS events = SUM(n), hop_events = SUM(n) WHERE hop, clients = COUNT(real), cs = VALUES(real) BY source.ip ` +
   `| EVAL hop_events = COALESCE(hop_events, 0), client_events = events - hop_events, ` +
   `forwarded_for = CASE(clients == 0, "none, only the internal hop", ` +
   `CONCAT(MV_CONCAT(MV_SLICE(MV_SORT(cs), 0, 2), ", "), CASE(clients > 3, CONCAT(" +", TO_STRING(clients - 3), " more"), ""))) ` +
-  `| SORT client_events DESC, hop_events DESC | KEEP attributes.source.ip, forwarded_for, client_events, hop_events | LIMIT 10`;
+  `| SORT client_events DESC, hop_events DESC | KEEP source.ip, forwarded_for, client_events, hop_events | LIMIT 10`;
 
 /**
  * "Placed events" is one measure printed in two tables (Top client locations, Busiest client IPs), so it
@@ -155,7 +155,7 @@ export function build() {
       { secondary: 'detail' }),
     // The secondary reconciles this tile with "Proxy vs real client IP", which has one row per proxy
     // that forwarded a client address: without it the tile said 7 and the table showed 4.
-    kpi(32, 0, 8, 5, `FROM ${IDX} | ${TIME} | STATS \`Proxy IPs\` = COUNT_DISTINCT(attributes.source.ip), fwd = COUNT_DISTINCT(attributes.source.ip) WHERE client.ip IS NOT NULL | EVAL detail = CONCAT(${grouped('fwd')}, " forwarded a client IP") | KEEP \`Proxy IPs\`, detail`, 'Proxy IPs',
+    kpi(32, 0, 8, 5, `FROM ${IDX} | ${TIME} | STATS \`Proxy IPs\` = COUNT_DISTINCT(source.ip), fwd = COUNT_DISTINCT(source.ip) WHERE client.ip IS NOT NULL | EVAL detail = CONCAT(${grouped('fwd')}, " forwarded a client IP") | KEEP \`Proxy IPs\`, detail`, 'Proxy IPs',
       'Distinct source.ip values — these are Elastic Cloud\'s own proxies, not clients, which is why they sit in the platform-internal 100.64/10 range. Shown to make the difference explicit. The line beneath counts the ones that forwarded any client address: the rows of "Proxy vs real client IP, by proxy".',
       { secondary: 'detail' }),
     // A bare 0 here meant either "nobody travelled" or "only one country is visible at all", and those
@@ -164,7 +164,7 @@ export function build() {
     // keyword groups faster (QUERY SHAPE rule 2). STATS over zero rows still returns one row (maxc null), which is
     // what lets the first CASE branch fire on an empty window. The phrases stay ~16 characters: at a
     // 1440px viewport the tile is ~210px wide and "everyone from one country" was cut mid-word.
-    kpi(40, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE attributes.user.email IS NOT NULL AND client.geo.country_iso_code IS NOT NULL | STATS c = COUNT_DISTINCT(client.geo.country_iso_code) BY attributes.user.email | STATS \`Multi-country people\` = COUNT(*) WHERE c > 1, maxc = MAX(c) | EVAL detail = CASE(maxc IS NULL, "no person placed", maxc < 2, "one country each", "in 2+ countries") | KEEP \`Multi-country people\`, detail`, 'Multi-country people',
+    kpi(40, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE user.email IS NOT NULL AND client.geo.country_iso_code IS NOT NULL | STATS c = COUNT_DISTINCT(client.geo.country_iso_code) BY user.email | STATS \`Multi-country people\` = COUNT(*) WHERE c > 1, maxc = MAX(c) | EVAL detail = CASE(maxc IS NULL, "no person placed", maxc < 2, "one country each", "in 2+ countries") | KEEP \`Multi-country people\`, detail`, 'Multi-country people',
       'Human identities seen from more than one country in range — the impossible-travel signal. Service credentials are excluded: for machine credentials, multi-region is the normal case, not an anomaly. The line beneath says whether a 0 is a clean reading or just one country in view.',
       { secondary: 'detail' }),
     // The map is a Vega choropleth, not Lens region_map: region_map takes no palette, legend or extent
@@ -197,8 +197,8 @@ export function build() {
     // h=8 (6 rows) for this and Busiest client IPs beside it: at 12 units each held 1–2 rows over
     // ~250px of blank card on a one-person, two-address project; six still leads with any traveller.
     table(0, 22, 24, 8, 'Countries per person (impossible travel) · no service credentials',
-      `FROM ${IDX} | ${TIME} | WHERE attributes.user.email IS NOT NULL AND client.geo.country_iso_code IS NOT NULL | STATS countries = COUNT_DISTINCT(client.geo.country_iso_code), ips = COUNT_DISTINCT(client.ip), events = COUNT(*), names = VALUES(client.geo.country_name) BY attributes.user.email | EVAL verdict = CASE(countries > 1, "Check travel", "One country"), seen_from = MV_CONCAT(MV_SORT(names), ", ") | SORT countries DESC, events DESC | LIMIT 6`,
-      [filterable('attributes.user.email'), sized('verdict', 115, { label: 'Reading', min: 100 }), { column: 'seen_from', label: 'Countries seen' }],
+      `FROM ${IDX} | ${TIME} | WHERE user.email IS NOT NULL AND client.geo.country_iso_code IS NOT NULL | STATS countries = COUNT_DISTINCT(client.geo.country_iso_code), ips = COUNT_DISTINCT(client.ip), events = COUNT(*), names = VALUES(client.geo.country_name) BY user.email | EVAL verdict = CASE(countries > 1, "Check travel", "One country"), seen_from = MV_CONCAT(MV_SORT(names), ", ") | SORT countries DESC, events DESC | LIMIT 6`,
+      [filterable('user.email'), sized('verdict', 115, { label: 'Reading', min: 100 }), { column: 'seen_from', label: 'Countries seen' }],
       [{ column: 'ips', label: 'Client IPs' }, 'events'],
       'People (identities with an email) whose traffic resolved to a country in range, most countries first. Only people, so it lists fewer identities than the Identities column of Top client locations, which counts service credentials too: API keys, Cloud API keys and Kibana\'s own service account. Two or more countries inside one window is the classic impossible-travel indicator — compare "Countries seen" with where the person actually is. "One country" on every row is the clean state. Service credentials are excluded, since multi-region is normal for machines, and a person whose every address is unplaceable (private egress) cannot appear here — see Geo coverage. Click an email to scope the suite to that person.'),
     // One row per address (IP_GEO): grouped by the geo fields too, an address with events from before
@@ -237,7 +237,7 @@ export function build() {
     // verify.mjs's 1400px "did the measurement work" limit at a 1920px viewport and every render was
     // flagged TRUNCATED.
     table(24, 30, 24, 13, 'Proxy vs real client IP, by proxy', PROXIES,
-      [filterable('attributes.source.ip', { label: 'Platform proxy', width: 125 }), { column: 'forwarded_for', label: 'Real client IPs it forwarded' }],
+      [filterable('source.ip', { label: 'Platform proxy', width: 125 }), { column: 'forwarded_for', label: 'Real client IPs it forwarded' }],
       [{ column: 'client_events', label: 'Client events', width: 100 }, { column: 'hop_events', label: 'Internal-hop events', width: 130 }],
       'Side-by-side proof that source.ip is a proxy and client.ip (from network.forwarded_ip) is the real origin: one row per proxy that forwarded any client address — the proxies the Proxy IPs tile\'s line counts — with the real client addresses it carried (in address order, up to three, then "+N more"). The proxies are Elastic Cloud\'s own, which is why they sit in the platform-internal 100.64/10 range. Analysing the wrong field would put every user in the datacentre. Busiest proxy first by Client events, which came from those real clients; Internal-hop events carried a platform-internal 100.64/10 address instead — not a client but, on this project, Kibana\'s server calling Elasticsearch on a user\'s behalf — and are kept out of the client list. The two add up to the proxy\'s whole traffic, and over every proxy to the All events of Busiest client IPs. Click a proxy to scope the suite to it; Busiest client IPs filters by client. ' + EDGE_NOTE),
   ];

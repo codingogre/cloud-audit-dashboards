@@ -15,12 +15,12 @@
  *     and `dataViewId` inside explicitInput must match that reference's id.
  *
  * Field choices are driven by what the audit stream actually carries:
- *   attributes.project.name    the emitting serverless project — see CONTROLS below
- *   attributes.user.email      the identity control: the reliable key, never null for a human
+ *   project.name    the emitting serverless project — see CONTROLS below
+ *   user.email      the identity control: the reliable key, never null for a human
  *   client.ip                  high-cardinality — too many to eyeball, which is the point of
  *                              a searchable dropdown rather than a table
- * `attributes.user.name` is deliberately NOT offered: it is a numeric id (e.g. 1234567890), not
- * a name. See esql/fragments.md. `attributes.user.full_name` is not offered either (removed in
+ * `user.name` is deliberately NOT offered: it is a numeric id (e.g. 1234567890), not
+ * a name. See esql/fragments.md. `user.full_name` is not offered either (removed in
  * 1.0.2): it was NULL for some identities, so a "Person (name)" dropdown silently missed people
  * that the email dropdown always finds, and two person controls invited a contradictory pair.
  */
@@ -28,8 +28,12 @@ import { cfg, nsId } from './env.mjs';
 import { stableUuid } from './ids.mjs';
 
 /** The data view the controls aggregate against. Real saved object, not the ad-hoc one
- *  the Discover sessions carry inline — a control resolves its field list by reference. */
-export const DATA_VIEW_ID = nsId('cloud-audit-dv');
+ *  the Discover sessions carry inline — a control resolves its field list by reference.
+ *  A public id, like the dashboards' (`elastic_cloud-audit-*`); it replaced `cloud-audit-dv` in 1.0.4. */
+export const DATA_VIEW_ID = nsId('elastic_cloud-audit-logs');
+
+/** Data view ids earlier releases deployed. --objects and --clean delete them. */
+export const RETIRED_DATA_VIEW_IDS = ['cloud-audit-dv'];
 
 export const dataViewObject = () => ({
   id: DATA_VIEW_ID, type: 'index-pattern',
@@ -51,7 +55,7 @@ export const dataViewObject = () => ({
  * because it answers a different question ("who was at this address") rather than "what did
  * this person do".
  *
- * attributes.project.* names the project that EMITTED the event, not the audit project that
+ * project.* names the project that EMITTED the event, not the audit project that
  * stores it, and it is populated on every Elasticsearch and Kibana event (verified 2026-10-14,
  * 100% of both sources). The name, not the id, because the id is a 32-hex string nobody
  * recognises; Elastic Cloud does not enforce unique project names, so an org that reuses a
@@ -62,8 +66,8 @@ export const dataViewObject = () => ({
  * TWO_DATASET_SPECS in layout.mjs.
  */
 export const CONTROLS = [
-  { field: 'attributes.project.name',   title: 'Project',        width: 'medium', search: 'prefix' },
-  { field: 'attributes.user.email',     title: 'Person (email)', width: 'medium', search: 'prefix' },
+  { field: 'project.name',   title: 'Project',        width: 'medium', search: 'prefix' },
+  { field: 'user.email',     title: 'Person (email)', width: 'medium', search: 'prefix' },
   // 'wildcard', not 'prefix': prefix search on an `ip` field only matches whole octets, so
   // typing "100.64" returns nothing while "100.64.0.10" works. Wildcard matches substrings.
   { field: 'client.ip',                 title: 'Client IP',      width: 'medium', search: 'wildcard' },

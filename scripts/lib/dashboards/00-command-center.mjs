@@ -75,7 +75,7 @@ export function build() {
     // gate's: 4 here over a 3-row table). Counted first by the raw identity fields, resolved after.
     kpi(15, 0, 7, 5, `FROM ${IDX} | ${TIME} | ${NOISE} | STATS n = COUNT(*) BY ${ACTOR_KEYS} | ${ACTOR_RESOLVE} | STATS \`Distinct actors\` = COUNT_DISTINCT(actor)`, 'Distinct actors',
       `Identities with signal traffic, behind the same noise gate and resolved the same way as Busiest identities: email, then API key name, then numeric user id. Someone whose only events are noise (browsing dashboards, health checks) is not counted here${pv ? '; Platform Volume counts all traffic' : ''}.`),
-    kpi(22, 0, 7, 5, `FROM ${IDX} | ${TIME} | ${NOISE} | WHERE attributes.user.email IS NOT NULL | STATS \`Human actors\` = COUNT_DISTINCT(attributes.user.email)`, 'Human actors',
+    kpi(22, 0, 7, 5, `FROM ${IDX} | ${TIME} | ${NOISE} | WHERE user.email IS NOT NULL | STATS \`Human actors\` = COUNT_DISTINCT(user.email)`, 'Human actors',
       'Distinct email addresses with signal traffic, behind the same noise gate as Signal events. Includes an API key whose events carry its creator’s email: such a row in Busiest identities reads “email · via key name”.'),
     // Widths follow the titles at a 1440px viewport, where a metric tile clips its secondary line and
     // wraps its title: the two "· all traffic" tiles need 9 columns, and Privileged ops' title 10. The
@@ -85,12 +85,12 @@ export function build() {
     kpi(29, 0, 10, 5, `FROM ${IDX} | ${TIME} | ${privilegedKpi(`Privileged ops${ALL}`)}`, `Privileged ops${ALL}`,
       'Security configuration changes — API keys created, changed or invalidated, roles and user profiles written — by any identity, over all traffic (the noise gate removes none of these, so gated and ungated counts are the same). Kibana’s own routine clean-up of API keys (invalidate_apikeys by the elastic/kibana service account) is not counted here; the line under the number (“excl. N cleanups”) says how many there were. Any other non-zero value deserves review.',
       { secondary: 'housekeeping_note' }),
-    kpi(39, 0, 9, 5, `FROM ${IDX} | ${TIME} | WHERE attributes.event.outcome == "failure" OR attributes.event.action == "anonymous_access_denied" | STATS \`Failed events${ALL}\` = COUNT(*)`, `Failed events${ALL}`,
+    kpi(39, 0, 9, 5, `FROM ${IDX} | ${TIME} | WHERE event.outcome == "failure" OR event.action == "anonymous_access_denied" | STATS \`Failed events${ALL}\` = COUNT(*)`, `Failed events${ALL}`,
       'Failed outcomes plus anonymous access denials over all traffic, not only signal: a failure is worth seeing even when it is a health check or a query internal. The first place to look during an incident.'),
     // Named, pinned and ordered by the same SOURCE_LABEL / SOURCE_COLORS as 06's chart, so the two
     // sources are the same words and colours on both pages, and the stack stops swapping on refresh.
     fullRange(xy(0, 5, 32, 11, `Audit volume by source${ALL}`,
-      `FROM ${IDX} | ${TIME} | STATS events = COUNT(*) BY ${BUCKET}, source = resource.attributes.service.name | ${SOURCE_LABEL}`,
+      `FROM ${IDX} | ${TIME} | STATS events = COUNT(*) BY ${BUCKET}, source = service.name | ${SOURCE_LABEL}`,
       'events', 'Total audited events over time, split by originating service. Elasticsearch audits every transport action, so its volume usually far exceeds Kibana’s — and the Kibana slice is where most of the forensic value is. The plot spans exactly the time range. The range ends a minute ago, part-way through the last bucket, so the last bar covers only part of its interval and is usually short; a bucket with no bar had no audit events delivered for it (the stream arrives in batches). Signal vs noise draws the same buckets over the same span.',
       { breakdown: 'source', colors: SOURCE_COLORS, legend: 'right' })),
     // 11 rows, not 13: in the intro style (small text) the legend needs ~257px at 1920 and ~275px at 1440, so
@@ -117,12 +117,12 @@ export function build() {
       'events', `Every audited event per time bucket, on either side of the noise gate: Signal is what the gate keeps (the Signal events tile, and what every gated panel reads), Noise is what it removes (health pings, query internals, API key lookups, page loads, bulk sign-in events and this suite’s own traffic). The two bars of a bucket add up to its Audit volume bar. LOG SCALE: each gridline is ten times the one below, so a bucket with one signal event among tens of thousands still shows; read the gap between the two bar tops as a ratio (one gridline apart is 10×).${pv ? ' Platform Volume splits the noise into its bands.' : ''} As on Audit volume, the last bucket covers only part of its interval, and a missing bar means no events on that side of the gate in that bucket.`,
       { kind: 'bar', xcol: 'ts', breakdown: 'side', colors: { Signal: '#54B399', Noise: '#98A2B3' }, yScale: 'log' }))),
     table(0, 31, 13, TABLE_H, 'Most frequent actions',
-      `FROM ${IDX} | ${TIME} | ${NOISE} | STATS events = COUNT(*) BY action = attributes.event.action, source = resource.attributes.service.name | ${SOURCE_LABEL} | SORT events DESC | LIMIT ${fitRows(TABLE_H)}`,
+      `FROM ${IDX} | ${TIME} | ${NOISE} | STATS events = COUNT(*) BY action = event.action, source = service.name | ${SOURCE_LABEL} | SORT events DESC | LIMIT ${fitRows(TABLE_H)}`,
       ['action', sized('source', 100, { min: 100 })], [sized('events', COUNT_W, { min: COUNT_W })], 'Top audited actions after the noise gate, with the service that emitted them.'),
     /**
      * Groups on the computed `actor` like the Distinct actors tile, so the two count identities the
      * same way. A Kind column was tried and dropped: telling a cloud API key from an unattributed
-     * principal needs attributes.user.domain on every event, which measured several times slower.
+     * principal needs user.domain on every event, which measured several times slower.
      *
      * No Email column. It was the click-to-pin column, but Identity already IS the email wherever there
      * is one, and on every other row Lens drew it as an underlined, clickable "-". The pin from this
@@ -135,7 +135,7 @@ export function build() {
      * relabelling it loses no click-filter (it never had one).
      */
     table(13, 31, 22, TABLE_H, 'Busiest identities',
-      `FROM ${IDX} | ${TIME} | ${NOISE} | ${ACTOR} | STATS events = COUNT(*), actions = COUNT_DISTINCT(attributes.event.action), last_seen = MAX(@timestamp) BY actor, attributes.api_key.name | EVAL actor = CASE(attributes.api_key.name IS NOT NULL AND attributes.api_key.name != actor, CONCAT(actor, " · via key ", attributes.api_key.name), actor) | SORT events DESC | LIMIT ${fitRows(TABLE_H)}`,
+      `FROM ${IDX} | ${TIME} | ${NOISE} | ${ACTOR} | STATS events = COUNT(*), actions = COUNT_DISTINCT(event.action), last_seen = MAX(@timestamp) BY actor, api_key.name | EVAL actor = CASE(api_key.name IS NOT NULL AND api_key.name != actor, CONCAT(actor, " · via key ", api_key.name), actor) | SORT events DESC | LIMIT ${fitRows(TABLE_H)}`,
       ['actor'], [sized('events', COUNT_W, { min: COUNT_W }), sized('actions', COUNT_W, { min: COUNT_W }), 'last_seen'],
       'The identities generating the most signal traffic, and how varied their behaviour is; the rows sum to Signal events when they all fit, and fewer rows than the bound means every identity with signal is listed (Distinct actors counts the same set). Identity resolves to an email, then an API key name, then a user id. An identity’s treemap tile and its row here can differ by an event or two at the range’s edges, because each panel reads the clock for itself. Elasticsearch stamps an API key’s CREATOR’s email on every event the key emits, so any number of machines authenticating with one key resolve to one person: such a row reads “email · via key name” and is a credential’s traffic, not the person at a keyboard. To follow one person across the suite, pick them in the Person (email) control above.'),
     // A bar rather than the donut it replaces: the donut's thin slices carried no label and it had no
@@ -145,7 +145,7 @@ export function build() {
     // dropped the 100,000 tick at 24h, and a count printed inside only the bars wide enough for it left
     // the reader two places to look. grouped() runs on the eight rows left after the LIMIT.
     compactValues(bar(35, 31, 13, TABLE_H, `Event categories${ALL}`,
-      `FROM ${IDX} | ${TIME} | STATS events = COUNT(*) BY category = attributes.event.category | EVAL category = COALESCE(category, "none recorded") | SORT events DESC | LIMIT 8 | EVAL category = CONCAT(category, " · ", ${grouped('events')}) | KEEP category, events`,
+      `FROM ${IDX} | ${TIME} | STATS events = COUNT(*) BY category = event.category | EVAL category = COALESCE(category, "none recorded") | SORT events DESC | LIMIT 8 | EVAL category = CONCAT(category, " · ", ${grouped('events')}) | KEEP category, events`,
       'category', 'events', 'ECS event categories over the whole stream, noise included, each with its count, on a log scale so the small categories are as readable as the bulk: read each bar by its count, not its length (each axis step is ten times the one before). event.category is a multi-value array, so an event in two categories counts once in each and the bars sum to more than the event total; “none recorded” is events that carry no category. A category with a single event has no visible bar.',
       { yScale: 'log' })),
     // h=25, not 15: Discover rows are 27px on a 28px grid unit, so the last visible row moves 1px per

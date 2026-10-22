@@ -18,32 +18,32 @@ export const STREAM = cfg.dataStream;
 export { DEFAULT_STREAM as VERIFIED_STREAM } from '../lib/env.mjs';
 
 export const F = {
-  source:    'resource.attributes.service.name',
-  action:    'attributes.event.action',
-  outcome:   'attributes.event.outcome',
-  evtype:    'attributes.event.type',
-  category:  'attributes.event.category',
-  esAction:  'attributes.elasticsearch.audit.action',
-  reqName:   'attributes.elasticsearch.audit.request.name',
-  indices:   'attributes.elasticsearch.audit.indices',
-  secChange: 'attributes.elasticsearch.audit.security_config_change',
-  keyName:   'attributes.api_key.name',
-  keyId:     'attributes.api_key.id',
-  email:     'attributes.user.email',
-  userName:  'attributes.user.name',
-  domain:    'attributes.user.domain',
-  authType:  'attributes.authentication.type',
-  soType:    'attributes.kibana.saved_object.type',
-  soId:      'attributes.kibana.saved_object.id',
-  soName:    'attributes.kibana.saved_object.name',
-  space:     'attributes.kibana.space.id',
+  source:    'service.name',
+  action:    'event.action',
+  outcome:   'event.outcome',
+  evtype:    'event.type',
+  category:  'event.category',
+  esAction:  'elasticsearch.audit.action',
+  reqName:   'elasticsearch.audit.request.name',
+  indices:   'elasticsearch.audit.indices',
+  secChange: 'elasticsearch.audit.security_config_change',
+  keyName:   'api_key.name',
+  keyId:     'api_key.id',
+  email:     'user.email',
+  userName:  'user.name',
+  domain:    'user.domain',
+  authType:  'authentication.type',
+  soType:    'kibana.saved_object.type',
+  soId:      'kibana.saved_object.id',
+  soName:    'kibana.saved_object.name',
+  space:     'kibana.space.id',
   msg:       'body.text',
-  urlPath:   'attributes.url.path',
-  urlOrig:   'attributes.url.original',
+  urlPath:   'url.path',
+  urlOrig:   'url.original',
   /** Hyphenated, so it must be backtick-quoted to parse in ES|QL. */
-  opaqueId:  '`attributes.http.request.header.x-opaque-id`',
-  projectId: 'attributes.project.id',
-  fwdIp:     'attributes.network.forwarded_ip',
+  opaqueId:  '`http.request.header.x-opaque-id`',
+  projectId: 'project.id',
+  fwdIp:     'network.forwarded_ip',
   clientIp:  'client.ip',
 };
 
@@ -53,7 +53,18 @@ export const SOURCE = { es: 'serverless-elasticsearch', kb: 'serverless-kibana' 
 /** ES|QL string literal. Assertions interpolate ids and names the generator chose, never user input. */
 export const lit = (s) => `"${String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 
-/** Every `attributes.*` / `resource.*` / `client.*` / `body.*` path the dashboard sources reference. */
+/**
+ * Roots of every field path the dashboard sources reference. Queries name ECS fields bare
+ * (`event.action`, `service.name`): the stream maps `attributes` and `resource.attributes` as
+ * passthrough objects, so the bare name resolves to the stored `attributes.event.action`.
+ */
+const ROOTS = ['event', 'elasticsearch', 'user', 'api_key', 'kibana', 'authentication', 'url', 'source',
+  'project', 'network', 'http', 'service', 'client', 'body'];
+
+/** Same roots, not fields: Vega's event object and a Vega data source's `url` request. */
+const NOT_FIELDS = new Set(['event.shiftKey', 'url.body', 'url.index']);
+
+/** Every field path under ROOTS that the dashboard sources reference. */
 export function referencedFields() {
   const files = [
     join(ROOT, 'scripts', 'lib', 'panels.mjs'),
@@ -61,9 +72,9 @@ export function referencedFields() {
     ...['vega', 'searches', 'esql'].flatMap((d) => readdirSync(join(ROOT, d)).map((f) => join(ROOT, d, f))),
   ];
   const seen = new Set();
-  const re = /\b((?:attributes|resource\.attributes|client|body)\.[A-Za-z0-9_.]*[A-Za-z0-9_])/g;
+  const re = new RegExp(`(?<![\\w.$-])((?:${ROOTS.join('|')})\\.[A-Za-z0-9_.]*[A-Za-z0-9_])`, 'g');
   for (const f of files) for (const m of readFileSync(f, 'utf8').matchAll(re)) seen.add(m[1]);
-  return [...seen].sort();
+  return [...seen].filter((p) => !NOT_FIELDS.has(p)).sort();
 }
 
 /**
@@ -79,6 +90,9 @@ export const VALUE_RENAMES = [
 
 const unquote = (p) => p.replace(/`/g, '');
 
+/** Passthrough objects in the stream's mapping, highest priority first (resource 40, scope 30, attributes 20). */
+const PASSTHROUGH = ['resource.attributes', 'scope.attributes', 'attributes'];
+
 /**
  * Pure classification, separated from the I/O so every status is unit-testable.
  * queryable: Set of mapped leaf paths; emitted: Map(path -> doc count) from _source; wanted: paths.
@@ -86,14 +100,18 @@ const unquote = (p) => p.replace(/`/g, '');
 export function classify({ queryable, emitted, wanted }) {
   const everything = new Set([...queryable, ...emitted.keys()]);
   const leaf = (p) => p.split('.').slice(-2).join('.');
+  // A bare ECS name and its stored passthrough path are one field, not a rename candidate.
+  const twins = (p) => [p, ...PASSTHROUGH.map((r) => `${r}.${p}`)];
+  const isEmitted = (p) => twins(p).some((t) => emitted.has(t));
+  const sameField = (a, b) => twins(a).includes(b) || twins(b).includes(a);
   const isParent = (p) => [...queryable].some((q) => q.startsWith(`${p}.`));
   // A geo_point is stored as {lat, lon}: its leaves are covered by the mapped point itself.
   const underLeaf = (p) => [...queryable].some((q) => p.startsWith(`${q}.`));
   const fields = [...wanted].sort().filter((p) => !isParent(p)).map((path) => {
-    if (queryable.has(path)) return { path, status: emitted.has(path) ? 'mapped' : 'mapped-empty' };
+    if (queryable.has(path)) return { path, status: isEmitted(path) ? 'mapped' : 'mapped-empty' };
     if (RENAMES[path]) return { path, status: 'renamed', to: RENAMES[path] };
     if (emitted.has(path)) return { path, status: 'unmapped', docs: emitted.get(path) };
-    const candidates = [...everything].filter((q) => q !== path && leaf(q) === leaf(path));
+    const candidates = [...everything].filter((q) => !sameField(q, path) && leaf(q) === leaf(path));
     if (candidates.length) return { path, status: 'candidate', candidates };
     return { path, status: 'not-observed' };
   });

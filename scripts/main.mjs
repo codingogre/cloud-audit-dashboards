@@ -1,7 +1,8 @@
 /**
  * Audit dashboards for Elastic Cloud Serverless. Command dispatch.
  *
- * Pipeline: --space -> --ingest -> --lint -> --objects -> --dashboards -> --verify
+ * Pipeline: --ingest -> --lint -> --objects -> --dashboards -> --verify
+ *           Everything installs into Kibana's Default space.
  *           (or run the lot with --deploy).
  *
  * Order matters: Vega visualizations and Discover sessions must exist before the
@@ -20,13 +21,12 @@ const rest = argv.slice(1);
 const HELP = `Usage: ./audit <command>
 
   Provision
-    --space            Create the Kibana space (default: audit; override with AUDIT_SPACE)
     --ingest           Install the audit-scoped geoip pipeline, templates and client.* mappings
     --ingest-check     Assert enrichment is actually flowing on live data
 
   Kibana as code
     --lint             Execute every ES|QL query in the repo; fails the build on any error
-    --objects          Deploy the data view, 13 Vega visualizations and 10 Discover sessions
+    --objects          Deploy the data view, 13 Vega visualizations and 11 Discover sessions
     --dashboards       Generate dashboards/*.json and deploy every dashboard. Removes a suite
                        dashboard left from an earlier deploy that is not in this run's set
     --verify           Render every dashboard in Chromium and inspect for broken panels
@@ -62,7 +62,7 @@ const HELP = `Usage: ./audit <command>
                        --lint agree on the set. Example: ./audit --dashboards --with platform-volume
 
   Lifecycle
-    --deploy           Full pipeline: space -> ingest -> lint -> objects -> dashboards
+    --deploy           Full pipeline: ingest -> lint -> objects -> dashboards (Default space)
     --clean <target>   Tear down: 'dashboards', 'ingest', or 'all'. No target deletes nothing.
     --help             This message
 `;
@@ -74,7 +74,6 @@ async function runModule(file, fn = 'run') {
 }
 
 async function doDeploy() {
-  await runModule('./space.mjs');
   await runModule('./ingest.mjs');
   await runModule('./esql.mjs');
   await runModule('./objects.mjs');
@@ -83,7 +82,6 @@ async function doDeploy() {
 }
 
 const table = {
-  '--space': () => runModule('./space.mjs'),
   '--ingest': () => runModule('./ingest.mjs'),
   '--ingest-check': () => runModule('./ingest.mjs', 'check'),
   '--lint': () => runModule('./esql.mjs'),
@@ -102,7 +100,7 @@ banner('Cloud Audit Dashboards');
 if (!cmd || cmd === '--help' || cmd === '-h') { console.log(HELP); process.exit(0); }
 const handler = table[cmd];
 if (!handler) { fail(`Unknown command: ${cmd}`); console.log(HELP); process.exit(1); }
-info(`space=${cfg.space}  kibana=${new URL(cfg.kibana).host}${optIns().size ? `  with=${[...optIns()].join(',')}` : ''}`);
+info(`space=default  kibana=${new URL(cfg.kibana).host}${optIns().size ? `  with=${[...optIns()].join(',')}` : ''}`);
 try {
   await handler();
 } catch (err) {

@@ -11,7 +11,7 @@ import { WHO } from './shared.mjs';
 /**
  * Every API key, of both kinds, and the one key that names it. Measured on the live stream (24h):
  *
- *   Cloud API key          attributes.api_key.* absent; user.domain "_cloud_api_key" and user.name = the
+ *   Cloud API key          api_key.* absent; user.domain "_cloud_api_key" and user.name = the
  *                          key's id. It carried ~880k events a day — far the busiest credential — and the
  *                          old `api_key.name IS NOT NULL` filter left it off every API-key panel, so the
  *                          tile read "0 · none in range" beside a chart of thousands of API-key requests.
@@ -24,9 +24,9 @@ import { WHO } from './shared.mjs';
  * 7d on the perf replica: Busiest API keys 50 → 260ms, the tile 43 → 90ms, the inventory 90 → 390ms —
  * the cost of the 1.7M Cloud-key events the panels used to skip.
  */
-const KEYED = 'WHERE attributes.api_key.id IS NOT NULL OR attributes.user.domain == "_cloud_api_key"';
-const KEY_DERIVE = 'EVAL key_id = COALESCE(attributes.api_key.id, attributes.user.name), ' +
-  'kind = CASE(attributes.api_key.id IS NULL, "Cloud", "Elasticsearch")';
+const KEYED = 'WHERE api_key.id IS NOT NULL OR user.domain == "_cloud_api_key"';
+const KEY_DERIVE = 'EVAL key_id = COALESCE(api_key.id, user.name), ' +
+  'kind = CASE(api_key.id IS NULL, "Cloud", "Elasticsearch")';
 
 /**
  * "N things" for a KPI's secondary line, in words when N is 0 or 1. A digit zero renders slashed in the
@@ -123,25 +123,25 @@ export function build() {
     // under several ids (22 names, 103 ids at 24h). Grouped on the raw identity fields first (QUERY SHAPE
     // rule 2): a filtered COUNT_DISTINCT(actor) per event cost ~370ms over 7 days on the replica against
     // ~250ms for the old tile; counted on the grouped rows it is ~290ms.
-    kpi(0, 0, 8, 5, `FROM ${IDX} | ${TIME} | STATS BY attributes.user.email, attributes.api_key.name, attributes.user.name, attributes.user.domain | ${ACTOR_RESOLVE} | STATS \`Identities\` = COUNT_DISTINCT(actor), keys = COUNT_DISTINCT(actor) WHERE attributes.user.email IS NULL AND (attributes.api_key.name IS NOT NULL OR attributes.user.domain == "_cloud_api_key") | EVAL detail = CASE(keys == 0, "no API keys", keys == 1, "incl. 1 key name", CONCAT("incl. ", ${grouped('keys')}, " key names")) | KEEP \`Identities\`, detail`,
+    kpi(0, 0, 8, 5, `FROM ${IDX} | ${TIME} | STATS BY user.email, api_key.name, user.name, user.domain | ${ACTOR_RESOLVE} | STATS \`Identities\` = COUNT_DISTINCT(actor), keys = COUNT_DISTINCT(actor) WHERE user.email IS NULL AND (api_key.name IS NOT NULL OR user.domain == "_cloud_api_key") | EVAL detail = CASE(keys == 0, "no API keys", keys == 1, "incl. 1 key name", CONCAT("incl. ", ${grouped('keys')}, " key names")) | KEEP \`Identities\`, detail`,
       'Identities', 'Distinct identities in all traffic, resolved as email, then API key name, then user.name — one per row of Identity first and last seen. The people among them, by email, are the Humans tile beside it. The line under the number counts the API keys among them that have no email, by name (a Cloud API key, which has none, by its id): a re-issued key keeps its name, so it counts once here and once per id in the API keys tile. A key named after a person (syn-new-hire-…) is still a key. The rest of the number is service accounts and built-in users (elastic/kibana, autoscaling), user names tried in a failed sign-in (admin, elastic), and the placeholders for requests that presented no identity (<anonymous>, <unauthenticated-…>) — each a row in that session.',
       { secondary: 'detail' }),
-    kpi(8, 0, 8, 5, `FROM ${IDX} | ${TIME} | STATS \`Humans\` = COUNT_DISTINCT(attributes.user.email), sso = COUNT_DISTINCT(attributes.user.email) WHERE attributes.user.domain == "cloud-saml-kibana" | EVAL detail = CASE(sso == 0, "none used SSO", CONCAT(${grouped('sso')}, " used SSO")) | KEEP \`Humans\`, detail`,
+    kpi(8, 0, 8, 5, `FROM ${IDX} | ${TIME} | STATS \`Humans\` = COUNT_DISTINCT(user.email), sso = COUNT_DISTINCT(user.email) WHERE user.domain == "cloud-saml-kibana" | EVAL detail = CASE(sso == 0, "none used SSO", CONCAT(${grouped('sso')}, " used SSO")) | KEEP \`Humans\`, detail`,
       'Humans', 'Distinct email addresses in all traffic — the people Busiest human identities ranks. An Elasticsearch API key carries its creator\'s email, so a person can count here through a key they made without signing in; the line under the number says how many of them used SAML SSO in range (a browser session, whether it began in range or earlier — SSO events beside it says which).',
       { secondary: 'detail' }),
-    kpi(16, 0, 8, 5, `FROM ${IDX} | ${TIME} | ${KEYED} | STATS BY attributes.api_key.id, attributes.api_key.name, attributes.user.name | ${KEY_DERIVE}, name = COALESCE(attributes.api_key.name, attributes.user.name) | STATS \`API keys\` = COUNT_DISTINCT(key_id), names = COUNT_DISTINCT(name) | EVAL detail = CASE(\`API keys\` == 0, "none in range", names == 1, "1 name", CONCAT(${grouped('names')}, " names")) | KEEP \`API keys\`, detail`,
+    kpi(16, 0, 8, 5, `FROM ${IDX} | ${TIME} | ${KEYED} | STATS BY api_key.id, api_key.name, user.name | ${KEY_DERIVE}, name = COALESCE(api_key.name, user.name) | STATS \`API keys\` = COUNT_DISTINCT(key_id), names = COUNT_DISTINCT(name) | EVAL detail = CASE(\`API keys\` == 0, "none in range", names == 1, "1 name", CONCAT(${grouped('names')}, " names")) | KEEP \`API keys\`, detail`,
       'API keys', 'Distinct API keys seen in range, by id, of both kinds: Elastic Cloud API keys (recorded by id only) and Elasticsearch API keys (by id and name) — one per row of API key inventory. The line under the number counts the names those ids carry (a Cloud API key, which has none, by its id), one per row of Busiest API keys by name: a re-issued Elasticsearch key keeps its name under a new id, so a name with many ids is one key re-issued many times. These are the key names in the Identities tile beside it, unless a person created a key: that key\'s traffic carries the person\'s email, so Identities counts the person instead and this count of names is higher.',
       { secondary: 'detail' }),
-    kpi(24, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE attributes.user.domain == "cloud-saml-kibana" | STATS \`SSO events\` = COUNT(*), logins = COUNT(*) WHERE attributes.event.action == "user_login" | EVAL detail = CASE(\`SSO events\` == 0, "none in range", logins == 0, "signed in earlier", logins == 1, "1 new sign-in", CONCAT(${grouped('logins')}, " new sign-ins")) | KEEP \`SSO events\`, detail`,
+    kpi(24, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE user.domain == "cloud-saml-kibana" | STATS \`SSO events\` = COUNT(*), logins = COUNT(*) WHERE event.action == "user_login" | EVAL detail = CASE(\`SSO events\` == 0, "none in range", logins == 0, "signed in earlier", logins == 1, "1 new sign-in", CONCAT(${grouped('logins')}, " new sign-ins")) | KEEP \`SSO events\`, detail`,
       'SSO events', 'Events authenticated through the cloud-saml-kibana SAML realm — a person in a browser. The line under the number counts Kibana user_login events in range, or reads “signed in earlier” when there are none: the sessions behind these events began before the range, so a person can use SSO (the Humans tile) with no new sign-in here.',
       { secondary: 'detail' }),
     // The line under the number names ONE part, the failed sign-ins; the title says the rest is denied.
     // "N logins · M denied" read as N successful logins beside SSO events' "no new sign-ins", and
     // "539 failed sign-ins · 628 denied" was cut to "… · 62" in an 8-column tile at a 1440px viewport.
-    kpi(32, 0, 8, 5, `FROM ${IDX} | ${TIME} | ${FAILED_OR_DENIED} | STATS \`Failed or denied\` = COUNT(*), signin = COUNT(*) WHERE attributes.event.action IN (${SIGNIN_FAILED}) | EVAL detail = CASE(signin == 0, "no failed sign-ins", signin == 1, "1 failed sign-in", signin == \`Failed or denied\`, "all failed sign-ins", CONCAT(${grouped('signin')}, " failed sign-ins")) | KEEP \`Failed or denied\`, detail`,
+    kpi(32, 0, 8, 5, `FROM ${IDX} | ${TIME} | ${FAILED_OR_DENIED} | STATS \`Failed or denied\` = COUNT(*), signin = COUNT(*) WHERE event.action IN (${SIGNIN_FAILED}) | EVAL detail = CASE(signin == 0, "no failed sign-ins", signin == 1, "1 failed sign-in", signin == \`Failed or denied\`, "all failed sign-ins", CONCAT(${grouped('signin')}, " failed sign-ins")) | KEEP \`Failed or denied\`, detail`,
       'Failed or denied', `Failed sign-ins (${SIGNIN_WORDS}) plus requests refused or failed after sign-in (access_denied and any other failed outcome). The line under the number counts the failed sign-in attempts (nobody signed in: these are not logins); the rest of the number is denied — refused or failed after sign-in. A denial is an authenticated identity hitting a permission wall, not someone guessing credentials. Same predicate as the two failure panels below.`,
       { secondary: 'detail' }),
-    kpi(40, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE attributes.kibana.session.id IS NOT NULL | STATS \`Kibana sessions\` = COUNT_DISTINCT(attributes.kibana.session.id), people = COUNT_DISTINCT(attributes.user.email) | EVAL detail = CASE(\`Kibana sessions\` == 0, "none in range", ${count('people', 'person', 'people', 'no email recorded')}) | KEEP \`Kibana sessions\`, detail`,
+    kpi(40, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE kibana.session.id IS NOT NULL | STATS \`Kibana sessions\` = COUNT_DISTINCT(kibana.session.id), people = COUNT_DISTINCT(user.email) | EVAL detail = CASE(\`Kibana sessions\` == 0, "none in range", ${count('people', 'person', 'people', 'no email recorded')}) | KEEP \`Kibana sessions\`, detail`,
       'Kibana sessions', 'Distinct Kibana browser sessions observed in range, and how many people (by email) they belong to.',
       { secondary: 'detail' }),
     // Bars, not a line. ES|QL returns no row for an interval without traffic, so a line ran straight
@@ -167,7 +167,7 @@ export function build() {
     // Leaving out the x domain or rounding it changed nothing. Anchored bars end exactly at the range
     // end and step back one interval at a time, so every bar is whole and inside what Lens draws.
     rateBar(xy(0, 5, 24, 12, 'Elasticsearch requests per minute by credential type',
-        `FROM ${IDX} | ${TIME} | WHERE attributes.authentication.type IS NOT NULL | ${ANCHORED.k} | STATS events = COUNT(*) BY k, attributes.authentication.type | ${ANCHORED.bars('attributes.authentication.type')} | EVAL ${CRED_TYPE_LABEL} | KEEP ts, auth, per_minute | SORT auth`,
+        `FROM ${IDX} | ${TIME} | WHERE authentication.type IS NOT NULL | ${ANCHORED.k} | STATS events = COUNT(*) BY k, authentication.type | ${ANCHORED.bars('authentication.type')} | EVAL ${CRED_TYPE_LABEL} | KEEP ts, auth, per_minute | SORT auth`,
         'per_minute', 'Elasticsearch requests per minute by how they presented credentials: API key, token (SSO browser sessions and service accounts), realm (username and password) or SAML. One bar per credential type per interval — 1 minute at 1h, 30 minutes at 24h, 3 hours at 7d — and its height is that interval\'s requests divided by its minutes, so the scale reads the same at every range: a lone request in a 30-minute bar is 0.033 a minute. A log scale, so a type carrying a fraction of a percent of the traffic is as readable as the bulk; an interval with no bar had no requests of that type. Every bar is a whole interval counted back from the end of the range, so the newest bar is the most recent minutes and none is left out. A shift in this mix is worth explaining.',
         { breakdown: 'auth', kind: 'bar', colors: CRED_TYPE_COLORS, yScale: 'log', xcol: 'ts' })),
     vega(24, 5, 24, 12, '02-auth-matrix', 'Credential type by identity · Elasticsearch requests',
@@ -181,14 +181,14 @@ export function build() {
     // where it fits inside the bar, so at a 1440px viewport "SAML SSO" (37 events) had no number at
     // all and "Elastic 37" sat half outside its bar; an axis label is always drawn. The 0.5 floor gives
     // a count of 1 a visible bar (logBar).
-    // Grouped on the raw email first, then classified: ORG reads only attributes.user.email, so the
+    // Grouped on the raw email first, then classified: ORG reads only user.email, so the
     // CASE runs once per person instead of once per event.
     compactLog(logBar(bar(0, 17, 12, 12, 'Events by identity origin',
-      `FROM ${IDX} | ${TIME} | STATS events = COUNT(*) BY attributes.user.email | ${ORG} | STATS events = SUM(events) BY origin = actor_org | EVAL origin = CONCAT(origin, " · ", ${grouped('events')}) | SORT events DESC`,
+      `FROM ${IDX} | ${TIME} | STATS events = COUNT(*) BY user.email | ${ORG} | STATS events = SUM(events) BY origin = actor_org | EVAL origin = CONCAT(origin, " · ", ${grouped('events')}) | SORT events DESC`,
       'origin', 'events', 'Events, not identities, by the email on the event: Elastic (@elastic.co), Tenant (any other address), or Machine (no email: service accounts, Cloud API keys, internal users and anonymous requests). Each origin\'s name carries its count, and the bars are on a log scale so a person\'s few dozen events are visible beside a key\'s hundreds of thousands: read the count, not the length. An origin with no bar had no events in range. One busy key can make Machine nearly all of the traffic while most identities are people. An Elasticsearch API key carries its creator\'s email, so traffic from a key a person created counts under that person\'s origin.',
       { yScale: 'log' }), 1e9)),
     compactLog(logBar(bar(12, 17, 12, 12, 'Events by authentication realm',
-      `FROM ${IDX} | ${TIME} | WHERE attributes.user.domain IS NOT NULL | STATS events = COUNT(*) BY attributes.user.domain | EVAL realm = CASE(attributes.user.domain == "cloud-saml-kibana", "SAML SSO", attributes.user.domain == "_es_api_key", "Elasticsearch API key", attributes.user.domain == "_cloud_api_key", "Cloud API key", STARTS_WITH(attributes.user.domain, "_service_account"), "Service account", STARTS_WITH(attributes.user.domain, "_"), "Other internal", attributes.user.domain) | STATS events = SUM(events) BY realm | EVAL realm = CONCAT(realm, " · ", ${grouped('events')}) | SORT events DESC`,
+      `FROM ${IDX} | ${TIME} | WHERE user.domain IS NOT NULL | STATS events = COUNT(*) BY user.domain | EVAL realm = CASE(user.domain == "cloud-saml-kibana", "SAML SSO", user.domain == "_es_api_key", "Elasticsearch API key", user.domain == "_cloud_api_key", "Cloud API key", STARTS_WITH(user.domain, "_service_account"), "Service account", STARTS_WITH(user.domain, "_"), "Other internal", user.domain) | STATS events = SUM(events) BY realm | EVAL realm = CONCAT(realm, " · ", ${grouped('events')}) | SORT events DESC`,
       'realm', 'events', 'Events by the security realm that authenticated them. Each realm\'s name carries its count, and the bars are on a log scale so a small realm is visible beside the bulk: read the count, not the length. SAML SSO is interactive human sign-in (cloud-saml-kibana); Elasticsearch API key (_es_api_key) and Cloud API key (_cloud_api_key) are programmatic — an Elasticsearch key minted by a Cloud API key authenticates in the Cloud key\'s realm; Service account is Elastic\'s own components (_service_account). Any other realm is shown by its name. Anonymous and unauthenticated requests record no realm and are not counted, so the bars can sum to less than Events by identity origin beside it.',
       { yScale: 'log' }), 1e9)),
     // ONE ROW PER KEY NAME. One row per key id put a re-issued key on the page twice — at 24h
@@ -205,7 +205,7 @@ export function build() {
     // Events and IPs are sized: auto, they took ~240px of a 655px panel at a 1440px viewport and left a
     // 36-character key name (syn-new-hire-it-20261014-141115-4426) touching "Elasticsearch" in Kind.
     table(24, 17, 24, 12, 'Busiest API keys by name',
-      `FROM ${IDX} | ${TIME} | ${KEYED} | STATS events = COUNT(*), ips = COUNT_DISTINCT(client.ip), key_ids = COUNT_DISTINCT(attributes.api_key.id) BY api_key = attributes.api_key.name, attributes.user.name | EVAL kind = CASE(key_ids == 0, "Cloud", "Elasticsearch"), key_ids = GREATEST(key_ids, 1), api_key = COALESCE(api_key, ${cloudKeyLabel('attributes.user.name', '"(no name)"')}) | SORT events DESC, api_key | LIMIT 10`,
+      `FROM ${IDX} | ${TIME} | ${KEYED} | STATS events = COUNT(*), ips = COUNT_DISTINCT(client.ip), key_ids = COUNT_DISTINCT(api_key.id) BY api_key = api_key.name, user.name | EVAL kind = CASE(key_ids == 0, "Cloud", "Elasticsearch"), key_ids = GREATEST(key_ids, 1), api_key = COALESCE(api_key, ${cloudKeyLabel('user.name', '"(no name)"')}) | SORT events DESC, api_key | LIMIT 10`,
       ['api_key', sized('kind', 105)], [sized('key_ids', 90, { label: 'Key IDs', min: 72 }), sized('events', 100), sized('ips', 56)],
       `The busiest API keys of both kinds, one row per key name, with request volume and how many distinct client IPs used it. Kind is Cloud (an Elastic Cloud API key: it has no name and is recorded by its id, so it reads “_4KEO… · Cloud API key”, the first five characters of its id) or Elasticsearch (an Elasticsearch API key: id and name). A re-issued Elasticsearch key keeps its name under a new id, so Key IDs counts the ids a name ran under in range; API key inventory below has one row per id, with owner and first and last use. The API keys tile counts every id and every name in range, so past the ten busiest names the rows here add up to less than it; the rest are in the inventory. A key used from many IPs is worth investigating. ${EDGE_NOTE}`),
     // Grouped on the email alone. user.full_name was a second key, but over 7 days it was empty on all
@@ -216,7 +216,7 @@ export function build() {
     // at a 1440px viewport), and the failures beside it get the 36 that six columns need there: at 32 the
     // Result column cut "<unauthenticated-cloud-access-token>" in Identity (rendered at 1440).
     table(0, 29, 12, 12, 'Busiest human identities',
-      `FROM ${IDX} | ${TIME} | WHERE attributes.user.email IS NOT NULL | STATS events = COUNT(*) BY attributes.user.email | SORT events DESC | LIMIT 10`,
+      `FROM ${IDX} | ${TIME} | WHERE user.email IS NOT NULL | STATS events = COUNT(*) BY user.email | SORT events DESC | LIMIT 10`,
       [WHO], ['events'],
       `People by email, busiest first: the people the Humans tile counts, over all traffic, with the same event counts as Identity first and last seen, which also has when each was first and last seen and from how many IPs. The panel shows the top rows; the rest are in that session. Click an email to pin that person across the suite. ${EDGE_NOTE}`),
     // Grouped on the raw identity fields and resolved afterwards (QUERY SHAPE rule 2): the COALESCE then
@@ -230,7 +230,7 @@ export function build() {
     // address (anonymous_access_denied) reads "no IP", the page's words for it, not a bare "-"; the
     // column is display-only (no click filter), so it can be assigned in ES|QL.
     table(12, 29, 36, 12, 'Top failed or denied access',
-      `FROM ${IDX} | ${TIME} | ${FAILED_OR_DENIED} | STATS events = COUNT(*), last_seen = MAX(@timestamp) BY attributes.user.email, attributes.api_key.name, attributes.user.name, action = attributes.event.action, ip = client.ip | ${ACTOR_RESOLVE} | STATS events = SUM(events), last_seen = MAX(last_seen) BY actor, action, ip | EVAL result = CASE(action IN (${SIGNIN_FAILED}), "failed sign-in", action == "access_denied", "denied", "failed"), ip = COALESCE(TO_STRING(ip), "no IP") | SORT events DESC, last_seen DESC, actor, action, ip | LIMIT 10`,
+      `FROM ${IDX} | ${TIME} | ${FAILED_OR_DENIED} | STATS events = COUNT(*), last_seen = MAX(@timestamp) BY user.email, api_key.name, user.name, action = event.action, ip = client.ip | ${ACTOR_RESOLVE} | STATS events = SUM(events), last_seen = MAX(last_seen) BY actor, action, ip | EVAL result = CASE(action IN (${SIGNIN_FAILED}), "failed sign-in", action == "access_denied", "denied", "failed"), ip = COALESCE(TO_STRING(ip), "no IP") | SORT events DESC, last_seen DESC, actor, action, ip | LIMIT 10`,
       ['actor', sized('action', 175), 'result', 'ip'], ['events', 'last_seen'],
       `Failed sign-ins and refused requests grouped by identity, action and source IP, most frequent first; the top rows of what the Failed or denied tile counts. Result names the kind, as in the session below: failed sign-in (${SIGNIN_WORDS}), denied (access_denied: an authenticated identity refused an action), or failed (any other action, here because its outcome was failure).`,
       { empty: 'good' }),

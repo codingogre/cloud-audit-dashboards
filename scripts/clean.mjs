@@ -4,7 +4,7 @@
  *   --clean dashboards   every dashboard + its data view, Vega and Discover sessions
  *   --clean ingest       the audit-scoped pipeline and templates (mappings are left alone;
  *                        removing a field mapping requires a reindex)
- *   --clean all          both, plus the space
+ *   --clean all          both (the suite lives in the Default space, which is never deleted)
  */
 import { cfg, nsId } from './lib/env.mjs';
 import { kb, es } from './lib/http.mjs';
@@ -13,7 +13,7 @@ import { SUITE, RETIRED_IDS } from './lib/suite.mjs';
 import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { ROOT } from './lib/env.mjs';
-import { DATA_VIEW_ID } from './lib/controls.mjs';
+import { DATA_VIEW_ID, RETIRED_DATA_VIEW_IDS } from './lib/controls.mjs';
 
 async function cleanDashboards() {
   // Every suite dashboard, opted in or not, and every id an earlier release used: --clean removes what
@@ -31,10 +31,16 @@ async function cleanDashboards() {
     // The controls' data view lives in neither vega/ nor searches/, so it has to be named
     // explicitly or `--clean dashboards` silently orphans it.
     { type: 'index-pattern', id: DATA_VIEW_ID },
+    ...RETIRED_DATA_VIEW_IDS.map((id) => ({ type: 'index-pattern', id: nsId(id) })),
   ];
-  await kb.raw(`/s/${cfg.space}/api/saved_objects/_bulk_delete?force=true`, {
-    method: 'POST', body: JSON.stringify(objs), headers: { 'Content-Type': 'application/json' },
-  });
+  // One call per object: _bulk_delete is disabled on serverless (see kb.deleteObject).
+  const failed = [];
+  for (const o of objs) {
+    const status = await kb.deleteObject(o.type, o.id);
+    detail(`${o.type} ${o.id}: ${status}`);
+    if (status >= 300 && status !== 404) failed.push(`${o.type} ${o.id} (${status})`);
+  }
+  if (failed.length) throw new Error(`could not delete: ${failed.join(', ')}`);
   success(`removed up to ${ids.length} dashboards and ${objs.length} saved objects`);
 }
 
@@ -87,8 +93,4 @@ export async function run(argv = []) {
   if (!target) { info('Nothing deleted. Pass a target: dashboards | ingest | all'); return; }
   if (target === 'dashboards' || target === 'all') await cleanDashboards();
   if (target === 'ingest' || target === 'all') await cleanIngest();
-  if (target === 'all') {
-    const r = await kb.raw(`/api/spaces/space/${cfg.space}`, { method: 'DELETE' });
-    detail(`space ${cfg.space}: ${r.status}`);
-  }
 }

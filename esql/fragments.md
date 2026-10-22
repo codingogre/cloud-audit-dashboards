@@ -11,8 +11,8 @@ FROM logs-elastic_cloud.serverless_audit.otel-default
 
 ## Actor resolution — REQUIRED on every actor-facing panel
 
-`attributes.user.name` is a numeric ID (`1234567890`), not a name. Human identity is in
-`attributes.user.email`; machine identity in `attributes.api_key.name`.
+`user.name` is a numeric ID (`1234567890`), not a name. Human identity is in
+`user.email`; machine identity in `api_key.name`.
 
 `actor_org` splits traffic by the email on the event: `Elastic` is an `@elastic.co` address, `Tenant`
 is any other address (including API-key traffic, which carries its creator's email), and `Machine`
@@ -21,13 +21,13 @@ prints them as they are. This `Tenant` is not the same as `actor_scope`'s `tenan
 "neither platform automation nor unauthenticated".
 
 ```esql
-| EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, "<anonymous>"),
-       actor_kind = CASE(attributes.user.email IS NOT NULL, "human", "service"),
-       actor_org  = CASE(attributes.user.email IS NULL, "Machine",
-                         attributes.user.email LIKE "*@elastic.co", "Elastic", "Tenant")
+| EVAL actor = COALESCE(user.email, api_key.name, user.name, "<anonymous>"),
+       actor_kind = CASE(user.email IS NOT NULL, "human", "service"),
+       actor_org  = CASE(user.email IS NULL, "Machine",
+                         user.email LIKE "*@elastic.co", "Elastic", "Tenant")
 ```
 
-`actor_org` is a two-condition `CASE`, so it runs after a `STATS` grouped on `attributes.user.email`,
+`actor_org` is a two-condition `CASE`, so it runs after a `STATS` grouped on `user.email`,
 never per event (see *Query shape decides cost* below). `actor_kind` stays a one-condition cut for the
 same reason; a panel that shows the kind refines it on the grouped rows with `SCOPE`'s vocabulary, so
 `<anonymous>` reads `unauthenticated` and Elastic's own service accounts read `platform`, not `service`:
@@ -54,11 +54,11 @@ the realm test it replaces split one key into two rows. `-` leads the character 
 reads `_-]` as a range. `table()` appends it to every table showing `actor`; the Discover sessions and
 the treemap and matrix specs embed it verbatim, and the drift check pins it. For a key-name or owner
 column that would print `-`, `0` or `(no name)` for such a key, `cloudKeyLabel(col, otherwise)` gives the
-same form (API key inventory: `COALESCE(attributes.api_key.name, <cloudKeyLabel(user.name, "(no name)")>)`).
+same form (API key inventory: `COALESCE(api_key.name, <cloudKeyLabel(user.name, "(no name)")>)`).
 
 ## Noise gate — ON by default
 
-**Both halves must be null-guarded.** `attributes.elasticsearch.audit.action` does not exist on
+**Both halves must be null-guarded.** `elasticsearch.audit.action` does not exist on
 Kibana audit events, so a bare `NOT (field IN (...))` evaluates to null there — and `WHERE null`
 drops the row. The previous gate therefore discarded 100% of Kibana audit, which is a small
 fraction of the stream carrying nearly all of the forensic value.
@@ -72,7 +72,7 @@ one of them is the bulk:
 | Query internals, Elasticsearch | search phases, `msearch`, `scroll`, PIT and reader contexts; **ES\|QL and every sub-request** (`esql/compute`, `esql/data`, `esql/search_shards`, `esql/resolve_fields`, `esql/async/get`, `indices:admin/esql/*`); `field_caps` and `field_caps[n]`; `async_search/*`; `indices:admin/resolve/*`; `indices:admin/shards/search_shards`; ES\|QL's query listing (`cluster:monitor/xpack/esql/*`); and the two cluster reads Kibana makes on every page load, `cluster:monitor/project/tags` and `cluster:monitor/xpack/inference/get` (24h: 1,707 and 1,704 against 1,666 page shells); **reads of API key metadata**, `cluster:admin/xpack/security/api_key/get` and `…/api_key/query` (`API_KEY_READS`, round 6: a client polling its own key, 12,595 a day live, 1,369 of 1,805 Signal events in one hour) | the machinery every dashboard, Discover tab and client runs to read data. With many viewers, each viewer's own panel queries were the top "signal" |
 | Query internals, Kibana | `http_request` to an `/internal/` route (with or without `/s/<space>`): `/internal/search/esql_async`, feature flags, controls options, session checks; the dashboard app's content-management reads (`/api/content_management/rpc/get`, `search`, `mget`, `bulkGet`); **page-load plumbing** — `/bootstrap.js`, `/bootstrap-anonymous.js`, `/translations/…`, the `/app/<app>` page shell, `/api/core/…`, `/api/licensing/…`, `/api/banners/…`, `/api/ui_counters/…` and the space picker's `/api/spaces/space` list; `saved_object_open/close_point_in_time`; `space_get` / `space_find` ("User has accessed space", once per page load) | what the browser calls to draw a page. A content-management read is also audited as its own `saved_object_*` event, and a change through a public route is audited again as its own event (`space_create`, `saved_object_create` …). Every other public `/api/` route, `/api/spaces/space/<id>`, an rpc create/update/delete, and a space create/update/delete stay signal |
 | Page-load lookups | `saved_object_get` of the `config` / `config-global` settings object; `saved_object_find` of `index-pattern` (the logs-\* / metrics-\* default data-view check, the workflows data views) | what every Kibana page load reads before it draws (24h: 2,021 each, one per page load, by every viewer and by the verify renderer). Resolving, creating or changing a particular data view stays signal |
-| The suite itself (`SUITE_SELF`) | on a `cloud-audit-*` (Vega, Discover, data view) or `elastic_cloud-audit-*` (every dashboard, from 1.0.3) object: a **read** (`saved_object_get` / `_resolve` / `_find`) by anyone; **any** event with no Kibana browser session (`attributes.kibana.session.id IS NULL`). And an `http_request` to `/api/saved_objects/_import` or `_export`, or to a public route that names a suite id (`PUT /api/dashboards/elastic_cloud-audit-…`) — `SUITE_INSTALL_URL`, session-blind | a read is the suite watching itself be watched, one per panel load per viewer. A session-less event is the automated install: `./audit --objects/--dashboards` imports, exports, creates, updates and deletes the suite's objects with an API key, and after a redeploy that was every row of the Live signal feed (24h: 10,368 events). Each object an import or export touches is audited again as its own `saved_object_*` event, so gating the request line loses no object. A person **editing** a suite dashboard does it in a browser session and stays signal; it is a test of the channel, never of a key. Every change, the install's included, stays in `CHANGE_PRED` (02 Mutations, 04 Mutation feed, 07 What they changed), and views stay on 02's all-traffic tiles, heatmap and Busiest object types |
+| The suite itself (`SUITE_SELF`) | on a `cloud-audit-*` (Vega, Discover, data view) or `elastic_cloud-audit-*` (every dashboard, from 1.0.3) object: a **read** (`saved_object_get` / `_resolve` / `_find`) by anyone; **any** event with no Kibana browser session (`kibana.session.id IS NULL`). And an `http_request` to `/api/saved_objects/_import` or `_export`, or to a public route that names a suite id (`PUT /api/dashboards/elastic_cloud-audit-…`) — `SUITE_INSTALL_URL`, session-blind | a read is the suite watching itself be watched, one per panel load per viewer. A session-less event is the automated install: `./audit --objects/--dashboards` imports, exports, creates, updates and deletes the suite's objects with an API key, and after a redeploy that was every row of the Live signal feed (24h: 10,368 events). Each object an import or export touches is audited again as its own `saved_object_*` event, so gating the request line loses no object. A person **editing** a suite dashboard does it in a browser session and stays signal; it is a test of the channel, never of a key. Every change, the install's included, stays in `CHANGE_PRED` (02 Mutations, 04 Mutation feed, 07 What they changed), and views stay on 02's all-traffic tiles, heatmap and Busiest object types |
 | Connection / authn volume | `connection_granted`, `authentication_success` | one per transport connection / authenticated request |
 
 A read of a system index is not lost to the gate: `SYS_INDEX` selects on the index name and never
@@ -89,36 +89,36 @@ list it. 7-day replica: signal 333,360 → 309,810; no gated query moved (gated 
 ~0.65–0.8s, treemap ~310ms, before and after, alternating runs).
 
 ```esql
-| WHERE (attributes.elasticsearch.audit.action IS NULL OR NOT (
-      attributes.elasticsearch.audit.action IN ("cluster:monitor/main", "elastic.maintenance")
-      OR attributes.elasticsearch.audit.action LIKE "indices:data/read/search*"
-      OR attributes.elasticsearch.audit.action LIKE "indices:data/read/msearch*"
-      OR attributes.elasticsearch.audit.action LIKE "indices:data/read/scroll*"
-      OR attributes.elasticsearch.audit.action LIKE "indices:data/read/*point_in_time"
-      OR attributes.elasticsearch.audit.action == "indices:data/read/open_reader_context"
-      OR attributes.elasticsearch.audit.action LIKE "indices:data/read/esql*"
-      OR attributes.elasticsearch.audit.action LIKE "indices:admin/esql/*"
-      OR attributes.elasticsearch.audit.action LIKE "indices:data/read/field_caps*"
-      OR attributes.elasticsearch.audit.action LIKE "indices:data/read/async_search/*"
-      OR attributes.elasticsearch.audit.action LIKE "indices:admin/resolve/*"
-      OR attributes.elasticsearch.audit.action == "indices:admin/shards/search_shards"
-      OR attributes.elasticsearch.audit.action LIKE "cluster:monitor/xpack/esql/*"
-      OR attributes.elasticsearch.audit.action IN ("cluster:monitor/project/tags", "cluster:monitor/xpack/inference/get",
+| WHERE (elasticsearch.audit.action IS NULL OR NOT (
+      elasticsearch.audit.action IN ("cluster:monitor/main", "elastic.maintenance")
+      OR elasticsearch.audit.action LIKE "indices:data/read/search*"
+      OR elasticsearch.audit.action LIKE "indices:data/read/msearch*"
+      OR elasticsearch.audit.action LIKE "indices:data/read/scroll*"
+      OR elasticsearch.audit.action LIKE "indices:data/read/*point_in_time"
+      OR elasticsearch.audit.action == "indices:data/read/open_reader_context"
+      OR elasticsearch.audit.action LIKE "indices:data/read/esql*"
+      OR elasticsearch.audit.action LIKE "indices:admin/esql/*"
+      OR elasticsearch.audit.action LIKE "indices:data/read/field_caps*"
+      OR elasticsearch.audit.action LIKE "indices:data/read/async_search/*"
+      OR elasticsearch.audit.action LIKE "indices:admin/resolve/*"
+      OR elasticsearch.audit.action == "indices:admin/shards/search_shards"
+      OR elasticsearch.audit.action LIKE "cluster:monitor/xpack/esql/*"
+      OR elasticsearch.audit.action IN ("cluster:monitor/project/tags", "cluster:monitor/xpack/inference/get",
            "cluster:admin/xpack/security/api_key/get", "cluster:admin/xpack/security/api_key/query")))
-    AND (attributes.event.action IS NULL OR NOT (
-      attributes.event.action IN ("authentication_success","connection_granted")
+    AND (event.action IS NULL OR NOT (
+      event.action IN ("authentication_success","connection_granted")
       OR <KIBANA_INTERNALS>))
 ```
 
 `KIBANA_INTERNALS` (exported from `panels.mjs`):
 
 ```esql
-attributes.event.action IN ("saved_object_open_point_in_time","saved_object_close_point_in_time","space_get","space_find")
-  OR (attributes.event.action == "http_request" AND attributes.url.original IS NOT NULL
-      AND attributes.url.original RLIKE "<KIBANA_PLUMBING_URL>|<SUITE_INSTALL_URL>")
-  OR (attributes.kibana.saved_object.type IS NOT NULL AND (
-      (attributes.event.action == "saved_object_get" AND attributes.kibana.saved_object.type IN ("config","config-global"))
-      OR (attributes.event.action == "saved_object_find" AND attributes.kibana.saved_object.type == "index-pattern")))
+event.action IN ("saved_object_open_point_in_time","saved_object_close_point_in_time","space_get","space_find")
+  OR (event.action == "http_request" AND url.original IS NOT NULL
+      AND url.original RLIKE "<KIBANA_PLUMBING_URL>|<SUITE_INSTALL_URL>")
+  OR (kibana.saved_object.type IS NOT NULL AND (
+      (event.action == "saved_object_get" AND kibana.saved_object.type IN ("config","config-global"))
+      OR (event.action == "saved_object_find" AND kibana.saved_object.type == "index-pattern")))
   OR <SUITE_SELF>
 ```
 
@@ -127,9 +127,9 @@ of the plumbing RLIKE (a second RLIKE behind a session test measured slower on t
 `SUITE_SELF`:
 
 ```esql
-(attributes.kibana.saved_object.id IS NOT NULL AND (attributes.kibana.saved_object.id LIKE "cloud-audit-*" OR attributes.kibana.saved_object.id LIKE "elastic_cloud-audit-*")
-  AND (attributes.event.action IN ("saved_object_get","saved_object_resolve","saved_object_find")
-       OR attributes.kibana.session.id IS NULL))
+(kibana.saved_object.id IS NOT NULL AND (kibana.saved_object.id LIKE "cloud-audit-*" OR kibana.saved_object.id LIKE "elastic_cloud-audit-*")
+  AND (event.action IN ("saved_object_get","saved_object_resolve","saved_object_find")
+       OR kibana.session.id IS NULL))
 ```
 
 `KIBANA_PLUMBING_URL` — each alternative carries its own tail, so `api/spaces/space` matches the list a
@@ -172,13 +172,13 @@ through, so Kibana events with no internal match land in `signal`.
 
 ```esql
 | STATS n = COUNT(*) BY <panel keys>,
-    attributes.elasticsearch.audit.action, attributes.event.action, kib_internal = (<KIBANA_INTERNALS>)
+    elasticsearch.audit.action, event.action, kib_internal = (<KIBANA_INTERNALS>)
 | EVAL band = CASE(
-    attributes.elasticsearch.audit.action IN ("cluster:monitor/main", "elastic.maintenance"), "infra-noise",
+    elasticsearch.audit.action IN ("cluster:monitor/main", "elastic.maintenance"), "infra-noise",
     <the Elasticsearch query-internals disjunction above>, "query-noise",
     kib_internal, "query-noise",
-    attributes.event.action == "connection_granted", "query-noise",
-    attributes.event.action == "authentication_success", "authn-volume", "signal")
+    event.action == "connection_granted", "query-noise",
+    event.action == "authentication_success", "authn-volume", "signal")
 | STATS events = SUM(n) BY <panel keys>, band
 ```
 
@@ -194,10 +194,10 @@ its own: `elastic/kibana` invalidates keys every few milliseconds (payload ids s
 the tiles that say "any non-zero deserves review" leave exactly that out, and say how much:
 
 ```esql
-| WHERE attributes.elasticsearch.audit.security_config_change IS NOT NULL AND NOT <HOUSEKEEPING>
+| WHERE elasticsearch.audit.security_config_change IS NOT NULL AND NOT <HOUSEKEEPING>
 -- HOUSEKEEPING:
-(attributes.event.action IS NOT NULL AND attributes.event.action == "invalidate_apikeys"
- AND attributes.user.name IS NOT NULL AND attributes.user.name IN (<PLATFORM_ACTORS>) AND attributes.api_key.name IS NULL)
+(event.action IS NOT NULL AND event.action == "invalidate_apikeys"
+ AND user.name IS NOT NULL AND user.name IN (<PLATFORM_ACTORS>) AND api_key.name IS NULL)
 ```
 
 Every term is guarded, so `NOT HOUSEKEEPING` never drops a row. A key Kibana *creates* on a user's behalf
@@ -214,8 +214,8 @@ One stream carries two audit sources. Kibana events are a small share of volume 
 all of the forensic value.
 
 ```esql
-| WHERE resource.attributes.service.name == "serverless-kibana"        -- Kibana audit
-| WHERE resource.attributes.service.name == "serverless-elasticsearch" -- Elasticsearch audit
+| WHERE service.name == "serverless-kibana"        -- Kibana audit
+| WHERE service.name == "serverless-elasticsearch" -- Elasticsearch audit
 ```
 
 ## Time bucketing
@@ -253,12 +253,12 @@ the scorer and the change panels can never disagree.
 ```esql
 | EVAL risk = CASE(
     housekeeping, 0,                                   -- Kibana's own key clean-up; a key of RISK_KEYS
-    attributes.event.action == "invalidate_apikeys", 45,
-    attributes.event.action == "anonymous_access_denied", 35,
-    attributes.elasticsearch.audit.security_config_change IS NOT NULL, 50,
-    attributes.event.outcome == "failure", 40,
-    <CHANGE_PRED> AND attributes.event.action IN ("workflow_run","workflow_test","workflow_execution_cancel"), 10,
-    <CHANGE_PRED> AND (attributes.event.type == "deletion" OR attributes.event.action == "rule_disable"), 30,
+    event.action == "invalidate_apikeys", 45,
+    event.action == "anonymous_access_denied", 35,
+    elasticsearch.audit.security_config_change IS NOT NULL, 50,
+    event.outcome == "failure", 40,
+    <CHANGE_PRED> AND event.action IN ("workflow_run","workflow_test","workflow_execution_cancel"), 10,
+    <CHANGE_PRED> AND (event.type == "deletion" OR event.action == "rule_disable"), 30,
     <CHANGE_PRED>, 25,
     0)
 | WHERE risk > 0
@@ -288,9 +288,9 @@ Push this **ahead** of the actor/risk EVALs. Without it, `COALESCE`/`CASE` are e
 document before `WHERE risk > 0` prunes anything. Keep it in sync with the weights above.
 
 ```esql
-| WHERE attributes.elasticsearch.audit.security_config_change IS NOT NULL
-    OR attributes.event.outcome == "failure"
-    OR attributes.event.action IN ("invalidate_apikeys","anonymous_access_denied")
+| WHERE elasticsearch.audit.security_config_change IS NOT NULL
+    OR event.outcome == "failure"
+    OR event.action IN ("invalidate_apikeys","anonymous_access_denied")
     OR <CHANGE_PRED>
 ```
 
@@ -308,11 +308,11 @@ every count downstream is then `SUM(n)` and every severity `SUM(risk * n)`:
 ```esql
 | <RISK_PREFILTER>
 | STATS n = COUNT(*) BY <panel keys>,
-    attributes.event.action, scc = attributes.elasticsearch.audit.security_config_change IS NOT NULL,
-    attributes.event.outcome, resource.attributes.service.name, et = MV_CONCAT(attributes.event.type, ","),
+    event.action, scc = elasticsearch.audit.security_config_change IS NOT NULL,
+    event.outcome, service.name, et = MV_CONCAT(event.type, ","),
     housekeeping = <HOUSEKEEPING>
-| EVAL attributes.event.type = SPLIT(et, ","),
-       attributes.elasticsearch.audit.security_config_change = CASE(scc, "present")
+| EVAL event.type = SPLIT(et, ","),
+       elasticsearch.audit.security_config_change = CASE(scc, "present")
 | <RISK>
 | WHERE risk > 0
 ```
@@ -353,14 +353,14 @@ missed every mutation whose action does not end in `_create`/`_update`/`_delete`
 `workflow_test` and `workflow_execution_cancel`. Select by ECS classification instead:
 
 ```esql
-| WHERE (resource.attributes.service.name == "serverless-kibana" AND (
-      (attributes.event.type IN ("change","creation","deletion")
-       AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (
+| WHERE (service.name == "serverless-kibana" AND (
+      (event.type IN ("change","creation","deletion")
+       AND (event.action IS NULL OR NOT (event.action IN (
             "saved_object_open_point_in_time","saved_object_close_point_in_time"))))
-      OR attributes.event.action IN ("rule_run_soon","secret_create")))
+      OR event.action IN ("rule_run_soon","secret_create")))
 ```
 
-- `attributes.event.type` is **single-valued on Kibana** but **multi-valued on Elasticsearch**
+- `event.type` is **single-valued on Kibana** but **multi-valued on Elasticsearch**
   (`access_granted` carries `["access","allowed"]`). ES|QL returns **null, not false**, for `IN` on a
   multi-value operand — verified live — so in a `WHERE` the row drops and in a `CASE` the branch
   falls through. This predicate is fail-closed outside Kibana, and the explicit `service.name` test
@@ -377,27 +377,27 @@ Wildcards on **both** sides for create/update: the newer action names bury the v
 test reads them as "other". ML uses its own vocabulary and needs naming explicitly.
 
 ```esql
-| EVAL verb = CASE(attributes.event.action LIKE "*_execution_cancel", "cancel",
-                   attributes.event.action LIKE "*_run_soon", "run",
-                   attributes.event.action LIKE "*_run",      "run",
-                   attributes.event.action LIKE "*_test",     "test",
-                   attributes.event.action LIKE "*_enable",   "enable",
-                   attributes.event.action LIKE "*_disable",  "disable",
-                   attributes.event.action LIKE "ml_put_*",   "create",
-                   attributes.event.action LIKE "ml_open_*",  "open",
-                   attributes.event.action LIKE "ml_start_*", "start",
-                   attributes.event.action LIKE "*point_in_time", "pit",
-                   attributes.event.action LIKE "*_create*",  "create",
-                   attributes.event.action LIKE "*_update*",  "update",
-                   attributes.event.action LIKE "*_delete",   "delete",
-                   attributes.event.action LIKE "*_find",     "find",
-                   attributes.event.action LIKE "*_get",      "get",
-                   attributes.event.action LIKE "*_resolve",  "resolve", "other")
+| EVAL verb = CASE(event.action LIKE "*_execution_cancel", "cancel",
+                   event.action LIKE "*_run_soon", "run",
+                   event.action LIKE "*_run",      "run",
+                   event.action LIKE "*_test",     "test",
+                   event.action LIKE "*_enable",   "enable",
+                   event.action LIKE "*_disable",  "disable",
+                   event.action LIKE "ml_put_*",   "create",
+                   event.action LIKE "ml_open_*",  "open",
+                   event.action LIKE "ml_start_*", "start",
+                   event.action LIKE "*point_in_time", "pit",
+                   event.action LIKE "*_create*",  "create",
+                   event.action LIKE "*_update*",  "update",
+                   event.action LIKE "*_delete",   "delete",
+                   event.action LIKE "*_find",     "find",
+                   event.action LIKE "*_get",      "get",
+                   event.action LIKE "*_resolve",  "resolve", "other")
 ```
 
 ## Naming the object that changed
 
-Kibana populates `attributes.kibana.saved_object.{id,type,name}` **only** on the saved-objects
+Kibana populates `kibana.saved_object.{id,type,name}` **only** on the saved-objects
 audit path. Workflows, agent-builder agents and tools, ML jobs and datafeeds, product documentation
 and secrets populate **none** of them; `connector_create`, the `case_*` family and `space_create`
 carry a type but no name. `body.text` is never null on a Kibana event and always names the thing,
@@ -409,8 +409,8 @@ so it is the fallback.
 | GROK body.text """\[executionId=%{DATA:g_exec}\]"""
 | GROK body.text """case id: %{NOTSPACE:g_case}"""
 | GROK body.text """(?:job|datafeed) %{NOTSPACE:g_ml}"""
-| EVAL obj_name = COALESCE(attributes.kibana.saved_object.name, g_name, g_id,
-                           attributes.kibana.saved_object.id, g_case, g_ml, g_exec, body.text)
+| EVAL obj_name = COALESCE(kibana.saved_object.name, g_name, g_id,
+                           kibana.saved_object.id, g_case, g_ml, g_exec, body.text)
 ```
 
 Message shapes these patterns exist for (object names are illustrative):
@@ -438,9 +438,9 @@ failure count — 01's *Failed or denied* tile, its failure table and `searches/
 description), and the drift check pins it in `searches/02`:
 
 ```esql
-| WHERE attributes.event.action IN ("authentication_failed","anonymous_access_denied")
-     OR (attributes.event.outcome == "failure"
-         AND (attributes.event.action IS NULL OR attributes.event.action != "realm_authentication_failed"))
+| WHERE event.action IN ("authentication_failed","anonymous_access_denied")
+     OR (event.outcome == "failure"
+         AND (event.action IS NULL OR event.action != "realm_authentication_failed"))
 ```
 
 Live, 24h: 04's old `outcome == "failure"` count 1,182 → 1,052 (130 realm traces), now equal to 01's tile.
@@ -448,28 +448,28 @@ Live, 24h: 04's old `outcome == "failure"` count 1,182 → 1,052 (130 realm trac
 
 ## Credential, across both audit sources
 
-`attributes.authentication.type` is an Elasticsearch-audit field — it is null on almost every
-Kibana event. `attributes.user.domain` is populated there, so the COALESCE is what gives a
+`authentication.type` is an Elasticsearch-audit field — it is null on almost every
+Kibana event. `user.domain` is populated there, so the COALESCE is what gives a
 credential dimension any fan-out on Kibana data, and it is the split between a person in a browser
 (`cloud-saml-kibana`) and a script calling Kibana with a key (`_es_api_key`).
 
 ```esql
-| EVAL credential = COALESCE(attributes.authentication.type, attributes.user.domain, "unknown")
+| EVAL credential = COALESCE(authentication.type, user.domain, "unknown")
 ```
 
 Derived, so never click-filter on it. To pin a credential, filter on either source field.
 
-`attributes.authentication.type` in words, for any chart that breaks down by it (01's line chart and
+`authentication.type` in words, for any chart that breaks down by it (01's line chart and
 the vega/02 matrix embed this text; the drift check pins vega/02). Apply it after a `STATS` that groups
 on the raw field, and pin a colour for every value it can produce (`CRED_TYPE_COLORS`): an unpinned
 breakdown value takes the palette from its start, which a pinned value already holds.
 
 ```esql
-| EVAL auth = CASE(attributes.authentication.type == "api_key", "API key",
-    attributes.authentication.type == "token", "Token", attributes.authentication.type == "realm", "Realm",
-    attributes.authentication.type == "saml", "SAML",
-    attributes.authentication.type == "anonymous", "Anonymous", attributes.authentication.type == "internal", "Internal",
-    attributes.authentication.type)
+| EVAL auth = CASE(authentication.type == "api_key", "API key",
+    authentication.type == "token", "Token", authentication.type == "realm", "Realm",
+    authentication.type == "saml", "SAML",
+    authentication.type == "anonymous", "Anonymous", authentication.type == "internal", "Internal",
+    authentication.type)
 ```
 
 ## Did the event touch an object?
@@ -481,9 +481,9 @@ Keep its families in step with `OBJ_TYPE`'s branches — a family added there an
 dropped by anything that filters on this.
 
 ```esql
-| WHERE (attributes.kibana.saved_object.type IS NOT NULL OR attributes.event.action LIKE "ml_*"
-    OR attributes.event.action LIKE "workflow_*" OR attributes.event.action LIKE "agent_builder_*"
-    OR attributes.event.action LIKE "product_documentation_*" OR attributes.event.action == "secret_create")
+| WHERE (kibana.saved_object.type IS NOT NULL OR event.action LIKE "ml_*"
+    OR event.action LIKE "workflow_*" OR event.action LIKE "agent_builder_*"
+    OR event.action LIKE "product_documentation_*" OR event.action == "secret_create")
 ```
 
 It references only raw fields, so it works on rows already grouped by those fields.
@@ -497,9 +497,9 @@ Measured on the 2.6M-event perf replica (`./audit --perf`), alternating runs on 
 | **A `CASE` with two or more conditions never runs per document.** It costs ~4µs per row it is evaluated on, whether or not it feeds a group-by; nesting it as one-condition `CASE`s does not help. Each condition alone, a one-condition `CASE`, `COALESCE`, boolean expressions, `GROK` and the whole noise gate are cheap. `RISK`, `BAND`, `VERB`, `OBJ_TYPE`, `ORG` and `SCOPE` are all this shape. | 7 days: `CASE(client.ip IS NULL, …, client.geo.country_iso_code IS NOT NULL, …, …)` 11.2s; either condition alone 90ms |
 | **Count first by the raw fields a fragment reads, derive afterwards.** `STATS n = COUNT(*) BY` the raw keyword fields, apply the fragment unchanged to the grouped rows, then `STATS SUM(n) BY` what it derived (`MIN`/`MAX` a carried timestamp, `COUNT_DISTINCT` a carried key). The fragments still appear verbatim, so the drift check still pins them, and the output is identical. | the `CASE` above: 11.2s → 0.14s. Command Center treemap 31s → 0.8s, band charts 13s → 0.3s, object/verb heatmap 8.9s → 0.4s (7 days); Actor 360 flow 2,839ms → 145ms (24h) |
 | **Keep the grouped rows few.** The `CASE` still costs per grouped row, so group on what it reads and nothing wider. `RISK_KEYS` groups `security_config_change` — a near-unique JSON payload — as a presence boolean, because `RISK` only asks `IS NOT NULL`. | hourly risk chart, 7 days: 18,001 grouped rows 1.7s, 2,936 rows 0.27s |
-| **A multi-valued key is grouped joined.** `attributes.event.type` is multi-valued on Elasticsearch events; `STATS BY` it would count a document once per value. Group `et = MV_CONCAT(attributes.event.type, ",")` and restore it with `EVAL attributes.event.type = SPLIT(et, ",")`, which keeps `IN`/`==` returning null on those rows exactly as on the raw field. | identical rows on every risk panel, 24h and 7d |
+| **A multi-valued key is grouped joined.** `event.type` is multi-valued on Elasticsearch events; `STATS BY` it would count a document once per value. Group `et = MV_CONCAT(event.type, ",")` and restore it with `EVAL event.type = SPLIT(et, ",")`, which keeps `IN`/`==` returning null on those rows exactly as on the raw field. | identical rows on every risk panel, 24h and 7d |
 | **A row feed sorts straight after its filter.** A Discover session that classifies rows puts `SORT @timestamp DESC` (and any `LIMIT`) before the `EVAL`s, so they run on the rows returned. | `searches/04` 10.6s → 0.18s, `searches/01` 3.2s → 0.3s (7 days) |
-| **Group on raw keyword fields where you can.** A computed key such as the actor `COALESCE` is cheap enough, but only a raw field can take a filter pill. | 7 days: `BY attributes.user.email` 51–53ms, `BY` the actor COALESCE 183–195ms |
+| **Group on raw keyword fields where you can.** A computed key such as the actor `COALESCE` is cheap enough, but only a raw field can take a filter pill. | 7 days: `BY user.email` 51–53ms, `BY` the actor COALESCE 183–195ms |
 | **A panel that measures presence takes no noise gate.** `access_granted` *is* activity, so gating it removes the thing being measured. This is about meaning, not speed: the null-guarded gate itself is cheap. | 7 days: the full noise gate 42–56ms; `== "access_granted"` 25–38ms |
 | **Sub-aggregations over a wide window cost the scan.** A bare `terms` reads ordinals; any sub-aggregation visits every document. | earlier measurement on the live stream: 7-day `terms` by email 270ms bare, ~4s with two `cardinality` sub-aggs, ~6s with `terms` sub-aggs. On the replica (one email) all three ran in 25–143ms, so re-check on a tenant with many users |
 | **Low-cardinality `COUNT_DISTINCT` takes a precision threshold.** The default sizes the sketch for thousands of values. | `COUNT_DISTINCT(field, 100)` is exact for `event.action` (tens of values) |
@@ -509,8 +509,8 @@ rewritten to `SUM(n)` `COALESCE`s after the `STATS` so an empty window still rea
 
 ## Geo (populated by the audit-scoped final_pipeline)
 
-`attributes.source.ip` is the internal proxy (100.64.x / 10.x) and is NOT the client.
-`attributes.network.forwarded_ip` is the real public client IP; the pipeline lifts it to
+`source.ip` is the internal proxy (100.64.x / 10.x) and is NOT the client.
+`network.forwarded_ip` is the real public client IP; the pipeline lifts it to
 `client.ip` and geo-resolves it into `client.geo.*`.
 
 ```esql
@@ -544,13 +544,13 @@ through one `CONCAT` measured 484ms and is not worth it.
 
 | Gotcha | Handling |
 | --- | --- |
-| `attributes.event.category` / `.type` are arrays | `MV_EXPAND` before `STATS ... BY` |
-| `attributes.url.path` / `url.original` are `wildcard` | cast `::keyword` to group by them |
-| `attributes.elasticsearch.audit.security_config_change` is a JSON *string* | render as text, never aggregate internals |
+| `event.category` / `.type` are arrays | `MV_EXPAND` before `STATS ... BY` |
+| `url.path` / `url.original` are `wildcard` | cast `::keyword` to group by them |
+| `elasticsearch.audit.security_config_change` is a JSON *string* | render as text, never aggregate internals |
 | `body.text` is only on Kibana events | always pair with the `serverless-kibana` source filter |
 | Keys inside `attributes` are literal dotted strings | matters for ingest processors, not for ES\|QL |
 | Root mapping is `dynamic: false` | enriched fields must be explicitly mapped (see `ingest/`) |
-| Filter pills bind to a **source field**, not a derived column | `click_filter` goes on `attributes.user.email`; a pill on the `actor` COALESCE matches nothing |
+| Filter pills bind to a **source field**, not a derived column | `click_filter` goes on `user.email`; a pill on the `actor` COALESCE matches nothing |
 | Wide windows used to "time out past `now-1h`" | that timing was confounded: the queries ran back to back — a synchronous query outlives its client and cannot be cancelled on serverless. Dashboards stay at 1h as the readable default; see *Query shape decides cost* for what actually costs |
 | `_field_caps` reports `url.path` / `url.original` as `keyword` | they are `wildcard` in the backing index mapping — read `_mapping`, and never group on them unguarded |
 | `LAST` is reserved | `last = MAX(@timestamp)` is a parse error; use `last_ts` |

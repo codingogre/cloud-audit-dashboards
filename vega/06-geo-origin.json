@@ -88,7 +88,7 @@
         "name": "countries",
         "url": {
           "%type%": "esql",
-          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE client.geo.country_iso_code IS NOT NULL | EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, \"<anonymous>\") | STATS events = COUNT(*), actors = COUNT_DISTINCT(actor), ips = COUNT_DISTINCT(client.ip) BY iso = client.geo.country_iso_code, country = client.geo.country_name | SORT events DESC | LIMIT 300",
+          "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE client.geo.country_iso_code IS NOT NULL | EVAL actor = COALESCE(user.email, api_key.name, user.name, \"<anonymous>\") | STATS events = COUNT(*), actors = COUNT_DISTINCT(actor), ips = COUNT_DISTINCT(client.ip) BY iso = client.geo.country_iso_code, country = client.geo.country_name | SORT events DESC | LIMIT 300",
           "%timefield%": "@timestamp",
           "%context%": true
         }

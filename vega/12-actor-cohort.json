@@ -43,19 +43,19 @@
           "aggs": {
             "people": {
               "terms": {
-                "field": "attributes.user.email",
+                "field": "user.email",
                 "size": 40
               },
               "aggs": {
                 "actions": {
                   "cardinality": {
-                    "field": "attributes.event.action",
+                    "field": "event.action",
                     "precision_threshold": 100
                   }
                 },
                 "objtypes": {
                   "cardinality": {
-                    "field": "attributes.kibana.saved_object.type",
+                    "field": "kibana.saved_object.type",
                     "precision_threshold": 100
                   }
                 }
@@ -63,25 +63,25 @@
             },
             "projects": {
               "terms": {
-                "field": "attributes.project.name",
+                "field": "project.name",
                 "size": 200
               },
               "aggs": {
                 "people": {
                   "terms": {
-                    "field": "attributes.user.email",
+                    "field": "user.email",
                     "size": 40
                   },
                   "aggs": {
                     "actions": {
                       "cardinality": {
-                        "field": "attributes.event.action",
+                        "field": "event.action",
                         "precision_threshold": 100
                       }
                     },
                     "objtypes": {
                       "cardinality": {
-                        "field": "attributes.kibana.saved_object.type",
+                        "field": "kibana.saved_object.type",
                         "precision_threshold": 100
                       }
                     }
@@ -126,13 +126,13 @@
           "aggs": {
             "people": {
               "terms": {
-                "field": "attributes.user.email",
+                "field": "user.email",
                 "size": 40
               }
             },
             "projects": {
               "terms": {
-                "field": "attributes.project.name",
+                "field": "project.name",
                 "size": 200
               }
             }

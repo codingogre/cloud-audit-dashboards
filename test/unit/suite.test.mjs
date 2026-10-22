@@ -158,11 +158,11 @@ test('control bar (1.0.2): Project, Person (email), Client IP; no full_name; ids
   const { CONTROLS, controlGroup } = await import('../../scripts/lib/controls.mjs');
   const { stableUuid } = await import('../../scripts/lib/ids.mjs');
   assert.deepEqual(CONTROLS.map((c) => c.title), ['Project', 'Person (email)', 'Client IP']);
-  assert.ok(!CONTROLS.some((c) => c.field === 'attributes.user.full_name'));
+  assert.ok(!CONTROLS.some((c) => c.field === 'user.full_name'));
   const g = controlGroup();
   assert.equal(g.controlGroupInput.chainingSystem, 'HIERARCHICAL');
   const panels = JSON.parse(g.controlGroupInput.panelsJSON);
-  // The same ids 1.0.1 deployed for these fields, so a selection made before the upgrade survives.
+  // Ids are keyed on the field name. 1.0.4 renamed the fields to bare ECS names, so the ids changed with them.
   for (const [i, c] of CONTROLS.entries()) {
     const id = stableUuid(`cloud-audit-control:${c.field}`);
     assert.equal(panels[id].explicitInput.fieldName, c.field);
@@ -181,5 +181,17 @@ test('a dashboard drilldown carries the reference Kibana navigates by, so "Open 
       name: `tbl-12:drilldown:DASHBOARD_TO_DASHBOARD_DRILLDOWN:${ev.eventId}:dashboardId`, type: 'dashboard', id: 'elastic_cloud-audit-actor-360' }]);
     assert.ok(isDrilldownRef(drilldownRefs('tbl-12', enh)[0].name));
     assert.ok(!isDrilldownRef('panel_tbl-3') && !isDrilldownRef('controlGroup_x:optionsListDataView'));
+  });
+});
+
+test('data view (1.0.4): public id elastic_cloud-audit-logs, namespaced like the dashboards; cloud-audit-dv retired', async () => {
+  const { DATA_VIEW_ID, RETIRED_DATA_VIEW_IDS, dataViewObject } = await import('../../scripts/lib/controls.mjs');
+  const { nsId } = await import('../../scripts/lib/env.mjs');
+  if (!process.env.AUDIT_ID_NS) assert.equal(DATA_VIEW_ID, 'elastic_cloud-audit-logs');
+  assert.equal(dataViewObject().id, DATA_VIEW_ID);
+  assert.deepEqual(RETIRED_DATA_VIEW_IDS, ['cloud-audit-dv']);
+  withEnv({ AUDIT_ID_NS: 'pm1' }, () => {
+    assert.equal(nsId('elastic_cloud-audit-logs'), 'elastic_cloud-audit-pm1-logs');
+    assert.equal(nsId('cloud-audit-dv'), 'cloud-audit-pm1-dv');
   });
 });

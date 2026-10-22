@@ -16,8 +16,8 @@ import { nsId } from '../../scripts/lib/env.mjs';
 test('label() uses the suite vocabulary, then humanises', () => {
   assert.equal(label('actor'), 'Identity');
   assert.equal(label('last_seen'), 'Last seen');
-  assert.equal(label('attributes.user.email'), 'Email');
-  assert.equal(label('attributes.kibana.saved_object.id'), 'ID');
+  assert.equal(label('user.email'), 'Email');
+  assert.equal(label('kibana.saved_object.id'), 'ID');
   assert.equal(label('client_geo_country'), 'Client geo country');
   assert.equal(humanise('api_key_ips'), 'API key IPs');
   assert.equal(humanise('Last seen'), 'Last seen', 'an alias that is already a header is left alone');
@@ -36,9 +36,9 @@ test('no table in the suite shows a raw dotted or snake_case header', () => {
 
 test('table() labels without touching the filtered field, and sizes by role', () => {
   const t = table(0, 0, 48, 12, 't', 'FROM x | LIMIT 5',
-    [filterable('attributes.user.email'), 'action', sized('name', 300, { label: 'Object' })], ['events', 'last_seen'], 'd');
+    [filterable('user.email'), 'action', sized('name', 300, { label: 'Object' })], ['events', 'last_seen'], 'd');
   const [email, action, name] = t.config.rows;
-  assert.deepEqual([email.column, email.label, email.click_filter], ['attributes.user.email', 'Email', true]);
+  assert.deepEqual([email.column, email.label, email.click_filter], ['user.email', 'Email', true]);
   assert.equal(action.width, undefined, 'text columns flex');
   assert.deepEqual([name.label, name.width], ['Object', 300], 'call-site label and width win');
   assert.equal(t.config.metrics[0].width, COLUMNS.events.width);
@@ -190,9 +190,9 @@ test('NOISE and BAND share one vocabulary; BAND reads the kib_internal key BAND_
     assert.ok(NOISE.includes(`"${a}"`) && BAND.includes(`"${a}"`), a);
   }
   // Every non-action field KIBANA_INTERNALS reads is IS NOT NULL-guarded, so the gate never yields null.
-  for (const f of ['attributes.url.original', 'attributes.kibana.saved_object.id', 'attributes.kibana.saved_object.type']) assert.ok(KIBANA_INTERNALS.includes(`${f} IS NOT NULL AND`), f);
+  for (const f of ['url.original', 'kibana.saved_object.id', 'kibana.saved_object.type']) assert.ok(KIBANA_INTERNALS.includes(`${f} IS NOT NULL AND`), f);
   // The browser-session test is IS NULL, which is never null itself.
-  assert.ok(!/attributes\.kibana\.session\.id (?!IS NULL)/.test(KIBANA_INTERNALS));
+  assert.ok(!/kibana\.session\.id (?!IS NULL)/.test(KIBANA_INTERNALS));
   assert.doesNotMatch(IP_GEO, /\bBY\b/);
   assert.match(IP_GEO, /placed = COUNT\(client\.geo\.country_iso_code\)/);
 });
@@ -244,7 +244,7 @@ test('an opaque Cloud API key id has one display form, and table() applies it', 
   const { ACTOR_LABEL, CLOUD_KEY_TAG, cloudKeyLabel } = await import('../../scripts/lib/panels.mjs');
   assert.equal(CLOUD_KEY_TAG, '… · Cloud API key');
   assert.match(ACTOR_LABEL, /^EVAL actor = CASE\(/);
-  assert.match(cloudKeyLabel('attributes.user.name', 'attributes.api_key.name'), /, attributes\.api_key\.name\)$/);
+  assert.match(cloudKeyLabel('user.name', 'api_key.name'), /, api_key\.name\)$/);
   const q = table(0, 0, 24, 12, 't', 'FROM x | STATS events = COUNT(*) BY actor | SORT events DESC | LIMIT 30', ['actor'], ['events'], 'd').config.data_source.query;
   assert.ok(q.endsWith(`| LIMIT 10 | ${ACTOR_LABEL}`), 'after the clamp, on the displayed rows only');
   assert.ok(!table(0, 0, 24, 12, 't', 'FROM x | LIMIT 3', ['action'], ['events'], 'd').config.data_source.query.includes(ACTOR_LABEL));
@@ -254,7 +254,7 @@ test('privileged ops leave out only Kibana\'s own key clean-up, and say how much
   const { HOUSEKEEPING, PRIVILEGED, privilegedKpi, PLATFORM_ACTORS } = await import('../../scripts/lib/panels.mjs');
   assert.ok(HOUSEKEEPING.includes('"invalidate_apikeys"') && HOUSEKEEPING.includes(PLATFORM_ACTORS));
   // Every term guarded, so NOT HOUSEKEEPING never evaluates to null and drops a row.
-  for (const f of ['attributes.event.action', 'attributes.user.name']) assert.ok(HOUSEKEEPING.includes(`${f} IS NOT NULL AND ${f}`), f);
+  for (const f of ['event.action', 'user.name']) assert.ok(HOUSEKEEPING.includes(`${f} IS NOT NULL AND ${f}`), f);
   assert.ok(PRIVILEGED.endsWith(`AND NOT ${HOUSEKEEPING}`));
   assert.match(privilegedKpi('Privileged ops'), /COUNT\(\*\) WHERE NOT housekeeping.*housekeeping_note/);
   // The short, digit-grouped second line ("excl. 2,285 cleanups"), so it never outweighs the number under it.
@@ -281,7 +281,7 @@ test('round 6: every dashboard range ends at now-1m', () => {
 
 test('round 6: one failed sign-in counts once on 01 and 04 (no per-realm traces)', async () => {
   const { FAILED_OR_DENIED } = await import('../../scripts/lib/panels.mjs');
-  assert.match(FAILED_OR_DENIED, /attributes\.event\.action != "realm_authentication_failed"/);
+  assert.match(FAILED_OR_DENIED, /event\.action != "realm_authentication_failed"/);
   const all = buildAll();
   for (const name of Object.keys(all).filter((n) => /^0[14]-/.test(n))) {
     const qs = JSON.stringify(all[name].panels);
@@ -294,10 +294,10 @@ test('checkClickFilters() rejects a click-to-filter column the query assigns, an
   const { checkClickFilters } = await import('../../scripts/lib/layout.mjs');
   const panel = (query, column) => ({ id: 'p', config: { title: 't', data_source: { query }, rows: [{ column, click_filter: true }] } });
   const run = (q, c) => { const problems = []; checkClickFilters('d', [panel(q, c)], problems); return problems; };
-  const F = 'attributes.elasticsearch.audit.indices';
+  const F = 'elasticsearch.audit.indices';
   assert.equal(run(`FROM x | STATS a = MIN(${F}) BY family | EVAL \`${F}\` = COALESCE(a, "") | LIMIT 9`, F).length, 1);
   assert.equal(run(`FROM x | STATS n = COUNT(*), ${F} = MIN(y) BY family`, F).length, 1);
   assert.equal(run(`FROM x | STATS n = COUNT(*) BY y | RENAME y AS ${F}`, F).length, 1);
   assert.equal(run(`FROM x | INLINE STATS m = MIN(${F}) BY family | WHERE ${F} == m | STATS n = MAX(n) BY ${F}, family`, F).length, 0);
-  assert.equal(run('FROM x | STATS events = COUNT(*) BY attributes.user.email | SORT events DESC', 'attributes.user.email').length, 0);
+  assert.equal(run('FROM x | STATS events = COUNT(*) BY user.email | SORT events DESC', 'user.email').length, 0);
 });

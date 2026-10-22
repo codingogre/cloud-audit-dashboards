@@ -108,10 +108,10 @@ export function build() {
     // secondary is a string because the metric shows a bare secondary number with no label; ES|QL
     // has no thousands separator, so grouped() writes "52,113" the way Lens prints the number above it.
     // "requests", not "HTTP requests": "728,436 HTTP requests" was cut at an 8-column tile's edge at 1440px.
-    kpi(0, 0, 8, 5, `FROM ${IDX} | ${TIME} | STATS \`All events\` = COUNT(*), requests = COUNT_DISTINCT(attributes.http.request.id) | EVAL detail = CONCAT(${grouped('requests')}, " requests") | KEEP \`All events\`, detail`, 'All events',
+    kpi(0, 0, 8, 5, `FROM ${IDX} | ${TIME} | STATS \`All events\` = COUNT(*), requests = COUNT_DISTINCT(http.request.id) | EVAL detail = CONCAT(${grouped('requests')}, " requests") | KEEP \`All events\`, detail`, 'All events',
       'Total audited events, unfiltered. Beneath it, the distinct HTTP requests behind them — one request often emits several audit records. Every event lands in exactly one of the four bands (Signal, Auth success, Query internals, Infra health), so those tiles add up to this one, give or take the events of the second between two tiles\' fetches.', { secondary: 'detail' }),
     kpi(8, 0, 8, 5, `FROM ${IDX} | ${TIME} | ${NOISE} | STATS \`Signal\` = COUNT(*)`, 'Signal', 'Events that survive the noise gate: what every other dashboard reads.'),
-    kpi(16, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE attributes.event.action == "authentication_success" | STATS \`Auth success\` = COUNT(*)`, 'Auth success',
+    kpi(16, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE event.action == "authentication_success" | STATS \`Auth success\` = COUNT(*)`, 'Auth success',
       'Successful authentication events (authentication_success). Elasticsearch logs one per authenticated request, so credentials making many calls generate most of them.'),
     // Counted BY BAND_KEYS with no prefilter, like Signal share: BAND decides membership over the
     // grouped rows, so this tile cannot drift from the charts. A positive superset prefilter measured
@@ -119,7 +119,7 @@ export function build() {
     // list to keep in step. COALESCE because SUM over no rows is null, where COUNT was 0.
     kpi(24, 0, 8, 5, `FROM ${IDX} | ${TIME} | STATS n = COUNT(*) BY ${BAND_KEYS} | ${BAND} | WHERE band == "query-noise" | STATS q = SUM(n) | EVAL \`Query internals\` = COALESCE(q, 0) | KEEP \`Query internals\``, 'Query internals',
       'The machinery behind a query, not a decision anyone made: Elasticsearch search phases, ES|QL sub-requests, field_caps, async search and point-in-time; reads of API key metadata (api_key/get and query); Kibana /internal/ page requests; reads of this suite’s own saved objects; and transport connection_granted.'),
-    kpi(32, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE attributes.elasticsearch.audit.action IN ("cluster:monitor/main","elastic.maintenance") | STATS \`Infra health\` = COUNT(*)`, 'Infra health',
+    kpi(32, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE elasticsearch.audit.action IN ("cluster:monitor/main","elastic.maintenance") | STATS \`Infra health\` = COUNT(*)`, 'Infra health',
       'Health-check and platform maintenance traffic: cluster:monitor/main and elastic.maintenance.'),
     kpi(40, 0, 8, 5, `FROM ${IDX} | ${TIME} | STATS n = COUNT(*) BY ${BAND_KEYS} | ${BAND} | STATS total = SUM(n), sig = SUM(CASE(band == "signal", n, 0)) | EVAL \`Signal share\` = ROUND(sig * 1.0 / total, 4) | KEEP \`Signal share\``, 'Signal share',
       'Percentage of the firehose that survives the noise gate. The lower this is, the more the other dashboards are earning their keep.', { fmt: 'percent', dec: 2 }),
@@ -150,17 +150,17 @@ export function build() {
     // Created by at 140px and Events at 72px leave the key name ~260px at a 1440px viewport: at 150 / 90
     // "syn-new-hire-20261014-152111-2820" ran under Created by, and at 140 / 80 it touched it.
     table(30, 5, 18, 15, 'Named API keys',
-      `FROM ${IDX} | ${TIME} | WHERE attributes.api_key.name IS NOT NULL | STATS events = COUNT(*), emails = VALUES(attributes.user.email), names = VALUES(attributes.user.name) BY attributes.api_key.name ` +
+      `FROM ${IDX} | ${TIME} | WHERE api_key.name IS NOT NULL | STATS events = COUNT(*), emails = VALUES(user.email), names = VALUES(user.name) BY api_key.name ` +
       `| EVAL creator = COALESCE(MV_MIN(emails), MV_MIN(names)), n_creators = COALESCE(MV_COUNT(emails), 0) + COALESCE(MV_COUNT(names), 0) ` +
       `| EVAL created_by = COALESCE(CONCAT(${cloudKeyLabel('creator')}, CASE(n_creators > 1 AND emails IS NULL, CONCAT(" + ", TO_STRING(n_creators - 1), " more"), "")), " ") ` +
-      '| KEEP attributes.api_key.name, created_by, events | SORT events DESC, attributes.api_key.name | LIMIT 14',
-      [filterable('attributes.api_key.name'), { column: 'created_by', label: 'Created by', width: 140 }], [{ column: 'events', width: 72 }],
+      '| KEEP api_key.name, created_by, events | SORT events DESC, api_key.name | LIMIT 14',
+      [filterable('api_key.name'), { column: 'created_by', label: 'Created by', width: 140 }], [{ column: 'events', width: 72 }],
       'The busiest API keys that have a name, by events, as many as the panel holds. Click a key to pin it across the suite. Created by is who made the key, which Elasticsearch records on every event the key emits. A key made by a person counts under that person’s email in Highest-volume identities (Kind “human + key”); any other key has its own row there, with the same count as here. Empty when no named key was used in the time range: a Cloud API key has no name in the audit stream, so it is never listed here even while it drives the stream; it is in Highest-volume identities as “_4KEO… · Cloud API key” (its first five characters).',
       { empty: 'empty when unused' }),
     // Grouped on the raw keyword, relabelled after: the two-condition CASE runs on the grouped rows,
     // not on every event (panels.mjs QUERY SHAPE rules 1–2). Same labels, colours and order as 00's.
     xy(30, 20, 18, 10, 'Audit volume by source service',
-      `FROM ${IDX} | ${TIME} | STATS events = COUNT(*) BY ${BUCKET}, source = resource.attributes.service.name | ${SOURCE_LABEL}`,
+      `FROM ${IDX} | ${TIME} | STATS events = COUNT(*) BY ${BUCKET}, source = service.name | ${SOURCE_LABEL}`,
       'events', 'Elasticsearch versus Kibana audit volume over time. Elasticsearch audits every transport action, so it usually dwarfs Kibana.',
       { breakdown: 'source', colors: SOURCE_COLORS }),
     // Busiest identity replaces an Identities count that read 1 on every row at 1h (one machine identity
@@ -172,15 +172,15 @@ export function build() {
     // lowers; the name breaks ties, which otherwise swapped two equal rows between refreshes. Measured on
     // the 7-day replica: 111–158ms against 101–113ms for the count it replaces.
     table(0, 30, 22, 10, 'Noisiest transport actions',
-      `FROM ${IDX} | ${TIME} | WHERE attributes.elasticsearch.audit.action IS NOT NULL | ${ACTOR_RESOLVE} ` +
-      '| STATS n = COUNT(*) BY attributes.elasticsearch.audit.action, actor ' +
-      '| STATS events = SUM(n), actors = COUNT(*), top = MAX(CONCAT(TO_STRING(1000000000000 + n), actor)) BY attributes.elasticsearch.audit.action ' +
+      `FROM ${IDX} | ${TIME} | WHERE elasticsearch.audit.action IS NOT NULL | ${ACTOR_RESOLVE} ` +
+      '| STATS n = COUNT(*) BY elasticsearch.audit.action, actor ' +
+      '| STATS events = SUM(n), actors = COUNT(*), top = MAX(CONCAT(TO_STRING(1000000000000 + n), actor)) BY elasticsearch.audit.action ' +
       `| EVAL top_identity = SUBSTRING(top, 14) | EVAL top_identity = CONCAT(${cloudKeyLabel('top_identity')}, CASE(actors > 1, CONCAT(" + ", TO_STRING(actors - 1), " more"), "")) ` +
-      '| KEEP attributes.elasticsearch.audit.action, top_identity, events | SORT events DESC, attributes.elasticsearch.audit.action | LIMIT 8',
+      '| KEEP elasticsearch.audit.action, top_identity, events | SORT events DESC, elasticsearch.audit.action | LIMIT 8',
       // Busiest identity at 210px holds "_4KEO… · Cloud API key + 19 more" and Events at 80px a seven-digit
       // count, so the action keeps the rest: at 22 columns and even widths, 1440px left
       // "cluster:admin/xpack/security/api_key/get" 4px short of the identity beside it.
-      ['attributes.elasticsearch.audit.action', { column: 'top_identity', label: 'Busiest identity', width: 210 }], [{ column: 'events', width: 80 }],
+      ['elasticsearch.audit.action', { column: 'top_identity', label: 'Busiest identity', width: 210 }], [{ column: 'events', width: 80 }],
       'Highest-volume Elasticsearch transport actions, unfiltered. Busiest identity is the identity behind most of each action’s events (resolved as in Highest-volume identities), followed by how many others also called it. ES|QL’s own fan-out (esql/compute, search_shards, field_caps[n]) is in Query internals, and much of it is dashboards querying this stream — often the Cloud API key running this suite, shown as “_4KEO… · Cloud API key” (its first five characters).'),
     // Kind is refined after the STATS (KIND_REFINE, then the key cases), where it costs nothing: ACTOR's
     // two-way CASE called every key — the Cloud API key and each named key — "service", the same word as
@@ -201,8 +201,8 @@ export function build() {
     // At h=13 (12 rows) the last row ended 2px above it and read as a sliver of a thirteenth (round-5
     // review), and at 1h, when a handful of identities make the whole stream, 12 rows left 60% blank.
     table(22, 30, 26, 10, 'Highest-volume identities',
-      `FROM ${IDX} | ${TIME} | ${ACTOR} | STATS events = COUNT(*), via_key = COUNT(attributes.api_key.name), ` +
-      `acts = VALUES(attributes.event.action) BY actor, actor_kind | ${KIND_REFINE} ` +
+      `FROM ${IDX} | ${TIME} | ${ACTOR} | STATS events = COUNT(*), via_key = COUNT(api_key.name), ` +
+      `acts = VALUES(event.action) BY actor, actor_kind | ${KIND_REFINE} ` +
       '| EVAL actions = MV_COUNT(acts), acts = MV_CONCAT(MV_SORT(acts), ",") ' +
       `| EVAL actor_kind = CASE(${isCloudKeyId('actor')}, "API key", actor_kind == "service" AND via_key == events, "API key", ` +
       'actor_kind == "human" AND via_key > 0, "human + key", ' +

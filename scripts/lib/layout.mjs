@@ -46,9 +46,11 @@ const FRAGMENT_USES = {
   'vega/05-rare-event-scatter.json': { RISK, RISK_KEYS, RISK_RESTORE },
   'vega/06-geo-origin.json': { ACTOR_RESOLVE },
   'vega/07-noise-ratio-stream.json': { BAND_KEYS, BAND },
-  // Groups on the real attributes.user.email (never the actor COALESCE), so there is no fragment to pin.
+  // Groups on the real user.email (never the actor COALESCE), so there is no fragment to pin.
   'vega/10-actor-geography.json': {},
   'vega/11-actor-object-flow.json': { OBJ_PRESENT, CRED, VERB, OBJ_TYPE },
+  // 00 is the unfiltered full data set: no noise gate by design, only the shared identity.
+  'searches/00-all-events.json': { ACTOR_RESOLVE, ACTOR_LABEL },
   'searches/01-all-mutations.json': { CHANGE_PRED, ACTOR_RESOLVE, VERB, OBJ, ACTOR_LABEL },
   // FAILED_OR_DENIED: one failed sign-in counts once (no per-realm traces), as on 01's and 04's tiles.
   'searches/02-failed-authentications.json': { ACTOR_RESOLVE, FAILED_OR_DENIED, ACTOR_LABEL },

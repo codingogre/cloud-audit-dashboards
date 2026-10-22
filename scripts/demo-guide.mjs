@@ -111,15 +111,15 @@ export async function run(argv = []) {
     q('stream span', `FROM ${IDX} | STATS oldest = MIN(@timestamp), newest = MAX(@timestamp), docs = COUNT(*)`),
     q('window total', `FROM ${IDX} | ${W} | STATS total = COUNT(*)`),
     q('band mix', `FROM ${IDX} | ${W} | STATS n = COUNT(*) BY ${BAND_KEYS} | ${BAND} | STATS events = SUM(n) BY band | SORT events DESC`),
-    q('signal by service', `FROM ${IDX} | ${W} | ${NOISE} | STATS events = COUNT(*) BY svc = resource.attributes.service.name | SORT events DESC`),
-    q('top identities (24h)', `FROM ${IDX} | ${EV} | WHERE attributes.api_key.name IS NOT NULL | STATS events = COUNT(*), ips = COUNT_DISTINCT(client.ip) BY key = attributes.api_key.name, owner = attributes.user.email | SORT events DESC | LIMIT 8`),
-    q('human interaction', `FROM ${IDX} | ${W} | WHERE resource.attributes.service.name == "serverless-kibana" AND attributes.user.email IS NOT NULL | STATS events = COUNT(*), people = COUNT_DISTINCT(attributes.user.email)`),
-    q('denials by country (24h)', `FROM ${IDX} | ${EV} | WHERE attributes.event.action == "anonymous_access_denied" | STATS n = COUNT(*) BY country = client.geo.country_iso_code | SORT n DESC | LIMIT 6`),
-    q('denial paths (24h)', `FROM ${IDX} | ${EV} | WHERE attributes.event.action == "anonymous_access_denied" | STATS n = COUNT(*) BY path = attributes.url.path::keyword | SORT n DESC | LIMIT 8`),
-    q('config changes (24h)', `FROM ${IDX} | ${EV} | WHERE attributes.elasticsearch.audit.security_config_change IS NOT NULL | ${ACTOR} | STATS n = COUNT(*) BY actor, action = attributes.event.action | SORT n DESC | LIMIT 6`),
+    q('signal by service', `FROM ${IDX} | ${W} | ${NOISE} | STATS events = COUNT(*) BY svc = service.name | SORT events DESC`),
+    q('top identities (24h)', `FROM ${IDX} | ${EV} | WHERE api_key.name IS NOT NULL | STATS events = COUNT(*), ips = COUNT_DISTINCT(client.ip) BY key = api_key.name, owner = user.email | SORT events DESC | LIMIT 8`),
+    q('human interaction', `FROM ${IDX} | ${W} | WHERE service.name == "serverless-kibana" AND user.email IS NOT NULL | STATS events = COUNT(*), people = COUNT_DISTINCT(user.email)`),
+    q('denials by country (24h)', `FROM ${IDX} | ${EV} | WHERE event.action == "anonymous_access_denied" | STATS n = COUNT(*) BY country = client.geo.country_iso_code | SORT n DESC | LIMIT 6`),
+    q('denial paths (24h)', `FROM ${IDX} | ${EV} | WHERE event.action == "anonymous_access_denied" | STATS n = COUNT(*) BY path = url.path::keyword | SORT n DESC | LIMIT 8`),
+    q('config changes (24h)', `FROM ${IDX} | ${EV} | WHERE elasticsearch.audit.security_config_change IS NOT NULL | ${ACTOR} | STATS n = COUNT(*) BY actor, action = event.action | SORT n DESC | LIMIT 6`),
     q('mutations', `FROM ${IDX} | ${W} | ${CHANGE} | STATS n = COUNT(*)`),
     q('geo coverage', `FROM ${IDX} | ${W} | EVAL g = CASE(client.geo.country_iso_code IS NOT NULL, "resolved", client.ip IS NOT NULL, "ip, no geo", "no client ip") | STATS n = COUNT(*) BY g | SORT n DESC`),
-    q('risk leaderboard (24h)', `FROM ${IDX} | ${EV} | ${riskScored({ by: ACTOR_KEYS })} | ${ACTOR_RESOLVE} | STATS severity = SUM(risk * n), events = SUM(n) BY actor, action = attributes.event.action | SORT severity DESC | LIMIT 8`),
+    q('risk leaderboard (24h)', `FROM ${IDX} | ${EV} | ${riskScored({ by: ACTOR_KEYS })} | ${ACTOR_RESOLVE} | STATS severity = SUM(risk * n), events = SUM(n) BY actor, action = event.action | SORT severity DESC | LIMIT 8`),
   ]);
 
   const docs = one(span, 2);
@@ -208,7 +208,7 @@ export async function run(argv = []) {
           : 'These are unauthenticated requests to paths nothing here serves — automated probing of the endpoint rather than anyone in your organisation. Every one was denied.',
         note: {
           kind: 'tip', label: 'The field that would have lied to you',
-          body: 'Scroll to **Proxy vs real client IP**. `attributes.source.ip` is the internal proxy — `100.64.x` CGNAT and `10.x` mesh. Analysing it would have placed every one of these scanners inside your own datacentre. Geography here comes from `network.forwarded_ip`, resolved at ingest.',
+          body: 'Scroll to **Proxy vs real client IP**. `source.ip` is the internal proxy — `100.64.x` CGNAT and `10.x` mesh. Analysing it would have placed every one of these scanners inside your own datacentre. Geography here comes from `network.forwarded_ip`, resolved at ingest.',
         },
       }),
     ],
@@ -253,7 +253,7 @@ export async function run(argv = []) {
         mins: '1 min',
         // The redacted copy must not leak the identity through the deep link either — that is the
         // one place a masked document would otherwise carry the real address in full.
-        links: [{ href: discover(`FROM ${IDX} | WHERE attributes.user.email == "${redact ? 'someone@example.com' : (fleetOwner || 'someone@example.com')}" | KEEP @timestamp, attributes.event.action, attributes.kibana.saved_object.name, attributes.kibana.space.id, client.ip | SORT @timestamp DESC`), label: redact ? 'Open an identity in Discover (edit the address) →' : 'Open one identity in Discover →' }],
+        links: [{ href: discover(`FROM ${IDX} | WHERE user.email == "${redact ? 'someone@example.com' : (fleetOwner || 'someone@example.com')}" | KEEP @timestamp, event.action, kibana.saved_object.name, kibana.space.id, client.ip | SORT @timestamp DESC`), label: redact ? 'Open an identity in Discover (edit the address) →' : 'Open one identity in Discover →' }],
         act: 'When someone wants the underlying events rather than an aggregate, the Discover sessions are pre-built and pivotable.',
         say: 'Every panel here is ES|QL, and every ES|QL query opens in Discover. Nothing is locked in a visualization — an analyst can take any of this and keep going.',
       }),
@@ -331,7 +331,7 @@ export async function run(argv = []) {
   const preflight = check([
     `Open all ${DASHBOARDS.length} dashboards once, ~30 minutes before. Cold panels are slow; warm ones are not.`,
     `Set every dashboard to **${WINDOW_LABEL}** and confirm no panel is empty.`,
-    'Create a throwaway dashboard in the audit space for the live-change beat, and leave it open in a second tab.',
+    'Create a throwaway dashboard for the live-change beat, and leave it open in a second tab.',
     'Clear any filter pill left over from rehearsal.',
     redact
       ? 'This copy is redacted. Real identities are visible on screen but masked in this document.'

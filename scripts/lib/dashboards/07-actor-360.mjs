@@ -21,7 +21,7 @@ import { riskScored, CHANGED, CHANGED_KEYS, CHANGED_DERIVE, specDescription } fr
  *
  * No panel here groups by the actor COALESCE: that is the shape that goes slow unfiltered, and on a
  * page already about one identity the resolution ladder buys nothing. Identity panels group on the
- * real attributes.user.email instead, which is also the only thing a filter pill can match.
+ * real user.email instead, which is also the only thing a filter pill can match.
  */
 
 const vegaPanel = (ref, title) => (x, y, w, h) => vega(x, y, w, h, ref, title, specDescription(ref));
@@ -37,7 +37,7 @@ const drillTo = (destination, panel) => Object.assign(panel, { drill: destinatio
  * Applied to the grouped rows (after a STATS), never per document, so it costs nothing.
  */
 const isPattern = (col) => `LOCATE(${col}, "*") > 0 OR STARTS_WITH(${col}, "<")`;
-const NOT_PATTERN = `WHERE NOT (${isPattern('attributes.elasticsearch.audit.indices')})`;
+const NOT_PATTERN = `WHERE NOT (${isPattern('elasticsearch.audit.indices')})`;
 
 /**
  * The two index tables in ② count the SAME reads, so every dot-prefixed family in "What they read" is a
@@ -49,7 +49,7 @@ const NOT_PATTERN = `WHERE NOT (${isPattern('attributes.elasticsearch.audit.indi
  * the right selects with SYS_INDEX — the definition 03 uses — so a dot-named stream's backing index
  * counts with its family. NOT_FANOUT is a boolean on a raw keyword, cheap per event (QUERY SHAPE rule 1).
  */
-const NOT_FANOUT = '(attributes.elasticsearch.audit.action IS NULL OR NOT attributes.elasticsearch.audit.action LIKE "*[*")';
+const NOT_FANOUT = '(elasticsearch.audit.action IS NULL OR NOT elasticsearch.audit.action LIKE "*[*")';
 
 /**
  * DELETING A SPACE DELETES WHAT IS IN IT, and Kibana audits each of those objects as its own
@@ -74,17 +74,17 @@ const NOT_FANOUT = '(attributes.elasticsearch.audit.action IS NULL OR NOT attrib
  * `␞` separates the packed fields; a name containing it would mis-split, and none does.
  */
 const SEP = '␞';
-const PACK = ['attributes.event.action', 'attributes.kibana.saved_object.type', 'obj_name', 'execution', 'space', 'result']
+const PACK = ['event.action', 'kibana.saved_object.type', 'obj_name', 'execution', 'space', 'result']
   .map((c) => `COALESCE(${c}, "")`).join(`, "${SEP}", `) + `, "${SEP}", TO_STRING(n), "${SEP}", TO_STRING(last_ts)`;
-const CASCADE_KEY = 'EVAL req = CASE(attributes.event.action IN ("space_delete", "saved_object_delete"), attributes.http.request.id)';
+const CASCADE_KEY = 'EVAL req = CASE(event.action IN ("space_delete", "saved_object_delete"), http.request.id)';
 const CASCADE_FOLD =
-  `EVAL pack = CONCAT(${PACK}), sd = attributes.event.action == "space_delete" ` +
-  '| STATS n = SUM(n), inside = SUM(n) WHERE attributes.event.action == "saved_object_delete", last_ts = MAX(last_ts), ' +
+  `EVAL pack = CONCAT(${PACK}), sd = event.action == "space_delete" ` +
+  '| STATS n = SUM(n), inside = SUM(n) WHERE event.action == "saved_object_delete", last_ts = MAX(last_ts), ' +
   'gone = COUNT(*) WHERE sd, sname = MAX(obj_name) WHERE sd, sspace = MAX(space) WHERE sd, sres = MAX(result) WHERE sd, rows = VALUES(pack) ' +
   'BY k = COALESCE(req, pack) ' +
   `| EVAL rows = CASE(gone > 0, CONCAT("space_delete${SEP}space${SEP}", COALESCE(sname, "a deleted space"), "${SEP}—${SEP}", COALESCE(sspace, ""), "${SEP}", COALESCE(sres, ""), "${SEP}", TO_STRING(n), "${SEP}", TO_STRING(last_ts)), rows), inside = CASE(gone > 0, inside, 0) ` +
   `| MV_EXPAND rows | DISSECT rows "%{a}${SEP}%{t}${SEP}%{obj_name}${SEP}%{execution}${SEP}%{sp}${SEP}%{res}${SEP}%{ns}${SEP}%{ts}" ` +
-  '| EVAL attributes.event.action = CASE(a == "", null, a), attributes.kibana.saved_object.type = CASE(t == "", null, t), ' +
+  '| EVAL event.action = CASE(a == "", null, a), kibana.saved_object.type = CASE(t == "", null, t), ' +
   'space = CASE(sp == "", null, sp), result = CASE(res == "", null, res), n = TO_LONG(ns), last_ts = TO_DATETIME(ts) ' +
   `| STATS n = SUM(n), inside = SUM(inside), last_ts = MAX(last_ts) BY ${CHANGED_KEYS}, obj_name, execution, space, result`;
 
@@ -159,15 +159,15 @@ export function build() {
   const P = stack([
     row(7, [
       [16, (x, y, w, h) => table(x, y, w, h, 'Who this is — people, by email',
-        `FROM ${IDX} | ${TIME} | STATS events = COUNT(*), keys = COUNT_DISTINCT(attributes.api_key.name, 100) BY attributes.user.email | INLINE STATS all = SUM(events) | WHERE attributes.user.email IS NOT NULL | EVAL share = TO_DOUBLE(events) / all | DROP all | SORT events DESC | LIMIT 10`,
-        [filterable('attributes.user.email')], ['events', { column: 'share', label: '% of Events', width: 100, format: { type: 'percent', decimals: 1 } }, { column: 'keys', label: 'Own API keys' }],
+        `FROM ${IDX} | ${TIME} | STATS events = COUNT(*), keys = COUNT_DISTINCT(api_key.name, 100) BY user.email | INLINE STATS all = SUM(events) | WHERE user.email IS NOT NULL | EVAL share = TO_DOUBLE(events) / all | DROP all | SORT events DESC | LIMIT 10`,
+        [filterable('user.email')], ['events', { column: 'share', label: '% of Events', width: 100, format: { type: 'percent', decimals: 1 } }, { column: 'keys', label: 'Own API keys' }],
         'People only: `% of Events` is each person\'s share of the Events tile beside this table, so the rest of that tile — traffic with no person behind it — is visible here and not only in this note. Counts only events that carry a user email, so an organization-level Cloud API key (`_4KEO… · Cloud API key`), which belongs to no person, is never a row here even when it is the busiest credential in the flow below; and with nobody selected these rows add up to far less than the Events tile: API-key and service traffic with no email behind it has nothing to group on here, and is counted in the tile. The people in range, busiest first — click an email to pin that identity across the suite. `Own API keys` counts the named API keys acting under that email: Elasticsearch stamps a key\'s CREATOR on every event the key emits, so a person with keys may be carrying a machine\'s traffic. It reads 0 beside API-key credentials in the flow below when that key traffic carries no email.')],
       [8, (x, y, w, h) => kpi(x, y, w, h,
-        `FROM ${IDX} | ${TIME} | STATS Events = COUNT(*), actions = COUNT_DISTINCT(attributes.event.action, 100), last_ts = MAX(@timestamp) | EVAL mins = DATE_DIFF("minutes", last_ts, NOW()) | EVAL detail = CASE(Events == 0, "no activity", CONCAT(${grouped('actions')}, CASE(actions == 1, " action", " actions"), " · ", CASE(mins < 1, "just now", mins < 60, CONCAT(${grouped('mins')}, "m ago"), CONCAT(TO_STRING(mins / 60), "h ago")))) | KEEP Events, detail`,
+        `FROM ${IDX} | ${TIME} | STATS Events = COUNT(*), actions = COUNT_DISTINCT(event.action, 100), last_ts = MAX(@timestamp) | EVAL mins = DATE_DIFF("minutes", last_ts, NOW()) | EVAL detail = CASE(Events == 0, "no activity", CONCAT(${grouped('actions')}, CASE(actions == 1, " action", " actions"), " · ", CASE(mins < 1, "just now", mins < 60, CONCAT(${grouped('mins')}, "m ago"), CONCAT(TO_STRING(mins / 60), "h ago")))) | KEEP Events, detail`,
         'Events', 'Every audited event for the selection, how many different things that was, and how recently they were last seen. Unfiltered by the noise gate, so it includes connection housekeeping.',
         { secondary: 'detail' })],
       [8, (x, y, w, h) => kpi(x, y, w, h,
-        `FROM ${IDX} | ${WHOLE_MINUTES} | ${riskScored()} | STATS sev = SUM(risk * n) BY attributes.event.action, risk | STATS Risk = SUM(sev), worst = MAX(risk), kinds = COUNT(*) | EVAL detail = CASE(worst IS NULL, "nothing scored", CONCAT(${grouped('kinds')}, CASE(kinds == 1, " action · worst ", " actions · worst "), ${grouped('worst')})), Risk = COALESCE(Risk, 0) | KEEP Risk, detail`,
+        `FROM ${IDX} | ${WHOLE_MINUTES} | ${riskScored()} | STATS sev = SUM(risk * n) BY event.action, risk | STATS Risk = SUM(sev), worst = MAX(risk), kinds = COUNT(*) | EVAL detail = CASE(worst IS NULL, "nothing scored", CONCAT(${grouped('kinds')}, CASE(kinds == 1, " action · worst ", " actions · worst "), ${grouped('worst')})), Risk = COALESCE(Risk, 0) | KEEP Risk, detail`,
         'Risk', 'Summed severity (weight × events) of everything that scored, how many scoring actions that was, and the highest weight among them (50 is a security config change; the table below names every weight in words). Routine activity scores zero, so this is not an event count in disguise. The receipts are in "Every scoring action" below: one row per action and weight, scrollable, and the Sum under its Risk column is this number; the count here is its number of rows. An action that scored at two weights (a create that succeeded, and one that failed) counts twice, as it is two rows there. ' + RACE_NOTE,
         { secondary: 'detail' })],
       // Families, not raw names, so the tile counts the same thing as "What they read, by index family"
@@ -179,7 +179,7 @@ export function build() {
       // being audit-stream backing generations named only by shard copies. Boolean on a raw keyword.
       // Measured against the raw COUNT_DISTINCT it replaced: 55ms vs 50ms at 1h, 57ms vs 52ms at 24h.
       [8, (x, y, w, h) => kpi(x, y, w, h,
-        `FROM ${IDX} | ${TIME} | WHERE ${NOT_FANOUT} | STATS idx = VALUES(attributes.elasticsearch.audit.indices) | MV_EXPAND idx | EVAL name = CASE(${isPattern('idx')}, null, idx) | EVAL family = ${indexFamily('name')} | STATS \`Index families\` = COUNT_DISTINCT(family), names = COUNT_DISTINCT(name) | EVAL detail = CASE(names == 0, "no index named", CONCAT("from ", ${grouped('names')}, CASE(names == 1, " index", " indices"))) | KEEP \`Index families\`, detail`,
+        `FROM ${IDX} | ${TIME} | WHERE ${NOT_FANOUT} | STATS idx = VALUES(elasticsearch.audit.indices) | MV_EXPAND idx | EVAL name = CASE(${isPattern('idx')}, null, idx) | EVAL family = ${indexFamily('name')} | STATS \`Index families\` = COUNT_DISTINCT(family), names = COUNT_DISTINCT(name) | EVAL detail = CASE(names == 0, "no index named", CONCAT("from ", ${grouped('names')}, CASE(names == 1, " index", " indices"))) | KEEP \`Index families\`, detail`,
         'Index families', 'The width of their reach in Elasticsearch: index families named in their requests, and how many distinct indices those families hold. A family folds dated daily indices and data-stream backing indices together, as "What they read, by index family" does, so one dashboard reading thirty days of a daily index is one family. Request patterns such as * and date-math names are not counted, and neither are shard-level repeats of a request (search[phase/query]), so `from N indices` is the sum of the Indices column of that table when every family fits in it.',
         { secondary: 'detail' })],
       [8, (x, y, w, h) => kpi(x, y, w, h,
@@ -196,11 +196,11 @@ export function build() {
     // action vocabulary (43 over 24h at today's volume; volume adds events, not rows) — so the LIMIT is
     // a guard, not a cut, and the title says "every" instead of a count (the description says "scroll").
     row(13, [[48, (x, y, w, h) => drillTo(rawId('04-security-anomalies'), table(x, y, w, h, 'Every scoring action and its weight, largest first · its Sum is the Risk tile',
-      `FROM ${IDX} | ${WHOLE_MINUTES} | ${riskScored({ aggs: 'last_ts = MAX(@timestamp)' })} | STATS events = SUM(n), severity = SUM(risk * n), last_seen = MAX(last_ts) BY attributes.event.action, weight = risk | EVAL why = ${weightWords('weight')} | SORT severity DESC | LIMIT 500`,
+      `FROM ${IDX} | ${WHOLE_MINUTES} | ${riskScored({ aggs: 'last_ts = MAX(@timestamp)' })} | STATS events = SUM(n), severity = SUM(risk * n), last_seen = MAX(last_ts) BY event.action, weight = risk | EVAL why = ${weightWords('weight')} | SORT severity DESC | LIMIT 500`,
       // weight is a number, so it reads as one (right-aligned, beside the other numbers); it stays in the
       // BY clause, so the grouping is unchanged. The action stays the raw event.action because it is the
       // click-to-filter column (an assigned column cannot take a pill); `why` says it in words.
-      [filterable('attributes.event.action'), sized('why', 220, { label: 'Why it scored' })],
+      [filterable('event.action'), sized('why', 220, { label: 'Why it scored' })],
       // The Sum footer is the tile's number computed from THESE rows in the same fetch, so the receipt
       // reconciles on screen whatever is scrolled. Its label says "all rows" because only 11 of 43 fit at 24h (the list scrolls; a title may not say so, CUT in panels.mjs), and 180px holds "Sum, all rows: 4,360,050" at 10x today's 24h.
       ['weight', 'events', { column: 'severity', label: 'Risk', width: 180, summary: { type: 'sum', label: 'Sum, all rows' } }, 'last_seen'],
@@ -221,7 +221,7 @@ export function build() {
     // here, so it leads; the rest follow newest first, and the list scrolls to the guard of 100 rows.
     // `gone` is a one-condition EVAL on the grouped rows, so it costs nothing per event.
     row(12, [[48, (x, y, w, h) => table(x, y, w, h, '⚠️ What they changed — deletes first, then newest · up to 100',
-      `FROM ${IDX} | ${TIME} | ${CHANGED} | ${CASCADE_KEY} | STATS n = COUNT(*), last_ts = MAX(@timestamp) BY ${CHANGED_KEYS}, obj_name, execution, space = attributes.kibana.space.id, result, req | ${CASCADE_FOLD} | ${CHANGED_DERIVE} | STATS events = SUM(n), inside = SUM(inside), last_seen = MAX(last_ts) BY verb, type = obj_type, name = obj_name, execution, space, result | EVAL name = CASE(execution == "—", name, CONCAT(name, " · run ", execution)), type = REPLACE(type, "-", " "), gone = verb == "delete" | EVAL name = CASE(inside > 0, CONCAT(name, " · and the ", ${grouped('inside')}, CASE(inside == 1, " object in it", " objects in it")), name) | EVAL verb = CASE(result == "failure", CONCAT(verb, " (failed)"), verb) | DROP execution, result, inside | SORT gone DESC, last_seen DESC | DROP gone | LIMIT 100`,
+      `FROM ${IDX} | ${TIME} | ${CHANGED} | ${CASCADE_KEY} | STATS n = COUNT(*), last_ts = MAX(@timestamp) BY ${CHANGED_KEYS}, obj_name, execution, space = kibana.space.id, result, req | ${CASCADE_FOLD} | ${CHANGED_DERIVE} | STATS events = SUM(n), inside = SUM(inside), last_seen = MAX(last_ts) BY verb, type = obj_type, name = obj_name, execution, space, result | EVAL name = CASE(execution == "—", name, CONCAT(name, " · run ", execution)), type = REPLACE(type, "-", " "), gone = verb == "delete" | EVAL name = CASE(inside > 0, CONCAT(name, " · and the ", ${grouped('inside')}, CASE(inside == 1, " object in it", " objects in it")), name) | EVAL verb = CASE(result == "failure", CONCAT(verb, " (failed)"), verb) | DROP execution, result, inside | SORT gone DESC, last_seen DESC | DROP gone | LIMIT 100`,
       // Space is a free-form id, so it gets room for one ('syn-marketing' filled 110px edge to edge).
       // No Execution column: it read "—" on every row that is not a workflow run, which is nearly all of
       // them, so the run id rides on the name instead ("Daily sweep · run 3f2a9c1e").
@@ -240,13 +240,13 @@ export function build() {
       // `values: true` labelled only the two bars that needed it least. The ranking is the point, and
       // a sorted count column carries it at any spread and at any volume.
       [20, (x, y, w, h) => table(x, y, w, h, 'What they read, by index family',
-        `FROM ${IDX} | ${TIME} | WHERE attributes.elasticsearch.audit.indices IS NOT NULL AND ${NOT_FANOUT} | MV_EXPAND attributes.elasticsearch.audit.indices | STATS n = COUNT(*) BY attributes.elasticsearch.audit.indices | ${NOT_PATTERN} | EVAL family = ${INDEX_FAMILY} | STATS events = SUM(n), indices = COUNT(*) BY family | SORT events DESC, family | LIMIT ${fitRows(11)}`,
+        `FROM ${IDX} | ${TIME} | WHERE elasticsearch.audit.indices IS NOT NULL AND ${NOT_FANOUT} | MV_EXPAND elasticsearch.audit.indices | STATS n = COUNT(*) BY elasticsearch.audit.indices | ${NOT_PATTERN} | EVAL family = ${INDEX_FAMILY} | STATS events = SUM(n), indices = COUNT(*) BY family | SORT events DESC, family | LIMIT ${fitRows(11)}`,
         [{ column: 'family', label: 'Index family' }], ['indices', 'events'],
         'Where their reads concentrate, busiest first. Dated daily indices and data-stream backing indices are folded into the family they belong to, so a date-suffixed series is one row and `Indices` says how many of its members were read. A request naming several indices counts once per index; request patterns such as * and date-math names are left out, and so are shard- and node-level repeats of a request (search[phase/query], bulk[s][p]), which Elasticsearch audits with the same index as the request itself. Every dot-prefixed family here is also a row of "System and hidden index reads", with the same counts. The audit stream itself usually tops the list, because every dashboard on this page reads it. This is the busiest few; the Index families tile above counts every family.')],
       [28, (x, y, w, h) => drillTo(rawId('03-data-access'), table(x, y, w, h, '⚠️ System and hidden index reads',
-        `FROM ${IDX} | ${TIME} | WHERE attributes.elasticsearch.audit.indices IS NOT NULL | MV_EXPAND attributes.elasticsearch.audit.indices | ${SYS_INDEX} | STATS n = COUNT(*), seen = MAX(@timestamp) BY attributes.elasticsearch.audit.indices, action = attributes.elasticsearch.audit.action | ${NOT_PATTERN} | EVAL family = ${INDEX_FAMILY} | INLINE STATS events = SUM(n), indices = COUNT_DISTINCT(attributes.elasticsearch.audit.indices), actions = COUNT_DISTINCT(action), last_seen = MAX(seen), named_idx = MIN(attributes.elasticsearch.audit.indices) WHERE NOT attributes.elasticsearch.audit.indices LIKE ".ds-*", any_idx = MIN(attributes.elasticsearch.audit.indices) BY family | WHERE attributes.elasticsearch.audit.indices == COALESCE(named_idx, any_idx) | STATS events = MAX(events), indices = MAX(indices), actions = MAX(actions), last_seen = MAX(last_seen) BY attributes.elasticsearch.audit.indices, family | SORT events DESC, family | LIMIT ${fitRows(11)}`,
+        `FROM ${IDX} | ${TIME} | WHERE elasticsearch.audit.indices IS NOT NULL | MV_EXPAND elasticsearch.audit.indices | ${SYS_INDEX} | STATS n = COUNT(*), seen = MAX(@timestamp) BY elasticsearch.audit.indices, action = elasticsearch.audit.action | ${NOT_PATTERN} | EVAL family = ${INDEX_FAMILY} | INLINE STATS events = SUM(n), indices = COUNT_DISTINCT(elasticsearch.audit.indices), actions = COUNT_DISTINCT(action), last_seen = MAX(seen), named_idx = MIN(elasticsearch.audit.indices) WHERE NOT elasticsearch.audit.indices LIKE ".ds-*", any_idx = MIN(elasticsearch.audit.indices) BY family | WHERE elasticsearch.audit.indices == COALESCE(named_idx, any_idx) | STATS events = MAX(events), indices = MAX(indices), actions = MAX(actions), last_seen = MAX(last_seen) BY elasticsearch.audit.indices, family | SORT events DESC, family | LIMIT ${fitRows(11)}`,
         // The index column is the GROUP KEY of the last STATS, never assigned by an EVAL. Through 1.0.2 it was
-        // `EVAL attributes.elasticsearch.audit.indices = COALESCE(named_idx, any_idx)` after a STATS BY family:
+        // `EVAL elasticsearch.audit.indices = COALESCE(named_idx, any_idx)` after a STATS BY family:
         // Lens drew it as a link, but Kibana builds no filter from a column created at query time, so a click
         // produced no filter, no "Apply filter" and therefore no drilldown menu at all (clicked in Playwright,
         // 1.0.3). INLINE STATS computes the family totals on the grouped rows, the WHERE keeps the family's
@@ -254,7 +254,7 @@ export function build() {
         // Same rows as before at 1h, 24h and 7d; ~190ms against ~115ms over 24h and 7 days on the live stream.
         // Two count columns at 70px (from 90) so the longest family member, .alerts-observability.threshold.alerts-default, fits at 1440px.
         // The index column flexes and takes the rest; 20/28 split with the family table for the same reason.
-        [filterable('attributes.elasticsearch.audit.indices', { label: 'Index (one per family)' })], [sized('indices', 70), sized('actions', 70), 'events', 'last_seen'],
+        [filterable('elasticsearch.audit.indices', { label: 'Index (one per family)' })], [sized('indices', 70), sized('actions', 70), 'events', 'last_seen'],
         'The dot-prefixed families of "What they read, by index family" beside it — system and hidden indices — counted the same way, so a family reads the same Events and Indices in both: daily indices and a dot-named stream\'s backing indices (.ds-.alerts-…) are folded into their family, and request patterns and shard-level repeats are left out. A backing index of an ordinary stream (.ds-logs-…) is ordinary data and is not here, as on Elasticsearch Data Access. The index shown is one real member of the family, never a backing index when the family has another — the row counts the whole family — and it is what a click pins; then "Open in Elasticsearch Data Access" to see who else reads it.', { empty: 'good' }))],
     ]),
     row(12, [
@@ -271,7 +271,7 @@ export function build() {
     row(2, [[48, (x, y, w, h) => section(x, y, w, h, '③ Evidence', 'session timeline is fixed at 24 hours · the records follow the time picker · your time zone')]]),
     row(7, [[48, vegaPanel('13-session-gantt', 'Kibana browser sessions · fixed last 24 hours, your time zone')]]),
     row(12, [[48, (x, y, w, h) => search(x, y, w, h, '09-session-reconstruction', 'Session records · newest 1,000 at most',
-      'The raw Kibana events behind the session timeline above, newest first and capped at the newest 1,000 — so "1,000 results" above the grid is that cap, not a count of the range — with the session, the object and the message Kibana wrote. To read one session, click its bar in the timeline above, or hover a cell of the attributes.kibana.session.id column (the full session id, under its field name so that the cell can filter) and choose Filter for value. Columns are cut to fit the panel: expand a row (the ⤢ at its left) to read the full session id, object name and message, or open the session in Discover. Like the timeline, it leaves out what an open browser tab does on its own — internal page requests, usage counters, point-in-time paging — so a session in the timeline always has records here, and an hour in which they only had Kibana open is empty.', { empty: 'quiet' })]]),
+      'The raw Kibana events behind the session timeline above, newest first and capped at the newest 1,000 — so "1,000 results" above the grid is that cap, not a count of the range — with the session, the object and the message Kibana wrote. To read one session, click its bar in the timeline above, or hover a cell of the kibana.session.id column (the full session id, under its field name so that the cell can filter) and choose Filter for value. Columns are cut to fit the panel: expand a row (the ⤢ at its left) to read the full session id, object name and message, or open the session in Discover. Like the timeline, it leaves out what an open browser tab does on its own — internal page requests, usage counters, point-in-time paging — so a session in the timeline always has records here, and an hour in which they only had Kibana open is empty.', { empty: 'quiet' })]]),
   ]);
   return dash(rawId('07-actor-360'), '[Audit] 👤 Actor 360',
     'One identity’s complete footprint — pick a person in the control bar and every panel becomes their story.', P, { intro: INTRO });

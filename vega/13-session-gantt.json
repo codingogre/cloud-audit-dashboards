@@ -1,6 +1,6 @@
 {
   "$schema": "https://vega.github.io/schema/vega/v5.json",
-  "description": "One bar per Kibana browser session in the last 24 hours, newest first — its length runs from the first to the last thing they did in it and its strength is how much it did, which are independent: a short session can carry far more activity than a long one left open and idle. Click a bar to filter the dashboard to that session (a \"session: …\" pill on attributes.kibana.session.id) and to set the time range to the session plus a minute either side, so the session records directly below this timeline show exactly that session's events: those records follow the time picker, while this timeline stays on its fixed 24 hours. To return, remove the pill and set the time range again. The pill narrows every panel on the page to that session, so a panel of Elasticsearch events, which carry no session id, reads empty while it is on. Shift-click pins that identity by email across the suite instead. What an open browser tab does on its own — internal page requests, usage counters, point-in-time paging — is left out, exactly as in the session records below, so a tab left open does not stretch a bar past the person's last action and every bar has records under it. Only Kibana browser sign-ins carry a session id: work through an API key or the Elasticsearch API has no session and draws no bar, so the dashed line marks the latest such event in the same 24 hours — activity after the last bar is real, it is just not a session. An identity that only works through the API has no bars, and that is the correct answer. Twelve most recent sessions, each labelled with who and when it started (with the weekday when that was not today); a session already open when the 24-hour window begins starts at the window's left edge and is labelled \"or earlier\", because its real start is outside the window. Times are in your browser's timezone, like the rest of Kibana. Fixed 24-hour window: does not follow the time picker.",
+  "description": "One bar per Kibana browser session in the last 24 hours, newest first — its length runs from the first to the last thing they did in it and its strength is how much it did, which are independent: a short session can carry far more activity than a long one left open and idle. Click a bar to filter the dashboard to that session (a \"session: …\" pill on kibana.session.id) and to set the time range to the session plus a minute either side, so the session records directly below this timeline show exactly that session's events: those records follow the time picker, while this timeline stays on its fixed 24 hours. To return, remove the pill and set the time range again. The pill narrows every panel on the page to that session, so a panel of Elasticsearch events, which carry no session id, reads empty while it is on. Shift-click pins that identity by email across the suite instead. What an open browser tab does on its own — internal page requests, usage counters, point-in-time paging — is left out, exactly as in the session records below, so a tab left open does not stretch a bar past the person's last action and every bar has records under it. Only Kibana browser sign-ins carry a session id: work through an API key or the Elasticsearch API has no session and draws no bar, so the dashed line marks the latest such event in the same 24 hours — activity after the last bar is real, it is just not a session. An identity that only works through the API has no bars, and that is the correct answer. Twelve most recent sessions, each labelled with who and when it started (with the weekday when that was not today); a session already open when the 24-hour window begins starts at the window's left edge and is labelled \"or earlier\", because its real start is outside the window. Times are in your browser's timezone, like the rest of Kibana. Fixed 24-hour window: does not follow the time picker.",
   "autosize": {
     "type": "fit",
     "contains": "padding"
@@ -40,7 +40,7 @@
       "on": [
         {
           "events": "@ribbon:click[!event.shiftKey]",
-          "update": "kibanaAddFilter({match_phrase: {'attributes.kibana.session.id': datum.key}}, 'logs-elastic_cloud.serverless_audit.otel-default', 'session: ' + slice(datum.key, 0, 8) + '…')"
+          "update": "kibanaAddFilter({match_phrase: {'kibana.session.id': datum.key}}, 'logs-elastic_cloud.serverless_audit.otel-default', 'session: ' + slice(datum.key, 0, 8) + '…')"
         }
       ]
     },
@@ -50,7 +50,7 @@
       "on": [
         {
           "events": "@ribbon:click[event.shiftKey]",
-          "update": "datum.actor === 'no email recorded' ? null : kibanaAddFilter({match_phrase: {'attributes.user.email': datum.actor}}, 'logs-elastic_cloud.serverless_audit.otel-default', 'actor: ' + datum.actor)"
+          "update": "datum.actor === 'no email recorded' ? null : kibanaAddFilter({match_phrase: {'user.email': datum.actor}}, 'logs-elastic_cloud.serverless_audit.otel-default', 'actor: ' + datum.actor)"
         }
       ]
     },
@@ -80,7 +80,7 @@
                 },
                 {
                   "exists": {
-                    "field": "attributes.kibana.session.id"
+                    "field": "kibana.session.id"
                   }
                 },
                 {
@@ -88,7 +88,7 @@
                     "must_not": [
                       {
                         "terms": {
-                          "attributes.event.action": [
+                          "event.action": [
                             "saved_object_open_point_in_time",
                             "saved_object_close_point_in_time",
                             "space_get",
@@ -101,7 +101,7 @@
                           "filter": [
                             {
                               "term": {
-                                "attributes.event.action": "http_request"
+                                "event.action": "http_request"
                               }
                             }
                           ],
@@ -111,7 +111,7 @@
                                 "must_not": [
                                   {
                                     "wildcard": {
-                                      "attributes.url.original": "*/api/*"
+                                      "url.original": "*/api/*"
                                     }
                                   }
                                 ]
@@ -119,12 +119,12 @@
                             },
                             {
                               "wildcard": {
-                                "attributes.url.original": "*/api/ui_counters/*"
+                                "url.original": "*/api/ui_counters/*"
                               }
                             },
                             {
                               "wildcard": {
-                                "attributes.url.original": "*/api/content_management/*"
+                                "url.original": "*/api/content_management/*"
                               }
                             }
                           ],
@@ -146,7 +146,7 @@
           "aggs": {
             "sessions": {
               "terms": {
-                "field": "attributes.kibana.session.id",
+                "field": "kibana.session.id",
                 "size": 12,
                 "order": {
                   "last": "desc"
@@ -165,19 +165,19 @@
                 },
                 "who": {
                   "terms": {
-                    "field": "attributes.user.email",
+                    "field": "user.email",
                     "size": 1
                   }
                 },
                 "actions": {
                   "cardinality": {
-                    "field": "attributes.event.action",
+                    "field": "event.action",
                     "precision_threshold": 100
                   }
                 },
                 "spaces": {
                   "terms": {
-                    "field": "attributes.kibana.space.id",
+                    "field": "kibana.space.id",
                     "size": 5
                   }
                 }
@@ -287,7 +287,7 @@
                 "%dashboard_context-must_not_clause%",
                 {
                   "exists": {
-                    "field": "attributes.kibana.session.id"
+                    "field": "kibana.session.id"
                   }
                 }
               ],

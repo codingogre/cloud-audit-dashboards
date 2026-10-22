@@ -64,7 +64,7 @@ export const IDX = cfg.dataStream;
  * rests on (user.name is a numeric id, so it is the last resort, not the first).
  */
 export const ACTOR_RESOLVE =
-  'EVAL actor = COALESCE(attributes.user.email, attributes.api_key.name, attributes.user.name, "<anonymous>")';
+  'EVAL actor = COALESCE(user.email, api_key.name, user.name, "<anonymous>")';
 
 /**
  * `actor_kind` here is the cheap first cut — "human" when the event carries an email, "service"
@@ -73,43 +73,43 @@ export const ACTOR_RESOLVE =
  * panel that SHOWS the kind groups by it and then applies KIND_REFINE to the grouped rows.
  */
 export const ACTOR =
-  `${ACTOR_RESOLVE}, actor_kind = CASE(attributes.user.email IS NOT NULL, "human", "service")`;
+  `${ACTOR_RESOLVE}, actor_kind = CASE(user.email IS NOT NULL, "human", "service")`;
 
 /**
  * Where an identity's traffic comes from, by the email on the event. Title case because these are
  * display values — a pie's slices and legend print them as they are — and they sit beside the
- * realm and credential-type labels, which are title case too. ORG reads only attributes.user.email,
+ * realm and credential-type labels, which are title case too. ORG reads only user.email,
  * so group by that first and apply ORG to the grouped rows.
  */
 export const ORG =
-  'EVAL actor_org = CASE(attributes.user.email IS NULL, "Machine", ' +
-  'attributes.user.email LIKE "*@elastic.co", "Elastic", "Tenant")';
+  'EVAL actor_org = CASE(user.email IS NULL, "Machine", ' +
+  'user.email LIKE "*@elastic.co", "Elastic", "Tenant")';
 
 /**
- * attributes.authentication.type in words, as an EVAL assignment (`auth = CASE(…)`) so it can share an
+ * authentication.type in words, as an EVAL assignment (`auth = CASE(…)`) so it can share an
  * EVAL with other columns: vega/02 embeds exactly this text, and the drift check pins it. Apply it
  * AFTER a STATS that groups on the raw field. "saml" is real on serverless (a SAML sign-in not yet
  * exchanged for a token). A type Elasticsearch has not documented falls through as its raw value.
  */
 export const CRED_TYPE_LABEL =
-  'auth = CASE(attributes.authentication.type == "api_key", "API key", ' +
-  'attributes.authentication.type == "token", "Token", attributes.authentication.type == "realm", "Realm", ' +
-  'attributes.authentication.type == "saml", "SAML", ' +
-  'attributes.authentication.type == "anonymous", "Anonymous", attributes.authentication.type == "internal", "Internal", ' +
-  'attributes.authentication.type)';
+  'auth = CASE(authentication.type == "api_key", "API key", ' +
+  'authentication.type == "token", "Token", authentication.type == "realm", "Realm", ' +
+  'authentication.type == "saml", "SAML", ' +
+  'authentication.type == "anonymous", "Anonymous", authentication.type == "internal", "Internal", ' +
+  'authentication.type)';
 
 /**
  * How an identity authenticated, across both audit sources.
  *
- * attributes.authentication.type is an Elasticsearch-audit field: it is null on virtually every
- * Kibana event. attributes.user.domain IS populated there (cloud-saml-kibana), so the
+ * authentication.type is an Elasticsearch-audit field: it is null on virtually every
+ * Kibana event. user.domain IS populated there (cloud-saml-kibana), so the
  * COALESCE is what gives a credential dimension any fan-out on Kibana data — and it is the split
  * between a person in a browser (cloud-saml-kibana) and a script calling Kibana with a key
  * (_es_api_key), which no other field answers. It is derived, so never click-filter on it: a pill
  * on `credential` matches nothing.
  */
 export const CRED =
-  'EVAL credential = COALESCE(attributes.authentication.type, attributes.user.domain, "unknown")';
+  'EVAL credential = COALESCE(authentication.type, user.domain, "unknown")';
 
 /**
  * What counts as a Kibana state change.
@@ -122,7 +122,7 @@ export const CRED =
  *
  * Three things this predicate has to get right, each of them measured:
  *
- *   1. `attributes.event.type` is SINGLE-valued on every Kibana audit event checked, so IN is
+ *   1. `event.type` is SINGLE-valued on every Kibana audit event checked, so IN is
  *      safe here without MV_EXPAND and cannot double-count. It is MULTI-valued on Elasticsearch
  *      events (access_granted carries ["access","allowed"]), and ES|QL returns null — not false —
  *      for IN on a multi-value operand, verified on live data. A null in WHERE drops the row
@@ -140,18 +140,18 @@ export const CRED =
 const EXECUTIONS = '"workflow_run","workflow_test","workflow_execution_cancel"';
 
 export const CHANGE_PRED =
-  '(resource.attributes.service.name == "serverless-kibana" AND (' +
-  '(attributes.event.type IN ("change","creation","deletion") ' +
-  'AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (' +
+  '(service.name == "serverless-kibana" AND (' +
+  '(event.type IN ("change","creation","deletion") ' +
+  'AND (event.action IS NULL OR NOT (event.action IN (' +
   '"saved_object_open_point_in_time","saved_object_close_point_in_time")))) ' +
-  'OR attributes.event.action IN ("rule_run_soon","secret_create")))';
+  'OR event.action IN ("rule_run_soon","secret_create")))';
 
 export const CHANGE = `WHERE ${CHANGE_PRED}`;
 
 /**
  * Recovers the changed object's identity from body.text when saved_object.* is absent.
  *
- * Kibana only populates attributes.kibana.saved_object.{id,type,name} on the saved-objects audit
+ * Kibana only populates kibana.saved_object.{id,type,name} on the saved-objects audit
  * path. Its newer feature-level events populate NONE of them — workflows, agent-builder agents and
  * tools, ML jobs and datafeeds, product documentation, secrets — and several others (connector_create,
  * case_*, space_create) carry a type but no name. body.text is never null on a Kibana event and
@@ -191,21 +191,21 @@ export const OBJ_GROK = [
  */
 export const OBJ_TYPE =
   'EVAL obj_type = CASE(' +
-  'attributes.kibana.saved_object.type IS NOT NULL, attributes.kibana.saved_object.type, ' +
-  'attributes.event.action LIKE "ml_*ad_job", "ml-job", ' +
-  'attributes.event.action LIKE "ml_*ad_datafeed", "ml-datafeed", ' +
-  'attributes.event.action LIKE "workflow_execution_*", "workflow-execution", ' +
-  'attributes.event.action LIKE "workflow_*", "workflow", ' +
-  'attributes.event.action LIKE "agent_builder_agent_*", "agent-builder-agent", ' +
-  'attributes.event.action LIKE "agent_builder_tool_*", "agent-builder-tool", ' +
-  'attributes.event.action LIKE "product_documentation_*", "product-documentation", ' +
-  'attributes.event.action == "secret_create", "secret", ' +
+  'kibana.saved_object.type IS NOT NULL, kibana.saved_object.type, ' +
+  'event.action LIKE "ml_*ad_job", "ml-job", ' +
+  'event.action LIKE "ml_*ad_datafeed", "ml-datafeed", ' +
+  'event.action LIKE "workflow_execution_*", "workflow-execution", ' +
+  'event.action LIKE "workflow_*", "workflow", ' +
+  'event.action LIKE "agent_builder_agent_*", "agent-builder-agent", ' +
+  'event.action LIKE "agent_builder_tool_*", "agent-builder-tool", ' +
+  'event.action LIKE "product_documentation_*", "product-documentation", ' +
+  'event.action == "secret_create", "secret", ' +
   // Fleet emits some events with NO event.action at all ("User deploying policy [id=...]",
   // "User creating enrollment API key [name=...]"). REPLACE on a null is null, which would put a
   // (null) bucket back on the heatmap and the object-type KPI — the exact thing this fragment
   // exists to remove. They are ECS-tagged `access`, so they never reach the change panels.
-  'attributes.event.action IS NULL, "unclassified", ' +
-  'REPLACE(attributes.event.action, "_(create|update|delete|enable|disable|run|run_soon|test|cancel)$", ""))';
+  'event.action IS NULL, "unclassified", ' +
+  'REPLACE(event.action, "_(create|update|delete|enable|disable|run|run_soon|test|cancel)$", ""))';
 
 /**
  * True when an event touched an object at all — the rows OBJ_TYPE names from a real type rather than
@@ -215,9 +215,9 @@ export const OBJ_TYPE =
  * this. It references only raw fields, so it works on rows grouped by those fields, after a STATS.
  */
 export const OBJ_PRESENT =
-  '(attributes.kibana.saved_object.type IS NOT NULL OR attributes.event.action LIKE "ml_*" ' +
-  'OR attributes.event.action LIKE "workflow_*" OR attributes.event.action LIKE "agent_builder_*" ' +
-  'OR attributes.event.action LIKE "product_documentation_*" OR attributes.event.action == "secret_create")';
+  '(kibana.saved_object.type IS NOT NULL OR event.action LIKE "ml_*" ' +
+  'OR event.action LIKE "workflow_*" OR event.action LIKE "agent_builder_*" ' +
+  'OR event.action LIKE "product_documentation_*" OR event.action == "secret_create")';
 
 /**
  * Name of the thing changed. The ladder order is load-bearing: real name, then the name GROKed out
@@ -226,8 +226,8 @@ export const OBJ_PRESENT =
  * column is NEVER null — which is the whole point of the exercise.
  */
 export const OBJ_NAME =
-  'EVAL obj_name = COALESCE(attributes.kibana.saved_object.name, g_name, g_id, ' +
-  'attributes.kibana.saved_object.id, g_case, g_ml, g_exec, body.text)';
+  'EVAL obj_name = COALESCE(kibana.saved_object.name, g_name, g_id, ' +
+  'kibana.saved_object.id, g_case, g_ml, g_exec, body.text)';
 
 /** The three together, ready to drop into a pipeline. */
 export const OBJ = `${OBJ_GROK} | ${OBJ_TYPE} | ${OBJ_NAME}`;
@@ -239,7 +239,7 @@ export const OBJ = `${OBJ_GROK} | ${OBJ_TYPE} | ${OBJ_NAME}`;
  */
 export const OBJ_ID =
   `${G(String.raw`\[(?:id|workflowId)=%{DATA:g_id}(?:,|\])`)} ` +
-  '| EVAL obj_id = COALESCE(attributes.kibana.saved_object.id, g_id)';
+  '| EVAL obj_id = COALESCE(kibana.saved_object.id, g_id)';
 
 /**
  * Kibana logs an ATTEMPT (outcome=unknown, "User is creating dashboard") on the saved-objects path
@@ -247,14 +247,14 @@ export const OBJ_ID =
  * "unknown" in a table reads as a defect, so it is relabelled to what it actually means.
  */
 export const OUTCOME =
-  'EVAL result = CASE(attributes.event.outcome == "unknown", "attempted", attributes.event.outcome)';
+  'EVAL result = CASE(event.outcome == "unknown", "attempted", event.outcome)';
 
 /**
  * A failed sign-in is one REQUEST that could not prove who it was: authentication_failed, or
  * anonymous_access_denied for a request that presented nothing. Elasticsearch also writes one
  * realm_authentication_failed per realm it tried on the way, so with two realms one bad password was
  * three events — 'admin' read 60 realm failures beside 30 authentication_failed at the same millisecond,
- * and the tile counted 90 "failed sign-ins" for 30 attempts. Measured by attributes.http.request.id over
+ * and the tile counted 90 "failed sign-ins" for 30 attempts. Measured by http.request.id over
  * the stream's whole span: 62 requests wrote 2 realm failures + 1 authentication_failed, 24 wrote the
  * authentication_failed alone, 327 one anonymous_access_denied, and 4 a realm failure with NO overall
  * failure (a later realm let them in). So realm_authentication_failed is a per-realm trace of an attempt
@@ -270,8 +270,8 @@ export const OUTCOME =
  * failure session ~90ms more over 7 days on the replica.
  */
 export const SIGNIN_FAILED = '"authentication_failed","anonymous_access_denied"';
-export const REALM_TRACE = '(attributes.event.action IS NULL OR attributes.event.action != "realm_authentication_failed")';
-export const FAILED_OR_DENIED = `WHERE attributes.event.action IN (${SIGNIN_FAILED}) OR (attributes.event.outcome == "failure" AND ${REALM_TRACE})`;
+export const REALM_TRACE = '(event.action IS NULL OR event.action != "realm_authentication_failed")';
+export const FAILED_OR_DENIED = `WHERE event.action IN (${SIGNIN_FAILED}) OR (event.outcome == "failure" AND ${REALM_TRACE})`;
 export const SIGNIN_WORDS = 'authentication_failed or anonymous_access_denied, one per request; the realm_authentication_failed events Elasticsearch writes for each realm an attempt tried are left out, so an attempt counts once';
 
 /**
@@ -317,12 +317,12 @@ export const RISK_MAX = 50;
  * otherwise group on), so RISK runs only after RISK_KEYS, as it always has.
  */
 export const RISK =
-  'EVAL risk = CASE(housekeeping, 0, attributes.event.action == "invalidate_apikeys", 45, ' +
-  'attributes.event.action == "anonymous_access_denied", 35, ' +
-  'attributes.elasticsearch.audit.security_config_change IS NOT NULL, 50, ' +
-  'attributes.event.outcome == "failure", 40, ' +
-  `${CHANGE_PRED} AND attributes.event.action IN (${EXECUTIONS}), 10, ` +
-  `${CHANGE_PRED} AND (attributes.event.type == "deletion" OR attributes.event.action == "rule_disable"), 30, ` +
+  'EVAL risk = CASE(housekeeping, 0, event.action == "invalidate_apikeys", 45, ' +
+  'event.action == "anonymous_access_denied", 35, ' +
+  'elasticsearch.audit.security_config_change IS NOT NULL, 50, ' +
+  'event.outcome == "failure", 40, ' +
+  `${CHANGE_PRED} AND event.action IN (${EXECUTIONS}), 10, ` +
+  `${CHANGE_PRED} AND (event.type == "deletion" OR event.action == "rule_disable"), 30, ` +
   `${CHANGE_PRED}, 25, ` +
   '0)';
 
@@ -388,10 +388,10 @@ export const KIND_REFINE =
  * treemap, leaderboard, Why these identities scored, the scatter, Actor 360's Risk — agree with these tiles.
  */
 export const HOUSEKEEPING =
-  '(attributes.event.action IS NOT NULL AND attributes.event.action == "invalidate_apikeys" ' +
-  `AND attributes.user.name IS NOT NULL AND attributes.user.name IN (${PLATFORM_ACTORS}) AND attributes.api_key.name IS NULL)`;
+  '(event.action IS NOT NULL AND event.action == "invalidate_apikeys" ' +
+  `AND user.name IS NOT NULL AND user.name IN (${PLATFORM_ACTORS}) AND api_key.name IS NULL)`;
 export const PRIVILEGED =
-  `WHERE attributes.elasticsearch.audit.security_config_change IS NOT NULL AND NOT ${HOUSEKEEPING}`;
+  `WHERE elasticsearch.audit.security_config_change IS NOT NULL AND NOT ${HOUSEKEEPING}`;
 /**
  * A count as text with thousands separators ("1,618,996"), the form Lens prints every number beside it
  * in: a KPI's secondary line, a category label that carries its count. TO_STRING alone gave "2326 key
@@ -419,12 +419,12 @@ export const grouped = (x) => {
  * qualifier of the number below it. One row, after the STATS, so the CASE costs nothing.
  */
 export const privilegedKpi = (col) =>
-  `WHERE attributes.elasticsearch.audit.security_config_change IS NOT NULL | EVAL housekeeping = ${HOUSEKEEPING} ` +
+  `WHERE elasticsearch.audit.security_config_change IS NOT NULL | EVAL housekeeping = ${HOUSEKEEPING} ` +
   `| STATS \`${col}\` = COUNT(*) WHERE NOT housekeeping, cleanups = COUNT(*) WHERE housekeeping ` +
   `| EVAL housekeeping_note = CASE(cleanups == 0, "no cleanups in range", CONCAT("excl. ", ${grouped('cleanups')}, " cleanups"))`;
 
 /**
- * CLOUD API KEYS, AS AN IDENTITY. ACTOR_RESOLVE ends at attributes.user.name, and for an
+ * CLOUD API KEYS, AS AN IDENTITY. ACTOR_RESOLVE ends at user.name, and for an
  * organization-level Elastic Cloud API key that is the key's 20-character id — the stream records no
  * name and no owner for it. Shown bare it reads as a broken lookup, and on this project such a key (the
  * one this repo's own tooling deploys, lints and renders with) is the busiest identity on every page.
@@ -444,8 +444,8 @@ export const privilegedKpi = (col) =>
  *                                     last STATS BY actor (two keys sharing a prefix would merge if it
  *                                     ran first). table() appends it to every table that shows `actor`.
  *   cloudKeyLabel(col, otherwise)     the expression, for any other column: a key-name column that is
- *                                     null for a Cloud key reads `cloudKeyLabel('attributes.user.name',
- *                                     'attributes.api_key.name')` instead of "-" or "(no name)".
+ *                                     null for a Cloud key reads `cloudKeyLabel('user.name',
+ *                                     'api_key.name')` instead of "-" or "(no name)".
  *
  * Per row, on the few rows a panel displays, so it costs nothing measurable.
  */
@@ -472,9 +472,9 @@ export const ACTOR_LABEL = `EVAL actor = ${cloudKeyLabel('actor')}`;
  * point-in-time events that used to reach the CASE only to score 0.
  */
 export const RISK_PREFILTER =
-  'WHERE attributes.elasticsearch.audit.security_config_change IS NOT NULL ' +
-  'OR attributes.event.outcome == "failure" ' +
-  'OR attributes.event.action IN ("invalidate_apikeys","anonymous_access_denied") ' +
+  'WHERE elasticsearch.audit.security_config_change IS NOT NULL ' +
+  'OR event.outcome == "failure" ' +
+  'OR event.action IN ("invalidate_apikeys","anonymous_access_denied") ' +
   `OR ${CHANGE_PRED}`;
 
 /**
@@ -485,12 +485,12 @@ export const RISK_PREFILTER =
  *
  * Two fields are not grouped as they are, and RISK_RESTORE puts them back for RISK to read:
  *
- *   attributes.event.type is MULTI-valued on Elasticsearch events, and STATS BY a multi-valued field
+ *   event.type is MULTI-valued on Elasticsearch events, and STATS BY a multi-valued field
  *   would count such a document once per value. It is grouped as one joined string and restored as
  *   the same multi-value, which keeps CHANGE_PRED's `IN` and `==` returning null on those rows exactly
  *   as on the raw field (no ECS event.type value contains a comma).
  *
- *   attributes.elasticsearch.audit.security_config_change is a JSON payload that is close to unique per
+ *   elasticsearch.audit.security_config_change is a JSON payload that is close to unique per
  *   event, and RISK only asks whether it is present. Grouping on the payload multiplied the rows that
  *   reach RISK sixfold (18,001 against 2,936 for the hourly risk chart over 7d on the perf replica), and
  *   a CASE costs per ROW after a STATS as well as before it. So it is grouped as the boolean `scc`, and
@@ -502,16 +502,16 @@ export const RISK_PREFILTER =
  * Never null (every term guarded), so it never splits a group three ways.
  */
 export const RISK_KEYS =
-  'attributes.event.action, scc = attributes.elasticsearch.audit.security_config_change IS NOT NULL, ' +
-  'attributes.event.outcome, resource.attributes.service.name, et = MV_CONCAT(attributes.event.type, ","), ' +
+  'event.action, scc = elasticsearch.audit.security_config_change IS NOT NULL, ' +
+  'event.outcome, service.name, et = MV_CONCAT(event.type, ","), ' +
   `housekeeping = ${HOUSEKEEPING}`;
 export const RISK_RESTORE =
-  'EVAL attributes.event.type = SPLIT(et, ","), attributes.elasticsearch.audit.security_config_change = CASE(scc, "present")';
+  'EVAL event.type = SPLIT(et, ","), elasticsearch.audit.security_config_change = CASE(scc, "present")';
 
 /**
  * The noise vocabulary, shared by NOISE and BAND so the gate and the bands can never disagree.
  *
- * `attributes.elasticsearch.audit.action` does not exist on Kibana audit events. The previous
+ * `elasticsearch.audit.action` does not exist on Kibana audit events. The previous
  * gate was a bare `NOT (... IN ...)`, which is null for those rows — and `WHERE null` drops the
  * row, so the gate silently discarded 100% of Kibana audit: the small slice of the stream that
  * carries nearly all of the forensic value. Every predicate below is explicitly null-guarded.
@@ -582,7 +582,7 @@ export const RISK_RESTORE =
  * as a LIKE (36ms vs 34ms, 7d) and is exact where `LIKE "*\/internal/*"` also matched /api/internal/….
  */
 const NOISE_ES_ACTIONS = '"cluster:monitor/main", "elastic.maintenance"';
-const A_ = 'attributes.elasticsearch.audit.action';
+const A_ = 'elasticsearch.audit.action';
 /**
  * Reads of API key METADATA: `GET /_security/api_key` (api_key/get) and the query/list form
  * (api_key/query). Query internals by the human's decision (round 6): a client polling its own key — on
@@ -643,22 +643,22 @@ export const SUITE_INSTALL_URL = 'https?://[^/]+(/s/[^/]+)?/api/(saved_objects/(
  * session test is `IS NULL`, so it never yields null.
  */
 export const SUITE_SELF =
-  '(attributes.kibana.saved_object.id IS NOT NULL AND (attributes.kibana.saved_object.id LIKE "cloud-audit-*" OR attributes.kibana.saved_object.id LIKE "elastic_cloud-audit-*") ' +
-  'AND (attributes.event.action IN ("saved_object_get","saved_object_resolve","saved_object_find") OR attributes.kibana.session.id IS NULL))';
+  '(kibana.saved_object.id IS NOT NULL AND (kibana.saved_object.id LIKE "cloud-audit-*" OR kibana.saved_object.id LIKE "elastic_cloud-audit-*") ' +
+  'AND (event.action IN ("saved_object_get","saved_object_resolve","saved_object_find") OR kibana.session.id IS NULL))';
 
 export const KIBANA_INTERNALS =
-  'attributes.event.action IN ("saved_object_open_point_in_time","saved_object_close_point_in_time","space_get","space_find") ' +
-  'OR (attributes.event.action == "http_request" AND attributes.url.original IS NOT NULL ' +
-  `AND attributes.url.original RLIKE "${KIBANA_PLUMBING_URL}|${SUITE_INSTALL_URL}") ` +
-  'OR (attributes.kibana.saved_object.type IS NOT NULL AND (' +
-  '(attributes.event.action == "saved_object_get" AND attributes.kibana.saved_object.type IN ("config","config-global")) ' +
-  'OR (attributes.event.action == "saved_object_find" AND attributes.kibana.saved_object.type == "index-pattern"))) ' +
+  'event.action IN ("saved_object_open_point_in_time","saved_object_close_point_in_time","space_get","space_find") ' +
+  'OR (event.action == "http_request" AND url.original IS NOT NULL ' +
+  `AND url.original RLIKE "${KIBANA_PLUMBING_URL}|${SUITE_INSTALL_URL}") ` +
+  'OR (kibana.saved_object.type IS NOT NULL AND (' +
+  '(event.action == "saved_object_get" AND kibana.saved_object.type IN ("config","config-global")) ' +
+  'OR (event.action == "saved_object_find" AND kibana.saved_object.type == "index-pattern"))) ' +
   `OR ${SUITE_SELF}`;
 
 export const NOISE =
   `WHERE (${A_} IS NULL OR NOT (` +
   `${A_} IN (${NOISE_ES_ACTIONS}) OR ${NOISE_ES_QUERY_INTERNALS})) ` +
-  `AND (attributes.event.action IS NULL OR NOT (attributes.event.action IN (${NOISE_EVENT_ACTIONS}) OR ${KIBANA_INTERNALS}))`;
+  `AND (event.action IS NULL OR NOT (event.action IN (${NOISE_EVENT_ACTIONS}) OR ${KIBANA_INTERNALS}))`;
 
 /**
  * The raw keys BAND reads, for `STATS n = COUNT(*) BY …, BAND_KEYS | BAND | STATS SUM(n) BY band`.
@@ -668,7 +668,7 @@ export const NOISE =
  * BAND reads that column. It is null where event.action is null, which BAND's CASE falls through.
  */
 export const BAND_KEYS =
-  `${A_}, attributes.event.action, kib_internal = (${KIBANA_INTERNALS})`;
+  `${A_}, event.action, kib_internal = (${KIBANA_INTERNALS})`;
 
 /**
  * Band classification for the quarantine dashboard, over rows grouped BY BAND_KEYS. A CASE condition
@@ -680,8 +680,8 @@ export const BAND =
   `EVAL band = CASE(${A_} IN (${NOISE_ES_ACTIONS}), "infra-noise", ` +
   `${NOISE_ES_QUERY_INTERNALS}, "query-noise", ` +
   `kib_internal, "query-noise", ` +
-  `attributes.event.action == "connection_granted", "query-noise", ` +
-  `attributes.event.action == "authentication_success", "authn-volume", "signal")`;
+  `event.action == "connection_granted", "query-noise", ` +
+  `event.action == "authentication_success", "authn-volume", "signal")`;
 
 /**
  * Location PER ADDRESS. Enrichment is forward-only (README, Geo enrichment), so one client IP can carry
@@ -710,9 +710,9 @@ export const IP_GEO =
 
 export const TIME   = 'WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart';
 export const BUCKET = 'BUCKET(@timestamp, 75, ?_tstart, ?_tend)';
-export const KIB    = 'WHERE resource.attributes.service.name == "serverless-kibana"';
+export const KIB    = 'WHERE service.name == "serverless-kibana"';
 /** Elasticsearch's source name; `elasticsearch-serverless` before the 2026 schema change. */
-export const ESS    = 'WHERE resource.attributes.service.name == "serverless-elasticsearch"';
+export const ESS    = 'WHERE service.name == "serverless-elasticsearch"';
 
 /**
  * Folds dated daily indices and data-stream backing indices into the family they belong to, so
@@ -721,7 +721,7 @@ export const ESS    = 'WHERE resource.attributes.service.name == "serverless-ela
  * same text and the drift check pins it.
  */
 export const indexFamily = (col) => String.raw`REPLACE(REPLACE(${col}, """^\.ds-""", ""), """[-.]?\d{4}[.-]\d{2}[.-]\d{2}(-\d+)?$""", "")`;
-export const INDEX_FAMILY = indexFamily('attributes.elasticsearch.audit.indices');
+export const INDEX_FAMILY = indexFamily('elasticsearch.audit.indices');
 
 /**
  * Index EXPRESSIONS, not indices: `*`, `-*`, `syn-*` and date math like `<.slo-…{2026-10-14||/d}>`.
@@ -730,7 +730,7 @@ export const INDEX_FAMILY = indexFamily('attributes.elasticsearch.audit.indices'
  * as if it were something you could open. Applied to grouped rows, so it costs nothing per document.
  * vega/04 embeds it verbatim.
  */
-export const CONCRETE = 'WHERE LOCATE(attributes.elasticsearch.audit.indices, "*") == 0 AND NOT attributes.elasticsearch.audit.indices LIKE "<*"';
+export const CONCRETE = 'WHERE LOCATE(elasticsearch.audit.indices, "*") == 0 AND NOT elasticsearch.audit.indices LIKE "<*"';
 
 /**
  * A request to a system or hidden index. Two corrections to the bare `LIKE ".*"` this used to be:
@@ -750,9 +750,9 @@ export const CONCRETE = 'WHERE LOCATE(attributes.elasticsearch.audit.indices, "*
  * searches/05-system-index-access.json embeds the same text, and the drift check pins it.
  */
 export const SYS_INDEX =
-  'WHERE ((attributes.elasticsearch.audit.indices LIKE ".*" AND NOT attributes.elasticsearch.audit.indices LIKE ".ds-*") ' +
-  'OR attributes.elasticsearch.audit.indices LIKE ".ds-.*") ' +
-  'AND (attributes.elasticsearch.audit.action IS NULL OR NOT attributes.elasticsearch.audit.action LIKE "*[*")';
+  'WHERE ((elasticsearch.audit.indices LIKE ".*" AND NOT elasticsearch.audit.indices LIKE ".ds-*") ' +
+  'OR elasticsearch.audit.indices LIKE ".ds-.*") ' +
+  'AND (elasticsearch.audit.action IS NULL OR NOT elasticsearch.audit.action LIKE "*[*")';
 
 /**
  * Action -> verb. Shared by the change panels, 02's object/verb heatmap and the Discover sessions,
@@ -765,17 +765,17 @@ export const SYS_INDEX =
  * vocabulary (put/open/start) and needs naming explicitly or every ML action reads "other" too.
  */
 export const VERB =
-  'EVAL verb = CASE(attributes.event.action LIKE "*_execution_cancel", "cancel", ' +
-  'attributes.event.action LIKE "*_run_soon", "run", attributes.event.action LIKE "*_run", "run", ' +
-  'attributes.event.action LIKE "*_test", "test", ' +
-  'attributes.event.action LIKE "*_enable", "enable", attributes.event.action LIKE "*_disable", "disable", ' +
-  'attributes.event.action LIKE "ml_put_*", "create", attributes.event.action LIKE "ml_open_*", "open", ' +
-  'attributes.event.action LIKE "ml_start_*", "start", ' +
-  'attributes.event.action LIKE "*point_in_time", "pit", ' +
-  'attributes.event.action LIKE "*_create*", "create", ' +
-  'attributes.event.action LIKE "*_update*", "update", attributes.event.action LIKE "*_delete", "delete", ' +
-  'attributes.event.action LIKE "*_find", "find", attributes.event.action LIKE "*_get", "get", ' +
-  'attributes.event.action LIKE "*_resolve", "resolve", "other")';
+  'EVAL verb = CASE(event.action LIKE "*_execution_cancel", "cancel", ' +
+  'event.action LIKE "*_run_soon", "run", event.action LIKE "*_run", "run", ' +
+  'event.action LIKE "*_test", "test", ' +
+  'event.action LIKE "*_enable", "enable", event.action LIKE "*_disable", "disable", ' +
+  'event.action LIKE "ml_put_*", "create", event.action LIKE "ml_open_*", "open", ' +
+  'event.action LIKE "ml_start_*", "start", ' +
+  'event.action LIKE "*point_in_time", "pit", ' +
+  'event.action LIKE "*_create*", "create", ' +
+  'event.action LIKE "*_update*", "update", event.action LIKE "*_delete", "delete", ' +
+  'event.action LIKE "*_find", "find", event.action LIKE "*_get", "get", ' +
+  'event.action LIKE "*_resolve", "resolve", "other")';
 
 /**
  * The old suffix-based mutation test. SUPERSEDED by CHANGE for everything Kibana emits — it misses
@@ -787,8 +787,8 @@ export const VERB =
  * which means CHANGE alone would empty that search of its Elasticsearch rows.
  */
 export const MUT =
-  'WHERE attributes.event.action LIKE "*_create" OR attributes.event.action LIKE "*_update" ' +
-  'OR attributes.event.action LIKE "*_delete"';;
+  'WHERE event.action LIKE "*_create" OR event.action LIKE "*_update" ' +
+  'OR event.action LIKE "*_delete"';;
 
 /**
  * The navigation strip's entries, in order: the dashboards this run deploys (see lib/suite.mjs, which
@@ -861,8 +861,8 @@ export const CRED_TYPE_COLORS = {
 };
 
 /**
- * The two audit sources by name, for any panel that splits by resource.attributes.service.name. Apply
- * after a STATS grouped on `source = resource.attributes.service.name`: "serverless-" spends eleven
+ * The two audit sources by name, for any panel that splits by service.name. Apply
+ * after a STATS grouped on `source = service.name`: "serverless-" spends eleven
  * characters of every legend entry saying what the whole suite assumes. Pinned so Elasticsearch and
  * Kibana are the same colours on Command Center and Platform Volume, and SORTed because Lens takes stack
  * and legend order from row order: unsorted, the two swapped places between refreshes. Elasticsearch
@@ -946,14 +946,14 @@ export const bar = (x, y, w, h, title, q, cat, val, desc, opts = {}) =>
  *
  * Only ever set it on a REAL field. `actor` is an EVAL COALESCE with nothing behind it in
  * _source, so a pill built from it matches nothing; identity filtering hangs off
- * attributes.user.email, which is `flattened` and answers term/match_phrase correctly
+ * user.email, which is `flattened` and answers term/match_phrase correctly
  * (verified: filter and native WHERE return the same count for the same identity).
  */
 /**
  * HEADERS AND WIDTHS. A column's header is its `label`, which the 9.6 Dashboards API accepts on
  * every row and metric and stores as the Lens column's customLabel. It changes the header ONLY:
  * the column still reads `fieldName`, so a click_filter column labelled "Email" still pins
- * `attributes.user.email: …` — verified by clicking a labelled cell on a live dashboard. That is
+ * `user.email: …` — verified by clicking a labelled cell on a live dashboard. That is
  * why labels are applied here rather than by aliasing in ES|QL: an alias would cost the filter.
  *
  * So the convention is: name ES|QL columns for the query (snake_case, raw fields), and let table()
@@ -987,19 +987,19 @@ const C = (label, width) => (width ? { label, width, min: FLOOR.get(width) } : {
 export const COLUMNS = {
   // who
   actor: C('Identity'), actor_kind: C('Kind', W.ENUM), actor_scope: C('Scope', W.SCOPE), actor_org: C('Origin', W.ENUM),
-  'attributes.user.email': C('Email'), 'attributes.user.name': C('User'), user: C('User'), owner: C('Owner'),
-  api_key: C('API key'), 'attributes.api_key.name': C('API key'), key_id: C('Key ID'), 'attributes.api_key.id': C('Key ID'),
+  'user.email': C('Email'), 'user.name': C('User'), user: C('User'), owner: C('Owner'),
+  api_key: C('API key'), 'api_key.name': C('API key'), key_id: C('Key ID'), 'api_key.id': C('Key ID'),
   credential: C('Credential', W.ENUM),
   // what
-  action: C('Action'), 'attributes.event.action': C('Action'), 'attributes.elasticsearch.audit.action': C('Transport action'),
-  verb: C('Operation', W.ENUM), result: C('Result', W.ENUM), 'attributes.event.outcome': C('Outcome', W.ENUM),
+  action: C('Action'), 'event.action': C('Action'), 'elasticsearch.audit.action': C('Transport action'),
+  verb: C('Operation', W.ENUM), result: C('Result', W.ENUM), 'event.outcome': C('Outcome', W.ENUM),
   change: C('Change'), request: C('Request'), execution: C('Execution', W.ENUM), weight: C('Weight', W.COUNT),
   // on what
   name: C('Name'), type: C('Type'), obj_name: C('Object'), obj_type: C('Object type'), kind: C('Kind'),
-  index: C('Index'), 'attributes.elasticsearch.audit.indices': C('Index'),
-  space: C('Space', W.ENUM), 'attributes.kibana.space.id': C('Space', W.ENUM),
-  'attributes.kibana.saved_object.name': C('Object'), 'attributes.kibana.saved_object.type': C('Object type'),
-  source: C('Source'), 'resource.attributes.service.name': C('Source'),
+  index: C('Index'), 'elasticsearch.audit.indices': C('Index'),
+  space: C('Space', W.ENUM), 'kibana.space.id': C('Space', W.ENUM),
+  'kibana.saved_object.name': C('Object'), 'kibana.saved_object.type': C('Object type'),
+  source: C('Source'), 'service.name': C('Source'),
   // from where
   ip: C('IP', W.IP), client_ip: C('Client IP', W.IP), 'client.ip': C('Client IP', W.IP), proxy: C('Proxy IP', W.IP),
   city: C('City'), country: C('Country', W.ENUM),
@@ -1019,7 +1019,7 @@ const ACRONYMS = { ip: 'IP', ips: 'IPs', id: 'ID', api: 'API', url: 'URL', os: '
 
 /**
  * The header for a column COLUMNS does not list. A dotted field keeps only its last segment
- * (`attributes.kibana.saved_object.type` → "Type"); snake_case becomes words; the first word is
+ * (`kibana.saved_object.type` → "Type"); snake_case becomes words; the first word is
  * capitalised. A name that already looks like a header (`Last seen`, an ES|QL backtick alias) is
  * returned as written.
  */

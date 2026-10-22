@@ -21,7 +21,7 @@ import { CONTROLS } from './lib/controls.mjs';
 import { TIME_TO } from './lib/panels.mjs';
 
 /**
- * Kibana emits exactly six console errors on every FULL page load of any dashboard in this space.
+ * Kibana emits exactly six console errors on every FULL page load of any dashboard.
  * Measured identically on 00-command-center (two Vega panels) and 06-platform-volume (one), so
  * none of them belong to this suite and Vega has nothing to do with it: a CSP refusal for the
  * inline script Kibana injects into its own HTML, plus five HTTP failures on endpoints an ApiKey
