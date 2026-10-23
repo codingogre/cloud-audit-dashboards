@@ -146,7 +146,7 @@ const INTRO = {
 export function build() {
   resetIds();
   const P = [
-    // A DSL Vega tile with a previous-period line (PREV_TILES in panels.mjs, held to its ES|QL by --lint).
+    // An ES|QL Vega tile on the events view with a previous-period line (PREV_TILES in panels.mjs, held to TIME by --lint).
     prevKpi(0, 0, 8, 5, 'kibana-events', 'All Kibana audit events: a small share of the stream, but where saved objects, spaces and sessions are recorded.'),
     kpi(8, 0, 8, 5, `FROM ${IDX} | ${TIME} | ${CHANGE} | STATS \`Mutations\` = COUNT(*)`, 'Mutations',
       'Every change to Kibana content in range: creates, updates, deletes and other changes such as enabling a rule, running a workflow or starting an ML job.'),

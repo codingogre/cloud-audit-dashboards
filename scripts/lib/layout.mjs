@@ -22,8 +22,9 @@ import {
   NAV_H, NOISE, BAND, BAND_KEYS, RISK, RISK_KEYS, RISK_RESTORE, VERB, ACTOR_RESOLVE, ACTOR_KEYS, OBJ, OBJ_ID, OBJ_TYPE, CHANGE_PRED, CRED, OBJ_PRESENT,
   CRED_TYPE_LABEL, INDEX_FAMILY, CONCRETE, SYS_INDEX, ACTOR_LABEL, MAGNITUDE_RAMP, SEVERITY_RAMP, fitRows, tableLimit,
   KIBANA_INTERNALS, BOUNDED, BARE_COUNT, grouped, FAILED_OR_DENIED, PREV_TILES, prevRef, COVERAGE_REF, flatPanels,
-  HOW_TO_LABEL, TIME, TIME_ONLY, IDENTITY_WHERE, HOUR_AGO, VEGA_WINDOWS, windowMs,
+  HOW_TO_LABEL, TIME, TIME_ONLY, IDENTITY_WHERE, HOUR_AGO, VEGA_WINDOWS, windowMs, NULL_SAFE, VIEW_TIME,
 } from './panels.mjs';
+import { DEFAULT_VIEW } from './env.mjs';
 
 export const GRID_W = 48;
 
@@ -76,6 +77,11 @@ const FRAGMENT_USES = {
   'searches/08-cross-space-activity.json': { ACTOR_KEYS, ACTOR_RESOLVE, ACTOR_LABEL },
   'searches/09-session-reconstruction.json': { ACTOR_RESOLVE, ACTOR_LABEL },
   'searches/10-raw-signal-feed.json': { ACTOR_RESOLVE, NOISE, ACTOR_LABEL },
+  // The prior-period tiles (PREV_TILES, generated) read the events view, not the stream, so they bound their own
+  // window and cannot embed TIME: they pin IDENTITY_WHERE, which is what makes both counts follow the dropdowns,
+  // and the tile's own filter. --lint parity then checks both counts against TIME on the stream.
+  ...Object.fromEntries(Object.entries(PREV_TILES).map(([k, t]) => [`vega/${prevRef(k)}.json`,
+    { IDENTITY_WHERE, NULL_SAFE, ...(t.esql ? { [`PREV_TILES['${k}'].esql`]: t.esql } : {}) }])),
 };
 
 function checkGrid(name, panels, problems) {
@@ -176,9 +182,38 @@ const DSL_SPECS = new Set([
   // 08, 09, 12 and 13 were DSL through 1.0.5 for their fixed windows; they are ES|QL on a panel range now
   // (VEGA_WINDOWS), so they follow the identity dropdowns.
   `vega/${COVERAGE_REF}.json`,
-  // Generated from PREV_TILES (panels.mjs); --lint checks each one's count against its ES|QL twin.
-  ...Object.keys(PREV_TILES).map((k) => `vega/${prevRef(k)}.json`),
 ]);
+
+/**
+ * ESCAPE RULES (panels.mjs, PREVIOUS-PERIOD TILES). An ES|QL dataset that reads the events view is sent with no
+ * hidden time filter only while Kibana's get_timefield finds no time column in it, and each of these brings the
+ * filter back (on event_time, cut to the picker, so a prior count reads 0) or breaks the query. Measured in 1.0.5.1.
+ */
+const ESCAPE_RULES = [
+  [/(?<![\w(])[A-Za-z_@`][\w.@`]*\s*(==|!=|<=|>=|<|>)\s*\?_t(start|end)\b/, 'compares a column bare with ?_tstart/?_tend (wrap the param in TO_DATETIME())'],
+  [/\?_t(start|end)\s*(==|!=|<=|>=|<|>)/, 'compares ?_tstart/?_tend bare with a column (wrap the param in TO_DATETIME())'],
+  [/(?<![=!<>])=\s*\?_t(start|end)\b/, 'assigns ?_tstart/?_tend bare (EVAL x = ?_tstart): wrap it in TO_DATETIME()'],
+  [/BUCKET\s*\([^|]*\?_t(start|end)/i, 'buckets on ?_tstart/?_tend, which brings the time filter back'],
+  [/(^|[\s,(|])first\s*=|\bAS\s+first\b/i, 'names a column `first`, a reserved word in ES|QL'],
+  [/@timestamp/, `names @timestamp, which the view renames to ${VIEW_TIME}`],
+];
+/** Every ES|QL data source in a spec (`url: { "%type%": "esql", query }`), Vega or Vega-Lite, at any depth. */
+function esqlEntries(node, out = []) {
+  if (Array.isArray(node)) { node.forEach((n) => esqlEntries(n, out)); return out; }
+  if (!node || typeof node !== 'object') return out;
+  if (node.url && typeof node.url === 'object' && node.url['%type%'] === 'esql') out.push(node);
+  for (const v of Object.values(node)) esqlEntries(v, out);
+  return out;
+}
+export function checkEscape(file, spec, problems) {
+  for (const d of esqlEntries(spec)) {
+    const q = String(d.url.query || '');
+    if (!new RegExp(`FROM\\s+${DEFAULT_VIEW}\\b`).test(q)) continue;
+    const label = `${file} dataset ${d.name || '(unnamed)'}`;
+    if (d.url['%timefield%'] !== undefined) problems.push(`vega: ${label} reads the events view and sets %timefield%, which re-binds it to the picker`);
+    for (const [re, why] of ESCAPE_RULES) if (re.test(q)) problems.push(`vega: ${label} reads the events view and ${why}`);
+  }
+}
 
 /**
  * DSL specs that describe the WHOLE stream on purpose and so carry none of the control-bar clauses: the
@@ -211,15 +246,6 @@ function dataEntries(node, out = []) {
   if (!node || typeof node !== 'object') return out;
   if (node.url && typeof node.url === 'object' && typeof node.url.index === 'string' && node.url.body) out.push(node);
   for (const v of Object.values(node)) dataEntries(v, out);
-  return out;
-}
-
-/** Every ES|QL data source in a spec (`url: { "%type%": "esql", query }`), Vega or Vega-Lite, at any depth. */
-function esqlEntries(node, out = []) {
-  if (Array.isArray(node)) { node.forEach((n) => esqlEntries(n, out)); return out; }
-  if (!node || typeof node !== 'object') return out;
-  if (node.url && typeof node.url === 'object' && node.url['%type%'] === 'esql') out.push(node);
-  for (const v of Object.values(node)) esqlEntries(v, out);
   return out;
 }
 
@@ -390,6 +416,7 @@ function checkVega(problems) {
     }
 
     checkMagnitude(file, spec, problems);
+    checkEscape(file, spec, problems);
 
     // Kibana themes guide/title styles but not mark text: an unstyled text mark renders #000, which is
     // invisible on the dark theme. Full Vega: give it style "guide-label"/"guide-title" (theme-aware) or

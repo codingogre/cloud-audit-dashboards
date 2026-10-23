@@ -29,6 +29,7 @@ import { pinnedPanels, dataViewObject, isControlRef, CONTROLS, RETIRED_DATA_VIEW
 import { panelDrilldown, hasFilterableColumn, ACTOR_360, drilldownRefs, isDrilldownRef } from './lib/drilldowns.mjs';
 import { checkLayout } from './lib/layout.mjs';
 import { smallMarkdown, writeTileSpecs, flatPanels } from './lib/panels.mjs';
+import { requireView } from './lib/view.mjs';
 
 /**
  * The Dashboards API payload: the definitions minus the in-memory annotations the post-pass and the
@@ -209,6 +210,8 @@ async function removeStrays() {
 
 export async function run() {
   const all = emit();
+  // The prior-period tiles read the events view, which --objects creates; without it they render an error.
+  await requireView();
   // The classic controls name the data view by id, so it must exist before the first PUT. Imported here
   // rather than relying on `--objects` having run: a control on a missing data view renders an empty bar.
   await kb.importObjects([dataViewObject()]);

@@ -440,8 +440,8 @@ test('nullSafe (1.0.4): SET unmapped_fields="nullify" on exactly the queries tha
 test('nullSafe (1.0.4): every shipped query that names api_key.* carries the SET, and none other does', async () => {
   const { gatherQueries } = await import('../../scripts/esql.mjs');
   const items = gatherQueries();
-  // 96 since 1.0.5: six headline counts became DSL Vega tiles (PREV_TILES), which carry no ES|QL.
-  assert.ok(items.length >= 96, `collector still sees every query (${items.length})`);
+  // 108 since 1.0.5.1: the six prior-period tiles (PREV_TILES) are ES|QL again, two datasets each.
+  assert.ok(items.length >= 108, `collector still sees every query (${items.length})`);
   const names = (q) => /(?<![\w.])api_key\./.test(q);
   for (const { src, q } of items) {
     assert.equal(q.startsWith('SET unmapped_fields="nullify"; FROM '), names(q), `${src}: SET iff api_key.*`);
@@ -453,6 +453,8 @@ test('bounded() keeps SET first and splices the time bound after FROM', async ()
   const { bounded } = await import('../../scripts/esql.mjs');
   const b = bounded('SET unmapped_fields="nullify"; FROM x | STATS n = COUNT(*) BY api_key.name');
   assert.match(b, /^SET unmapped_fields="nullify"; FROM x \| WHERE .*\| STATS n = COUNT\(\*\) BY api_key\.name$/);
+  const view = 'FROM v | WHERE event_time >= NOW() - 15 days | STATS t0 = MIN(event_time)';
+  assert.equal(bounded(view), view, 'a query on the events view bounds itself, and has no @timestamp to bound');
 });
 
 test('every tooltip is 40 words at most, appended notes included, and so is every Discover session description', async () => {

@@ -15,6 +15,9 @@
  *                                      range is the picker's unless the panel carries its own
  *                                      config.time_range (VEGA_WINDOWS): then ?_tstart/?_tend AND the
  *                                      hidden filter are that window, and Kibana badges the panel with it
+ *   Vega ES|QL on THE EVENTS VIEW      does not: the view has no @timestamp, so Kibana finds no time
+ *                                      field and attaches no range, and the query bounds itself
+ *                                      (PREV_TILES; never compare a column bare with ?_tstart there)
  *   Vega, DSL (url.index + url.body)   follows it ONLY if %timefield% is set, so a DSL spec with an
  *                                      explicit @timestamp range and the %dashboard_context-*%
  *                                      placeholders keeps the control-bar filters AND its own window
@@ -22,7 +25,7 @@
  * A fixed window on a now-24h dashboard (Actor 360's 7-day baseline, the 24-hour session timeline) is the
  * middle row with a VEGA_WINDOWS entry (1.0.5.1): an ES|QL spec bounded by TIME, so it also follows the
  * identity dropdowns, which no DSL spec can read. The last row is left for what a panel range cannot say:
- * a previous period (PREV_TILES) and the stream's first event (vega/14). Read from the 9.6 source
+ * a previous period (PREV_TILES, an ES|QL spec on the events view) and the stream's first event (vega/14, DSL). Read from the 9.6 source
  * (es_query_parser.ts / esql_query_parser.ts) and confirmed on live dashboards.
  *
  * THE HIDDEN LENS TIME FILTER (1.0.5, captured in the browser). "Lens ES|QL always follows the time
@@ -35,7 +38,7 @@
  * field only moves the filter there. So no Lens panel can read an event outside the picker: a
  * `WHERE @timestamp > ?_tstart - 1 day` previous-period count comes back 0, and a lower bound below
  * ?_tstart is silently cut at ?_tstart. A fixed window is a panel range (VEGA_WINDOWS); a previous period,
- * or anything else outside the range, is a DSL Vega spec (last row above) or nothing.
+ * or anything else outside the range, is a Vega spec on the events view or a DSL Vega spec, or nothing.
  *
  * QUERY SHAPE decides cost far more than window size on the audit stream. Measured on the 2.6M-event
  * perf replica (`./audit --perf`), alternating runs on a quiet cluster:
@@ -69,7 +72,7 @@
 
 import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { cfg, nsId, objId, ROOT, DEFAULT_STREAM } from './env.mjs';
+import { cfg, nsId, objId, ROOT, DEFAULT_STREAM, DEFAULT_VIEW } from './env.mjs';
 import { deployed } from './suite.mjs';
 
 /** The audit stream, from config — one definition, so a rename is an .env change, not a code change. */
@@ -1566,61 +1569,78 @@ export const vega = (x, y, w, h, ref, title, desc) => {
 };
 
 /**
- * PREVIOUS-PERIOD TILES (1.0.5). A headline count with a second line comparing it with the period of the
- * same length just before the range: "▲ 34% vs prior 24h". Lens cannot do this (THE HIDDEN LENS TIME
- * FILTER, above), so each is a DSL Vega spec drawn to look like the Lens metric tiles beside it — title
- * top left at 16px/500, the number bottom right at 36px/500, the comparison right-aligned above it at
- * 16px, the sizes and offsets read off a rendered Lens metric — with theme colours from the guide-title /
- * guide-label styles.
+ * PREVIOUS-PERIOD TILES (1.0.5; ES|QL since 1.0.5.1). A headline count with a second line comparing it with
+ * the period of the same length just before the range: "▲ 34% vs prior 24h". Each is a Vega spec drawn to
+ * look like the Lens metric tiles beside it — title top left at 16px/500, the number bottom right at 36px/500,
+ * the comparison right-aligned above it at 16px, the sizes and offsets read off a rendered Lens metric — with
+ * theme colours from the guide-title / guide-label styles.
  *
- * Only tiles whose filter is a plain DSL query are ported, and THIS TABLE IS THE ONE PLACE each one's two
- * forms sit side by side: `esql` is the ES|QL WHERE the Lens tile used (empty for every event) and `dsl`
- * the DSL clauses the spec filters on. `./audit --lint` counts both over the same fixed window and fails
- * if they differ by a single event (scripts/esql.mjs, parity), so the two cannot drift. NOISE, RISK,
- * resolved identities and COUNT_DISTINCT tiles stay Lens: their predicate would have to be written twice
- * with nothing to check it. Identity & Access's Failed or denied is one (REALM_TRACE), and it already
- * carries a detail line.
+ * WHY A VIEW. A Lens or Vega ES|QL request gets a hidden range filter for exactly the picker's window (THE
+ * HIDDEN LENS TIME FILTER, above): Kibana asks /internal/esql/get_timefield which column to filter, and the
+ * answer is the column the query compares bare with ?_tstart/?_tend, else @timestamp if the source has one.
+ * So no ES|QL panel on the stream can count the period before the picker. These tiles read THE EVENTS VIEW
+ * instead (EVENTS_VIEW_QUERY: the stream with @timestamp renamed to event_time, created by --objects), which
+ * has no @timestamp, so no filter is attached and the query bounds its own window. That behaviour follows a
+ * Kibana code comment, not documentation, so three guards hold it:
+ *   - the query never compares a column bare with ?_tstart/?_tend (always TO_DATETIME(...)), never BUCKETs on
+ *     them, never sets %timefield% and names no column `first` (ES|QL reserved word). layout.mjs fails a spec
+ *     on the view that does (ESCAPE RULES), and `--lint` asks get_timefield for each tile's query and fails
+ *     if Kibana would now attach a filter;
+ *   - `--verify` captures the tiles' esql_async requests and fails if one carries a range filter, or if a
+ *     prior count reads 0 where the stream has events (the canary for a Kibana change);
+ *   - `--lint` parity: each tile's current AND prior counts must equal prevEsql(key), the plain TIME-bounded
+ *     count on the stream, over the same two windows, with the dropdowns empty and with AUDIT_IDENTITY set.
  *
- * How the spec works (vega/15-prev-*.json, generated from this table by writeTileSpecs(); never edit
- * them by hand — `npm test` fails when a file and the table disagree):
- *   - no %timefield%, so the picker does not bind it; its own range runs from PREV_LOOKBACK through
- *     {"%timefilter%": "max"}, which Kibana replaces with the picker's end in ms (es_query_parser.ts,
- *     _injectContextVars), and the %dashboard_context-*% placeholders keep the control bar;
- *   - a range aggregation over a script splits each event by the picker's min/max into previous
- *     (2·min−max, min] and current (min, max] — the same open-start, closed-end window as TIME, so the
- *     current count equals the Lens tile's ES|QL count to the event;
- *   - a `range` bucket echoes min and max back, so the spec knows the window's length ("24h", "7d");
- *   - a `global` min over @timestamp finds the stream's first event whatever the pills say. When the
- *     previous period starts before it, or before the lookback, the line reads "no full prior 24h"
- *     instead of a rise against a period the stream was not recording. ≥10× prints as "▲ 12×". "prior",
- *     not "previous": an 8-column tile at 1440px holds ~20 characters, and "▲ 418× vs previous 1h" was
- *     cut to "previous …" (rendered).
- * Cost: the script runs on every event in the lookback, whatever the picker: ~0.7s over 15 days of
- * this project's ~3M events (1.0.5, live). PREV_LOOKBACK caps the comparable range at 7 days.
+ * The query (prevQuery) reads (2·start − end, end], the prior and current windows together, with the same
+ * open-start, closed-end bounds as TIME, and splits them with STATS … WHERE. It carries IDENTITY_WHERE, so
+ * both counts follow the Identity type and Identity dropdowns; `%context%` brings the pills, KQL and the
+ * Project and Client IP controls, whose filters run on the stream's raw fields under the view. It also caps
+ * the read at PREV_LOOKBACK_DAYS: without that a 30-day picker would scan 60 days on every load.
+ *
+ * The second dataset (prevStreamQuery, `stream`) finds the first event of that lookback with no %context%
+ * and no dropdowns — the stream's, whatever is selected. When the previous period starts before it the line
+ * reads "no full prior 24h" instead of a rise against a period the stream was not recording. ≥10× prints as
+ * "▲ 12×". "prior", not "previous": an 8-column tile at 1440px holds ~20 characters, and "▲ 418× vs
+ * previous 1h" was cut to "previous …" (rendered).
+ *
+ * The specs (vega/15-prev-*.json) are generated from this table by writeTileSpecs(); never edit them by
+ * hand — `npm test` fails when a file and the table disagree. `esql` is the tile's ES|QL WHERE (empty for
+ * every event). Only plain filters are tiles: NOISE, RISK and COUNT_DISTINCT tiles stay Lens, whose hidden
+ * filter they cannot escape without the same work. Measured live (1.0.5.1, ~3M events): 50–210ms per tile
+ * from 1h to 7d, ~40ms with a person selected; the stream dataset ~30ms.
  */
 export const PREV_LOOKBACK_DAYS = 15;
 export const PREV_TILES = {
-  'total-events': { title: 'Total events · all traffic', esql: '', dsl: [] },
-  'failed-events': {
-    title: 'Failed events · all traffic',
-    esql: 'WHERE event.outcome == "failure" OR event.action == "anonymous_access_denied"',
-    dsl: [{ bool: { should: [{ term: { 'event.outcome': 'failure' } }, { term: { 'event.action': 'anonymous_access_denied' } }], minimum_should_match: 1 } }],
-  },
-  'es-events': { title: 'Elasticsearch events', esql: ESS, dsl: [{ term: { 'service.name': 'serverless-elasticsearch' } }] },
-  'esql-queries': {
-    title: 'ES|QL queries',
-    esql: 'WHERE elasticsearch.audit.action == "indices:data/read/esql"',
-    dsl: [{ term: { 'elasticsearch.audit.action': 'indices:data/read/esql' } }],
-  },
-  'access-denied': {
-    title: 'Access denied',
-    esql: 'WHERE event.action == "access_denied" OR event.action == "anonymous_access_denied"',
-    dsl: [{ terms: { 'event.action': ['access_denied', 'anonymous_access_denied'] } }],
-  },
-  'kibana-events': { title: 'Kibana events', esql: KIB, dsl: [{ term: { 'service.name': 'serverless-kibana' } }] },
+  'total-events': { title: 'Total events · all traffic', esql: '' },
+  'failed-events': { title: 'Failed events · all traffic', esql: 'WHERE event.outcome == "failure" OR event.action == "anonymous_access_denied"' },
+  'es-events': { title: 'Elasticsearch events', esql: ESS },
+  'esql-queries': { title: 'ES|QL queries', esql: 'WHERE elasticsearch.audit.action == "indices:data/read/esql"' },
+  'access-denied': { title: 'Access denied', esql: 'WHERE event.action == "access_denied" OR event.action == "anonymous_access_denied"' },
+  'kibana-events': { title: 'Kibana events', esql: KIB },
 };
 export const prevRef = (key) => `15-prev-${key}`;
-/** The ES|QL count a previous-period tile's current number must equal (the parity lint runs it). */
+
+/** THE EVENTS VIEW's time column and its definition over a stream (env.mjs DEFAULT_VIEW, objects.mjs). */
+export const VIEW_TIME = 'event_time';
+export const EVENTS_VIEW_QUERY = (stream = cfg.dataStream) => `FROM ${stream} | RENAME @timestamp AS ${VIEW_TIME}`;
+/** The picker's bounds, always wrapped: a bare `event_time > ?_tstart` makes Kibana filter event_time to the picker. */
+const T_START = 'TO_DATETIME(?_tstart)';
+const T_END = 'TO_DATETIME(?_tend)';
+const PRIOR_START = `TO_DATETIME(2 * TO_LONG(${T_START}) - TO_LONG(${T_END}))`;
+
+/** A tile's query: current and prior counts, and the window's bounds in ms (s, e) for the second line. */
+export const prevQuery = (key, view = DEFAULT_VIEW) => {
+  const t = PREV_TILES[key];
+  if (!t) throw new Error(`no previous-period tile "${key}"`);
+  return nullSafe(`FROM ${view} | WHERE ${VIEW_TIME} <= ${T_END} AND ${VIEW_TIME} > ${PRIOR_START}`
+    + ` AND ${VIEW_TIME} >= NOW() - ${PREV_LOOKBACK_DAYS} days AND ${IDENTITY_WHERE}${t.esql ? ` | ${t.esql}` : ''}`
+    + ` | STATS cur = COUNT(*) WHERE ${VIEW_TIME} > ${T_START}, prev = COUNT(*) WHERE ${VIEW_TIME} <= ${T_START}`
+    + ` | EVAL s = TO_LONG(${T_START}), e = TO_LONG(${T_END})`);
+};
+/** The first event inside the lookback, of the whole stream: no context, no dropdowns. */
+export const prevStreamQuery = (view = DEFAULT_VIEW) =>
+  `FROM ${view} | WHERE ${VIEW_TIME} >= NOW() - ${PREV_LOOKBACK_DAYS} days | STATS t0 = MIN(${VIEW_TIME}) | EVAL t0 = TO_LONG(t0)`;
+/** The plain TIME-bounded count on the stream that a tile's current and prior numbers must equal (--lint parity). */
 export const prevEsql = (key) => `FROM ${IDX} | ${TIME}${PREV_TILES[key].esql ? ` | ${PREV_TILES[key].esql}` : ''} | STATS n = COUNT(*)`;
 
 /** The metric tile's look, shared by the previous-period and data coverage specs. */
@@ -1672,46 +1692,27 @@ export const prevSpec = (key) => {
     description: `${t.title}, with the change against the previous period of the same length. Generated from PREV_TILES in scripts/lib/panels.mjs: do not edit.`,
     autosize: { type: 'fit', contains: 'padding' },
     padding: 0,
-    signals: [{ name: 'pad', value: TILE_PAD }, { name: 'lookbackMs', value: PREV_LOOKBACK_DAYS * 864e5 }],
-    data: [{
-      name: 'tile',
-      url: {
-        index: DEFAULT_STREAM,
-        body: {
-          size: 0, track_total_hits: false,
-          query: { bool: {
-            must: ['%dashboard_context-must_clause%',
-              { range: { '@timestamp': { gte: `now-${PREV_LOOKBACK_DAYS}d`, lte: { '%timefilter%': 'max' }, format: 'epoch_millis' } } }],
-            must_not: ['%dashboard_context-must_not_clause%'],
-            filter: ['%dashboard_context-filter_clause%', ...t.dsl],
-          } },
-          aggs: {
-            split: { range: {
-              script: {
-                source: "long t = doc['@timestamp'].value.toInstant().toEpochMilli(); long s = params.s; long e = params.e; return t > e ? 2 : (t > s ? 1 : (t > s - (e - s) ? 0 : -1));",
-                params: { s: { '%timefilter%': 'min' }, e: { '%timefilter%': 'max' } },
-              },
-              keyed: true,
-              ranges: [{ key: 'prev', from: 0, to: 1 }, { key: 'cur', from: 1, to: 2 }],
-            } },
-            window: { range: { field: '@timestamp', keyed: true, ranges: [{ key: 'w', from: { '%timefilter%': 'min' }, to: { '%timefilter%': 'max' } }] } },
-            stream: { global: {}, aggs: { first: { min: { field: '@timestamp' } } } },
-          },
-        },
+    signals: [
+      { name: 'pad', value: TILE_PAD },
+      { name: 'lookbackMs', value: PREV_LOOKBACK_DAYS * 864e5 },
+      // The stream's first event in the lookback, in ms; null on an empty stream (the column is then dropped).
+      { name: 't0', value: null, update: "length(data('stream')) && isValid(data('stream')[0].t0) ? data('stream')[0].t0 : null" },
+    ],
+    data: [
+      { name: 'stream', url: { '%type%': 'esql', query: prevStreamQuery() } },
+      {
+        name: 'tile',
+        url: { '%type%': 'esql', '%context%': true, query: prevQuery(key) },
+        transform: [
+          { type: 'formula', as: 'len', expr: '(datum.e - datum.s) / 1000' },
+          { type: 'formula', as: 'span', expr: SPAN },
+          { type: 'formula', as: 'full', expr: 'isValid(t0) && datum.s - datum.len * 1000 >= max(t0, now() - lookbackMs)' },
+          { type: 'formula', as: 'pct', expr: 'datum.prev > 0 ? round((datum.cur - datum.prev) * 100 / datum.prev) : 0' },
+          { type: 'formula', as: 'value', expr: "format(datum.cur, ',d')" },
+          { type: 'formula', as: 'detail', expr: PREV_LINE },
+        ],
       },
-      format: { property: 'aggregations' },
-      transform: [
-        { type: 'formula', as: 'cur', expr: 'datum.split.buckets.cur.doc_count' },
-        { type: 'formula', as: 'prev', expr: 'datum.split.buckets.prev.doc_count' },
-        { type: 'formula', as: 's', expr: 'datum.window.buckets.w.from' },
-        { type: 'formula', as: 'len', expr: '(datum.window.buckets.w.to - datum.s) / 1000' },
-        { type: 'formula', as: 'span', expr: SPAN },
-        { type: 'formula', as: 'full', expr: 'isValid(datum.stream.first.value) && datum.s - datum.len * 1000 >= max(datum.stream.first.value, now() - lookbackMs)' },
-        { type: 'formula', as: 'pct', expr: 'datum.prev > 0 ? round((datum.cur - datum.prev) * 100 / datum.prev) : 0' },
-        { type: 'formula', as: 'value', expr: "format(datum.cur, ',d')" },
-        { type: 'formula', as: 'detail', expr: PREV_LINE },
-      ],
-    }],
+    ],
     marks: tileMarks(t.title),
   };
 };

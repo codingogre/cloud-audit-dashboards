@@ -1,5 +1,6 @@
 /**
- * Deploys Vega visualizations and ES|QL Discover sessions with STABLE ids.
+ * Deploys Vega visualizations and ES|QL Discover sessions with STABLE ids, and the ES|QL view the prior-period
+ * tiles read (lib/view.mjs) — the one Elasticsearch object the suite creates.
  *
  * The generic /api/saved_objects CRUD API is disabled on serverless, so everything goes
  * through _import. Stable ids matter: dashboards reference these by id, so an
@@ -13,6 +14,7 @@ import { writeTileSpecs, retentionText, COVERAGE_DEFAULT_RETENTION } from './lib
 import { dataViewObject } from './lib/controls.mjs';
 import { stableUuid } from './lib/ids.mjs';
 import { success, detail, warn } from './lib/log.mjs';
+import { putView } from './lib/view.mjs';
 
 const titleCase = (s) => s.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
@@ -117,6 +119,9 @@ async function retention() {
 
 export async function run() {
   writeTileSpecs();
+  // The prior-period tiles read the events view (lib/view.mjs), so it exists before any spec that names it.
+  const view = await putView();
+  detail(`ES|QL view ${view.name}: ${view.query}`);
   const signals = { retention: await retention() };
   detail(`coverage tile: ${signals.retention}`);
   const objects = [
@@ -126,6 +131,6 @@ export async function run() {
   ];
   const res = await kb.importObjects(objects);
   detail(`${res.successCount} objects imported into the Default space`);
-  success(`${objects.filter((o) => o.type === 'visualization').length} Vega visualizations, ${objects.filter((o) => o.type === 'search').length} Discover sessions`);
+  success(`${objects.filter((o) => o.type === 'visualization').length} Vega visualizations, ${objects.filter((o) => o.type === 'search').length} Discover sessions, ES|QL view ${view.name}`);
   return objects;
 }

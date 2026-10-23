@@ -92,7 +92,7 @@ export function build() {
   // Platform Volume is opt-in (lib/suite.mjs): a description may point at it only when it is deployed.
   const pv = isDeployed('06-platform-volume');
   const P = [
-    // A DSL Vega tile with a previous-period line (PREV_TILES in panels.mjs); --lint holds its count to
+    // An ES|QL Vega tile on the events view with a previous-period line (PREV_TILES in panels.mjs); --lint holds both counts to
     // the ES|QL `FROM … | TIME | STATS COUNT(*)` it replaced.
     prevKpi(0, 0, 8, 5, 'total-events',
       'Every audited event in range, routine machine traffic included. Compare with Signal events to see how much the noise gate removes.'),

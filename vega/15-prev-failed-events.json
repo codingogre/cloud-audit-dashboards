@@ -14,139 +14,33 @@
     {
       "name": "lookbackMs",
       "value": 1296000000
+    },
+    {
+      "name": "t0",
+      "value": null,
+      "update": "length(data('stream')) && isValid(data('stream')[0].t0) ? data('stream')[0].t0 : null"
     }
   ],
   "data": [
     {
+      "name": "stream",
+      "url": {
+        "%type%": "esql",
+        "query": "FROM cloud-audit-events-view | WHERE event_time >= NOW() - 15 days | STATS t0 = MIN(event_time) | EVAL t0 = TO_LONG(t0)"
+      }
+    },
+    {
       "name": "tile",
       "url": {
-        "index": "logs-elastic_cloud.serverless_audit.otel-default",
-        "body": {
-          "size": 0,
-          "track_total_hits": false,
-          "query": {
-            "bool": {
-              "must": [
-                "%dashboard_context-must_clause%",
-                {
-                  "range": {
-                    "@timestamp": {
-                      "gte": "now-15d",
-                      "lte": {
-                        "%timefilter%": "max"
-                      },
-                      "format": "epoch_millis"
-                    }
-                  }
-                }
-              ],
-              "must_not": [
-                "%dashboard_context-must_not_clause%"
-              ],
-              "filter": [
-                "%dashboard_context-filter_clause%",
-                {
-                  "bool": {
-                    "should": [
-                      {
-                        "term": {
-                          "event.outcome": "failure"
-                        }
-                      },
-                      {
-                        "term": {
-                          "event.action": "anonymous_access_denied"
-                        }
-                      }
-                    ],
-                    "minimum_should_match": 1
-                  }
-                }
-              ]
-            }
-          },
-          "aggs": {
-            "split": {
-              "range": {
-                "script": {
-                  "source": "long t = doc['@timestamp'].value.toInstant().toEpochMilli(); long s = params.s; long e = params.e; return t > e ? 2 : (t > s ? 1 : (t > s - (e - s) ? 0 : -1));",
-                  "params": {
-                    "s": {
-                      "%timefilter%": "min"
-                    },
-                    "e": {
-                      "%timefilter%": "max"
-                    }
-                  }
-                },
-                "keyed": true,
-                "ranges": [
-                  {
-                    "key": "prev",
-                    "from": 0,
-                    "to": 1
-                  },
-                  {
-                    "key": "cur",
-                    "from": 1,
-                    "to": 2
-                  }
-                ]
-              }
-            },
-            "window": {
-              "range": {
-                "field": "@timestamp",
-                "keyed": true,
-                "ranges": [
-                  {
-                    "key": "w",
-                    "from": {
-                      "%timefilter%": "min"
-                    },
-                    "to": {
-                      "%timefilter%": "max"
-                    }
-                  }
-                ]
-              }
-            },
-            "stream": {
-              "global": {},
-              "aggs": {
-                "first": {
-                  "min": {
-                    "field": "@timestamp"
-                  }
-                }
-              }
-            }
-          }
-        }
-      },
-      "format": {
-        "property": "aggregations"
+        "%type%": "esql",
+        "%context%": true,
+        "query": "SET unmapped_fields=\"nullify\"; FROM cloud-audit-events-view | WHERE event_time <= TO_DATETIME(?_tend) AND event_time > TO_DATETIME(2 * TO_LONG(TO_DATETIME(?_tstart)) - TO_LONG(TO_DATETIME(?_tend))) AND event_time >= NOW() - 15 days AND ((?identity == \"\" OR ?identity == \"Any\") OR user.email == ?identity OR api_key.name == ?identity OR user.name == ?identity OR user.name == REPLACE(REPLACE(?identity, \" · Cloud API key$\", \"\"), \"^Unnamed key of \", \"\") OR (?identity == \"(unattributed)\" AND user.name IS NULL)) AND ((?identity_kind == \"\" OR ?identity_kind == \"Any\") OR (?identity_kind == \"Person\" AND user.email IS NOT NULL) OR (?identity_kind == \"Elasticsearch API key\" AND user.email IS NULL AND api_key.name IS NOT NULL) OR (?identity_kind == \"Elasticsearch API key (name not recorded)\" AND user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_es_api_key\") OR (?identity_kind == \"Cloud API key\" AND user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_cloud_api_key\") OR (?identity_kind == \"Service account\" AND user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_service_account\") OR (?identity_kind == \"Failed sign-in\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\",\"_service_account\")) AND event.action IN (\"authentication_failed\",\"anonymous_access_denied\")) OR (?identity_kind == \"Unattributed\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\",\"_service_account\")) AND (event.action IS NULL OR NOT event.action IN (\"authentication_failed\",\"anonymous_access_denied\")) AND user.name IS NULL) OR (?identity_kind == \"Other\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\",\"_service_account\")) AND (event.action IS NULL OR NOT event.action IN (\"authentication_failed\",\"anonymous_access_denied\")) AND user.name IS NOT NULL)) AND ((?identity == \"\" OR ?identity == \"Any\") OR user.email == ?identity OR (user.email IS NULL AND api_key.name == ?identity) OR (user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_cloud_api_key\" AND user.name == REPLACE(?identity, \" · Cloud API key$\", \"\")) OR (user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_es_api_key\" AND user.name == REPLACE(?identity, \"^Unnamed key of \", \"\")) OR (user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\")) AND user.name == ?identity) OR (?identity == \"(unattributed)\" AND user.email IS NULL AND api_key.name IS NULL AND user.name IS NULL)) | WHERE event.outcome == \"failure\" OR event.action == \"anonymous_access_denied\" | STATS cur = COUNT(*) WHERE event_time > TO_DATETIME(?_tstart), prev = COUNT(*) WHERE event_time <= TO_DATETIME(?_tstart) | EVAL s = TO_LONG(TO_DATETIME(?_tstart)), e = TO_LONG(TO_DATETIME(?_tend))"
       },
       "transform": [
         {
           "type": "formula",
-          "as": "cur",
-          "expr": "datum.split.buckets.cur.doc_count"
-        },
-        {
-          "type": "formula",
-          "as": "prev",
-          "expr": "datum.split.buckets.prev.doc_count"
-        },
-        {
-          "type": "formula",
-          "as": "s",
-          "expr": "datum.window.buckets.w.from"
-        },
-        {
-          "type": "formula",
           "as": "len",
-          "expr": "(datum.window.buckets.w.to - datum.s) / 1000"
+          "expr": "(datum.e - datum.s) / 1000"
         },
         {
           "type": "formula",
@@ -156,7 +50,7 @@
         {
           "type": "formula",
           "as": "full",
-          "expr": "isValid(datum.stream.first.value) && datum.s - datum.len * 1000 >= max(datum.stream.first.value, now() - lookbackMs)"
+          "expr": "isValid(t0) && datum.s - datum.len * 1000 >= max(t0, now() - lookbackMs)"
         },
         {
           "type": "formula",
