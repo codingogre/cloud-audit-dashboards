@@ -31,51 +31,26 @@
   "data": {
     "name": "hours",
     "url": {
-      "index": "logs-elastic_cloud.serverless_audit.otel-default",
-      "body": {
-        "size": 0,
-        "query": {
-          "bool": {
-            "must": [
-              "%dashboard_context-must_clause%",
-              {
-                "range": {
-                  "@timestamp": {
-                    "gte": "now-167h/h",
-                    "lte": "now"
-                  }
-                }
-              }
-            ],
-            "must_not": [
-              "%dashboard_context-must_not_clause%"
-            ],
-            "filter": [
-              "%dashboard_context-filter_clause%"
-            ]
-          }
-        },
-        "aggs": {
-          "hours": {
-            "date_histogram": {
-              "field": "@timestamp",
-              "fixed_interval": "1h",
-              "time_zone": "UTC",
-              "min_doc_count": 0,
-              "extended_bounds": {
-                "min": "now-167h/h",
-                "max": "now"
-              }
-            }
-          }
-        }
-      }
-    },
-    "format": {
-      "property": "aggregations.hours.buckets"
+      "%type%": "esql",
+      "%timefield%": "@timestamp",
+      "%context%": true,
+      "query": "SET unmapped_fields=\"nullify\"; FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart AND ((?identity == \"\" OR ?identity == \"Any\") OR user.email == ?identity OR api_key.name == ?identity OR user.name == ?identity OR user.name == REPLACE(REPLACE(?identity, \" · Cloud API key$\", \"\"), \"^Unnamed key of \", \"\") OR (?identity == \"(unattributed)\" AND user.name IS NULL)) AND ((?identity_kind == \"\" OR ?identity_kind == \"Any\") OR (?identity_kind == \"Person\" AND user.email IS NOT NULL) OR (?identity_kind == \"Elasticsearch API key\" AND user.email IS NULL AND api_key.name IS NOT NULL) OR (?identity_kind == \"Elasticsearch API key (name not recorded)\" AND user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_es_api_key\") OR (?identity_kind == \"Cloud API key\" AND user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_cloud_api_key\") OR (?identity_kind == \"Service account\" AND user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_service_account\") OR (?identity_kind == \"Failed sign-in\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\",\"_service_account\")) AND event.action IN (\"authentication_failed\",\"anonymous_access_denied\")) OR (?identity_kind == \"Unattributed\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\",\"_service_account\")) AND (event.action IS NULL OR NOT event.action IN (\"authentication_failed\",\"anonymous_access_denied\")) AND user.name IS NULL) OR (?identity_kind == \"Other\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\",\"_service_account\")) AND (event.action IS NULL OR NOT event.action IN (\"authentication_failed\",\"anonymous_access_denied\")) AND user.name IS NOT NULL)) AND ((?identity == \"\" OR ?identity == \"Any\") OR user.email == ?identity OR (user.email IS NULL AND api_key.name == ?identity) OR (user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_cloud_api_key\" AND user.name == REPLACE(?identity, \" · Cloud API key$\", \"\")) OR (user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_es_api_key\" AND user.name == REPLACE(?identity, \"^Unnamed key of \", \"\")) OR (user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\")) AND user.name == ?identity) OR (?identity == \"(unattributed)\" AND user.email IS NULL AND api_key.name IS NULL AND user.name IS NULL)) | STATS doc_count = COUNT(*) BY hour = DATE_TRUNC(1 hour, @timestamp) | EVAL ago = DATE_DIFF(\"hour\", hour, DATE_TRUNC(1 hour, TO_DATETIME(?_tend))) | WHERE ago <= 167 | KEEP ago, doc_count"
     }
   },
   "transform": [
+    {
+      "impute": "doc_count",
+      "key": "ago",
+      "keyvals": {
+        "start": 0,
+        "stop": 168
+      },
+      "value": 0
+    },
+    {
+      "calculate": "(floor(now() / 3600000) - datum.ago) * 3600000",
+      "as": "key"
+    },
     {
       "calculate": "utchours(datum.key)",
       "as": "hour"

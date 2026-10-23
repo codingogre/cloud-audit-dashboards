@@ -10,15 +10,20 @@
  * TIME BINDING is a property of the panel type, not a choice, and it decides what a panel can show:
  *
  *   Lens ES|QL (kpi/xy/table/pie)      always follows the time picker
- *   Vega, "%type%": "esql"             always follows it — omitting %timefield% does NOT opt out:
- *                                      Kibana looks the index's time field up and ANDs the range
+ *   Vega, "%type%": "esql"             follows the PANEL's range — omitting %timefield% does NOT opt out:
+ *                                      Kibana looks the index's time field up and ANDs the range. That
+ *                                      range is the picker's unless the panel carries its own
+ *                                      config.time_range (VEGA_WINDOWS): then ?_tstart/?_tend AND the
+ *                                      hidden filter are that window, and Kibana badges the panel with it
  *   Vega, DSL (url.index + url.body)   follows it ONLY if %timefield% is set, so a DSL spec with an
  *                                      explicit @timestamp range and the %dashboard_context-*%
  *                                      placeholders keeps the control-bar filters AND its own window
  *
- * That last row is the only way a panel on a now-24h dashboard can show a 7-day baseline, a previous
- * period (PREV_TILES) or the stream's first event (vega/14). It was read from the 9.6 source
- * (es_query_parser.ts / esql_query_parser.ts).
+ * A fixed window on a now-24h dashboard (Actor 360's 7-day baseline, the 24-hour session timeline) is the
+ * middle row with a VEGA_WINDOWS entry (1.0.5.1): an ES|QL spec bounded by TIME, so it also follows the
+ * identity dropdowns, which no DSL spec can read. The last row is left for what a panel range cannot say:
+ * a previous period (PREV_TILES) and the stream's first event (vega/14). Read from the 9.6 source
+ * (es_query_parser.ts / esql_query_parser.ts) and confirmed on live dashboards.
  *
  * THE HIDDEN LENS TIME FILTER (1.0.5, captured in the browser). "Lens ES|QL always follows the time
  * picker" is stronger than it sounds: every Lens ES|QL request carries a DSL range filter on @timestamp
@@ -29,8 +34,8 @@
  * layers are stored with no timeField and are still sent the filter). Pointing the comparison at another
  * field only moves the filter there. So no Lens panel can read an event outside the picker: a
  * `WHERE @timestamp > ?_tstart - 1 day` previous-period count comes back 0, and a lower bound below
- * ?_tstart is silently cut at ?_tstart. A previous period, or anything outside the range, is a DSL
- * Vega spec (last row above) or nothing.
+ * ?_tstart is silently cut at ?_tstart. A fixed window is a panel range (VEGA_WINDOWS); a previous period,
+ * or anything else outside the range, is a DSL Vega spec (last row above) or nothing.
  *
  * QUERY SHAPE decides cost far more than window size on the audit stream. Measured on the 2.6M-event
  * perf replica (`./audit --perf`), alternating runs on a quiet cluster:
@@ -1517,11 +1522,48 @@ export const regionMap = (x, y, w, h, title, q, regionCol, metricCol, desc) => (
   },
 });
 
+/**
+ * FIXED-WINDOW VEGA (1.0.5.1). A Vega chart that must ignore the time picker (Actor 360's "Is this normal?"
+ * row over 7 days, the 24-hour session timeline) is an ES|QL spec bounded by TIME, so it follows the identity
+ * dropdowns, on a panel with its own time range. Kibana sends that range as ?_tstart/?_tend and as the hidden
+ * range filter, and badges the panel with it ("Last 7 days"; a viewer can click the badge to change it).
+ *
+ * This table is the one place such a window is declared: vega() puts it on every panel showing the spec, and
+ * --lint (esql.mjs) and --perf run the spec's queries over it instead of the picker's window, so the panel and
+ * its checks cannot drift. layout.mjs fails a panel range that is not this table's, and a listed spec that is
+ * not ES|QL bounded by TIME. Only `now-<n><m|h|d>` → `now` (windowMs()).
+ *
+ * The hourly charts (08, 09) take "now-7d", not the DSL's "now-167h/h": a rounded range badges as "Last 167
+ * hours rounded to the hour", ~235px of title. They count BY DATE_TRUNC(1 hour) and keep the 168 hours ending
+ * with the one now filling (HOUR_AGO, `ago` 0–167): the same cells as the DSL histogram, to the event.
+ */
+export const VEGA_WINDOWS = {
+  '08-actor-baseline-band': { from: 'now-7d', to: 'now' },
+  '09-activity-punchcard': { from: 'now-7d', to: 'now' },
+  '12-actor-cohort': { from: 'now-7d', to: 'now' },
+  '13-session-gantt': { from: 'now-24h', to: 'now' },
+};
+const WINDOW_UNIT = { m: 60e3, h: 3600e3, d: 864e5 };
+/** A VEGA_WINDOWS range's length in ms. Throws on a shape Kibana and the linters could read differently. */
+export const windowMs = ({ from, to }) => {
+  const m = /^now-(\d+)([mhd])$/.exec(from);
+  if (!m || to !== 'now') throw new Error(`fixed window ${JSON.stringify({ from, to })}: use { from: 'now-<n><m|h|d>', to: 'now' }`);
+  return Number(m[1]) * WINDOW_UNIT[m[2]];
+};
+/** The VEGA_WINDOWS entry for a spec path or ref ('vega/08-….json' or '08-…'), or undefined. */
+export const fixedWindow = (src) => VEGA_WINDOWS[String(src).replace(/^vega\//, '').replace(/\.json$/, '')];
+/**
+ * An hourly fixed-window spec's hour, counted back from the one now filling (0) to the first of the seven
+ * days (167). Evaluated on grouped rows, after `STATS … BY hour = DATE_TRUNC(1 hour, @timestamp)`.
+ */
+export const HOUR_AGO = 'ago = DATE_DIFF("hour", hour, DATE_TRUNC(1 hour, TO_DATETIME(?_tend)))';
+
 /** Vega panels are legacy `visualization` saved objects; see dashboards.mjs repointVega(). */
-export const vega = (x, y, w, h, ref, title, desc) => ({
-  type: 'vis', id: nid('vega'), grid: { x, y, w, h },
-  config: { ref_id: objId('vega', ref), title, description: desc },
-});
+export const vega = (x, y, w, h, ref, title, desc) => {
+  const config = { ref_id: objId('vega', ref), title, description: desc };
+  if (VEGA_WINDOWS[ref]) config.time_range = { ...VEGA_WINDOWS[ref] };
+  return { type: 'vis', id: nid('vega'), grid: { x, y, w, h }, config };
+};
 
 /**
  * PREVIOUS-PERIOD TILES (1.0.5). A headline count with a second line comparing it with the period of the

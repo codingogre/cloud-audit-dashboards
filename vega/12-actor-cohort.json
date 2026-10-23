@@ -27,120 +27,28 @@
   },
   "data": [
     {
+      "name": "whole",
+      "url": {
+        "%type%": "esql",
+        "%timefield%": "@timestamp",
+        "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE user.email IS NOT NULL | STATS events = COUNT(*), actions = COUNT_DISTINCT(event.action), kinds = COUNT_DISTINCT(kibana.saved_object.type) BY key = user.email | SORT events DESC, key | LIMIT 40"
+      }
+    },
+    {
       "name": "estate",
       "url": {
-        "index": "logs-elastic_cloud.serverless_audit.otel-default",
-        "body": {
-          "size": 0,
-          "query": {
-            "range": {
-              "@timestamp": {
-                "gte": "now-7d",
-                "lte": "now"
-              }
-            }
-          },
-          "aggs": {
-            "people": {
-              "terms": {
-                "field": "user.email",
-                "size": 40
-              },
-              "aggs": {
-                "actions": {
-                  "cardinality": {
-                    "field": "event.action",
-                    "precision_threshold": 100
-                  }
-                },
-                "objtypes": {
-                  "cardinality": {
-                    "field": "kibana.saved_object.type",
-                    "precision_threshold": 100
-                  }
-                }
-              }
-            },
-            "projects": {
-              "terms": {
-                "field": "project.name",
-                "size": 200
-              },
-              "aggs": {
-                "people": {
-                  "terms": {
-                    "field": "user.email",
-                    "size": 40
-                  },
-                  "aggs": {
-                    "actions": {
-                      "cardinality": {
-                        "field": "event.action",
-                        "precision_threshold": 100
-                      }
-                    },
-                    "objtypes": {
-                      "cardinality": {
-                        "field": "kibana.saved_object.type",
-                        "precision_threshold": 100
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      },
-      "format": {
-        "property": "aggregations"
+        "%type%": "esql",
+        "%timefield%": "@timestamp",
+        "query": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS events = COUNT(*), actions = COUNT_DISTINCT(event.action) WHERE user.email IS NOT NULL, kinds = COUNT_DISTINCT(kibana.saved_object.type) WHERE user.email IS NOT NULL BY project = project.name, key = user.email | LIMIT 10000"
       }
     },
     {
       "name": "scope",
       "url": {
-        "index": "logs-elastic_cloud.serverless_audit.otel-default",
-        "body": {
-          "size": 0,
-          "query": {
-            "bool": {
-              "must": [
-                "%dashboard_context-must_clause%",
-                {
-                  "range": {
-                    "@timestamp": {
-                      "gte": "now-7d",
-                      "lte": "now"
-                    }
-                  }
-                }
-              ],
-              "must_not": [
-                "%dashboard_context-must_not_clause%"
-              ],
-              "filter": [
-                "%dashboard_context-filter_clause%"
-              ]
-            }
-          },
-          "aggs": {
-            "people": {
-              "terms": {
-                "field": "user.email",
-                "size": 40
-              }
-            },
-            "projects": {
-              "terms": {
-                "field": "project.name",
-                "size": 200
-              }
-            }
-          }
-        }
-      },
-      "format": {
-        "property": "aggregations"
+        "%type%": "esql",
+        "%timefield%": "@timestamp",
+        "%context%": true,
+        "query": "SET unmapped_fields=\"nullify\"; FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart AND ((?identity == \"\" OR ?identity == \"Any\") OR user.email == ?identity OR api_key.name == ?identity OR user.name == ?identity OR user.name == REPLACE(REPLACE(?identity, \" · Cloud API key$\", \"\"), \"^Unnamed key of \", \"\") OR (?identity == \"(unattributed)\" AND user.name IS NULL)) AND ((?identity_kind == \"\" OR ?identity_kind == \"Any\") OR (?identity_kind == \"Person\" AND user.email IS NOT NULL) OR (?identity_kind == \"Elasticsearch API key\" AND user.email IS NULL AND api_key.name IS NOT NULL) OR (?identity_kind == \"Elasticsearch API key (name not recorded)\" AND user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_es_api_key\") OR (?identity_kind == \"Cloud API key\" AND user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_cloud_api_key\") OR (?identity_kind == \"Service account\" AND user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_service_account\") OR (?identity_kind == \"Failed sign-in\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\",\"_service_account\")) AND event.action IN (\"authentication_failed\",\"anonymous_access_denied\")) OR (?identity_kind == \"Unattributed\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\",\"_service_account\")) AND (event.action IS NULL OR NOT event.action IN (\"authentication_failed\",\"anonymous_access_denied\")) AND user.name IS NULL) OR (?identity_kind == \"Other\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\",\"_service_account\")) AND (event.action IS NULL OR NOT event.action IN (\"authentication_failed\",\"anonymous_access_denied\")) AND user.name IS NOT NULL)) AND ((?identity == \"\" OR ?identity == \"Any\") OR user.email == ?identity OR (user.email IS NULL AND api_key.name == ?identity) OR (user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_cloud_api_key\" AND user.name == REPLACE(?identity, \" · Cloud API key$\", \"\")) OR (user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_es_api_key\" AND user.name == REPLACE(?identity, \"^Unnamed key of \", \"\")) OR (user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\")) AND user.name == ?identity) OR (?identity == \"(unattributed)\" AND user.email IS NULL AND api_key.name IS NULL AND user.name IS NULL)) | STATS n = COUNT(*) BY project = project.name, key = user.email | LIMIT 10000"
       }
     },
     {
@@ -148,18 +56,14 @@
       "source": "estate",
       "transform": [
         {
-          "type": "flatten",
-          "fields": [
-            "projects.buckets"
-          ],
-          "as": [
-            "p"
-          ]
+          "type": "filter",
+          "expr": "isValid(datum.project)"
         },
         {
-          "type": "formula",
-          "as": "project",
-          "expr": "datum.p.key"
+          "type": "aggregate",
+          "groupby": [
+            "project"
+          ]
         }
       ]
     },
@@ -168,18 +72,14 @@
       "source": "scope",
       "transform": [
         {
-          "type": "flatten",
-          "fields": [
-            "projects.buckets"
-          ],
-          "as": [
-            "p"
-          ]
+          "type": "filter",
+          "expr": "isValid(datum.project)"
         },
         {
-          "type": "formula",
-          "as": "project",
-          "expr": "datum.p.key"
+          "type": "aggregate",
+          "groupby": [
+            "project"
+          ]
         }
       ]
     },
@@ -188,18 +88,46 @@
       "source": "scope",
       "transform": [
         {
-          "type": "flatten",
+          "type": "filter",
+          "expr": "isValid(datum.key)"
+        },
+        {
+          "type": "aggregate",
+          "groupby": [
+            "key"
+          ],
           "fields": [
-            "people.buckets"
+            "n"
+          ],
+          "ops": [
+            "sum"
           ],
           "as": [
-            "b"
+            "events"
           ]
         },
         {
-          "type": "formula",
-          "as": "key",
-          "expr": "datum.b.key"
+          "type": "window",
+          "sort": {
+            "field": [
+              "events",
+              "key"
+            ],
+            "order": [
+              "descending",
+              "ascending"
+            ]
+          },
+          "ops": [
+            "row_number"
+          ],
+          "as": [
+            "busiest"
+          ]
+        },
+        {
+          "type": "filter",
+          "expr": "datum.busiest <= 40"
         }
       ]
     },
@@ -215,79 +143,47 @@
     },
     {
       "name": "exactRows",
-      "source": "estate",
+      "source": "whole",
       "transform": [
         {
           "type": "filter",
           "expr": "whole"
-        },
-        {
-          "type": "flatten",
-          "fields": [
-            "people.buckets"
-          ],
-          "as": [
-            "b"
-          ]
-        },
-        {
-          "type": "formula",
-          "as": "key",
-          "expr": "datum.b.key"
-        },
-        {
-          "type": "formula",
-          "as": "events",
-          "expr": "datum.b.doc_count"
-        },
-        {
-          "type": "formula",
-          "as": "actions",
-          "expr": "datum.b.actions.value"
-        },
-        {
-          "type": "formula",
-          "as": "kinds",
-          "expr": "datum.b.objtypes.value"
         }
       ]
     },
     {
       "name": "projectRows",
-      "source": "inScope",
+      "source": "estate",
       "transform": [
         {
           "type": "filter",
-          "expr": "!whole"
+          "expr": "!whole && isValid(datum.key) && indata('scopeProjects', 'project', datum.project)"
         },
         {
-          "type": "flatten",
-          "fields": [
-            "p.people.buckets"
+          "type": "window",
+          "groupby": [
+            "project"
+          ],
+          "sort": {
+            "field": [
+              "events",
+              "key"
+            ],
+            "order": [
+              "descending",
+              "ascending"
+            ]
+          },
+          "ops": [
+            "row_number"
           ],
           "as": [
-            "b"
+            "inProject"
           ]
         },
         {
-          "type": "formula",
-          "as": "key",
-          "expr": "datum.b.key"
-        },
-        {
-          "type": "formula",
-          "as": "ev",
-          "expr": "datum.b.doc_count"
-        },
-        {
-          "type": "formula",
-          "as": "ac",
-          "expr": "datum.b.actions.value"
-        },
-        {
-          "type": "formula",
-          "as": "ok",
-          "expr": "datum.b.objtypes.value"
+          "type": "filter",
+          "expr": "datum.inProject <= 40"
         },
         {
           "type": "aggregate",
@@ -295,9 +191,9 @@
             "key"
           ],
           "fields": [
-            "ev",
-            "ac",
-            "ok"
+            "events",
+            "actions",
+            "kinds"
           ],
           "ops": [
             "sum",

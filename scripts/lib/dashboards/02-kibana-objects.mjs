@@ -251,9 +251,9 @@ export function build() {
       { scroll: true }),
     // The session timeline from Actor 360 (vega/13, one spec, so the two pages cannot disagree), directly
     // above the records it indexes: a click on a bar pins that session and zooms the picker to it, which
-    // narrows Session reconstruction beneath. A DSL spec on its own fixed 24 hours, so the title says so
-    // on a page where every other panel follows the picker.
-    vega(0, 70, 48, 7, '13-session-gantt', 'Kibana browser sessions · fixed last 24 hours, your time zone', specDescription('13-session-gantt')),
+    // narrows Session reconstruction beneath. On its own fixed 24 hours (VEGA_WINDOWS) on a page where every
+    // other panel follows the picker: Kibana badges the panel "Last 24 hours", so the title does not repeat it.
+    vega(0, 70, 48, 7, '13-session-gantt', 'Kibana browser sessions · your time zone', specDescription('13-session-gantt')),
     sessionRecords(0, 77, 48, 14, 'Session reconstruction',
       'One person’s Kibana session, event by event, newest first: each object they opened or changed, in Kibana’s own words. Click a session bar above, or a Session cell, to narrow it to one session.',
       { empty: 'empty when no browser session opened or changed anything' }),

@@ -342,8 +342,9 @@ async function cmdSeed(args) {
  * Bind a DSL spec as Kibana would for a given picker window. es_query_parser.ts applies the picker
  * ONLY when the spec sets %timefield%; otherwise the spec's own explicit range is the whole truth and
  * the picker changes nothing (see the TIME BINDING table in panels.mjs). Every DSL spec in the repo
- * today is in the second group — they show fixed windows on purpose — though the previous-period tiles
- * read the picker's min/max through %timefilter% placeholders, which are bound to `win` here.
+ * today is in the second group — the coverage tile reads the whole stream on purpose — though the
+ * previous-period tiles read the picker's min/max through %timefilter% placeholders, bound to `win` here.
+ * (The 7-day and 24-hour charts are ES|QL on a panel range since 1.0.5.1: fixedMsOf below.)
  */
 export function bindDsl(body, timefield, stripContext, win, now = Date.now()) {
   // A {"%timefilter%": "min"|"max"} (the previous-period tiles) is the picker's window, as in Kibana.
@@ -353,9 +354,16 @@ export function bindDsl(body, timefield, stripContext, win, now = Date.now()) {
   return { ...b, query: { bool: { filter: [range, ...(b.query ? [b.query] : [])] } } };
 }
 
+/**
+ * A fixed-window ES|QL spec (VEGA_WINDOWS in panels.mjs) gets its panel's range as ?_tstart/?_tend whatever the
+ * picker reads, so it is timed over that window in every --windows pass (and ends at the anchor like the rest).
+ * Set in cmdRun(), once panels.mjs can be loaded against the replica.
+ */
+let fixedMsOf = () => undefined;
+
 async function timeOne(item, win, budgetMs, lib, anchor) {
   const r = item.kind === 'esql'
-    ? await es.esqlRun(lib.bounded(item.q), windowParams(win.ms, anchor), { budgetMs })
+    ? await es.esqlRun(lib.bounded(item.q), windowParams(fixedMsOf(item.src) ?? win.ms, anchor), { budgetMs })
     : await es.searchRun(item.index, bindDsl(item.body, item.timefield, lib.stripContext, win, anchor), { budgetMs });
   return { ms: r.ms, ok: r.ok, cancelled: !!r.cancelled, error: r.ok ? undefined : reasonOf(r).slice(0, 200) };
 }
@@ -388,6 +396,8 @@ async function cmdRun(args) {
   process.env.AUDIT_STREAM = perf;
   const lib = await import('./esql.mjs');
   const { buildAll } = await import('./lib/definitions.mjs');
+  const { fixedWindow, windowMs } = await import('./lib/panels.mjs');
+  fixedMsOf = (src) => (fixedWindow(src) ? windowMs(fixedWindow(src)) : undefined);
   const esqlItems = lib.gatherQueries();
   const dslItems = lib.gatherDsl();
   // If anything still names the live stream the replica is not what is being measured; refuse.
@@ -397,7 +407,7 @@ async function cmdRun(args) {
   let groups = groupByDashboard(buildAll(), esqlItems, dslItems);
   if (only) { const want = only.split(','); groups = groups.filter((g) => want.some((w) => g.name.includes(w))); }
   const unique = new Map(groups.flatMap((g) => g.items).map((x) => [x.key, x]));
-  const followsPicker = (x) => x.kind === 'esql' || !!x.timefield;
+  const followsPicker = (x) => (x.kind === 'esql' && fixedMsOf(x.src) === undefined) || !!x.timefield;
   const fixed = [...unique.values()].filter((x) => !followsPicker(x));
   info(`${esqlItems.length} ES|QL + ${dslItems.length} DSL queries in ${groups.length} groups; budget ${fmtMs(budgetMs)}/query; windows ${windows.map((w) => w.label).join(', ')}`);
   if (fixed.length) detail(`fixed window (picker ignored, same query in every window): ${fixed.map((x) => x.key).join(', ')}`);

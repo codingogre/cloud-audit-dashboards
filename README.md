@@ -431,7 +431,8 @@ Probed against Kibana 9.6 serverless. Several are undocumented and cost real tim
 | Reporting API rejects `pngV2` / `printablePdfV2` | Verification drives Chromium directly |
 | **Every Lens ES\|QL request carries a hidden `@timestamp` range filter for exactly the picker's window**, whether or not the query uses `?_tstart`/`?_tend` (captured in the browser: `"filter":{"bool":{"filter":[{"range":{"@timestamp":{"gte":…,"lte":…}}}]}}` beside the params, on a query that never compares `@timestamp` with `?_tstart`). Kibana adds it for the layer's time field — the column first compared with the params, else `@timestamp` at run time; another column only moves it | No Lens panel can read outside the range: a previous-period count comes back 0, and a lower bound below `?_tstart` is silently cut there (it was on Actor 360's whole-minute window until 1.0.5). The prior-period tiles and *Audit data held* are DSL Vega specs instead (`PREV_TILES`, `coverageSpec()` in `panels.mjs`) |
 | A DSL Vega body can read the picker without being bound to it: `{"%timefilter%": "min"}` / `"max"` anywhere in `body.query` or `body.aggs` becomes the window's start or end in ms (a script's `params` included) | The prior-period tiles take their own range from a 15-day lookback through `"max"`, and split events into prior and current by `min`/`max` in a script `range` aggregation. `--lint` binds the placeholders to a fixed window and checks each tile's count against its ES\|QL twin (*parity*) |
-| An ES\|QL Vega spec **always** follows the time picker — omitting `%timefield%` does not opt out | A panel that needs its own window (a 7-day baseline on a 24h dashboard) is a **DSL** Vega spec: `url.index` + `url.body` with an explicit `@timestamp` range and the `%dashboard_context-*%` placeholders keeps the control-bar filters and ignores the picker. Confirmed on a live dashboard |
+| An ES\|QL Vega spec **always** follows its panel's time range — omitting `%timefield%` does not opt out — and that is the picker's unless the panel has its own | A panel that needs its own window (a 7-day baseline on a 24h dashboard) is an ES\|QL spec bounded by `TIME` on a `vis` panel with `config.time_range` (`VEGA_WINDOWS` in `panels.mjs`; vega/08, 09, 12, 13): `?_tstart`/`?_tend` and the hidden range filter are then that window, and the identity dropdowns still apply. Kibana badges the panel with the window (*Last 7 days*); a viewer can click it to change the range. The re-point keeps it (stored as `embeddableConfig.time_range`). A rounded range badges long (*Last 167 hours rounded to the hour*), so the hourly charts take `now-7d` and keep their 168 hours in the query. `--lint` and `--perf` run these specs over that window. A **DSL** spec (`url.index` + `url.body`, explicit `@timestamp` range, `%dashboard_context-*%` placeholders) is left for what a panel range cannot express: the prior period and the stream's first event |
+| A Vega ES\|QL dataset gets the dashboard's filters (pills, KQL, classic controls) only with `"%context%": true`, and then all of them | Every ES\|QL spec sets it, except the estate half of 07's cohort (vega/12), which must not be narrowed by the selection: it is grouped by project and the spec keeps the projects the selection's dataset reports, so it still follows the Project control (`TWO_DATASET_SPECS` in `layout.mjs`) |
 | Two **unnamed** DSL datasets in one Vega spec cross their responses — the second gets nothing and the panel shows a bare "Error" | Every DSL dataset carries a unique `name`; `layout.mjs` fails the build otherwise. (Kibana's `es_query_parser` matches results by the result's index, not the request's) |
 | Kibana themes axis, legend and title text, but **not text marks** — an unstyled text mark is `#000` on the dark theme | Full Vega text marks take `style: "guide-label"` / `"guide-title"`, which Kibana colours per theme. Vega-Lite `style` does not reach text marks at all; there, words go in a `title` whose `text` is an expression. Every themed Vega style is the same *subdued* text colour (measured: `rgb(152,168,195)` dark, `rgb(81,99,129)` light), a step softer than a Lens metric's title and number, and a spec cannot read the theme, so the Vega metric tiles' words are that step softer than the Lens tiles beside them |
 | `kibanaAddFilter(query, index)` resolves `index` by data view **title** | Pass `logs-elastic_cloud.serverless_audit.otel-default`; the id `elastic_cloud-audit-logs` renders *Index "elastic_cloud-audit-logs" not found* |
@@ -787,17 +788,19 @@ set too, so the committed files are the default seven; a `--with` run (without `
 `dashboards/06-platform-volume.json` and the eighth nav link to the others.
 
 `--lint` runs before every deploy and executes every query against the cluster with concrete
-`?_tstart` / `?_tend` values, so the exact text that ships is proven to run first. That includes the
-Elasticsearch DSL behind the fixed-window Vega specs, which it runs unfiltered — the expensive case —
-and whose `format.property` path it checks resolves, because a typo there renders an empty panel that
-nothing downstream can see. Each query runs through `es.esqlRun()` / `es.searchRun()`: async
+`?_tstart` / `?_tend` values, so the exact text that ships is proven to run first: the last hour, or a
+fixed-window spec's own window (`VEGA_WINDOWS`), never a window its panel cannot show. That includes the
+Elasticsearch DSL behind the remaining DSL Vega specs (coverage and prior-period tiles), which it runs
+unfiltered — the expensive case — and whose `format.property` path it checks resolves, because a typo there
+renders an empty panel that nothing downstream can see. Each query runs through `es.esqlRun()` / `es.searchRun()`: async
 submission with a budget, cancelled on overrun. Never use a synchronous `/_query` here — it outlives
 a client that gives up, and serverless has no way to stop it. `--lint` also prints anything slower
 than 5s, which is how a panel that passes today is noticed before it times out on a busier day.
 
 Before any query runs, `--lint` checks structure offline: exact grid tessellation, fragment drift
 between the Lens panels and the static ES|QL in Vega and Discover, and the Vega rules above — every
-spec registered, DSL specs windowed, scoped and named, text marks readable in both themes. After the
+spec registered, DSL specs windowed, scoped and named, fixed-window specs ES\|QL on `TIME` with exactly
+their declared panel range (and no other panel carrying one), text marks readable in both themes. After the
 queries it runs the prior-period *parity* check: each `PREV_TILES` tile's DSL and ES\|QL counts over the same
 fixed window must be equal.
 
@@ -831,7 +834,8 @@ Three failures it was built to catch, all real:
 looks as cheap there as a 1-hour one. `./audit --perf seed` copies the live stream into a sibling
 `-perf` data stream under the production template, re-stamped over 7 days. `./audit --perf run` then
 times every dashboard query on it, one at a time and as a concurrent page load per dashboard. Windows
-end at the newest replica document. Each run writes `build/perf-<stamp>/report.json`, and it warns
+end at the newest replica document; a fixed-window spec is timed over its own window in every pass and
+reported as `[fixed window]`. Each run writes `build/perf-<stamp>/report.json`, and it warns
 when ES|QL work is already resident on the dataset, because that load skews every timing.
 
 Measured 2026-10-14 with `./audit --perf run --windows 1h,24h,7d` on a 2,625,300-event replica
