@@ -386,9 +386,12 @@ Probed against Kibana 9.6 serverless. Several are undocumented and cost real tim
 | Metric items accept no per-item `color` | Styling lives at config root |
 | `dashboardLink` targets must already exist | Dashboards deploy in two passes |
 | Reporting API rejects `pngV2` / `printablePdfV2` | Verification drives Chromium directly |
-| **Every Lens ES\|QL request carries a hidden `@timestamp` range filter for exactly the picker's window**, whether or not the query uses `?_tstart`/`?_tend` (captured in the browser: `"filter":{"bool":{"filter":[{"range":{"@timestamp":{"gte":…,"lte":…}}}]}}` beside the params, on a query that never compares `@timestamp` with `?_tstart`). Kibana adds it for the layer's time field — the column first compared with the params, else `@timestamp` at run time; another column only moves it | No Lens panel can read outside the range: a previous-period count comes back 0, and a lower bound below `?_tstart` is silently cut there (it was on Actor 360's whole-minute window until 1.0.5). The prior-period tiles and *Audit data held* are DSL Vega specs instead (`PREV_TILES`, `coverageSpec()` in `panels.mjs`) |
-| A DSL Vega body can read the picker without being bound to it: `{"%timefilter%": "min"}` / `"max"` anywhere in `body.query` or `body.aggs` becomes the window's start or end in ms (a script's `params` included) | The prior-period tiles take their own range from a 15-day lookback through `"max"`, and split events into prior and current by `min`/`max` in a script `range` aggregation. `--lint` binds the placeholders to a fixed window and checks each tile's count against its ES\|QL twin (*parity*) |
-| An ES\|QL Vega spec **always** follows the time picker — omitting `%timefield%` does not opt out | A panel that needs its own window (a 7-day baseline on a 24h dashboard) is a **DSL** Vega spec: `url.index` + `url.body` with an explicit `@timestamp` range and the `%dashboard_context-*%` placeholders keeps the control-bar filters and ignores the picker. Confirmed on a live dashboard |
+| **Every Lens ES\|QL request carries a hidden `@timestamp` range filter for exactly the picker's window**, whether or not the query uses `?_tstart`/`?_tend` (captured in the browser: `"filter":{"bool":{"filter":[{"range":{"@timestamp":{"gte":…,"lte":…}}}]}}` beside the params, on a query that never compares `@timestamp` with `?_tstart`). Kibana adds it for the layer's time field — the column first compared with the params, else `@timestamp` at run time; another column only moves it | No Lens panel can read outside the range: a previous-period count comes back 0, and a lower bound below `?_tstart` is silently cut there (it was on Actor 360's whole-minute window until 1.0.5). The prior-period tiles read the events view instead (next rows), and *Audit data held* is a DSL Vega spec (`coverageSpec()` in `panels.mjs`) |
+| A DSL Vega body can read the picker without being bound to it: `{"%timefilter%": "min"}` / `"max"` anywhere in `body.query` or `body.aggs` becomes the window's start or end in ms (a script's `params` included) | Used by the prior-period tiles until 1.0.5.1; no spec uses it now. `--lint` still binds the placeholders to a fixed window, so one that does is linted rather than rejected |
+| An ES\|QL Vega spec on the stream **always** follows the time picker — omitting `%timefield%` does not opt out. Kibana asks `/internal/esql/get_timefield` which column to filter: the column the query compares bare with `?_tstart`/`?_tend`, else `@timestamp` if the source has one | A panel that needs its own window (a 7-day baseline on a 24h dashboard) is a **DSL** Vega spec: `url.index` + `url.body` with an explicit `@timestamp` range and the `%dashboard_context-*%` placeholders keeps the control-bar filters and ignores the picker. Confirmed on a live dashboard. A DSL spec cannot see the Identity dropdowns, which are ES\|QL variables |
+| An ES\|QL Vega spec on an **ES\|QL view that has no `@timestamp`** gets no time filter: `get_timefield` finds no time column (answers `{}`; the same query with `event_time > ?_tstart` answers `event_time`). Undocumented: it follows a Kibana code comment | The prior-period tiles read `cloud-audit-events-view` (`FROM <stream> \| RENAME @timestamp AS event_time`, `lib/view.mjs`) and bound their own window, so they can count the period before the picker **and** follow the Identity dropdowns, pills, KQL and the control bar (all four tested live). The query never compares a column bare with `?_tstart`/`?_tend` (always `TO_DATETIME(?_tstart)`), never `BUCKET`s on them, never sets `%timefield%` and names no column `first` (reserved): each brings the filter back or breaks the query, and `layout.mjs` fails a spec that does. `--lint` asks `get_timefield` about every query on the view, and `--verify` fails if a tile's request carries a range filter or its prior count differs from the stream's (*Prior-period tiles*) |
+| ES\|QL views are **index-level** resources with their own privileges (measured with narrowed API keys, 1.0.5.1): creating or replacing one needs `create_view` on its name (no read on the stream is checked at create time), deleting it `delete_view`, reading its definition `read_view_metadata`; `manage_view` (or `manage`) covers all three. Querying it needs `read` on the view name **and** on the stream. Cluster `manage` alone grants none of it | `--objects` creates the view and reads it back, `--clean dashboards` deletes it, `--dashboards` and `--verify` fail with "run ./audit --objects" when it is missing or defined differently. **Every dashboard viewer's role needs `read` on `cloud-audit-events-view` too** (a role scoped to `logs-*` alone shows the six prior-period tiles as errors). Only the suite's own admin key was tested end to end; narrower viewer roles in Kibana were not |
+| A query through an ES\|QL view costs more than the same text inlined on wide windows: 0.2–0.37s through the view against ~0.04s inlined over 7–30 days of ~3M events (1.0.5.1, live) | Still small, and capped by the tiles' 15-day lookback. `--perf` times the tiles through a view of the same definition over its replica (`<view>-perf`), not inlined, so the numbers are the view's |
 | Two **unnamed** DSL datasets in one Vega spec cross their responses — the second gets nothing and the panel shows a bare "Error" | Every DSL dataset carries a unique `name`; `layout.mjs` fails the build otherwise. (Kibana's `es_query_parser` matches results by the result's index, not the request's) |
 | Kibana themes axis, legend and title text, but **not text marks** — an unstyled text mark is `#000` on the dark theme | Full Vega text marks take `style: "guide-label"` / `"guide-title"`, which Kibana colours per theme. Vega-Lite `style` does not reach text marks at all; there, words go in a `title` whose `text` is an expression. Every themed Vega style is the same *subdued* text colour (measured: `rgb(152,168,195)` dark, `rgb(81,99,129)` light), a step softer than a Lens metric's title and number, and a spec cannot read the theme, so the Vega metric tiles' words are that step softer than the Lens tiles beside them |
 | `kibanaAddFilter(query, index)` resolves `index` by data view **title** | Pass `logs-elastic_cloud.serverless_audit.otel-default`; the id `elastic_cloud-audit-logs` renders *Index "elastic_cloud-audit-logs" not found* |
@@ -526,19 +529,28 @@ single row the STATS returns (a multi-branch CASE, so never per event). Keep the
 tile shows ~22 characters at 1440px) and quiet, a qualifier of the number under it. `--lint` fails a
 secondary line that stringifies a column without `grouped()`.
 
-**Prior-period tiles (1.0.5).** Six headline counts whose filter is plain — 00 *Total events* and *Failed
-events*, 02 *Kibana events*, 03 *Elasticsearch events*, *ES\|QL queries* and *Access denied* — show the
-change against the same length of time just before the range: *"▲ 34% vs prior 24h"*, *"▼ 50% …"*, *"▲ 15×
-…"* at ten times or more, *"none in prior 24h"*, and *"no full prior 24h"* when the audit stream (or the
-tiles' 15-day lookback) starts inside that earlier period, so a new project never shows a false rise. Lens
-cannot read outside the picker (*Platform constraints*), so each is a generated DSL Vega spec, and its tooltip
-ends with `PREV_NOTE` (*"The line above the number compares it with the prior period of the same length."*); the
-forms above are documented here, not in the tooltip. Each spec
-(`vega/15-prev-*.json` from `PREV_TILES` in `panels.mjs`; edit the table, never the files) is drawn at a Lens
-metric's sizes and offsets, measured at 1920 and 1440 in both themes. `PREV_TILES` holds each tile's ES\|QL
-`WHERE` and DSL clauses side by side, and `--lint` fails if the two count a different number of events over
-a fixed 14-day window. A tile whose filter is not plain DSL (the noise gate, risk, resolved identities,
-distinct counts) stays Lens. *Audit data held* (00, `vega/14`) is the same kind of tile over the whole
+**Prior-period tiles (1.0.5; ES\|QL since 1.0.5.1).** Six headline counts whose filter is plain — 00 *Total
+events* and *Failed events*, 02 *Kibana events*, 03 *Elasticsearch events*, *ES\|QL queries* and *Access
+denied* — show the change against the same length of time just before the range: *"▲ 34% vs prior 24h"*,
+*"▼ 50% …"*, *"▲ 15× …"* at ten times or more, *"none in prior 24h"*, and *"no full prior 24h"* when the audit
+stream (or the tiles' 15-day lookback) starts inside that earlier period, so a new project never shows a false
+rise. Both numbers follow the Identity type and Identity dropdowns, the pills, the KQL bar and the Project and
+Client IP controls: pick a person and the line compares that person's activity with their own prior period.
+Lens cannot read outside the picker (*Platform constraints*), so each is a generated ES\|QL Vega spec on the
+events view (`cloud-audit-events-view`, which `--objects` creates; under `AUDIT_ID_NS=x` it is
+`cloud-audit-x-events-view`): one dataset counts the current and prior windows, carrying `IDENTITY_WHERE`; a
+second, with no filters at all, finds the stream's first event for the *"no full prior"* gate. Its tooltip ends
+with `PREV_NOTE` (*"The line above the number compares it with the prior period of the same length."*); the forms
+above are documented here, not in the tooltip. Each spec (`vega/15-prev-*.json` from `PREV_TILES` in
+`panels.mjs`; edit the table, never the files) is drawn at a Lens metric's sizes and offsets, measured at 1920
+and 1440 in both themes. Three guards hold the route, because it rests on undocumented Kibana behaviour:
+`layout.mjs` rejects a query on the view that would bring the hidden filter back; `--lint` checks each tile's
+current **and** prior counts against plain `TIME`-bounded ES\|QL on the stream over the same windows (the last
+7 days and 24 hours, with the dropdowns empty and again with `AUDIT_IDENTITY` set), any difference failing, and
+asks Kibana's `get_timefield` that no time filter would be attached; and `--verify` captures the tiles'
+`esql_async` requests on every render and fails if one carries a range filter or a prior count differs from the
+stream's, including reading 0 while the picker starts after the stream's first event. A tile whose filter is
+not plain (the noise gate, risk, resolved identities, distinct counts) stays Lens. *Audit data held* (00, `vega/14`) is the same kind of tile over the whole
 stream: days since the first stored event, ignoring the picker and the controls, with the retention the
 data stream's lifecycle reported at `--objects` time.
 
@@ -673,7 +685,8 @@ legends over an empty domain, decade axes, solid placeholder cells, a flat line 
 ./audit --ingest-check   Assert enrichment is actually flowing on live data
 ./audit --lint           Execute every query in the repo — ES|QL and the DSL behind Vega specs — under a
                          time budget that cancels overruns; fails the build on any error
-./audit --objects        Deploy the data view, 20 Vega visualizations and 11 Discover sessions
+./audit --objects        Deploy the data view, 20 Vega visualizations, 11 Discover sessions and the
+                         ES|QL view the prior-period tiles read (cloud-audit-events-view)
 ./audit --dashboards     Generate dashboards/*.json and deploy every dashboard
 ./audit --verify         Render every dashboard in Chromium and inspect for broken panels
                          AUDIT_VERIFY_THEME=light renders light mode (default: dark)
@@ -686,7 +699,7 @@ legends over an empty domain, decade axes, solid placeholder cells, a flat line 
                          scanning. Check it before trusting any timing
 ./audit --deploy         Full pipeline
 ./audit --demo-guide     Generate the presenter runbook from live data (--redact to mask identities)
-./audit --clean <target> Tear down: dashboards | ingest | all
+./audit --clean <target> Tear down: dashboards (and the ES|QL view) | ingest | all
 ./audit --synth <sub>    Synthetic audit activity — see below
 ./audit <command> --with platform-volume
                          Include the opt-in Platform Volume dashboard (AUDIT_WITH=platform-volume)
@@ -730,15 +743,20 @@ than 5s, which is how a panel that passes today is noticed before it times out o
 
 Before any query runs, `--lint` checks structure offline: exact grid tessellation, fragment drift
 between the Lens panels and the static ES|QL in Vega and Discover, and the Vega rules above — every
-spec registered, DSL specs windowed, scoped and named, text marks readable in both themes. After the
-queries it runs the prior-period *parity* check: each `PREV_TILES` tile's DSL and ES\|QL counts over the same
-fixed window must be equal.
+spec registered, DSL specs windowed, scoped and named, text marks readable in both themes, and nothing on
+the events view that would bring Kibana's hidden time filter back. After the queries it runs the prior-period
+*parity* check: each `PREV_TILES` tile's current and prior counts must equal plain `TIME`-bounded ES\|QL on the
+stream over the same windows, with the dropdowns empty and with `AUDIT_IDENTITY` / `AUDIT_IDENTITY_KIND` when
+set. Then it asks Kibana (`/internal/esql/get_timefield`, the lint's one Kibana call) whether it would attach a
+time filter to any query on the events view.
 
 `--verify` exists because static checks cannot see a panel that renders empty, clipped or
 mid-load. It screenshots every dashboard to a fresh timestamped directory under
 `build/render-<stamp>-<theme>/` and **fails the build** on broken panels, raw-markup leakage, a
 control bar that is not exactly `CONTROLS.length` wide, or a capture that never grew past the
-viewport. Stuck loading states and panel counts are *recorded* in `report.json` but do not fail —
+viewport, or a prior-period tile whose request carries a time filter or whose prior count differs from the
+stream's (the *canary*, `lib/canary.mjs`; each tile's counts are in `report.json` as `priorTiles`). It also
+refuses to start when the events view is missing. Stuck loading states and panel counts are *recorded* in `report.json` but do not fail —
 they are noisy on a healthy dashboard. `AUDIT_VERIFY_THEME=light` renders light mode; the Vega
 specs are theme-aware and a dark-only verifier cannot see a regression in the other half.
 `AUDIT_VERIFY_WIDTH=1440` renders at a laptop viewport, where Lens' fixed pixel column widths clip what
@@ -843,7 +861,7 @@ scripts/
   ingest.mjs                Provisioning
   esql.mjs                  Query linter: ES|QL and Vega DSL, budgeted and timed
   queries.mjs               What is running on the cluster right now
-  objects.mjs               Data view + Vega + Discover sessions -> _import (stable ids)
+  objects.mjs               Data view + Vega + Discover sessions -> _import (stable ids), ES|QL view
   dashboards.mjs            Generate, deploy, then apply Vega + control post-pass
   verify.mjs clean.mjs
   lib/
@@ -854,6 +872,8 @@ scripts/
     layout.mjs              Offline structural checks (grid, fragment drift, Vega rules)
     drilldowns.mjs          Panel drilldowns, into and out of Actor 360
     controls.mjs            Control bar + its data view (import-only dashboard state)
+    view.mjs                The ES|QL events view the prior-period tiles read: create, require, delete
+    canary.mjs              --verify's prior-period canary (no time filter, true prior counts)
     html.mjs                Presenter-guide markup and stylesheet
     env.mjs http.mjs log.mjs
 dashboards/*.json           Generated definitions, committed for review
@@ -873,5 +893,7 @@ changes show up as readable diffs in review.
 - Node.js ≥ 22 (`process.loadEnvFile`, and glob patterns in `node --test`)
 - An Elastic Cloud Serverless project with Cloud audit logging enabled
 - An API key with `manage_index_templates`, `manage_ingest_pipelines`, read on the audit data
-  stream, and Kibana write access to the Default space
+  stream, `manage_view` (or `create_view` + `delete_view` + `read_view_metadata`) and `read` on
+  `cloud-audit-*` for the ES\|QL events view, and Kibana write access to the Default space
+- Dashboard viewers: `read` on the audit data stream **and** on `cloud-audit-events-view`
 - `--verify` only: `npm install playwright && npx playwright install chromium`
