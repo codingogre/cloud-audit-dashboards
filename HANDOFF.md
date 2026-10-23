@@ -5,6 +5,9 @@ conflict. This file is "where we are right now" and should be assumed stale.
 
 ## Next: 1.0.5.1 identity dropdowns, then 1.0.6 starter alert pack
 
+- **1.0.5.1, first:** Discover session and Vega ids lose their numbers (`cloud-audit-search-all-events`,
+  `cloud-audit-vega-actor-risk-treemap`). File names stay numbered; the leading `NN-` is stripped when the id is
+  built, and the old numbered ids are deleted after the dashboards repoint (user request, 2026-10-23).
 - **1.0.5.1:** dropdowns that make sense for "who acted". `user.email`, `user.name` and `api_key.name` change meaning by
   credential (for an Elasticsearch API key, `user.name` is the key's owner; a Cloud API key exists only as an id in
   `user.name`), so today's Person (email) and API key controls can't show every identity. Recommended: a query-time
