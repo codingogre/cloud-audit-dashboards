@@ -9,52 +9,99 @@ Measured against `logs-elastic_cloud.serverless_audit.otel-default`.
 FROM logs-elastic_cloud.serverless_audit.otel-default
 ```
 
-## Actor resolution — REQUIRED on every actor-facing panel
+## Identity: who an event was, and how a panel names it — REQUIRED on every actor-facing panel
 
-`user.name` is a numeric ID (`1234567890`), not a name. Human identity is in
-`user.email`; machine identity in `api_key.name`.
+No one raw field names every identity, because they change meaning with the credential:
 
-`actor_org` splits traffic by the email on the event: `Elastic` is an `@elastic.co` address, `Tenant`
-is any other address (including API-key traffic, which carries its creator's email), and `Machine`
-is traffic with no email at all. Its values are title case because they are display values — a pie
-prints them as they are. This `Tenant` is not the same as `actor_scope`'s `tenant` below, which means
-"neither platform automation nor unauthenticated".
+| Field | Holds |
+| --- | --- |
+| `user.email` | Only for a person signed in through Elastic Cloud SSO. No API key event carries one, not even a key a person created. |
+| `api_key.name` | A named Elasticsearch API key, and only on Elasticsearch events. |
+| `user.domain` | The realm: `cloud-saml-kibana`, `_cloud_api_key`, `_es_api_key`, `_service_account`, or none. |
+| `user.name` | Who the request ran as: a person's numeric Cloud user id (`3512997522`), a Cloud API key's 20-character id (nothing else names it), a service account (`elastic/kibana`), a name tried at sign-in (`admin`), a placeholder (`<unauthenticated-cloud-access-token>`) or, for an Elasticsearch API key, the key's **owner**. On a Kibana event made with an Elasticsearch key (`user.domain` `_es_api_key`) Kibana records only the owner, never the key. |
+
+`IDENTITY_KINDS`, `IDENTITY_KIND` and `IDENTITY` (panels.mjs) turn them into one answer per event: the values
+of the **Identity type** and **Identity** dropdowns (ES|QL variable controls `?identity_kind`, `?identity`).
+
+| Identity type | Identity (dropdown value) | Shown in a table as |
+| --- | --- | --- |
+| Person | `user.email` | the email |
+| Elasticsearch API key | `api_key.name` | the name |
+| Elasticsearch API key (name not recorded) | `Unnamed key of <user.name>` | `Unnamed key of _4KEO…` when the owner is a Cloud API key |
+| Cloud API key | `<user.name> · Cloud API key` | `_4KEO… · Cloud API key` |
+| Service account | `user.name` | the account |
+| Failed sign-in | `user.name` | the name tried |
+| Unattributed | `(unattributed)` | the same |
+| Other | `user.name` | the same |
+
+### What a panel shows: `ACTOR_RESOLVE`, counted first by `ACTOR_KEYS`
+
+`actor`, the Identity column of every identity table and Vega spec, is IDENTITY's rule, so a value read in a
+table can be found in the dropdown and picking it selects exactly that row:
 
 ```esql
-| EVAL actor = COALESCE(user.email, api_key.name, user.name, "<anonymous>"),
-       actor_kind = CASE(user.email IS NOT NULL, "human", "service"),
-       actor_org  = CASE(user.email IS NULL, "Machine",
-                         user.email LIKE "*@elastic.co", "Elastic", "Tenant")
+| STATS n = COUNT(*) BY user.email, api_key.name, user.domain, user.name, <the panel's own keys>   // ACTOR_KEYS
+| EVAL actor = CASE(user.email IS NOT NULL, user.email, api_key.name IS NOT NULL, api_key.name,       // ACTOR_RESOLVE
+    user.domain == "_cloud_api_key", CONCAT(user.name, " · Cloud API key"),
+    user.domain == "_es_api_key", CONCAT("Unnamed key of ", user.name),
+    user.name IS NOT NULL, user.name, "(unattributed)")
+| STATS events = SUM(n), identities = COUNT_DISTINCT(actor) … BY actor, …
 ```
 
-`actor_org` is a two-condition `CASE`, so it runs after a `STATS` grouped on `user.email`,
-never per event (see *Query shape decides cost* below). `actor_kind` stays a one-condition cut for the
-same reason; a panel that shows the kind refines it on the grouped rows with `SCOPE`'s vocabulary, so
-`<anonymous>` reads `unauthenticated` and Elastic's own service accounts read `platform`, not `service`:
+A five-condition `CASE`, so it never runs per event (see *Query shape decides cost*): group on `ACTOR_KEYS`
+first and resolve the grouped rows, or, in a row feed, resolve after the `SORT … | LIMIT`. Measured on the live
+stream over 30 days, per event against count-first: Top client locations 223 → 140ms, Busiest client IPs 532 →
+416ms. A panel that has already filtered to a few hundred events may resolve per event (04's Config changes,
+22ms). A query that groups on the pre-1.0.5.1 keys (no `user.domain`) and then resolves fails loudly. Until
+1.0.5.1 the rule was `COALESCE(user.email, api_key.name, user.name, "<anonymous>")`: it named an unnamed key by
+its owner, so a Cloud API key's Elasticsearch keys read as the Cloud API key itself (6,521 Kibana events on
+2026-10-14), and it printed values no dropdown lists.
+
+`actor_kind` is the cheap first cut beside it (`ACTOR`); a panel that shows the kind refines it on the
+grouped rows with `SCOPE`'s vocabulary, so `(unattributed)` and the `<unauthenticated-…>` placeholders read
+`unauthenticated` and Elastic's own service accounts read `platform`, not `service`:
 
 ```esql
 | EVAL actor_kind = CASE(actor IN (<unauthenticated principals>), "unauthenticated",
                          actor IN (<platform principals>), "platform", actor_kind)
 ```
 
-An identity that resolves to a 20-character opaque id is the end of the ladder, not a defect: an
-organization-level Elastic Cloud API key, which the audit stream records only by id — no name, no owner.
-It is displayed in one form everywhere an identity is shown, `_4KEO… · Cloud API key`, by `ACTOR_LABEL`,
-the last step before display (after the last `STATS … BY actor`, so two keys sharing a prefix never
-merge):
+### The short form: `ACTOR_LABEL`
+
+A Cloud API key's 20-character id is shortened to its first five characters wherever it is displayed, the last
+step before display (after the last `STATS … BY actor`, so two keys sharing a prefix never merge). Two
+`REPLACE`s, no `CASE`; five characters are enough to find the key by typing in the Identity dropdown:
 
 ```esql
-| EVAL actor = CASE((LENGTH(actor) == 20 AND actor RLIKE "[-_A-Za-z0-9]{20}" AND NOT actor RLIKE "[0-9]{20}"),
-                    CONCAT(LEFT(actor, 5), "… · Cloud API key"), actor)
+| EVAL actor = REPLACE(REPLACE(actor, "^([-_A-Za-z0-9]{5})[-_A-Za-z0-9]{15} · Cloud API key$", "$1… · Cloud API key"),
+                       "^Unnamed key of ([-_A-Za-z0-9]{5})[-_A-Za-z0-9]{15}$", "Unnamed key of $1…")
 ```
 
-A value test, not a realm test: the same key arrives with `user.domain` `_cloud_api_key` on
-Elasticsearch events and sometimes `_es_api_key` on Kibana's (live, 24h: 261,172 and 6,521 events), and
-the realm test it replaces split one key into two rows. `-` leads the character class because Lucene
-reads `_-]` as a range. `table()` appends it to every table showing `actor`; the Discover sessions and
-the treemap and matrix specs embed it verbatim, and the drift check pins it. For a key-name or owner
-column that would print `-`, `0` or `(no name)` for such a key, `cloudKeyLabel(col, otherwise)` gives the
-same form (API key inventory: `COALESCE(api_key.name, <cloudKeyLabel(user.name, "(no name)")>)`).
+`-` leads the character class because Lucene reads `_-]` as a range. `table()` appends it to every table
+showing `actor`; the Discover sessions and the treemap and matrix specs embed it verbatim, and the drift check
+pins it. A raw `user.name` column that holds a key's owner or creator takes `cloudKeyLabel(col, otherwise)`,
+which gives the same `_4KEO… · Cloud API key` from the bare id (API key inventory:
+`COALESCE(api_key.name, <cloudKeyLabel(user.name, "(no name)")>)`).
+
+### The dropdowns' filter: `IDENTITY_WHERE`, inside `TIME`
+
+`TIME` is the picker's window AND `IDENTITY_WHERE`, so every ES|QL panel that bounds its window with `TIME`
+follows the dropdowns. It is plain boolean tests on raw fields (no `CASE`, no `COALESCE`), so Elasticsearch
+answers most of it from the index: a cheap superset (`PRE`), the kind's test, then the identity matched branch
+by branch. An empty dropdown sends `""` and every guard folds to true. 30 days: unselected 270ms, a person 20ms.
+
+### Where traffic comes from: `actor_org`
+
+`actor_org` splits traffic by the email on the event: `Elastic` is an `@elastic.co` address, `Tenant` is any
+other address, and `Machine` is traffic with no email at all (every API key's, since none carries one). Its
+values are title case because they are display values — a pie prints them as they are. This `Tenant` is not
+the same as `actor_scope`'s `tenant` below, which means "neither platform automation nor unauthenticated".
+
+```esql
+| EVAL actor_org  = CASE(user.email IS NULL, "Machine", user.email LIKE "*@elastic.co", "Elastic", "Tenant")
+```
+
+`actor_org` is a two-condition `CASE`, so it runs after a `STATS` grouped on `user.email`, never per event.
 
 ## Noise gate — ON by default
 
@@ -360,7 +407,7 @@ carry the highest weight, so unsplit it can top the leaderboard.
 ```esql
 | EVAL actor_scope = CASE(actor IN ("elastic.maintenance","autoscaling","elasticsearch-controller",
     "elastic/fleet-server","elastic/kibana"), "platform",
-    actor IN ("<anonymous>","<unauthenticated-cloud-access-token>","<unauthenticated-saml-user>",
+    actor IN ("(unattributed)","<anonymous>","<unauthenticated-cloud-access-token>","<unauthenticated-saml-user>",
     "<unauthenticated-cloud-api-key>"), "unauthenticated",
     "tenant")
 ```
@@ -520,7 +567,7 @@ Measured on the 2.6M-event perf replica (`./audit --perf`), alternating runs on 
 | **Keep the grouped rows few.** The `CASE` still costs per grouped row, so group on what it reads and nothing wider. `RISK_KEYS` groups `security_config_change` — a near-unique JSON payload — as a presence boolean, because `RISK` only asks `IS NOT NULL`. | hourly risk chart, 7 days: 18,001 grouped rows 1.7s, 2,936 rows 0.27s |
 | **A multi-valued key is grouped joined.** `event.type` is multi-valued on Elasticsearch events; `STATS BY` it would count a document once per value. Group `et = MV_CONCAT(event.type, ",")` and restore it with `EVAL event.type = SPLIT(et, ",")`, which keeps `IN`/`==` returning null on those rows exactly as on the raw field. | identical rows on every risk panel, 24h and 7d |
 | **A row feed sorts straight after its filter.** A Discover session that classifies rows puts `SORT @timestamp DESC` (and any `LIMIT`) before the `EVAL`s, so they run on the rows returned. | `searches/04` 10.6s → 0.18s, `searches/01` 3.2s → 0.3s (7 days) |
-| **Group on raw keyword fields where you can.** A computed key such as the actor `COALESCE` is cheap enough, but only a raw field can take a filter pill. | 7 days: `BY user.email` 51–53ms, `BY` the actor COALESCE 183–195ms |
+| **Group on raw keyword fields where you can.** The identity a panel shows (`ACTOR_RESOLVE`) is a multi-condition `CASE`: group on `ACTOR_KEYS`, resolve, re-aggregate. Only a raw field can take a filter pill. | 30 days: Busiest client IPs per event 532ms, counted first 416ms |
 | **A panel that measures presence takes no noise gate.** `access_granted` *is* activity, so gating it removes the thing being measured. This is about meaning, not speed: the null-guarded gate itself is cheap. | 7 days: the full noise gate 42–56ms; `== "access_granted"` 25–38ms |
 | **Sub-aggregations over a wide window cost the scan.** A bare `terms` reads ordinals; any sub-aggregation visits every document. | earlier measurement on the live stream: 7-day `terms` by email 270ms bare, ~4s with two `cardinality` sub-aggs, ~6s with `terms` sub-aggs. On the replica (one email) all three ran in 25–143ms, so re-check on a tenant with many users |
 | **Low-cardinality `COUNT_DISTINCT` takes a precision threshold.** The default sizes the sketch for thousands of values. | `COUNT_DISTINCT(field, 100)` is exact for `event.action` (tens of values) |

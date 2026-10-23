@@ -83,7 +83,7 @@ Network, and Platform Volume last when it is deployed. The numbers below are sou
 | 04 | 🚨 **Security & Anomalies** | Mean severity (0–50) and a risk leaderboard, security config changes, rare/privileged operations, newly seen identities. |
 | 05 | 🌍 **Geo & Network** | Real client geography, choropleth, impossible-travel detection, and proof that `source.ip` is the wrong field. |
 | 06 | 📊 **Platform Volume** · *opt-in* | The unfiltered firehose, quarantined so the rest stay readable. Not deployed unless asked for: see *Optional dashboards* under Commands. |
-| 07 | 👤 **Actor 360** | One identity's whole footprint — pick a person in the control bar. **① Is this normal?** reads a fixed 7 days whatever the picker says: activity against their own hourly baseline, their rank among the week's 40 busiest identities, their weekly rhythm. **② What they did** follows the picker: a credential → space → object → operation flow, changes, reads, a map with travel lines, the risk receipts. **③ Evidence**: a 24-hour session timeline whose bars filter the dashboard to that session and zoom it there, over the raw records. |
+| 07 | 👤 **Actor 360** | One identity's whole footprint — pick someone in the Identity control. **① Is this normal?** reads a fixed 7 days whatever the picker says: activity against their own hourly baseline, their rank among the week's 40 busiest identities, their weekly rhythm. **② What they did** follows the picker: a credential → space → object → operation flow, changes, reads, a map with travel lines, the risk receipts. **③ Evidence**: a 24-hour session timeline whose bars filter the dashboard to that session and zoom it there, over the raw records. |
 
 ### The risk model
 
@@ -137,13 +137,16 @@ the highest weight.
 
 ### Drill-down
 
-The suite ships **controls** and **drilldowns**, and neither can go through the Dashboards API.
-`PUT /api/dashboards/{id}` silently drops both `controlGroupInput` and
-`enhancements.dynamicActions`, and a GET→edit→PUT round-trip would destroy every Vega panel, which
-the API itself warns about via `warnings[].type: "dropped_panel"`. Both are therefore applied by the
-same `_export → mutate → _import` post-pass that repoints Vega — see `applyImportOnlyState()` in
-`scripts/dashboards.mjs`. Because the PUT passes wipe that state on every deploy, the post-pass is
-part of every `--dashboards` run, not an install step.
+The suite ships **controls** and **drilldowns**. The controls go out in the PUT (1.0.5.1):
+`PUT /api/dashboards/{id}` takes a top-level `pinned_panels` array holding classic option lists
+(`options_list_control`) and ES|QL variable controls (`esql_control`) alike, and an `_export` → `_import`
+round trip keeps it (verified on 9.6 by PUT, GET and the round trip; `payload()` in `scripts/dashboards.mjs`).
+Until 1.0.5.1 they were patched in after the deploy as `controlGroupInput`, which the PUT silently drops.
+Drilldowns still cannot go through the API: the PUT drops `enhancements.dynamicActions`, and a GET→edit→PUT
+round-trip would destroy every Vega panel, which the API itself warns about via
+`warnings[].type: "dropped_panel"`. They are applied by the same `_export → mutate → _import` post-pass that
+repoints Vega — see `applyImportOnlyState()` in `scripts/dashboards.mjs`. Because the PUT passes wipe that
+state on every deploy, the post-pass is part of every `--dashboards` run, not an install step.
 
 **Drilldowns run both ways.** Every identity panel elsewhere offers *Open in Actor 360*. Actor 360's
 own panels drill **out**, to the dashboard that owns the dimension clicked — an action to Security &
@@ -164,33 +167,65 @@ reloads the panel and drops the filter (clicked in Playwright: the pill never ap
 the reload the filter itself causes has already replaced the view and the zoom is lost. Double-clicking
 the flow clears every pill on the page.
 
-**The control bar** — four option-list dropdowns on every dashboard, defined in
-`scripts/lib/controls.mjs` (width `small` with grow, so the four share one row at 1440px and at 1920px):
+**The control bar** — four dropdowns on every dashboard, defined in `scripts/lib/controls.mjs` (width `small`
+with grow, so the four share one row at 1440px and at 1920px). Project and Client IP are option lists on a raw
+field; Identity type and Identity are ES|QL variable controls, single choice:
 
-| Control | Field | Why |
+| Control | Reads | Why |
 |---|---|---|
-| Project | `project.name` | The serverless project that **emitted** the event. An audit project usually collects the audit streams of several projects; this narrows the whole dashboard — and, through hierarchical chaining, every dropdown after it — to one of them. Populated on every Elasticsearch and Kibana event. Names are not unique in Elastic Cloud, so projects that share a name share an option. **Actor 360's cohort rank follows Project and nothing else:** it ranks against everyone active in the projects the selection is active in, so a Person or Client IP selection highlights that identity instead of shrinking the cohort to one. Exact across all projects or within one; across several (not all) it sums events and takes each distinct count's per-project maximum, and its title says *approximate*. |
-| Person (email) | `user.email` | The identity control: the reliable identity key, never null for a human. |
-| API key | `api_key.name` | A named Elasticsearch API key. A Cloud API key has no name, so it is not listed: pin one from a *Principal id* cell instead (below). After Person in the chain, so choosing a person narrows it to keys whose events carry that email, which is usually none. A runtime "identity" field was tried instead and rejected: its pill is a filter on a field the index does not have, and every ES\|QL panel went empty. On a project where no API key has been used yet the field is unmapped and the list is simply empty. Like every option list, it reads a sample once the range holds more than about 100,000 events (Kibana's `isPartial`), so over a long, busy range a key used only now and then can be missing from the list: narrow the range around when it was used (checked on 1.0.5: no options over 30 days, the synthetic keys listed over the hour they ran). |
+| Project | `project.name` | The serverless project that **emitted** the event. An audit project usually collects the audit streams of several projects; this narrows the whole dashboard — and, through hierarchical chaining, every dropdown after it — to one of them. Populated on every Elasticsearch and Kibana event. Names are not unique in Elastic Cloud, so projects that share a name share an option. **Actor 360's cohort rank follows Project and nothing else:** it ranks against everyone active in the projects the selection is active in, so an identity or Client IP selection highlights that identity instead of shrinking the cohort to one. Exact across all projects or within one; across several (not all) it sums events and takes each distinct count's per-project maximum, and its title says *approximate*. |
+| Identity type | `?identity_kind`, worked out per event (`IDENTITY_KIND`) | What kind of credential made the request: Person, Elasticsearch API key, Elasticsearch API key (name not recorded), Cloud API key, Service account, Failed sign-in, Unattributed or Other. Eight values at most, so the list is always complete; picking one first shortens the Identity list. |
+| Identity | `?identity`, worked out per event (`IDENTITY`), chained on Identity type | One person, key or account, named exactly as every table names it (below). It replaced Person (email) and API key in 1.0.5.1: they read one raw field each, so a Cloud API key was in neither list and `user.name` meant a different thing on different rows. Single choice keeps a selected panel at ~20ms over 30 days; a multi-select has no fast path (~0.25s). Its query aggregates every event in range, so unlike an option list it never shows a sample. |
 | Client IP | `client.ip` | Can hold more distinct addresses than anyone could eyeball, which is the point of a searchable dropdown. |
 
-`user.name` is deliberately not offered as a dropdown — it is a numeric id, not a name; it is reachable
-from the *Principal id* click columns instead. Nor is
-`user.full_name` (a *Person (name)* control until 1.0.2): it is null for some identities,
-so a name dropdown silently missed people the email dropdown finds.
+**What the identity fields mean.** Elastic's audit log records the account a request ran as, which is not
+always the credential that was used:
 
-Controls need a real data view, so `elastic_cloud-audit-logs` is deployed as an `index-pattern` saved
-object; the Discover sessions keep their inline ad-hoc one. State shape was settled empirically
-against 9.6.0 serverless (import a throwaway dashboard, export it back): control state is
-**wrapped in `explicitInput`**, and the data view arrives by reference named
-`controlGroup_<uuid>:optionsListDataView`.
+- `user.name` is that account: a person's numeric Elastic Cloud user ID, a Cloud API key's 20-character ID,
+  Kibana's own service account (`elastic/kibana`), a name tried at sign-in, or, when an Elasticsearch API key
+  was used, the account that owns the key, not the key itself.
+- `user.email` is present only when a person signed in through Elastic Cloud SSO. API keys never carry one,
+  not even a key a person created.
+- `api_key.name` names an Elasticsearch API key, but only on Elasticsearch events. Kibana notes only that a
+  key was used (`user.domain` `_es_api_key`), not which one.
+- A Cloud API key has no name anywhere in the log; its name and creator are in the Cloud console.
 
-**What "sticky across dashboards" actually means**, measured end to end in a browser: selecting
-an identity scopes every panel, KPIs included, and clicking through the nav bar
-carries the *filter* to the destination, where every panel is correctly scoped and a pill reads
-`user.email: <identity>`. The destination's **dropdown itself reads "Any"** — control
-selections live in dashboard app state, which `use_filters` does not carry. The numbers are
-right everywhere; the widget does not re-display the selection. Read the pill, not the dropdown.
+Identity type and Identity combine these into one answer per event, what kind of credential it was and which
+one, and every table and chart names an identity the same way (`IDENTITY` and `ACTOR_RESOLVE` in
+`scripts/lib/panels.mjs`; *Identity* in `esql/fragments.md`), so a name read in a table can be picked there:
+
+| Identity type | Identity lists | A table shows |
+|---|---|---|
+| Person | the email | the same |
+| Elasticsearch API key | the key's name | the same |
+| Elasticsearch API key (name not recorded) | `Unnamed key of <owner>`: a Kibana event made with the key | `Unnamed key of _4KEO…` when the owner is a Cloud API key |
+| Cloud API key | `<20-character id> · Cloud API key` | `_4KEO… · Cloud API key`: the first five characters, enough to find it by typing in Identity |
+| Service account, Failed sign-in, Other | the account name, `user.name` | the same |
+| Unattributed | `(unattributed)`: no principal at all, mostly `connection_granted` | the same |
+
+A choice reaches every ES|QL panel through `TIME`, which carries `IDENTITY_WHERE`: plain boolean tests on the
+raw fields, which the index answers. Measured over 30 days: 270ms with nothing chosen, 20ms for a person,
+~850ms for the Cloud API key that is ~98% of the stream. Until 1.0.5.1 a Kibana event made with an
+Elasticsearch key was shown as the key's owner, so the Elasticsearch keys a Cloud API key created read as the
+Cloud API key itself.
+
+`user.name` alone is deliberately not a dropdown — it means a different thing for each kind of credential;
+it is reachable from the *Principal id* click columns. Nor is `user.full_name` (a *Person (name)* control
+until 1.0.2): it is null for some identities, so a name dropdown silently missed people. A runtime "identity"
+field on the data view was tried in 1.0.5 and rejected: its pill is a filter on a field the index does not
+have, and every ES|QL panel went empty.
+
+The option lists need a real data view, so `elastic_cloud-audit-logs` is deployed as an `index-pattern` saved
+object (`data_view_id` in `pinned_panels`; the saved object references it as `<control id>:optionsListDataView`).
+The Discover sessions keep their inline ad-hoc one, and the ES|QL controls name the stream in their query.
+
+**What "sticky across dashboards" actually means**, measured end to end in a browser: choosing a Project or
+Client IP scopes every panel, KPIs included, and clicking through the nav bar carries the *filter* to the
+destination, where every panel is correctly scoped and a pill reads `project.name: <project>`. The
+destination's **dropdown itself reads "Any"** — control selections live in dashboard app state, which
+`use_filters` does not carry. Read the pill, not the dropdown. **Identity type and Identity do not travel
+at all**: they set query variables, not filters, so each dashboard opens with them empty. To take an identity
+across the suite, pin it from a table (an email, an API key or a Principal id cell), which is a filter.
 
 The older click-to-filter path still exists and needs neither:
 
@@ -214,8 +249,8 @@ Actor 360 with `user.name: <id>` pinned, every panel narrowed). Two things to kn
 blocks of 00, 03 and 04):
 - A Principal id pin is the principal, not the credential. On a Cloud API key it also matches every
   Elasticsearch API key that key created, because Elasticsearch stamps the creator in `user.name`; a named
-  key's row, where there is no API key column, pins the identity that created it. The API key control pins
-  the key itself.
+  key's row, where there is no API key column, pins the identity that owns it. Picking the key in Identity
+  narrows to the key itself.
 - *Principal id* is 250px where `<unauthenticated-cloud-access-token>` (36 characters) can appear, and 165px
   where it cannot (it never signs in, so it changes nothing and reads no index). 00's *Busiest identities*
   gave Last seen and Actions to it.
@@ -283,29 +318,37 @@ still counts in *Signal events*. The two *Kibana saved-object* panels on 02 and 
 `http_request` and logins, which name no object.
 
 **Identities.**
-- Identity is `COALESCE(user.email, api_key.name, user.name)`; an identity whose events disagree on its kind is one
-  treemap tile, in the most specific block any of them supports. Treemap blocks: named API key (labelled by the key,
-  owner underneath when there is room), person, Cloud API key, platform (Elastic's service accounts such as
-  `elastic/kibana`), user with no email, unattributed (`<anonymous>`, an unauthenticated token, a user name that
-  only ever failed to sign in). The top 12 by signal (down to 8 on a narrow screen) are drawn, the rest of each kind
-  folded into a grey *+N more* tile. Area is √events plus an equal floor, so the quietest identity keeps a readable
-  name but is never drawn larger than a busier one; colour is risk total on a √ scale. A key carrying its creator's
-  email is its own tile there and counts under the person in *Busiest identities*.
+- Identity is the Identity dropdown's value (*What the identity fields mean*, under Drill-down): an email, else a
+  key's name, else `Unnamed key of <owner>` or `<id> · Cloud API key` by realm, else `user.name`, else
+  `(unattributed)`. It is worked out on rows already counted by `user.email`, `api_key.name`, `user.domain` and
+  `user.name` (`ACTOR_KEYS`), never per event. An identity whose events disagree on its kind is one treemap tile,
+  in the most specific block any of them supports. Treemap blocks: Elasticsearch API key (named keys labelled by
+  the key, owner underneath when there is room, and `Unnamed key of …`), person, Cloud API key, platform (Elastic's
+  service accounts such as `elastic/kibana`), user with no email, unattributed (`(unattributed)`, an
+  unauthenticated token, a user name that only ever failed to sign in). The top 12 by signal (down to 8 on a narrow
+  screen) are drawn, the rest of each kind folded into a grey *+N more* tile. Area is √events plus an equal floor, so
+  the quietest identity keeps a readable name but is never drawn larger than a busier one; colour is risk total on
+  a √ scale.
+- 1.0.5.1 changed what some rows read: Kibana actions made with an Elasticsearch key moved from the owning Cloud API
+  key's row to `Unnamed key of _4KEO…` (6,521 events and 35,160 of the treemap's risk total over the 30 days to 2026-10-23), the
+  identity with no principal reads `(unattributed)` rather than `<anonymous>`, Command Center's *Busiest
+  identities* lost the never-seen `email · via key` form, and Actor 360's *Who this is* shows Identity and
+  Principal id rather than Email and Principal id, so a named key is its own row rather than part of its owner's.
 - 01 *Identities*: the line above the number counts API key names among identities with no email (a Cloud API key
-  by its id); the rest are service accounts and built-in users, user names tried in a failed sign-in, and the
-  placeholders `<anonymous>` / `<unauthenticated-…>`. *API keys* counts ids, its line the names: a person's key
-  counts under the person in *Identities*, so names can exceed the keys there. *Key IDs* on *Busiest API keys* is how
+  by its id); the rest are unnamed keys, service accounts and built-in users, user names tried in a failed sign-in,
+  and the placeholders `(unattributed)` / `<unauthenticated-…>`. *API keys* counts ids, its line the names; a
+  re-issued key is one name under many ids. *Key IDs* on *Busiest API keys* is how
   many ids a name ran under. *SSO events* is the `cloud-saml-kibana` realm; its line counts `user_login` in range or
   reads *signed in earlier*.
 - *API key inventory*: a Cloud API key's Owner reads *Cloud organization* (its creator is not in the stream). Kibana
-  records a call made with an Elasticsearch API key without the key id, so those calls count under the creator
-  elsewhere, not here. *Identity first and last seen* → *Located in*: *internal* (every address private or
+  records a call made with an Elasticsearch API key without the key id, so those calls are not here; elsewhere they
+  count as `Unnamed key of <owner>`. *Identity first and last seen* → *Located in*: *internal* (every address private or
   carrier-NAT), *not located* (public, no geoip match) or *no IP*.
 - Realms on 01: `cloud-saml-kibana` (SAML SSO), `_es_api_key`, `_cloud_api_key` (an Elasticsearch key minted by a
   Cloud key authenticates there), `_service_account`. Anonymous and unauthenticated requests carry no realm, so
   *Events by authentication realm* sums to less than *Events by identity origin*. Credential type exists only on
   Elasticsearch events, so the credential matrix leaves out identities seen only in Kibana or only anonymously.
-- A Principal id pin on a named key's row pins the identity that created the key; the API key control pins the key.
+- A Principal id pin on a named key's row pins the identity that owns the key; picking the key in Identity narrows to the key.
   A key named `TaskManager: … - <id>` is one Kibana created to run a task for that identity: the id is its owner's.
 
 **Kibana objects (02, 07).** Type and name are recovered from the event message (`OBJ_GROK`, `OBJ_TYPE`) for
@@ -399,6 +442,13 @@ Probed against Kibana 9.6 serverless. Several are undocumented and cost real tim
 | An `xy` chart's legend defaults to `hidden`, even with a `breakdown_by` | `xy()` emits `config.legend` (`bottom` list by default when there is a split) and the `eui_amsterdam` palette; Kibana's `default` palette pairs each hue with a pale tint that vanishes on white |
 | Markdown panels have no font-size setting, `###` renders at ~20px, and raw HTML is **dropped** before render: a `<style>` block or a `<div class>` never reaches the page (probed: no style element in the DOM; the old `CSS_NAV` block on Command Center never styled anything) | `md()` lifts a leading heading into the panel title; `layout.mjs` rejects `#`–`###` anywhere else. The intros need small text, which only the legacy markdown *visualization* has (`fontSize` in pt), so the post-pass swaps each intro for a by-value one at 9pt: 12px paragraphs, a 17px `###` heading, theme colours (see *Presentation conventions*) |
 | A **collapsible section** is an ordinary entry of the Dashboards API's top-level `panels` array with **no `type` key**: `{ id, title, collapsed, grid: { y }, panels: [...] }`. A top-level `sections` key and `"type": "section"` are both 400 `unrecognized_keys`. Inner panels' grid y is relative to the section; a top-level panel after it keeps its own y, one row below the section's. The saved object stores it differently: inner panels stay in `panelsJSON` with `gridData.sectionId`, and the headers are a separate `sections` attribute (`[{ title, collapsed, gridData: { i, y } }]`). `GET /api/dashboards` omits legacy `visualization` panels, so a section whose panel the post-pass made a legacy markdown visualization reads back with `panels: []` there (the export has it) | `howToSection()` / `collapsible()` build `{ section: true, … }` in memory; `payload()` turns it into the API shape; `layout.mjs` treats the header as one full-width row and checks the inner grid separately; the post-pass leaves `sections` untouched and `checkSections()` reads the object back after `_import` and fails on a missing, open or orphaned section; `--verify` counts collapsed headers, opens them and captures `<id>.open.png` |
+| Controls go in the PUT's top-level `pinned_panels` (`options_list_control`, `esql_control`), which survives an `_export` → `_import` round trip. `controlGroupInput` in the PUT is silently dropped | `payload()` sends `pinnedPanels()` (`controls.mjs`) on every PUT; nothing is patched in afterwards (until 1.0.5.1 the control group went in through the `_import` post-pass) |
+| An **ES\|QL variable control** sets a query variable, not a filter: its choice is **not in the URL**, and a `dashboardLink` with `use_filters: true` does not carry it | Each dashboard opens with Identity type and Identity empty. The How to read blocks say so; an identity travels as a pin from a table (an email, API key or Principal id cell) |
+| Only ES\|QL panels read a variable: an ES\|QL Vega spec receives `?identity`, while **Discover sessions and DSL Vega specs ignore it** | 1.0.5.1 moves the dashboards' Discover panels to Lens ES\|QL tables and the DSL charts to ES\|QL. *Audit data held* (vega/14) stays DSL by design: it describes the whole stream. The Discover sessions the intros link to ignore the dropdowns |
+| An unbound `?variable` is a hard error, and an empty single-select control sends `""` (a multi-select `[]`) | Every test in `IDENTITY_WHERE` is guarded with `?identity == ""` / `?identity_kind == ""`, which fold to true. `--lint`, `--perf` and the parity check bind both (`identityParams()`; `AUDIT_IDENTITY` / `AUDIT_IDENTITY_KIND` choose one) |
+| A multi-select variable matches nothing through `IN (?list)` or `==` (0 rows, no error); only `MV_CONTAINS` works, and `MV_CONTAINS(list, null)` is true | Identity type and Identity are single choice, which also keeps a selection fast (~20ms for a person over 30 days); `(unattributed)` stands for a null identity |
+| A classic control (Project) does not narrow an ES\|QL control's options; one ES\|QL control chains on another only through its query | Identity's query reads `?identity_kind`. With a Project chosen, Identity still lists identities from every project |
+| A **stale chained selection is not cleared**: change Identity type and an Identity of the old type stays chosen | The dropdown warns, and panels read 0 until Identity is cleared |
 | Discover in ES\|QL mode ignores the ad-hoc data view's `fieldAttrs.customLabel` | Session headers come from a trailing `RENAME` — see *Presentation conventions* for the filter trade-off |
 
 ---
@@ -673,6 +723,8 @@ legends over an empty domain, decade axes, solid placeholder cells, a flat line 
 ./audit --ingest-check   Assert enrichment is actually flowing on live data
 ./audit --lint           Execute every query in the repo — ES|QL and the DSL behind Vega specs — under a
                          time budget that cancels overruns; fails the build on any error
+                         AUDIT_IDENTITY_KIND=Person AUDIT_IDENTITY=<email> runs it as if
+                         Identity type and Identity were chosen (also --perf; default: nothing chosen)
 ./audit --objects        Deploy the data view, 20 Vega visualizations and 11 Discover sessions
 ./audit --dashboards     Generate dashboards/*.json and deploy every dashboard
 ./audit --verify         Render every dashboard in Chromium and inspect for broken panels
