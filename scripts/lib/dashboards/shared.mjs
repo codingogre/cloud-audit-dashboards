@@ -161,6 +161,6 @@ export const SESSION_RECORDS = `FROM ${IDX} | ${TIME} | ${KIB} | WHERE kibana.se
   '| EVAL op = CASE(verb != "other", verb, COALESCE(REPLACE(event.action, "_", " "), "other")), object = COALESCE(kibana.saved_object.name, " ") ' +
   '| KEEP @timestamp, actor, kibana.session.id, op, object, kibana.space.id, body.text';
 export const sessionRecords = (x, y, w, h, title, desc, opts = {}) => table(x, y, w, h, title, SESSION_RECORDS,
-  [sized('actor', 245, { min: 200 }), filterable('kibana.session.id', { width: 150, min: 130 }), { column: 'op', label: 'Operation', width: 100 }, sized('object', 220, { label: 'Object', min: 150 }),
+  [sized('actor', 245, { min: 200 }), filterable('kibana.session.id', { width: 330, min: 300 }), { column: 'op', label: 'Operation', width: 100 }, sized('object', 180, { label: 'Object', min: 140 }),
     filterable('kibana.space.id'), 'body.text'],
   ['@timestamp'], desc, { scroll: true, ...opts });

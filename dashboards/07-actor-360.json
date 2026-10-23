@@ -127,7 +127,7 @@
             "h": 7
           },
           "config": {
-            "content": "- Pick an Identity type first to shorten the Identity list. A person’s API keys are identities of their own, so their traffic never counts under the person.\n- The ① panels read a fixed 7 days with no noise gate, so they will not match Signal events or the time picker.\n- Baseline: the band is their usual range for each hour; with under three days of history no band is drawn.\n- The Risk tile and Every scoring action count whole minutes only, so they can stop up to a minute short of the panels around them.\n- Session timeline: click a bar to pin a session (Elasticsearch panels then read empty); API-only identities have no sessions.\n- Identities read as in the Identity dropdown, a Cloud API key shortened to “_4KEO… · Cloud API key”. The dropdowns apply to this page only; the links above do not carry them.\n"
+            "content": "- Pick an Identity type first to shorten the Identity list. A person’s API keys are identities of their own, so their traffic never counts under the person.\n- The ① panels read a fixed 7 days with no noise gate, so they will not match the Events tile or the time picker.\n- Baseline: the band is their usual range for each hour; with under three days of history no band is drawn.\n- The Risk tile and Every scoring action count whole minutes only, so they can stop up to a minute short of the panels around them.\n- Session timeline: click a bar to pin a session (Elasticsearch panels then read empty); API-only identities have no sessions.\n- Identities read as in the Identity dropdown, a Cloud API key shortened to “_4KEO… · Cloud API key”. The dropdowns apply to this page only; the links above do not carry them.\n"
           }
         }
       ]
@@ -793,7 +793,7 @@
             "label": "Session",
             "column": "kibana.session.id",
             "click_filter": true,
-            "width": 150
+            "width": 330
           },
           {
             "label": "Operation",
@@ -803,7 +803,7 @@
           {
             "label": "Object",
             "column": "object",
-            "width": 220
+            "width": 180
           },
           {
             "label": "Space",

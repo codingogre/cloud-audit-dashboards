@@ -127,7 +127,7 @@
             "h": 7
           },
           "config": {
-            "content": "- Risk is weight × events, from 10 for a workflow run to 50 for a security change, so it runs far above event counts.\n- Identities read as in the Identity dropdown; a Cloud API key is shortened to the start of its id, “_4KEO… · Cloud API key”.\n- Identity type and Identity apply to this page only: the links above carry Project, Client IP and pinned filters, not them.\n- Click a Principal id to filter the page or open Actor 360; a Cloud API key’s id also covers the API keys it created.\n- In the Live signal feed, a Client IP in 100.64/10 or a private range is Kibana or the platform acting for someone, not where they are.\n- The last time bucket is partial, and panels side by side can differ by an event or two at the edges of the range.\n"
+            "content": "- Risk is weight × events, from 10 for a workflow run to 50 for a security change, so it runs far above event counts.\n- Identities read as in the Identity dropdown; a Cloud API key is shortened to the start of its id, “_4KEO… · Cloud API key”.\n- The links above carry the time range and filter pills to the next page, but no dropdown choice: pick again there.\n- Click a Principal id to filter the page or open Actor 360; a Cloud API key’s id also covers the API keys it created.\n- In the Live signal feed, a Client IP in 100.64/10 or a private range is Kibana or the platform acting for someone, not where they are.\n- The last time bucket is partial, and panels side by side can differ by an event or two at the edges of the range.\n"
           }
         }
       ]

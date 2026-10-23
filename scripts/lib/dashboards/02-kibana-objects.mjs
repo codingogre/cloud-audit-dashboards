@@ -137,7 +137,7 @@ const INTRO = {
     '*Noise gate applied* leaves out page loads, usage counters, paging and these dashboards’ own views and install; real changes, test spaces included, stay.',
     'Object is the title at the time, so a renamed object shows its old name on older rows; a workflow run reads “execution” and its run id.',
     'Spaces show by the id in their URL, not by name, which the audit log does not record. A sign-in belongs to no space.',
-    'Click a session bar to pin that session and zoom to it; remove the pill and reset the time to return. Shift-click pins the person.',
+    'Click a session bar to pin that session and zoom to it; remove the pill and reset the time to return. Shift-click pins the identity.',
     'While a session is pinned, Elasticsearch panels read empty: only browser sign-ins carry a session id, so API-only identities have no bars.',
     IDENTITY_HOW_TO,
   ],

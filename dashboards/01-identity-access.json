@@ -106,7 +106,7 @@
         "h": 6
       },
       "config": {
-        "content": "### Who signed in, how, and what failed\n\nSee which sign-in methods and credentials are in use, your busiest people and API keys, every key and when it was last used, and each failed or denied attempt.\n\nUse it to check that access looks as expected, review API keys, or follow up on failed sign-ins. Empty failure panels are good news. Raw records: [All audit events](/app/discover#/view/cloud-audit-search-all-events), [Raw signal feed](/app/discover#/view/cloud-audit-search-raw-signal-feed).\n\n**How to use it:** choose a Project, Identity type, Identity or Client IP in the controls and set the time picker. Click an email in a table to filter the whole suite to that person.\n"
+        "content": "### Who signed in, how, and what failed\n\nSee which sign-in methods and credentials are in use, your busiest people and API keys, every key and when it was last used, and each failed or denied attempt.\n\nUse it to check that access looks as expected, review API keys, or follow up on failed sign-ins. Empty failure panels are good news. Raw records: [All audit events](/app/discover#/view/cloud-audit-search-all-events), [Raw signal feed](/app/discover#/view/cloud-audit-search-raw-signal-feed).\n\n**How to use it:** choose a Project, Identity type, Identity or Client IP in the controls and set the time picker. Click an email or Principal id in a table to add a filter pill, which every page in the suite keeps.\n"
       }
     },
     {
@@ -127,7 +127,7 @@
             "h": 7
           },
           "config": {
-            "content": "- Identities read as in the Identity dropdown: an email, else an API key’s name, else the account name. A key named after a person is still a key.\n- API key traffic has carried no email in this audit log. Kibana does not record which Elasticsearch key it was given, so those rows read “Unnamed key of” the key’s owner.\n- Cloud API keys have no name or owner: tables show the start of the id, “_4KEO… · Cloud API key”, with Owner “Cloud organization”.\n- A re-issued key keeps its name under a new id, so key ids can outnumber names.\n- A failed sign-in counts once per attempt. Credential type exists only on Elasticsearch requests, so those panels leave out Kibana traffic.\n- Identity type and Identity apply to this page only: the links above carry Project, Client IP and pinned filters, not them.\n"
+            "content": "- Identities read as in the Identity dropdown: an email, else an API key’s name, else the account name. A key named after a person is still a key.\n- API key traffic has carried no email in this audit log. Kibana does not record which Elasticsearch key it was given, so those rows read “Unnamed key of” the key’s owner.\n- Cloud API keys have no name or owner: tables show the start of the id, “_4KEO… · Cloud API key”, with Owner “Cloud organization”.\n- A re-issued key keeps its name under a new id, so key ids can outnumber names.\n- A failed sign-in counts once per attempt. Credential type exists only on Elasticsearch requests, so those panels leave out Kibana traffic.\n- The links above carry the time range and filter pills to the next page, but no dropdown choice: pick again there.\n"
           }
         }
       ]

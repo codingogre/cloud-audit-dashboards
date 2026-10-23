@@ -118,7 +118,7 @@ const INTRO = {
   ],
   howTo: [
     'Pick an Identity type first to shorten the Identity list. A person’s API keys are identities of their own, so their traffic never counts under the person.',
-    'The ① panels read a fixed 7 days with no noise gate, so they will not match Signal events or the time picker.',
+    'The ① panels read a fixed 7 days with no noise gate, so they will not match the Events tile or the time picker.',
     'Baseline: the band is their usual range for each hour; with under three days of history no band is drawn.',
     'The Risk tile and Every scoring action count whole minutes only, so they can stop up to a minute short of the panels around them.',
     'Session timeline: click a bar to pin a session (Elasticsearch panels then read empty); API-only identities have no sessions.',

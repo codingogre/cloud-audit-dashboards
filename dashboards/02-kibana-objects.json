@@ -127,7 +127,7 @@
             "h": 7
           },
           "config": {
-            "content": "- *Noise gate applied* leaves out page loads, usage counters, paging and these dashboards’ own views and install; real changes, test spaces included, stay.\n- Object is the title at the time, so a renamed object shows its old name on older rows; a workflow run reads “execution” and its run id.\n- Spaces show by the id in their URL, not by name, which the audit log does not record. A sign-in belongs to no space.\n- Click a session bar to pin that session and zoom to it; remove the pill and reset the time to return. Shift-click pins the person.\n- While a session is pinned, Elasticsearch panels read empty: only browser sign-ins carry a session id, so API-only identities have no bars.\n- Identities read as in the Identity dropdown, a Cloud API key shortened to “_4KEO… · Cloud API key”. The dropdowns apply to this page only; the links above do not carry them.\n"
+            "content": "- *Noise gate applied* leaves out page loads, usage counters, paging and these dashboards’ own views and install; real changes, test spaces included, stay.\n- Object is the title at the time, so a renamed object shows its old name on older rows; a workflow run reads “execution” and its run id.\n- Spaces show by the id in their URL, not by name, which the audit log does not record. A sign-in belongs to no space.\n- Click a session bar to pin that session and zoom to it; remove the pill and reset the time to return. Shift-click pins the identity.\n- While a session is pinned, Elasticsearch panels read empty: only browser sign-ins carry a session id, so API-only identities have no bars.\n- Identities read as in the Identity dropdown, a Cloud API key shortened to “_4KEO… · Cloud API key”. The dropdowns apply to this page only; the links above do not carry them.\n"
           }
         }
       ]
@@ -865,7 +865,7 @@
             "label": "Session",
             "column": "kibana.session.id",
             "click_filter": true,
-            "width": 150
+            "width": 330
           },
           {
             "label": "Operation",
@@ -875,7 +875,7 @@
           {
             "label": "Object",
             "column": "object",
-            "width": 220
+            "width": 180
           },
           {
             "label": "Space",

@@ -150,7 +150,7 @@ const INTRO = {
   paragraphs: [
     "See which sign-in methods and credentials are in use, your busiest people and API keys, every key and when it was last used, and each failed or denied attempt.",
     `Use it to check that access looks as expected, review API keys, or follow up on failed sign-ins. Empty failure panels are good news. ${RAW_RECORDS}`,
-    "**How to use it:** choose a Project, Identity type, Identity or Client IP in the controls and set the time picker. Click an email in a table to filter the whole suite to that person.",
+    "**How to use it:** choose a Project, Identity type, Identity or Client IP in the controls and set the time picker. Click an email or Principal id in a table to add a filter pill, which every page in the suite keeps.",
   ],
   howTo: [
     'Identities read as in the Identity dropdown: an email, else an API key’s name, else the account name. A key named after a person is still a key.',
@@ -158,7 +158,7 @@ const INTRO = {
     'Cloud API keys have no name or owner: tables show the start of the id, “_4KEO… · Cloud API key”, with Owner “Cloud organization”.',
     'A re-issued key keeps its name under a new id, so key ids can outnumber names.',
     'A failed sign-in counts once per attempt. Credential type exists only on Elasticsearch requests, so those panels leave out Kibana traffic.',
-    'Identity type and Identity apply to this page only: the links above carry Project, Client IP and pinned filters, not them.',
+    'The links above carry the time range and filter pills to the next page, but no dropdown choice: pick again there.',
   ],
 };
 
