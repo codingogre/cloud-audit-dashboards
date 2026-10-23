@@ -379,7 +379,7 @@ Probed against Kibana 9.6 serverless. Several are undocumented and cost real tim
 | ES\|QL visualizations cannot be standalone saved objects | Lens panels are inline in the dashboard definition, which also keeps each dashboard self-contained and diffable |
 | XY split key is `breakdown_by`, not `breakdown` | — |
 | Partition charts use `metrics[]` + `group_by[]`, not `slice_by`/`metric` | — |
-| A `data_table` with an empty `metrics` array crashes the API | Raw event listings are aggregated, or shipped as Discover panels |
+| A `data_table` with an empty `metrics` array crashes the API | A record feed (a raw event listing) carries its time as the metric column: `@timestamp`, *Time*, at the right end, as *Last seen* is on every other table (*Record feeds* under Presentation conventions) |
 | A Lens table prints a null cell as `-` (a clickable, underlined `-` in a click-to-filter column) and an empty string as `(blank)`; a column the query assigns — even `EVAL user.email = COALESCE(…)` — loses click-to-filter (*"relies on a field created at query time"*) | `blankNull()` blanks display columns only; a filter column keeps its nulls, or is dropped where they dominate |
 | A pie's outside slice labels are dropped for small slices when the panel is short | `pie()` always draws a legend (`right`, size `l`), so every category is named somewhere |
 | On an ES\|QL Vega spec, `"domain": {"%timefilter%": true}` renders the bare "Error" | Echo `?_tstart` / `?_tend` after the `STATS` and draw them as an invisible mark, so the axis spans the whole window (vega/07) |
@@ -400,6 +400,7 @@ Probed against Kibana 9.6 serverless. Several are undocumented and cost real tim
 | Markdown panels have no font-size setting, `###` renders at ~20px, and raw HTML is **dropped** before render: a `<style>` block or a `<div class>` never reaches the page (probed: no style element in the DOM; the old `CSS_NAV` block on Command Center never styled anything) | `md()` lifts a leading heading into the panel title; `layout.mjs` rejects `#`–`###` anywhere else. The intros need small text, which only the legacy markdown *visualization* has (`fontSize` in pt), so the post-pass swaps each intro for a by-value one at 9pt: 12px paragraphs, a 17px `###` heading, theme colours (see *Presentation conventions*) |
 | A **collapsible section** is an ordinary entry of the Dashboards API's top-level `panels` array with **no `type` key**: `{ id, title, collapsed, grid: { y }, panels: [...] }`. A top-level `sections` key and `"type": "section"` are both 400 `unrecognized_keys`. Inner panels' grid y is relative to the section; a top-level panel after it keeps its own y, one row below the section's. The saved object stores it differently: inner panels stay in `panelsJSON` with `gridData.sectionId`, and the headers are a separate `sections` attribute (`[{ title, collapsed, gridData: { i, y } }]`). `GET /api/dashboards` omits legacy `visualization` panels, so a section whose panel the post-pass made a legacy markdown visualization reads back with `panels: []` there (the export has it) | `howToSection()` / `collapsible()` build `{ section: true, … }` in memory; `payload()` turns it into the API shape; `layout.mjs` treats the header as one full-width row and checks the inner grid separately; the post-pass leaves `sections` untouched and `checkSections()` reads the object back after `_import` and fails on a missing, open or orphaned section; `--verify` counts collapsed headers, opens them and captures `<id>.open.png` |
 | Discover in ES\|QL mode ignores the ad-hoc data view's `fieldAttrs.customLabel` | Session headers come from a trailing `RENAME` — see *Presentation conventions* for the filter trade-off |
+| A Discover session panel takes no ES\|QL control variables (`?identity_kind`, `?identity`) | No dashboard embeds one since 1.0.5.1: every record list is a Lens ES\|QL table bounded by `TIME`, so the Identity dropdowns narrow it. The sessions still deploy, for the intros' *Raw records* links and for Discover |
 
 ---
 
@@ -462,7 +463,7 @@ in shared code rather than at call sites.
   without / unless* → *"(empty when no browser sessions)"* (anything else throws at build). `'quiet'` →
   *"(empty when none in range)"*: its old words, *"(may be empty at 1h)"*, named one window and read as
   wrong at every other. Round 3's *"· none is good"* and *"· empty without X"* read as a verdict on the rows
-  whenever the table was full; `--lint` rejects that form. `search()` takes the same option. The description
+  whenever the table was full; `--lint` rejects that form. The description
   gains nothing (it once repeated the title in a sentence, and pushed tooltips past 40 words). Use it on every
   panel a 1h render shows empty on a healthy project (an hour is still one click in the picker).
 - *Completeness.* A title must not promise more than the panel shows. A LIMITed table whose title says
@@ -506,6 +507,18 @@ legend and the How to read blocks, not in each tooltip: `table()` appends the la
   never describe a bar or a total as "still filling", or two panels as differing by "rows landing between
   the two queries". The last bucket covers only part of its interval. Where a page sets a total beside
   its parts, its How to read block states the one gap left: panels read the clock up to a second apart.
+
+- *Record feeds (1.0.5.1).* Every record-level list on a dashboard (00 *Live signal feed*, 01's three lists, 02
+  *Cross-space activity*, *Kibana saved-object activity* and *Session reconstruction*, 03 *Raw system index
+  requests*, 04 *Mutation feed* and *Config-change event feed*, 07 *Session records*) is a Lens table with the logic
+  of the Discover session of the same name, bounded by `TIME` so the Identity dropdowns narrow it. A feed is
+  `… | TIME | <filter> | SORT @timestamp DESC | LIMIT n | <per-row EVALs> | KEEP …` (QUERY SHAPE rule 3), its time
+  is the metric column at the right end (the API rejects a table with no metric), and `{ scroll: true }` keeps the
+  bound the title states (*"· newest 1,000 at most"*, 200 on the Live signal feed). Raw fields shown as they are
+  (Action, Client IP, Space, Session, Transport action, Index) are click-to-filter, so those feeds drill into Actor
+  360 (Actor 360's own *Session records* only pins); a computed column never is. A hard-cut cell (a long message, a
+  change payload) opens whole from the expand icon its cell shows on hover. The Session column is 150px of a
+  44-character id: enough to tell sessions apart, and a click pins the whole id.
 
 **Tooltips — two tiers, 40 words.** A panel's description is its ⓘ tooltip, and a reader hovers it to learn
 what the panel shows and the one thing needed to read it — not every caveat behind it. So it is **40 words at
@@ -613,11 +626,13 @@ loses its filter-for/out cell actions, because no index field stands behind the 
 Discover app filter-for still works — it appends `| WHERE \`Header\` == …`. The suite's pivots are
 the control bar and the Lens click-to-filter columns, so sessions rename everything they show, with
 one exception: `searches/09` keeps `kibana.session.id` raw, under its field name, so a
-session cell offers Filter for/out on the dashboard. There is no friendlier header to be had: the saved
+session cell offers Filter for/out (on a dashboard grid, until 1.0.5.1). There is no friendlier header to be had: the saved
 search's `grid.columns.<name>` is a closed schema in 9.6 (import rejects `display`, `displayAsText`,
 `label`, `customLabel`, `displayName` and `name`; only `width` passes), and `fieldAttrs.customLabel` is
 ignored in ES|QL mode. `layout.mjs` fails a session that lists a renamed column by its old name. Pattern:
-`searches/10-raw-signal-feed.json`.
+`searches/10-raw-signal-feed.json`. Since 1.0.5.1 no dashboard embeds a session (*Record feeds* above): the
+sessions are what the intros' *Raw records* links open, and the Lens feeds carry the same logic, so a change to
+one is made to both.
 
 **Vega colour.** A spec cannot tell which theme it is in, so no colour may sit near either
 background (dark panels are ~`#111C2C`, light are white).

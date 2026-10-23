@@ -52,7 +52,7 @@
  *      Elasticsearch events) is grouped as MV_CONCAT and restored with SPLIT, or a document would
  *      be counted once per value. A computed group key (the actor COALESCE) is cheap enough —
  *      183–195ms against 51–53ms for the raw email over 7 days — but only a raw field takes a pill.
- *   3. A row feed sorts straight after its filter. A Discover session that classifies rows (VERB,
+ *   3. A row feed sorts straight after its filter. A record feed or session that classifies rows (VERB,
  *      OBJ_TYPE) puts `SORT @timestamp DESC` (and any LIMIT) before the EVALs, so they run on the
  *      rows returned rather than on every row matched: searches/04 went 10.6s → 0.18s over 7 days.
  *   4. A panel that measures presence does not take the noise gate. access_granted is emitted
@@ -1130,6 +1130,7 @@ export const COLUMNS = {
   space: C('Space', W.ENUM), 'kibana.space.id': C('Space', W.ENUM),
   'kibana.saved_object.name': C('Object'), 'kibana.saved_object.type': C('Object type'),
   source: C('Source'), 'service.name': C('Source'),
+  'kibana.session.id': C('Session'), 'body.text': C('Message'), 'elasticsearch.audit.security_config_change': C('Change'),
   // from where
   ip: C('IP', W.IP), client_ip: C('Client IP', W.IP), 'client.ip': C('Client IP', W.IP), proxy: C('Proxy IP', W.IP),
   city: C('City'), country: C('Country', W.ENUM),
@@ -1720,17 +1721,21 @@ export const writeTileSpecs = () => {
 };
 
 /**
- * A Discover session panel. Like table(), it takes `{ empty }` (see EMPTY STATES above) for a session that is
- * often empty. `desc` is the tooltip on the dashboard; searches/<ref>.json carries its own description, which
- * Discover shows (both within TIP_MAX_WORDS, checked by layout.mjs).
+ * RECORD FEEDS (1.0.5.1). Every record-level list on a dashboard is a Lens ES|QL table built with table(), not a
+ * Discover session panel: a Discover panel takes no ES|QL control variables, so it ignored the Identity type and
+ * Identity dropdowns (controls.mjs) while every panel around it followed them. A feed is
+ *
+ *   FROM … | TIME | <filter> | SORT @timestamp DESC | LIMIT n | <per-row EVALs> | KEEP …
+ *
+ * TIME carries IDENTITY_WHERE, so the dropdowns narrow it. The SORT and LIMIT come straight after the filter
+ * (QUERY SHAPE rule 3), so a classifying CASE runs on the n rows returned, never on every row matched. The time
+ * is a metric column (`@timestamp`, "Time"), because a Lens data_table with no metric is rejected by the API;
+ * it therefore sits at the right end, as Last seen does on every other table. `{ scroll: true }` keeps the
+ * title's bound ("· newest 1,000 at most") and the description says "Scroll for more." Raw fields shown as they
+ * are (Action, Client IP, Space, a session id) are click-to-filter; computed columns never are.
+ * searches/*.json still deploy: the intros' "Raw records" links open two of them in Discover, and the rest stay
+ * available there.
  */
-export const search = (x, y, w, h, ref, title, desc, { empty } = {}) => {
-  if (!existsSync(join(ROOT, 'searches', `${ref}.json`))) throw new Error(`search ${ref}: no searches/${ref}.json`);
-  return {
-    type: 'discover_session', id: nid('ds'), grid: { x, y, w, h }, ...(empty ? { lint: { empty } } : {}),
-    config: { ref_id: objId('search', ref), title: withEmptyTitle(title, empty), description: desc },
-  };
-};
 
 /**
  * MARKDOWN SIZE. A markdown panel renders its body at 16px and `###` at ~20px, against 14px panel

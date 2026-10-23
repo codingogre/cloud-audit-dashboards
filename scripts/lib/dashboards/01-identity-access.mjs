@@ -1,7 +1,7 @@
 /** 01 Identity & Access — see scripts/lib/definitions.mjs for how the suite is assembled. */
 import {
-  IDX, ACTOR_RESOLVE, ORG, CRED_TYPE_LABEL, CRED_TYPE_COLORS, TIME, dash, kpi, xy, table, sized,
-  vega, search, resetIds, bar, filterable, grouped, FAILED_OR_DENIED, SIGNIN_FAILED
+  IDX, ACTOR_RESOLVE, ORG, CRED_TYPE_LABEL, CRED_TYPE_COLORS, TIME, NOISE, dash, kpi, xy, table, sized,
+  vega, resetIds, bar, filterable, grouped, cloudKeyLabel, FAILED_OR_DENIED, SIGNIN_FAILED
 } from '../panels.mjs';
 import { rawId } from '../suite.mjs';
 import { WHO, RAW_RECORDS } from './shared.mjs';
@@ -96,6 +96,44 @@ const compactLog = (p) => {
   p.config.layers[0].y[0].format = { type: 'number', decimals: 0, compact: true };
   return p;
 };
+
+/**
+ * The record lists at the foot of the page, bounded by TIME so the identity dropdowns narrow them (RECORD FEEDS,
+ * panels.mjs); each is the logic of the Discover session of the same name.
+ *
+ * FAILED_FEED (searches/02): every failure FAILED_OR_DENIED counts, newest first, sorted and cut before the CASEs
+ * that word each row (QUERY SHAPE rule 3). Action and Client IP are the raw fields, so a click pins them.
+ */
+const FAILED_FEED = `FROM ${IDX} | ${TIME} | ${FAILED_OR_DENIED} | SORT @timestamp DESC | LIMIT 1000 | ${ACTOR_RESOLVE} ` +
+  `| EVAL ${CRED_TYPE_LABEL}, result = CASE(event.action IN (${SIGNIN_FAILED}), "failed sign-in", event.action == "access_denied", "denied", "failed") ` +
+  '| EVAL auth = COALESCE(auth, CASE(result == "failed sign-in", "not authenticated", user.domain IN ("_es_api_key", "_cloud_api_key"), "API key", user.domain == "cloud-saml-kibana", "SAML SSO", user.domain)), ' +
+  'country = COALESCE(client.geo.country_iso_code, CASE(client.ip IS NULL, "no IP", CIDR_MATCH(client.ip, "100.64.0.0/10", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8"), "internal", "not located")) ' +
+  '| KEEP @timestamp, actor, event.action, result, auth, country, client.ip';
+/**
+ * KEY_INVENTORY (searches/07): one row per key, busiest first, cut before the labels are worded. A Cloud API key
+ * has no name and no recorded owner, so its row reads the shared short form and "Cloud organization".
+ */
+const KEY_INVENTORY = `FROM ${IDX} | ${TIME} | ${KEYED} | STATS events = COUNT(*), first_seen = MIN(@timestamp), last_seen = MAX(@timestamp), ` +
+  'ips = COUNT_DISTINCT(client.ip), indices = COUNT_DISTINCT(elasticsearch.audit.indices) BY api_key.name, api_key.id, user.email, user.name ' +
+  '| SORT events DESC | LIMIT 1000 ' +
+  `| EVAL key_id = COALESCE(api_key.id, user.name), api_key = COALESCE(api_key.name, ${cloudKeyLabel('user.name', '"(no name)"')}), ` +
+  `owner = CASE(api_key.id IS NULL, "Cloud organization", COALESCE(user.email, ${cloudKeyLabel('user.name')}, "not recorded")) ` +
+  '| KEEP api_key, key_id, owner, first_seen, last_seen, events, ips, indices';
+/**
+ * FIRST_SEEN (searches/06): every identity's first and last event in range, all traffic, beside its signal events
+ * after NOISE. FORK counts both halves in one pass; the location words run on the rows kept.
+ */
+const FIRST_SEEN = `FROM ${IDX} | ${TIME} ` +
+  `| FORK (${ACTOR_RESOLVE} | STATS first_seen = MIN(@timestamp), last_seen = MAX(@timestamp), events = COUNT(*), ips = COUNT_DISTINCT(client.ip), ` +
+  'countries = COUNT_DISTINCT(client.geo.country_iso_code), ip_lo = MIN(client.ip), ip_hi = MAX(client.ip), actions = COUNT_DISTINCT(event.action) BY actor) ' +
+  `(${NOISE} | ${ACTOR_RESOLVE} | STATS signal = COUNT(*) BY actor) ` +
+  '| STATS first_seen = MIN(first_seen), last_seen = MAX(last_seen), events = MAX(events), signal = MAX(signal), ips = MAX(ips), countries = MAX(countries), ' +
+  'ip_lo = MIN(ip_lo), ip_hi = MAX(ip_hi), actions = MAX(actions) BY actor ' +
+  '| SORT first_seen DESC | LIMIT 1000 ' +
+  '| EVAL signal = COALESCE(signal, 0), countries = CASE(countries == 1, "1 country", countries > 1, CONCAT(TO_STRING(countries), " countries"), ips == 0, "no IP", ' +
+  ['100.64.0.0/10', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '127.0.0.0/8'].map((c) => `(CIDR_MATCH(ip_lo, "${c}") AND CIDR_MATCH(ip_hi, "${c}"))`).join(' OR ') +
+  ', "internal", "not located") ' +
+  '| KEEP actor, countries, first_seen, last_seen, events, signal, ips, actions';
 
 /** The intro (draft 3 of the 1.0.3 customer copy; INTRO TEXT in panels.mjs). */
 const INTRO = {
@@ -245,16 +283,25 @@ export function build() {
       ['actor', sized('action', 175), 'result', 'ip'], ['events', 'last_seen'],
       'Failed sign-ins and refused requests by identity, action and source IP, most frequent first. Result names the kind: failed sign-in, denied (refused an action) or failed (any other failure).',
       { empty: 'good' }),
-    // The sessions run full width. Side by side at 24 columns, seven and eight columns shared ~800px:
-    // timestamps wrapped onto three lines and the last column was cut off at the panel edge. These are
-    // the record-level evidence, so every column has to be readable without opening Discover.
-    search(0, 41, 48, 12, '02-failed-authentications', 'Failed sign-ins and denied access · newest 1,000 at most',
-      'The newest failed sign-ins and refused requests, record by record, up to 1,000; the Failed or denied tile has the total. Credential reads “not authenticated” when no credential worked; Country reads “internal” for Kibana or the platform acting for someone.',
-      { empty: 'good' }),
-    search(0, 53, 48, 12, '07-api-key-activity', 'API key inventory',
-      'Every API key used in range (up to 1,000), Cloud and Elasticsearch, busiest first, with owner, volume, IP spread, indices touched and first and last use. Owner is its creator: a person or the Cloud API key that minted it.'),
-    search(0, 65, 48, 14, '06-actor-first-seen', 'Identity first and last seen',
-      'Every identity in range (up to 1,000), all traffic, newest first appearance on top, with all its events and its signal events after the noise gate. Widen the time range to tell a brand-new identity from a quiet one.'),
+    // The three record lists run full width: they are the evidence, so every column has to be readable. Lens
+    // tables since 1.0.5.1 (RECORD FEEDS, panels.mjs), so the identity dropdowns narrow them too; each keeps the
+    // logic of the Discover session of the same name (searches/02, 07, 06) and scrolls to that session's bound.
+    table(0, 41, 48, 12, 'Failed sign-ins and denied access', FAILED_FEED,
+      ['actor', filterable('event.action', { label: 'Action', width: 220, min: 200 }), 'result', { column: 'auth', label: 'Credential', width: 150, min: 130 },
+        'country', filterable('client.ip')],
+      ['@timestamp'],
+      'Failed sign-ins and refused requests, record by record, newest first; the Failed or denied tile has the total. Credential reads “not authenticated” when no credential worked; Country “internal” is Kibana or the platform acting for someone.',
+      { scroll: true, empty: 'good' }),
+    table(0, 53, 48, 12, 'API key inventory', KEY_INVENTORY,
+      [{ column: 'api_key', label: 'API key' }, sized('key_id', 175, { label: 'Key ID' }), 'owner'],
+      ['first_seen', 'last_seen', 'events', 'ips', 'indices'],
+      'Every API key used in range, Cloud and Elasticsearch, busiest first, with owner, volume, IP spread, indices touched and first and last use. Owner is its creator: a person or the Cloud API key that minted it.',
+      { scroll: true }),
+    table(0, 65, 48, 14, 'Identity first and last seen', FIRST_SEEN,
+      ['actor', { column: 'countries', label: 'Located in', width: 105 }],
+      ['first_seen', 'last_seen', 'events', sized('signal', 115, { label: 'Signal events' }), 'ips', sized('actions', 105, { label: 'Action types' })],
+      'Every identity in range, all traffic, newest first appearance on top, with all its events and its signal events after the noise gate. Widen the time range to tell a brand-new identity from a quiet one.',
+      { scroll: true }),
   ];
   return dash(rawId('01-identity-access'), '[Audit] 🔐 Identity & Access',
     'Who authenticated, how, from where, and what failed. Resolves the numeric user.name into real identities.', P, { intro: INTRO });

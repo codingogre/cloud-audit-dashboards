@@ -1,7 +1,7 @@
 /** Constants shared by more than one dashboard module. */
 import {
-  RISK, VERB, introMd, RISK_PREFILTER, RISK_KEYS, RISK_RESTORE, CHANGE, OBJ_GROK, OBJ_NAME, OBJ_TYPE, OUTCOME,
-  filterable
+  IDX, TIME, KIB, ACTOR_RESOLVE, RISK, VERB, introMd, RISK_PREFILTER, RISK_KEYS, RISK_RESTORE, CHANGE, OBJ_GROK, OBJ_NAME, OBJ_TYPE, OUTCOME,
+  filterable, table, sized
 } from '../panels.mjs';
 import { isDeployed } from '../suite.mjs';
 import { readFileSync } from 'node:fs';
@@ -134,3 +134,22 @@ export const CHANGED = `${CHANGE} | ${OBJ_GROK} | ${OBJ_NAME} | ${OUTCOME} | EVA
  */
 export const CHANGED_KEYS = 'event.action, kibana.saved_object.type';
 export const CHANGED_DERIVE = `${VERB} | ${OBJ_TYPE}`;
+
+/**
+ * SESSION RECORDS (02 Session reconstruction, 07 Session records): the Kibana events behind the session timeline
+ * (vega/13), newest first, as a Lens table so the identity dropdowns narrow it (RECORD FEEDS, panels.mjs). The
+ * logic of searches/09: events with a browser session, less what an open tab does on its own (paging, space
+ * lookups, page and UI requests), so a tab left open adds no rows. A click on a Session cell pins
+ * kibana.session.id, as a click on a timeline bar does; Space pins the space. Sorted and cut straight after the
+ * filter (QUERY SHAPE rule 3), so VERB runs on the 1,000 rows kept.
+ */
+const SESSION_TAB_NOISE = 'event.action IN ("saved_object_open_point_in_time", "saved_object_close_point_in_time", "space_get", "space_find") ' +
+  'OR (event.action == "http_request" AND (NOT body.text LIKE "*/api/*" OR body.text LIKE "*/api/ui_counters/*" OR body.text LIKE "*/api/content_management/*"))';
+export const SESSION_RECORDS = `FROM ${IDX} | ${TIME} | ${KIB} | WHERE kibana.session.id IS NOT NULL | WHERE event.action IS NULL OR NOT (${SESSION_TAB_NOISE}) ` +
+  `| SORT @timestamp DESC | LIMIT 1000 | ${ACTOR_RESOLVE} | ${VERB} ` +
+  '| EVAL op = CASE(verb != "other", verb, COALESCE(REPLACE(event.action, "_", " "), "other")), object = COALESCE(kibana.saved_object.name, " ") ' +
+  '| KEEP @timestamp, actor, kibana.session.id, op, object, kibana.space.id, body.text';
+export const sessionRecords = (x, y, w, h, title, desc, opts = {}) => table(x, y, w, h, title, SESSION_RECORDS,
+  [sized('actor', 245, { min: 200 }), filterable('kibana.session.id', { width: 150, min: 130 }), { column: 'op', label: 'Operation', width: 100 }, { column: 'object', label: 'Object' },
+    filterable('kibana.space.id'), 'body.text'],
+  ['@timestamp'], desc, { scroll: true, ...opts });

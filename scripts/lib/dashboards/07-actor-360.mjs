@@ -1,10 +1,10 @@
 /** 07 Actor 360 — see scripts/lib/definitions.mjs for how the suite is assembled. */
 import {
-  IDX, TIME, INDEX_FAMILY, IP_GEO, indexFamily, dash, kpi, table, vega, search, section, row, stack, resetIds, sized, filterable, grouped,
+  IDX, TIME, INDEX_FAMILY, IP_GEO, indexFamily, dash, kpi, table, vega, section, row, stack, resetIds, sized, filterable, grouped,
   SYS_INDEX, fitRows
 } from '../panels.mjs';
 import { rawId } from '../suite.mjs';
-import { riskScored, CHANGED, CHANGED_KEYS, CHANGED_DERIVE, specDescription, RAW_RECORDS } from './shared.mjs';
+import { riskScored, CHANGED, CHANGED_KEYS, CHANGED_DERIVE, specDescription, RAW_RECORDS, sessionRecords } from './shared.mjs';
 
 /**
  * One identity's whole footprint on one page — pick a person in the control bar and every panel
@@ -287,8 +287,8 @@ export function build() {
 
     row(2, [[48, (x, y, w, h) => section(x, y, w, h, '③ Evidence', 'session timeline is fixed at 24 hours · the records follow the time picker · your time zone')]]),
     row(7, [[48, vegaPanel('13-session-gantt', 'Kibana browser sessions · fixed last 24 hours, your time zone')]]),
-    row(12, [[48, (x, y, w, h) => search(x, y, w, h, '09-session-reconstruction', 'Session records · newest 1,000 at most',
-      'The raw Kibana events behind the session timeline, newest first. Click a timeline bar or filter on a session id to read one session. Capped at the newest 1,000; an hour with only an idle Kibana tab is empty.', { empty: 'quiet' })]]),
+    row(12, [[48, (x, y, w, h) => sessionRecords(x, y, w, h, 'Session records',
+      'The raw Kibana events behind the session timeline, newest first. Click a timeline bar, or a Session cell, to read one session. An hour with only an idle Kibana tab is empty.', { empty: 'quiet' })]]),
   ]);
   return dash(rawId('07-actor-360'), '[Audit] 👤 Actor 360',
     'One identity’s complete footprint — pick a person in the control bar and every panel becomes their story.', P, { intro: INTRO });
