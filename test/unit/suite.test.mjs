@@ -307,8 +307,8 @@ test('record feeds (1.0.5.1): no Discover session panel; each record list is a L
     }
     // Title prefix → its click-to-filter columns: raw fields shown as they are, never a computed column.
     const want = {
-      '00-command-center': { 'Live signal feed': ['event.action'] },
-      '01-identity-access': { 'Failed sign-ins and denied access': ['event.action', 'client.ip'], 'API key inventory': [], 'Identity first and last seen': [] },
+      '00-command-center': { 'Live signal feed': ['event.action', 'client.ip'] },
+      '01-identity-access': { 'Failed sign-ins and denied access': ['event.action', 'client.ip'], 'API key inventory': ['api_key.id', 'user.name'], 'Identity first and last seen': [] },
       '02-kibana-objects': { 'Cross-space activity': [], 'Kibana saved-object activity': ['kibana.space.id'], 'Session reconstruction': ['kibana.session.id', 'kibana.space.id'] },
       '03-data-access': { 'Raw system index requests': ['elasticsearch.audit.action', 'elasticsearch.audit.indices', 'client.ip'] },
       '04-security-anomalies': { 'Config-change event feed': ['event.action'], 'Mutation feed': ['event.action', 'kibana.space.id'] },

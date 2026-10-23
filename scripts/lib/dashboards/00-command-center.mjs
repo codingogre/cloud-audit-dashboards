@@ -61,12 +61,12 @@ const LIVE_FEED = `FROM ${IDX} | ${TIME} | ${NOISE} | WHERE NOT ${HOUSEKEEPING} 
   String.raw`| GROK elasticsearch.audit.security_config_change """^\{"(?<scc_obj>[a-z_]+)":\{(?:.*?"name":"(?<scc_name>[^"]+))?(?:.*?"ids?":\[?"(?<scc_id>[^"]+))?""" ` +
   '| EVAL result = CASE(event.outcome == "unknown", "attempted", event.outcome), ' +
   'source = CASE(service.name == "serverless-elasticsearch", "Elasticsearch", service.name == "serverless-kibana", "Kibana", service.name), ' +
-  'ip = COALESCE(CASE(CIDR_MATCH(client.ip, "10.0.0.0/8", "100.64.0.0/10", "172.16.0.0/12", "192.168.0.0/16"), CONCAT(TO_STRING(client.ip), " internal"), TO_STRING(client.ip)), "none recorded"), ' +
   String.raw`more = (LENGTH(elasticsearch.audit.security_config_change) - LENGTH(REPLACE(elasticsearch.audit.security_config_change, "\",\"", ""))) / 3, ` +
   'detail = COALESCE(body.text, elasticsearch.audit.action, CONCAT(CASE(scc_obj IN ("apikey", "apikeys"), "API key", scc_obj), " ", COALESCE(scc_name, scc_id), ' +
   'CASE(scc_obj == "apikeys" AND more > 0, CONCAT(" + ", TO_STRING(more), " more"), "")), ' +
   String.raw`REPLACE(elasticsearch.audit.security_config_change, "[{}\"]", "")) ` +
-  '| KEEP @timestamp, actor, source, event.action, result, ip, detail';
+  // client.ip raw, not tagged "internal": a raw field is what makes the column click-to-filter.
+  '| KEEP @timestamp, actor, source, event.action, result, client.ip, detail';
 
 /** The intro (draft 1 of the 1.0.3 customer copy; INTRO TEXT in panels.mjs). */
 const INTRO = {
@@ -189,7 +189,7 @@ export function build() {
     // left out. 25 rows show 26 lines (fitRows), and the 200 the title states scroll.
     table(0, 49, 48, 25, 'Live signal feed · Kibana key clean-up left out', LIVE_FEED,
       [sized('actor', 245, { min: 200 }), sized('source', 100, { min: 100 }), filterable('event.action', { label: 'Action', width: 230, min: 200 }),
-        { column: 'result', label: 'Outcome' }, { column: 'ip', label: 'Client IP', width: 175, min: 150 }, { column: 'detail', label: 'Detail' }],
+        { column: 'result', label: 'Outcome' }, filterable('client.ip', { label: 'Client IP', width: 150, min: 130 }), { column: 'detail', label: 'Detail' }],
       ['@timestamp'],
       'The newest signal events, routine traffic and Kibana’s own key clean-up left out. Long runs of near-identical rows from one identity are automation: pick it in the Identity dropdown to read it alone.',
       { scroll: true }),

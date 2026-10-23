@@ -4,7 +4,7 @@ import {
   grouped, FAILED_OR_DENIED, SIGNIN_FAILED, NOISE, cloudKeyLabel
 } from '../panels.mjs';
 import { rawId } from '../suite.mjs';
-import { WHO, RAW_RECORDS } from './shared.mjs';
+import { WHO, RAW_RECORDS, PIN_PRINCIPAL_SHORT } from './shared.mjs';
 
 // FAILED_OR_DENIED and SIGNIN_FAILED live in panels.mjs: 04's failure panels count the same way.
 
@@ -117,9 +117,11 @@ const FAILED_FEED = `FROM ${IDX} | ${TIME} | ${FAILED_OR_DENIED} | SORT @timesta
 const KEY_INVENTORY = `FROM ${IDX} | ${TIME} | ${KEYED} | STATS events = COUNT(*), first_seen = MIN(@timestamp), last_seen = MAX(@timestamp), ` +
   'ips = COUNT_DISTINCT(client.ip), indices = COUNT_DISTINCT(elasticsearch.audit.indices) BY api_key.name, api_key.id, user.email, user.name ' +
   '| SORT events DESC | LIMIT 1000 ' +
-  `| EVAL key_id = COALESCE(api_key.id, user.name), api_key = COALESCE(api_key.name, ${cloudKeyLabel('user.name', '"(no name)"')}), ` +
+  `| EVAL api_key = COALESCE(api_key.name, ${cloudKeyLabel('user.name', '"(no name)"')}), ` +
   `owner = CASE(api_key.id IS NULL, "Cloud organization", COALESCE(user.email, ${cloudKeyLabel('user.name')}, "not recorded")) ` +
-  '| KEEP api_key, key_id, owner, first_seen, last_seen, events, ips, indices';
+  // api_key.id and user.name stay raw so both are click-to-filter: an Elasticsearch key by its id, a Cloud key
+  // (which has no api_key.id) by its Principal id.
+  '| KEEP api_key, api_key.id, user.name, owner, first_seen, last_seen, events, ips, indices';
 /**
  * FIRST_SEEN (searches/06): every identity's first and last event in range, all traffic, beside its signal events
  * after NOISE. FORK counts both halves in one pass; the location words run on the rows kept.
@@ -301,7 +303,7 @@ export function build() {
       'Failed sign-ins and refused requests, record by record, newest first; the Failed or denied tile has the total. Credential reads “not authenticated” when no credential worked; Country “internal” is Kibana or the platform acting for someone.',
       { scroll: true, empty: 'good' }),
     table(0, 53, 48, 12, 'API key inventory', KEY_INVENTORY,
-      [{ column: 'api_key', label: 'API key' }, sized('key_id', 175, { label: 'Key ID' }), 'owner'],
+      [{ column: 'api_key', label: 'API key' }, filterable('api_key.id', { label: 'Key ID', width: 175, min: 160 }), PIN_PRINCIPAL_SHORT, 'owner'],
       ['first_seen', 'last_seen', 'events', 'ips', 'indices'],
       'Every API key used in range, Cloud and Elasticsearch, busiest first, with owner, volume, IP spread, indices touched and first and last use. Owner is its creator: a person or the Cloud API key that minted it.',
       { scroll: true }),
