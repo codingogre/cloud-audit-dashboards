@@ -87,7 +87,7 @@ test('generator: every scenario lands in the audit stream and scores as the dash
 test('dashboards: every shipping ES|QL query executes against the configured stream', opts, async () => {
   const failures = [];
   for (const { src, i, q } of gatherQueries()) {
-    const r = await es.esqlRun(bounded(q), PARAMS(), { budgetMs: 45e3 });
+    const r = await es.esqlRun(bounded(q), PARAMS(src), { budgetMs: 45e3 });
     if (!r.ok) failures.push(`${src}[${i}]: ${String(r.body?.error?.root_cause?.[0]?.reason || r.body?.error?.reason || r.status).slice(0, 160)}`);
     else if (!q.includes(cfg.dataStream) && /FROM\s+logs-/.test(q)) failures.push(`${src}[${i}]: reads ${/FROM\s+(\S+)/.exec(q)[1]}, not ${cfg.dataStream}`);
   }

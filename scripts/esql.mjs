@@ -13,7 +13,7 @@ import { es } from './lib/http.mjs';
 import { success, fail, detail, warn } from './lib/log.mjs';
 import { buildAll } from './lib/definitions.mjs';
 import { checkLayout } from './lib/layout.mjs';
-import { PREV_TILES, PREV_LOOKBACK_DAYS, prevSpec, prevEsql } from './lib/panels.mjs';
+import { PREV_TILES, PREV_LOOKBACK_DAYS, prevSpec, prevEsql, fixedWindow, windowMs } from './lib/panels.mjs';
 
 /**
  * Every query runs through es.esqlRun(), which cancels it on overrun — a plain /_query keeps
@@ -24,8 +24,14 @@ import { PREV_TILES, PREV_LOOKBACK_DAYS, prevSpec, prevEsql } from './lib/panels
 const BUDGET_MS = Number(process.env.AUDIT_LINT_BUDGET_MS) || 30e3;
 const SLOW_MS = 5e3;
 
-export const PARAMS = () => {
-  const end = new Date(), start = new Date(Date.now() - 3600e3);
+/**
+ * The params Kibana would send for a query from `src`: the last hour, as the picker's shortest preset, or the
+ * spec's own window when its panel carries one (VEGA_WINDOWS in panels.mjs) — a fixed-window spec never runs
+ * over the picker's range, so linting it there would time and validate a query no viewer runs.
+ */
+export const PARAMS = (src) => {
+  const win = fixedWindow(src);
+  const end = new Date(), start = new Date(Date.now() - (win ? windowMs(win) : 3600e3));
   return [{ _tstart: start.toISOString() }, { _tend: end.toISOString() }, ...identityParams()];
 };
 
@@ -179,7 +185,7 @@ export async function run() {
   let bad = 0;
   for (const { src, i, q: raw } of items) {
     const q = bounded(raw);
-    const res = await es.esqlRun(q, PARAMS(), { budgetMs: BUDGET_MS });
+    const res = await es.esqlRun(q, PARAMS(src), { budgetMs: BUDGET_MS });
     timings.push({ src: `${src}[${i}]`, ms: res.ms });
     if (res.ok) continue;
     bad++;

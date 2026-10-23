@@ -22,7 +22,7 @@ import {
   NAV_H, NOISE, BAND, BAND_KEYS, RISK, RISK_KEYS, RISK_RESTORE, VERB, ACTOR_RESOLVE, OBJ, OBJ_ID, OBJ_TYPE, CHANGE_PRED, CRED, OBJ_PRESENT,
   CRED_TYPE_LABEL, INDEX_FAMILY, CONCRETE, SYS_INDEX, ACTOR_LABEL, MAGNITUDE_RAMP, SEVERITY_RAMP, fitRows, tableLimit,
   KIBANA_INTERNALS, BOUNDED, BARE_COUNT, grouped, FAILED_OR_DENIED, PREV_TILES, prevRef, COVERAGE_REF, flatPanels,
-  HOW_TO_LABEL, TIME,
+  HOW_TO_LABEL, TIME, TIME_ONLY, IDENTITY_WHERE, HOUR_AGO, VEGA_WINDOWS, windowMs,
 } from './panels.mjs';
 
 export const GRID_W = 48;
@@ -49,6 +49,12 @@ const FRAGMENT_USES = {
   'vega/05-rare-event-scatter.json': { TIME, RISK, RISK_KEYS, RISK_RESTORE },
   'vega/06-geo-origin.json': { TIME, ACTOR_RESOLVE },
   'vega/07-noise-ratio-stream.json': { TIME, BAND_KEYS, BAND },
+  // Fixed-window specs (VEGA_WINDOWS, panels.mjs): their panel carries the window, TIME still the dropdowns.
+  'vega/08-actor-baseline-band.json': { TIME, HOUR_AGO },
+  'vega/09-activity-punchcard.json': { TIME, HOUR_AGO },
+  // TIME on the selection, TIME_ONLY on the estate it is ranked against (TWO_DATASET_SPECS below).
+  'vega/12-actor-cohort.json': { TIME, TIME_ONLY },
+  'vega/13-session-gantt.json': { TIME },
   // Groups on the real user.email (never the actor COALESCE); TIME pins the identity dropdowns' filter.
   'vega/10-actor-geography.json': { TIME },
   'vega/11-actor-object-flow.json': { TIME, OBJ_PRESENT, CRED, VERB, OBJ_TYPE },
@@ -165,10 +171,8 @@ function checkFragmentDrift(problems) {
  * spec nothing checks, and that is how drift went unnoticed before FRAGMENT_USES existed.
  */
 const DSL_SPECS = new Set([
-  'vega/08-actor-baseline-band.json',
-  'vega/09-activity-punchcard.json',
-  'vega/12-actor-cohort.json',
-  'vega/13-session-gantt.json',
+  // 08, 09, 12 and 13 were DSL through 1.0.5 for their fixed windows; they are ES|QL on a panel range now
+  // (VEGA_WINDOWS), so they follow the identity dropdowns.
   `vega/${COVERAGE_REF}.json`,
   // Generated from PREV_TILES (panels.mjs); --lint checks each one's count against its ES|QL twin.
   ...Object.keys(PREV_TILES).map((k) => `vega/${prevRef(k)}.json`),
@@ -182,15 +186,20 @@ const DSL_SPECS = new Set([
 const WHOLE_STREAM_SPECS = new Set([`vega/${COVERAGE_REF}.json`]);
 
 /**
- * DSL specs that deliberately hold one dataset scoped by the control bar and estate-wide datasets
- * beside it, so a person can be drawn against everyone else. The estate-wide half looks like a
- * forgotten placeholder, which is exactly why its shape is asserted rather than trusted.
+ * ES|QL specs that deliberately hold one dataset scoped to the selection and estate-wide datasets beside
+ * it, so a person can be drawn against everyone else. The estate-wide half looks like a forgotten filter,
+ * which is exactly why its shape is asserted rather than trusted.
  *
- * The cohort must still follow the Project control, and Kibana cannot apply one control's filter to
- * a DSL dataset: it is all three clauses or none. So the scoped dataset reports which projects the
- * selection is active in, the estate dataset is broken down by project, and the spec picks the rows.
- * Both halves must aggregate on the Project control's field — without that, the cohort silently goes
- * back to ranking across every project whatever the control says.
+ *   selection  exactly one dataset with "%context%": true (pills, KQL and the classic controls) bounded by
+ *              TIME (the identity dropdowns)
+ *   estate     the rest: no %context% and TIME_ONLY, so neither the pills nor the dropdowns narrow it
+ *
+ * A Vega ES|QL dataset gets the dashboard's filters only through %context% (esql_query_parser.ts), and it
+ * is all of them or none — so the estate cannot take the Project control alone, and would otherwise go back
+ * to ranking across every project whatever the control says. The selection reports which projects it is
+ * active in, an estate dataset is broken down by project, and the spec picks the rows: both must group BY
+ * the Project control's field. (Through 1.0.5 the same rule held for the DSL form and its three
+ * %dashboard_context% clauses.)
  */
 const TWO_DATASET_SPECS = new Set(['vega/12-actor-cohort.json']);
 const CONTEXT_CLAUSES = ['%dashboard_context-must_clause%', '%dashboard_context-must_not_clause%', '%dashboard_context-filter_clause%'];
@@ -201,6 +210,67 @@ function dataEntries(node, out = []) {
   if (node.url && typeof node.url === 'object' && typeof node.url.index === 'string' && node.url.body) out.push(node);
   for (const v of Object.values(node)) dataEntries(v, out);
   return out;
+}
+
+/** Every ES|QL data source in a spec (`url: { "%type%": "esql", query }`), Vega or Vega-Lite, at any depth. */
+function esqlEntries(node, out = []) {
+  if (Array.isArray(node)) { node.forEach((n) => esqlEntries(n, out)); return out; }
+  if (!node || typeof node !== 'object') return out;
+  if (node.url && typeof node.url === 'object' && node.url['%type%'] === 'esql') out.push(node);
+  for (const v of Object.values(node)) esqlEntries(v, out);
+  return out;
+}
+
+/** True when an ES|QL query groups BY `field` (in any STATS … BY clause). */
+const groupsBy = (q, field) => new RegExp(`\\bBY\\b[^|]*?(?:=\\s*)?${field.replace(/\./g, '\\.')}\\b`).test(q);
+
+export function checkTwoDatasets(file, spec, problems) {
+  const ds = esqlEntries(spec);
+  const sel = ds.filter((d) => d.url['%context%'] === true && d.url.query.includes(TIME));
+  const estate = ds.filter((d) => d.url['%context%'] === undefined && d.url.query.includes(TIME_ONLY) && !d.url.query.includes(IDENTITY_WHERE));
+  if (sel.length !== 1 || !estate.length || sel.length + estate.length !== ds.length) {
+    problems.push(`vega: ${file} must hold exactly one ES|QL dataset with "%context%": true bounded by TIME, and estate datasets with no %context% bounded by TIME_ONLY `
+      + `(found ${ds.length}: ${sel.length} selection, ${estate.length} estate, ${ds.length - sel.length - estate.length} neither)`);
+  }
+  const field = CONTROLS[0].field;
+  if (sel.length === 1 && !groupsBy(sel[0].url.query, field)) {
+    problems.push(`vega: ${file} selection dataset ${sel[0].name} does not group BY ${field} — the spec cannot tell which projects the ${CONTROLS[0].title} control left in`);
+  }
+  if (estate.length && !estate.some((d) => groupsBy(d.url.query, field))) {
+    problems.push(`vega: ${file} has no estate dataset grouped BY ${field} — the cohort would stop following the ${CONTROLS[0].title} control`);
+  }
+}
+
+/**
+ * FIXED-WINDOW SPECS (VEGA_WINDOWS, panels.mjs). The window rides on the panel, so the spec has to be ES|QL
+ * (a DSL spec ignores a panel range) and bounded by TIME — or its panel would follow the window and not the
+ * identity dropdowns. Every panel showing one carries exactly the declared window, and no other panel carries
+ * a range of its own: a stray time_range silently detaches a panel from the picker.
+ */
+function checkFixedWindows(name, panels, problems) {
+  for (const p of panels) {
+    const tr = p.config?.time_range;
+    const ref = p.config?.ref_id ? objFile(p.config.ref_id)?.replace(/^vega\/|\.json$/g, '') : undefined;
+    const want = ref ? VEGA_WINDOWS[ref] : undefined;
+    if (tr && !want) problems.push(`${name}: panel ${p.id} "${p.config.title}" has its own time range but is not a VEGA_WINDOWS spec — it would silently ignore the time picker`);
+    if (want && JSON.stringify(tr) !== JSON.stringify(want)) problems.push(`${name}: panel ${p.id} shows vega/${ref} with time range ${JSON.stringify(tr)}, VEGA_WINDOWS says ${JSON.stringify(want)} — build it with vega()`);
+  }
+}
+
+function checkFixedWindowSpecs(problems) {
+  for (const [ref, win] of Object.entries(VEGA_WINDOWS)) {
+    const file = `vega/${ref}.json`;
+    try { windowMs(win); } catch (e) { problems.push(`VEGA_WINDOWS ${ref}: ${e.message}`); }
+    if (!existsSync(join(ROOT, file))) { problems.push(`VEGA_WINDOWS ${ref}: ${file} is missing`); continue; }
+    const spec = JSON.parse(readFileSync(join(ROOT, file), 'utf8'));
+    if (dataEntries(spec).length) problems.push(`vega: ${file} has a fixed window (VEGA_WINDOWS) but a DSL data source — a DSL spec ignores the panel's range`);
+    const ds = esqlEntries(spec);
+    if (!ds.length) problems.push(`vega: ${file} has a fixed window (VEGA_WINDOWS) but no ES|QL data source`);
+    for (const d of ds) {
+      if (!d.url.query.includes(TIME_ONLY)) problems.push(`vega: ${file} dataset ${d.name || '(unnamed)'} is not bounded by TIME/TIME_ONLY — it would scan past the panel's window`);
+    }
+    if (!FRAGMENT_USES[file]?.TIME) problems.push(`vega: ${file} has a fixed window but FRAGMENT_USES does not pin TIME — it would stop following the identity dropdowns unnoticed`);
+  }
 }
 
 /** Every legend `values` expression in a spec (Vega-Lite `legend.values.expr`, or a Vega legend's `values.signal`). */
@@ -308,19 +378,7 @@ function checkVega(problems) {
       if (q.includes('%dashboard_context-must_clause%')) scoped++;
     }
     if (TWO_DATASET_SPECS.has(file)) {
-      const body = (d) => JSON.stringify(d.url.body);
-      const full = dsl.filter((d) => CONTEXT_CLAUSES.every((c) => body(d).includes(c)));
-      const none = dsl.filter((d) => CONTEXT_CLAUSES.every((c) => !body(d).includes(c)));
-      if (full.length !== 1 || none.length < 1 || full.length + none.length !== dsl.length) {
-        problems.push(`vega: ${file} must hold exactly one DSL dataset scoped by all three control-bar clauses and at least one estate-wide dataset with none of them `
-          + `(found ${dsl.length}: ${full.length} fully scoped, ${none.length} unscoped, ${dsl.length - full.length - none.length} partly scoped)`);
-      }
-      const projectField = `"field":"${CONTROLS[0].field}"`;
-      for (const d of dsl) {
-        if (!body(d).includes(projectField)) {
-          problems.push(`vega: ${file} dataset ${d.name} does not aggregate on ${CONTROLS[0].field} — the cohort would stop following the ${CONTROLS[0].title} control`);
-        }
-      }
+      checkTwoDatasets(file, spec, problems);
     } else if (WHOLE_STREAM_SPECS.has(file)) {
       if (dsl.some((d) => CONTEXT_CLAUSES.some((c) => JSON.stringify(d.url.body).includes(c)))) {
         problems.push(`vega: ${file} describes the whole stream but carries a %dashboard_context% clause — the control bar would narrow it`);
@@ -582,6 +640,7 @@ export function checkLayout(all) {
     checkClickFilters(name, panels, problems);
     checkTitles(name, panels, problems);
     checkEmptyWording(name, panels, problems);
+    checkFixedWindows(name, panels, problems);
     rows.push(`${name}: panels=${panels.length} rows=${maxY}`);
     // Advisory, not a failure: a table whose columns cannot fit a 1440px viewport needs a layout
     // decision (a wider panel or fewer columns), which no width arithmetic can make. See fitWidths().
@@ -590,6 +649,7 @@ export function checkLayout(all) {
   }
   checkFragmentDrift(problems);
   checkVega(problems);
+  checkFixedWindowSpecs(problems);
   checkSessions(problems);
   checkSearchTips(problems);
   return { problems, panelCount, dashboards: Object.keys(all).length, rows };
