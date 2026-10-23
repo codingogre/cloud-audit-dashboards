@@ -1,11 +1,11 @@
 /** 02 Kibana Object Forensics — see scripts/lib/definitions.mjs for how the suite is assembled. */
 import {
-  IDX, ACTOR_KEYS, ACTOR_RESOLVE, TIME, BUCKET, KIB, VERB, CHANGE, OBJ_GROK, OBJ_NAME, OBJ_ID, OBJ_TYPE, PALETTE, KIBANA_INTERNALS, dash, kpi, prevKpi, xy, bar, table,
-  vega, search, resetIds, sized
+  IDX, ACTOR_KEYS, ACTOR_RESOLVE, TIME, BUCKET, KIB, VERB, CHANGE, OBJ_GROK, OBJ_NAME, OBJ_ID, OBJ_TYPE, PALETTE, KIBANA_INTERNALS, dash, kpi,
+  prevKpi, xy, bar, table, vega, resetIds, sized, ACTOR, OBJ, OBJ_PRESENT, filterable
 } from '../panels.mjs';
 import { rawId } from '../suite.mjs';
 import {
-  CHANGED, CHANGED_KEYS, CHANGED_DERIVE, specDescription, PIN_PRINCIPAL_SHORT, RAW_RECORDS, IDENTITY_HOW_TO
+  CHANGED, CHANGED_KEYS, CHANGED_DERIVE, specDescription, PIN_PRINCIPAL_SHORT, RAW_RECORDS, IDENTITY_HOW_TO, sessionRecords
 } from './shared.mjs';
 
 /**
@@ -92,8 +92,8 @@ const CHANGE_SERIES = `${CHANGE} | STATS n = COUNT(*) BY ${BUCKET}, event.action
  * every event and its display name on none — not even on space_get/space_find, whose saved_object.name
  * is null (checked over 24h, 2026-10-14) — so no panel can show the name. Line-wrapping a list breaks
  * after a hyphen, which split "r3chk-04" into "r3chk-" and "04" as if they were two spaces; a WORD
- * JOINER (U+2060) after each hyphen in searches/08's Space list removes that break opportunity and
- * prints nothing. It is a display column with no filter behind it (Discover renames it), so the
+ * JOINER (U+2060) after each hyphen in Cross-space activity's Space list (and searches/08's) removes that break
+ * opportunity and prints nothing. It is a display column the query assigns, never a click filter, so the
  * invisible character costs no pivot.
  */
 // Said once, in this page's How to read block, rather than in each tooltip.
@@ -106,6 +106,23 @@ const CHANGE_SERIES = `${CHANGE} | STATS n = COUNT(*) BY ${BUCKET}, event.action
  * Sorting runs on the ≤ ~300 aggregated rows, so it costs nothing measurable.
  */
 const SERIES_ORDER = 'SORT verb != "create", verb != "update", verb != "delete"';
+
+/**
+ * CROSS_SPACE (searches/08): identities by how many spaces they touched, all Kibana traffic. Counted first by the
+ * raw identity fields and the space (QUERY SHAPE rule 2), resolved after. The list wraps (`{ wrap: true }`), so a
+ * WORD JOINER after each hyphen stops "r3chk-04" breaking into "r3chk-" and "04".
+ */
+const CROSS_SPACE = `FROM ${IDX} | ${TIME} | WHERE kibana.space.id IS NOT NULL | STATS n = COUNT(*) BY ${ACTOR_KEYS}, kibana.space.id ` +
+  `| ${ACTOR_RESOLVE} | STATS events = SUM(n), spaces = COUNT_DISTINCT(kibana.space.id), space_list = VALUES(kibana.space.id) BY actor ` +
+  '| SORT spaces DESC, events DESC | LIMIT 1000 | EVAL space_list = REPLACE(MV_CONCAT(MV_SORT(space_list), ", "), "-", "-⁠")';
+
+/**
+ * OBJECT_ACTIVITY (searches/04): Kibana reads and changes of named objects, newest first, less KIBANA_INTERNALS.
+ * Sorted and cut before VERB, OBJ and the label run (QUERY SHAPE rule 3): searches/04 went 10.6s → 0.18s over 7
+ * days for that.
+ */
+const OBJECT_ACTIVITY = `FROM ${IDX} | ${TIME} | ${KIB} | WHERE ${OBJ_PRESENT} | ${NOT_INTERNAL} | SORT @timestamp DESC | LIMIT 1000 ` +
+  `| ${ACTOR_RESOLVE} | ${VERB} | ${OBJ} | ${objLabel('obj_name', 'obj_type')} | KEEP @timestamp, actor, verb, obj_type, obj_name, kibana.space.id, body.text`;
 
 /** The intro (draft 4 of the 1.0.3 customer copy; INTRO TEXT in panels.mjs). */
 const INTRO = {
@@ -220,17 +237,25 @@ export function build() {
     bar(12, 44, 12, 11, 'Busiest spaces by id · all traffic · up to 10',
       `FROM ${IDX} | ${TIME} | WHERE kibana.space.id IS NOT NULL | STATS events = COUNT(*) BY space = kibana.space.id | SORT events DESC | LIMIT 10`,
       'space', 'events', 'Kibana activity in the busiest spaces, all traffic; hover a bar for its count. Viewing these dashboards counts too, in the space they are viewed from.'),
-    search(24, 44, 24, 11, '08-cross-space-activity', 'Cross-space activity · all traffic',
-      'Identities ranked by how many Kibana spaces they touched, all traffic, with the spaces named; the ⤢ at a row’s left opens a long list. More than one space is worth understanding.'),
-    search(0, 55, 48, 15, '04-kibana-object-changes', 'Kibana saved-object activity · noise gate applied · newest 1,000 at most',
-      'Kibana reads and changes of named objects, newest first, up to 1,000 in range: the result count is that cap, not a total. Routine page loads and this suite’s own activity are left out. Open in Discover for more.'),
+    // Lens tables since 1.0.5.1 (RECORD FEEDS, panels.mjs), so the identity dropdowns narrow them; each keeps the
+    // logic of the Discover session of the same name (searches/08, 04). Space list wraps, as the session's three-line
+    // rows did, so a long list is read whole.
+    table(24, 44, 24, 11, 'Cross-space activity · all traffic', CROSS_SPACE,
+      ['actor', { column: 'space_list', label: 'Space list' }], [sized('spaces', 80, { label: 'Spaces' }), 'events'],
+      'Identities ranked by how many Kibana spaces they touched, all traffic, with the spaces named. More than one space is worth understanding.',
+      { wrap: true }),
+    table(0, 55, 48, 15, 'Kibana saved-object activity · noise gate applied', OBJECT_ACTIVITY,
+      [sized('actor', 245, { min: 200 }), 'verb', sized('obj_type', 140, { label: 'Object type' }), { column: 'obj_name', label: 'Object' }, filterable('kibana.space.id'), 'body.text'],
+      ['@timestamp'],
+      'Kibana reads and changes of named objects, record by record, newest first. Routine page loads and this suite’s own activity are left out. Click a Space to pin it.',
+      { scroll: true }),
     // The session timeline from Actor 360 (vega/13, one spec, so the two pages cannot disagree), directly
     // above the records it indexes: a click on a bar pins that session and zooms the picker to it, which
     // narrows Session reconstruction beneath. A DSL spec on its own fixed 24 hours, so the title says so
     // on a page where every other panel follows the picker.
     vega(0, 70, 48, 7, '13-session-gantt', 'Kibana browser sessions · fixed last 24 hours, your time zone', specDescription('13-session-gantt')),
-    search(0, 77, 48, 14, '09-session-reconstruction', 'Session reconstruction · newest 1,000 at most',
-      'One person’s Kibana session, event by event, newest first: each object they opened or changed, in Kibana’s own words. Click a session bar above or filter on a session id, then open in Discover and sort oldest first.',
+    sessionRecords(0, 77, 48, 14, 'Session reconstruction',
+      'One person’s Kibana session, event by event, newest first: each object they opened or changed, in Kibana’s own words. Click a session bar above, or a Session cell, to narrow it to one session.',
       { empty: 'empty when no browser session opened or changed anything' }),
   ];
   return dash(rawId('02-kibana-objects'), '[Audit] 🗂️ Kibana Object Forensics',

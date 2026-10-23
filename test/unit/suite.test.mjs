@@ -295,3 +295,43 @@ test('1.0.5.1: the identity a panel shows is resolved on grouped rows (by ACTOR_
     }
   }
 });
+
+test('record feeds (1.0.5.1): no Discover session panel; each record list is a Lens table that follows the identity dropdowns', async () => {
+  const { checkClickFilters } = await import('../../scripts/lib/layout.mjs');
+  const { TIME, IDENTITY_WHERE, BOUNDED, flatPanels } = await import('../../scripts/lib/panels.mjs');
+  withEnv({ AUDIT_WITH: 'platform-volume', AUDIT_ID_NS: undefined }, () => {
+    const all = buildAll();
+    for (const [name, def] of Object.entries(all)) {
+      // A Discover panel takes no ES|QL control variables, so it would ignore Identity type and Identity.
+      assert.ok(!flatPanels(def.panels).some((p) => p.type === 'discover_session'), `${name}: no discover_session panel`);
+    }
+    // Title prefix → its click-to-filter columns: raw fields shown as they are, never a computed column.
+    const want = {
+      '00-command-center': { 'Live signal feed': ['event.action'] },
+      '01-identity-access': { 'Failed sign-ins and denied access': ['event.action', 'client.ip'], 'API key inventory': [], 'Identity first and last seen': [] },
+      '02-kibana-objects': { 'Cross-space activity': [], 'Kibana saved-object activity': ['kibana.space.id'], 'Session reconstruction': ['kibana.session.id', 'kibana.space.id'] },
+      '03-data-access': { 'Raw system index requests': ['elasticsearch.audit.action', 'elasticsearch.audit.indices', 'client.ip'] },
+      '04-security-anomalies': { 'Config-change event feed': ['event.action'], 'Mutation feed': ['event.action', 'kibana.space.id'] },
+      '07-actor-360': { 'Session records': ['kibana.session.id', 'kibana.space.id'] },
+    };
+    for (const [name, tables] of Object.entries(want)) {
+      for (const [title, cols] of Object.entries(tables)) {
+        const p = flatPanels(all[name].panels).find((x) => x.config?.title?.startsWith(title));
+        assert.ok(p, `${name}: ${title}`);
+        const q = p.config.data_source.query;
+        assert.equal(p.config.type, 'data_table', `${name}: ${title} is a Lens table`);
+        assert.ok(q.includes(TIME) && TIME.includes(IDENTITY_WHERE), `${name}: ${title} is bounded by TIME, so the dropdowns narrow it`);
+        assert.ok(p.lint.scroll && BOUNDED(p.lint.limit).test(p.config.title), `${name}: ${title} scrolls to the bound its title states`);
+        assert.deepEqual(p.config.rows.filter((r) => r.click_filter).map((r) => r.column), cols, `${name}: ${title} click columns`);
+        assert.equal(hasFilterableColumn(p), cols.length > 0, `${name}: ${title} drills only when something is clickable`);
+        const problems = []; checkClickFilters(name, [p], problems);
+        assert.deepEqual(problems, [], `${name}: ${title}`);
+        // A record feed (time as its metric) sorts and cuts straight after its filter (QUERY SHAPE rule 3).
+        if (p.config.metrics.some((m) => m.column === '@timestamp')) {
+          const cut = q.indexOf('| SORT @timestamp DESC | LIMIT');
+          assert.ok(cut > 0 && !q.slice(0, cut).includes('| EVAL') && !/\|\s*(GROK|STATS)\b/.test(q.slice(0, cut)), `${name}: ${title} sorts before it classifies`);
+        }
+      }
+    }
+  });
+});

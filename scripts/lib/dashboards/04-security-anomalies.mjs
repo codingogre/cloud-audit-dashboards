@@ -1,7 +1,8 @@
 /** 04 Security & Anomalies — see scripts/lib/definitions.mjs for how the suite is assembled. */
 import {
   IDX, ACTOR_RESOLVE, RISK_INDEX_STATS, RISK_INDEX_EVAL, NOISE, TIME, BUCKET, SCOPE, PALETTE, PRIVILEGED,
-  privilegedKpi, FAILED_OR_DENIED, RISK_PREFILTER, RISK_KEYS, RISK_RESTORE, RISK, grouped, dash, kpi, xy, table, vega, search, sized, fitRows, resetIds
+  privilegedKpi, FAILED_OR_DENIED, RISK_PREFILTER, RISK_KEYS, RISK_RESTORE, RISK, grouped, dash, kpi, xy, table, vega, sized, fitRows, resetIds,
+  filterable, CHANGE_PRED, HOUSEKEEPING, OBJ
 } from '../panels.mjs';
 import { rawId } from '../suite.mjs';
 import {
@@ -47,6 +48,20 @@ const TARGET =
 const TARGET_SHOW =
   'EVAL latest = REPLACE(latest, ",", ", ") | EVAL latest = CASE(LENGTH(latest) > 72, CONCAT(LEFT(latest, 71), "…"), latest) ' +
   '| EVAL latest = COALESCE(latest, "(none named in the payload)")';
+
+/**
+ * MUTATION_FEED (searches/01): every Kibana change (CHANGE_PRED) and every Elasticsearch security configuration
+ * change, less Kibana's key clean-up, newest first. Sorted and cut straight after the filter (QUERY SHAPE rule
+ * 3), so OBJ's GROKs and CASE and the payload GROKs run on the 1,000 rows kept. An Elasticsearch change names
+ * its target from the payload (a key's name, the invalidated ids, a role) and takes its type from the action.
+ */
+const MUTATION_FEED = `FROM ${IDX} | ${TIME} | WHERE ${CHANGE_PRED} OR ${CHG} IS NOT NULL | WHERE NOT ${HOUSEKEEPING} | SORT @timestamp DESC | LIMIT 1000 ` +
+  `| ${ACTOR_RESOLVE} | ${OBJ} ` +
+  `| GROK ${CHG} """"name":"%{DATA:t_name}"""" | GROK ${CHG} """"ids":\\[%{DATA:t_ids}\\]""" | GROK ${CHG} """"id":"%{DATA:t_id}"""" | GROK ${CHG} """"uid":"%{DATA:t_uid}"""" ` +
+  '| EVAL target = COALESCE(t_name, REPLACE(REPLACE(t_ids, "\\"", ""), ",", ", "), t_id, t_uid) ' +
+  `| EVAL obj_name = COALESCE(obj_name, target, CASE(${CHG} IS NOT NULL, "(none named in the payload)")), message = COALESCE(body.text, ${CHG}) ` +
+  '| EVAL obj_type = CASE(service.name == "serverless-kibana", obj_type, event.action LIKE "*apikey*", "api-key", event.action LIKE "*_role", "role", event.action LIKE "*user_profile*", "user-profile", obj_type) ' +
+  '| KEEP @timestamp, actor, event.action, obj_type, obj_name, kibana.space.id, message';
 
 /**
  * PRIVILEGED, on every panel here that counts security config changes (the two tiles, the table, the
@@ -229,27 +244,21 @@ export function build() {
       `FROM ${IDX} | ${TIME} | ${FAILED_OR_DENIED} | ${ACTOR_RESOLVE} | STATS events = COUNT(*), ips = COUNT_DISTINCT(client.ip), ip = LAST(client.ip, @timestamp), last_seen = MAX(@timestamp) BY actor, user.name, action = event.action | SORT events DESC, actor, action | ${SCOPE} | EVAL ip = COALESCE(CASE(CIDR_MATCH(ip, "100.64.0.0/10"), CONCAT(TO_STRING(ip), " (internal)"), TO_STRING(ip)), "none recorded") | LIMIT ${fitRows(TH)}`,
       [WHO_COL, PIN_PRINCIPAL, WHAT_COL, { column: 'ip', label: 'Latest IP', width: 200, min: 170 }], [{ column: 'ips', label: 'Client IPs' }, 'events', 'last_seen', SCOPE_LAST],
       'Failed and denied operations by identity and action, most frequent first, with the latest client IP and how many addresses were used. Many addresses behind one identity suggests a spray; “(internal)” is the platform’s own hop.', { empty: 'good' }),
-    // Discover in ES|QL mode returns at most 1,000 rows and prints that as "1,000 results", which on a
-    // 24h range sat under a Config changes tile reading 1,976. The cap is the reason, so the title says it.
-    //
-    // FEED HEIGHTS are set so the grid ends on a whole row. An embedded Discover grid starts its first
-    // row 106px below a panel's 28h px, and rows step 27px (one line) or 46px (two lines) against the
-    // dashboard's 28px unit, so most heights cut the last visible row through its glyphs (round 4: h=12
-    // left 14px of a ninth row, h=14 16px of an eleventh). Changing h moves the cut by only 1px a unit;
-    // the heights that land on a row edge are 1-line h=25–27 and 2-line h=12. The session has no
-    // density or rows-per-page setting that the embedded grid honours (both tried, both ignored).
-    //   Config feed: one-line rows (searches/03 row_height 1) at h=25 = exactly 22 rows. It was two-line
-    //   rows at h=12 (5 rows) so a long create_apikey payload showed more before it was cut, but most rows
-    //   are short (activate_user_profile, delete_role: ~50 characters) and left half the grid as empty
-    //   second lines, 5 of 776 events in view (round-5 review). A long payload is one click away (expand).
-    //   Mutation feed: one-line rows at h=25 = exactly 22 rows, the page's long read.
-    // The Config-change feed sits LAST: it is mostly empty over the default hour (a change or two once the
-    // clean-up is left out), and a sparse grid at the foot of the page reads as the end of it, not a gap.
-    search(0, 102, 48, 25, '03-security-config-changes', 'Config-change event feed · newest 1,000 at most',
-      'Every security configuration change, one event per row, newest first. The payload is cut at the panel edge: expand a row to read it whole. Capped at the newest 1,000; the Config changes tile has the total.',
-      { empty: 'good' }),
-    search(0, 77, 48, 25, '01-all-mutations', 'Mutation feed · newest 1,000 at most',
-      'Every create, update and delete in Kibana and in Elasticsearch security configuration, newest first, with what each change named. Capped at the newest 1,000, so the result count is that cap; narrow the time range to reach older events.'),
+    // The two record feeds, Lens tables since 1.0.5.1 (RECORD FEEDS, panels.mjs), so the identity dropdowns narrow
+    // them; the logic of searches/03 and searches/01. One-line rows at h=25 show 26 rows and scroll to the 1,000
+    // the title states. The Config-change feed sits LAST: it is mostly empty over a quiet range (a change or two
+    // once the clean-up is left out), and a sparse table at the foot of the page reads as the end of it, not a gap.
+    table(0, 102, 48, 25, 'Config-change event feed',
+      `FROM ${IDX} | ${TIME} | ${PRIVILEGED} | SORT @timestamp DESC | LIMIT 1000 | ${ACTOR_RESOLVE} | KEEP @timestamp, actor, event.action, ${CHG}`,
+      [sized('actor', 230, { min: 200 }), filterable('event.action', { label: 'Action', width: 190, min: 175 }), CHG], ['@timestamp'],
+      'Every security configuration change, one event per row, newest first, with the raw change record; hover a cut record to expand it. The Config changes tile has the total. Click an Action to pin it.',
+      { scroll: true, empty: 'good' }),
+    table(0, 77, 48, 25, 'Mutation feed', MUTATION_FEED,
+      [sized('actor', 245, { min: 200 }), filterable('event.action', { label: 'Action', width: 190, min: 175 }), sized('obj_type', 120, { label: 'Object type' }), { column: 'obj_name', label: 'Object' },
+        filterable('kibana.space.id'), { column: 'message', label: 'Message' }],
+      ['@timestamp'],
+      'Every create, update and delete in Kibana and in Elasticsearch security configuration, newest first, with what each change named. Kibana’s routine API-key clean-up is left out. Click an Action or Space to pin it.',
+      { scroll: true }),
   ];
   return dash(rawId('04-security-anomalies'), '[Audit] 🚨 Security & Anomalies',
     'Mean-severity risk scoring, privileged operations, failures and newly seen identities.', P, { intro: INTRO });

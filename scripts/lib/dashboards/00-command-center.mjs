@@ -1,7 +1,7 @@
 /** 00 Command Center — see scripts/lib/definitions.mjs for how the suite is assembled. */
 import {
-  IDX, ACTOR_RESOLVE, NOISE, BAND, BAND_KEYS, TIME, BUCKET, SOURCE_LABEL, SOURCE_COLORS, dash, kpi, xy, bar, table, sized, vega, search,
-  resetIds, privilegedKpi, prevKpi, grouped, fitRows, COVERAGE_REF, COVERAGE_TITLE
+  IDX, ACTOR_RESOLVE, NOISE, BAND, BAND_KEYS, TIME, BUCKET, SOURCE_LABEL, SOURCE_COLORS, dash, kpi, xy, bar, table, sized, vega, resetIds,
+  privilegedKpi, prevKpi, grouped, fitRows, COVERAGE_REF, COVERAGE_TITLE, ACTOR, filterable, HOUSEKEEPING
 } from '../panels.mjs';
 import {
   legendPanel, ACTOR_KEYS, PIN_PRINCIPAL, RAW_RECORDS
@@ -49,6 +49,24 @@ const logFloor = (p) => { p.config.axis.y.domain = { type: 'custom', min: 0.5, m
  */
 const TABLE_H = 13;
 const COUNT_W = 72;
+
+/**
+ * Live signal feed: searches/10-raw-signal-feed.json's logic, bounded by TIME so the identity dropdowns narrow it
+ * (RECORD FEEDS, panels.mjs). Sorted and cut straight after the filter (QUERY SHAPE rule 3); the GROK and the
+ * CASEs that word each row run on the 200 rows kept. Detail is Kibana's own message, else the transport action,
+ * else the security change in words ("API key ci-deploy + 3 more"). The address is tagged "internal" where it is
+ * Kibana or the platform acting for someone, so it is a display column, not a click filter.
+ */
+const LIVE_FEED = `FROM ${IDX} | ${TIME} | ${NOISE} | WHERE NOT ${HOUSEKEEPING} | SORT @timestamp DESC | LIMIT 200 | ${ACTOR_RESOLVE} ` +
+  String.raw`| GROK elasticsearch.audit.security_config_change """^\{"(?<scc_obj>[a-z_]+)":\{(?:.*?"name":"(?<scc_name>[^"]+))?(?:.*?"ids?":\[?"(?<scc_id>[^"]+))?""" ` +
+  '| EVAL result = CASE(event.outcome == "unknown", "attempted", event.outcome), ' +
+  'source = CASE(service.name == "serverless-elasticsearch", "Elasticsearch", service.name == "serverless-kibana", "Kibana", service.name), ' +
+  'ip = COALESCE(CASE(CIDR_MATCH(client.ip, "10.0.0.0/8", "100.64.0.0/10", "172.16.0.0/12", "192.168.0.0/16"), CONCAT(TO_STRING(client.ip), " internal"), TO_STRING(client.ip)), "none recorded"), ' +
+  String.raw`more = (LENGTH(elasticsearch.audit.security_config_change) - LENGTH(REPLACE(elasticsearch.audit.security_config_change, "\",\"", ""))) / 3, ` +
+  'detail = COALESCE(body.text, elasticsearch.audit.action, CONCAT(CASE(scc_obj IN ("apikey", "apikeys"), "API key", scc_obj), " ", COALESCE(scc_name, scc_id), ' +
+  'CASE(scc_obj == "apikeys" AND more > 0, CONCAT(" + ", TO_STRING(more), " more"), "")), ' +
+  String.raw`REPLACE(elasticsearch.audit.security_config_change, "[{}\"]", "")) ` +
+  '| KEEP @timestamp, actor, source, event.action, result, ip, detail';
 
 /** The intro (draft 1 of the 1.0.3 customer copy; INTRO TEXT in panels.mjs). */
 const INTRO = {
@@ -166,10 +184,15 @@ export function build() {
       `FROM ${IDX} | ${TIME} | STATS events = COUNT(*) BY category = event.category | EVAL category = COALESCE(category, "none recorded") | SORT events DESC | LIMIT 8 | EVAL category = CONCAT(category, " · ", ${grouped('events')}) | KEEP category, events`,
       'category', 'events', 'Event categories across all traffic, routine included. Log scale: read each bar’s count, not its length. An event can belong to two categories, so the bars sum to more than the total; “none recorded” means no category.',
       { yScale: 'log' })),
-    // h=25, not 15: Discover rows are 27px on a 28px grid unit, so the last visible row moves 1px per
-    // unit of height. At 15 it was cut through its text; at 25 the grid ends on a row boundary.
-    search(0, 49, 48, 25, '10-raw-signal-feed', 'Live signal feed · Kibana key clean-up left out',
-      'The newest 200 signal events, with routine traffic and Kibana’s own key clean-up left out. Long runs of near-identical rows from one identity are automation: pick an Identity, or filter it out in Discover, to read past it.'),
+    // The record feed (RECORD FEEDS, panels.mjs): a Lens table, so the identity dropdowns narrow it. The same
+    // events as the Raw signal feed session the intro links to: NOISE, then Kibana's key clean-up (HOUSEKEEPING)
+    // left out. 25 rows show 26 lines (fitRows), and the 200 the title states scroll.
+    table(0, 49, 48, 25, 'Live signal feed · Kibana key clean-up left out', LIVE_FEED,
+      [sized('actor', 245, { min: 200 }), sized('source', 100, { min: 100 }), filterable('event.action', { label: 'Action', width: 230, min: 200 }),
+        { column: 'result', label: 'Outcome' }, { column: 'ip', label: 'Client IP', width: 175, min: 150 }, { column: 'detail', label: 'Detail' }],
+      ['@timestamp'],
+      'The newest signal events, routine traffic and Kibana’s own key clean-up left out. Long runs of near-identical rows from one identity are automation: pick it in the Identity dropdown to read it alone.',
+      { scroll: true }),
   ];
   return dash(rawId('00-command-center'), '[Audit] 🎛️ Command Center',
     'Entry point for Cloud Audit Dashboards. KPIs, volume, actor risk and the live signal feed.', P, { intro: INTRO });

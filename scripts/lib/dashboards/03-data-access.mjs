@@ -3,7 +3,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ROOT } from '../env.mjs';
 import {
-  IDX, ACTOR_RESOLVE, ACTOR_KEYS, TIME, BUCKET, ESS, INDEX_FAMILY, CONCRETE, SYS_INDEX, identityLabel, dash, kpi, prevKpi, xy, table, vega, search, sized, fitRows, resetIds
+  IDX, ACTOR_RESOLVE, ACTOR_KEYS, TIME, BUCKET, ESS, INDEX_FAMILY, CONCRETE, SYS_INDEX, identityLabel, dash, kpi, prevKpi, xy, table, vega, sized,
+  fitRows, resetIds, cloudKeyLabel, filterable
 } from '../panels.mjs';
 import { rawId } from '../suite.mjs';
 import { PIN_BY, PIN_KEY, PIN_PRINCIPAL_SHORT, RAW_RECORDS, IDENTITY_HOW_TO } from './shared.mjs';
@@ -45,8 +46,8 @@ const FAMILY =
  * `.slo-observability.sli-v3.6.2026-10-08` → `.slo*`, `.kibana_task_manager_8` → `.kibana*`, with a
  * `.ds-` prefix dropped first. Coarser than INDEX_FAMILY on purpose: one alerts query names ten
  * .alerts-* indices and one SLO read names a dozen dated ones, so per-index rows let a single
- * request fill a table and push everyone else out of view. The exact index is in the Discover
- * session. `.alert-actions` is named whole: cut at its first hyphen it read `.alert*`, which sat
+ * request fill a table and push everyone else out of view. The exact index is in Raw system index
+ * requests below. `.alert-actions` is named whole: cut at its first hyphen it read `.alert*`, which sat
  * beside `.alerts*` in the same cell and looked like a typo of it (round-4 review).
  */
 const sysArea = (col) => String.raw`CONCAT(REPLACE(${col}, """^(?:\.ds-)?(\.(?:alert-actions|[^-._]+)).*$""", "$1"), "*")`;
@@ -237,9 +238,14 @@ export function build() {
       ['actor', PIN_KEY, PIN_PRINCIPAL_SHORT, { column: 'groups', label: 'Index groups' }, sized('kinds', 240, { label: 'Kind of access' })], ['indices', 'events', 'last_seen'],
       'Who touched system and hidden indices (Kibana internals, security, alerting, SLO data), with the index groups, kinds of action and request count. Expected from Kibana and platform automation; from anyone else, a write is worth a look.',
       { empty: 'quiet', wrap: true }),
-    search(0, 71, 48, 12, '05-system-index-access', 'Raw system index requests · newest 1,000 at most',
-      'The raw requests behind the system index table above, one row per index named, newest first: one request naming ten indices is ten rows. Capped at 1,000, so it can show fewer than the tile counts.',
-      { empty: 'quiet' }),
+    // The raw requests, as a Lens table since 1.0.5.1 (RECORD FEEDS, panels.mjs), so the identity dropdowns narrow
+    // it: searches/05's logic, sorted and cut straight after the filter (QUERY SHAPE rule 3). Transport action,
+    // Index and Client IP are the raw fields, so a click pins them.
+    table(0, 71, 48, 12, 'Raw system index requests',
+      `FROM ${IDX} | ${TIME} | WHERE elasticsearch.audit.indices IS NOT NULL | MV_EXPAND elasticsearch.audit.indices | ${SYS_INDEX} | SORT @timestamp DESC | LIMIT 1000 | ${ACTOR_RESOLVE} | KEEP @timestamp, actor, elasticsearch.audit.action, elasticsearch.audit.indices, client.ip`,
+      [sized('actor', 245, { min: 200 }), filterable('elasticsearch.audit.action', { width: 300, min: 240 }), filterable('elasticsearch.audit.indices'), filterable('client.ip')], ['@timestamp'],
+      'The raw requests behind the system index table above, one row per index named, newest first: one request naming ten indices is ten rows. Click an action, index or address to pin it.',
+      { scroll: true, empty: 'quiet' }),
   ];
   return dash(rawId('03-data-access'), '[Audit] 🔎 Elasticsearch Data Access',
     'What data was read, by whom, through which transport action — including system indices.', P, { intro: INTRO });
