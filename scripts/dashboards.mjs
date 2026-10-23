@@ -20,7 +20,7 @@
  */
 import { writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { cfg, ROOT, nsId } from './lib/env.mjs';
+import { cfg, ROOT, nsId, RETIRED_OBJECTS } from './lib/env.mjs';
 import { dashId, strays, SUITE } from './lib/suite.mjs';
 import { kb } from './lib/http.mjs';
 import { success, detail, info } from './lib/log.mjs';
@@ -203,6 +203,16 @@ async function removeStrays() {
     if (status >= 300) throw new Error(`could not remove retired data view ${id}: ${status}`);
     info(`removed retired data view ${id}`);
   }
+  // The numbered Vega and Discover ids of 1.0.5 and earlier (env.mjs, RETIRED_OBJECTS). Same rule: only
+  // after every dashboard above has been re-pointed at the unnumbered id, so no panel is left dangling.
+  let retired = 0;
+  for (const { type, id } of RETIRED_OBJECTS()) {
+    const status = await kb.deleteObject(type, id);
+    if (status === 404) continue;
+    if (status >= 300) throw new Error(`could not remove retired ${type} ${id}: ${status}`);
+    retired++;
+  }
+  if (retired) info(`removed ${retired} retired numbered Vega/Discover id(s)`);
 }
 
 export async function run() {

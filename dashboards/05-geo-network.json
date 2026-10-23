@@ -106,7 +106,7 @@
         "h": 6
       },
       "config": {
-        "content": "### Where your users and API keys connect from\n\nSee activity by country and city, your busiest client addresses, and anyone seen in more than one country, a sign of a shared or stolen credential. Raw records: [All audit events](/app/discover#/view/cloud-audit-search-00-all-events), [Raw signal feed](/app/discover#/view/cloud-audit-search-10-raw-signal-feed).\n\nLocations come from each client's real address, not Elastic's own network hops. Country is reliable; city is often your internet provider's nearest hub. Private network addresses cannot be placed on a map.\n\n**How to use it:** choose a Project, Person (email), API key or Client IP in the controls and set the time picker. Click an address or email in a table to filter the whole suite to it.\n"
+        "content": "### Where your users and API keys connect from\n\nSee activity by country and city, your busiest client addresses, and anyone seen in more than one country, a sign of a shared or stolen credential. Raw records: [All audit events](/app/discover#/view/cloud-audit-search-all-events), [Raw signal feed](/app/discover#/view/cloud-audit-search-raw-signal-feed).\n\nLocations come from each client's real address, not Elastic's own network hops. Country is reliable; city is often your internet provider's nearest hub. Private network addresses cannot be placed on a map.\n\n**How to use it:** choose a Project, Person (email), API key or Client IP in the controls and set the time picker. Click an address or email in a table to filter the whole suite to it.\n"
       }
     },
     {
@@ -328,7 +328,7 @@
         "h": 17
       },
       "config": {
-        "ref_id": "cloud-audit-vega-06-geo-origin",
+        "ref_id": "cloud-audit-vega-geo-origin",
         "title": "Audited traffic by country",
         "description": "Events by real client country, shaded teal (few) to pink (most) on a log scale. Hover a country for details. The title line says how much traffic could be placed: a blank country is not proof of no traffic."
       }

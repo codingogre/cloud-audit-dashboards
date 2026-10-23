@@ -16,7 +16,7 @@
  */
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { ROOT, cfg } from './env.mjs';
+import { ROOT, cfg, objFile } from './env.mjs';
 import { CONTROLS } from './controls.mjs';
 import {
   NAV_H, NOISE, BAND, BAND_KEYS, RISK, RISK_KEYS, RISK_RESTORE, VERB, ACTOR_RESOLVE, OBJ, OBJ_ID, OBJ_TYPE, CHANGE_PRED, CRED, OBJ_PRESENT,
@@ -131,10 +131,10 @@ function checkRefs(name, panels, problems) {
   for (const p of panels) {
     const ref = p.config?.ref_id;
     if (!ref) continue;
-    const [, kind, file] = ref.match(new RegExp(`^${cfg.ns}-(vega|search)-(.+)$`)) || [];
-    const dir = kind === 'vega' ? 'vega' : 'searches';
-    if (!file || !existsSync(join(ROOT, dir, `${file}.json`))) {
-      problems.push(`${name}: panel ${p.id} references ${ref}, but ${dir}/${file}.json does not exist`);
+    // Only this run's namespace counts: a ref built under another AUDIT_ID_NS would deploy dangling.
+    const file = ref.startsWith(`${cfg.ns}-`) ? objFile(ref) : null;
+    if (!file || !existsSync(join(ROOT, file))) {
+      problems.push(`${name}: panel ${p.id} references ${ref}, but no file in vega/ or searches/ deploys as that id`);
     }
   }
 }

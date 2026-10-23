@@ -83,15 +83,16 @@ test('percentile', () => {
 
 test('groupByDashboard puts embedded Vega and Discover queries on every dashboard that embeds them', () => {
   const defs = {
-    a: { panels: [{ config: { ref_id: 'cloud-audit-vega-01-x' } }, { config: { ref_id: 'cloud-audit-search-02-y' } }] },
-    b: { panels: [{ config: { nested: [{ ref_id: 'cloud-audit-vega-01-x' }] } }] },
+    a: { panels: [{ config: { ref_id: 'cloud-audit-vega-actor-risk-treemap' } }, { config: { ref_id: 'cloud-audit-search-all-mutations' } }] },
+    b: { panels: [{ config: { nested: [{ ref_id: 'cloud-audit-vega-actor-risk-treemap' }] } }] },
   };
-  const esql = [{ src: 'dashboards/a', i: 0, q: 'FROM s' }, { src: 'vega/01-x.json', i: 0, q: 'FROM s' },
-                { src: 'searches/02-y.json', i: 0, q: 'FROM s' }, { src: 'vega/99-orphan.json', i: 0, q: 'FROM s' }];
-  const dsl = [{ src: 'vega/01-x.json', i: 0, index: 's', body: {} }];
+  const V = 'vega/01-actor-risk-treemap.json', S = 'searches/01-all-mutations.json';
+  const esql = [{ src: 'dashboards/a', i: 0, q: 'FROM s' }, { src: V, i: 0, q: 'FROM s' },
+                { src: S, i: 0, q: 'FROM s' }, { src: 'vega/99-orphan.json', i: 0, q: 'FROM s' }];
+  const dsl = [{ src: V, i: 0, index: 's', body: {} }];
   const g = Object.fromEntries(groupByDashboard(defs, esql, dsl).map((x) => [x.name, x.items.map((i) => i.key)]));
-  assert.deepEqual(g.a, ['dashboards/a[0]', 'vega/01-x.json[0]', 'searches/02-y.json[0]', 'vega/01-x.json[dsl 0]']);
-  assert.deepEqual(g.b, ['vega/01-x.json[0]', 'vega/01-x.json[dsl 0]']);
+  assert.deepEqual(g.a, ['dashboards/a[0]', `${V}[0]`, `${S}[0]`, `${V}[dsl 0]`]);
+  assert.deepEqual(g.b, [`${V}[0]`, `${V}[dsl 0]`]);
   assert.deepEqual(g['(unreferenced)'], ['vega/99-orphan.json[0]']);
 });
 
@@ -106,8 +107,8 @@ test('bindDsl: no %timefield% keeps the spec window; with one, the picker range 
 });
 
 test('groupByDashboard resolves refs under an AUDIT_ID_NS namespace too', () => {
-  const defs = { a: { panels: [{ config: { ref_id: 'cloud-audit-wip-vega-01-x' } }, { config: { ref_id: 'cloud-audit-wip-search-02-y' } }] } };
-  const esql = [{ src: 'vega/01-x.json', i: 0, q: 'FROM s' }, { src: 'searches/02-y.json', i: 0, q: 'FROM s' }];
+  const defs = { a: { panels: [{ config: { ref_id: 'cloud-audit-wip-vega-actor-risk-treemap' } }, { config: { ref_id: 'cloud-audit-wip-search-all-mutations' } }] } };
+  const esql = [{ src: 'vega/01-actor-risk-treemap.json', i: 0, q: 'FROM s' }, { src: 'searches/01-all-mutations.json', i: 0, q: 'FROM s' }];
   const g = groupByDashboard(defs, esql, []);
   assert.deepEqual(g.map((x) => x.name), ['a'], 'nothing may fall into (unreferenced)');
 });

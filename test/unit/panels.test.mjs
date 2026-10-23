@@ -10,7 +10,7 @@ import {
 } from '../../scripts/lib/panels.mjs';
 import { buildAll } from '../../scripts/lib/definitions.mjs';
 import { sessionGrid } from '../../scripts/objects.mjs';
-import { nsId } from '../../scripts/lib/env.mjs';
+import { nsId, objId, objFile, objFiles, RETIRED_OBJECTS } from '../../scripts/lib/env.mjs';
 
 test('label() uses the suite vocabulary, then humanises', () => {
   assert.equal(label('actor'), 'Identity');
@@ -147,9 +147,41 @@ test('nsId() is the identity unless AUDIT_ID_NS is set', () => {
   const was = process.env.AUDIT_ID_NS;
   try {
     delete process.env.AUDIT_ID_NS;
-    assert.equal(nsId('cloud-audit-vega-01-x'), 'cloud-audit-vega-01-x');
+    assert.equal(nsId('cloud-audit-vega-x'), 'cloud-audit-vega-x');
     process.env.AUDIT_ID_NS = 'mine';
-    assert.equal(nsId('cloud-audit-vega-01-x'), 'cloud-audit-mine-vega-01-x');
+    assert.equal(nsId('cloud-audit-vega-x'), 'cloud-audit-mine-vega-x');
+  } finally {
+    if (was === undefined) delete process.env.AUDIT_ID_NS; else process.env.AUDIT_ID_NS = was;
+  }
+});
+
+test('Vega and Discover ids drop the file order number; files map back; the numbered ids are retired (1.0.5.1)', () => {
+  const was = process.env.AUDIT_ID_NS;
+  try {
+    for (const ns of [undefined, 'mine']) {
+      if (ns === undefined) delete process.env.AUDIT_ID_NS; else process.env.AUDIT_ID_NS = ns;
+      const pre = ns ? `cloud-audit-${ns}` : 'cloud-audit';
+      assert.equal(objId('vega', '01-actor-risk-treemap'), `${pre}-vega-actor-risk-treemap`);
+      assert.equal(objId('vega', '15-prev-total-events.json'), `${pre}-vega-prev-total-events`);
+      assert.equal(objId('search', '00-all-events'), `${pre}-search-all-events`);
+      for (const kind of ['vega', 'search']) {
+        const dir = kind === 'vega' ? 'vega' : 'searches';
+        const files = objFiles(kind);
+        assert.ok(files.length > 0);
+        // Every id is unique and reads back to its own file.
+        assert.equal(new Set(files.map((f) => objId(kind, f))).size, files.length, `${kind}: unique ids`);
+        for (const f of files) assert.equal(objFile(objId(kind, f)), `${dir}/${f}`);
+      }
+      assert.equal(objFile(`${pre}-vega-no-such-chart`), null);
+      assert.equal(objFile(`${pre}-vega-01-actor-risk-treemap`), null, 'a numbered id is not a current one');
+      const retired = RETIRED_OBJECTS();
+      assert.equal(retired.length, objFiles('vega').length + objFiles('search').length);
+      assert.ok(retired.some((o) => o.type === 'visualization' && o.id === `${pre}-vega-01-actor-risk-treemap`));
+      assert.ok(retired.some((o) => o.type === 'search' && o.id === `${pre}-search-10-raw-signal-feed`));
+      // Never a live id: retiring one would delete the object a dashboard now points at.
+      const live = new Set(['vega', 'search'].flatMap((k) => objFiles(k).map((f) => objId(k, f))));
+      assert.ok(retired.every((o) => !live.has(o.id)));
+    }
   } finally {
     if (was === undefined) delete process.env.AUDIT_ID_NS; else process.env.AUDIT_ID_NS = was;
   }
@@ -441,7 +473,7 @@ test('How to read: a collapsed section under the intro, one small-text panel of 
   assert.throws(() => howToSection(9, Array(HOW_TO_MAX + 1).fill('b')), /at most/);
   assert.throws(() => howToSection(9, ['two\nlines']), /one source line/);
   assert.throws(() => howToSection(9, []), /no bullets/);
-  assert.match(howToSection(9, ['See [it](@search:00-all-events).']).panels[0].config.content, /\]\(\/app\/discover#\/view\/[\w-]+-search-00-all-events\)/);
+  assert.match(howToSection(9, ['See [it](@search:00-all-events).']).panels[0].config.content, /\]\(\/app\/discover#\/view\/[\w-]+-search-all-events\)/);
   assert.deepEqual(flatPanels([{ id: 'a' }, s, { id: 'b' }]).map((p) => p.id), ['a', inner.id, 'b']);
   // payload(): a section is a panels entry with NO type, its grid only a y, its panels stripped like any other.
   const out = payload({ title: 't', panels: [s, collapsible(3, 'x', [{ type: 'markdown', id: 'm', headed: true, lint: {}, grid: { x: 0, y: 0, w: 48, h: 2 }, config: { content: 'c' } }])] });

@@ -21,6 +21,11 @@ links to that id, so it is fixed. Every other dashboard is `elastic_cloud-audit-
 `-geo-network` and, when deployed, `-platform-volume`. The numbered ids of 1.0.2 and earlier
 (`cloud-audit-<NN>-<name>`) are retired: `--dashboards` removes them. The data view the controls use is
 **`elastic_cloud-audit-logs`**; it replaced `cloud-audit-dv` in 1.0.4, and `--dashboards` removes the old one.
+Vega charts and Discover sessions have no number in their ids either (1.0.5.1): `searches/00-all-events.json` deploys
+as `cloud-audit-search-all-events` and `vega/01-actor-risk-treemap.json` as `cloud-audit-vega-actor-risk-treemap`. The
+files keep their numbers, which only order the repo; `objId()` in `lib/env.mjs` drops the number when it builds the id.
+The numbered ids of 1.0.5 and earlier (`cloud-audit-vega-01-…`, `cloud-audit-search-00-…`) are retired: `--dashboards`
+removes them once every panel points at the new id, and `--clean dashboards` removes them too.
 Releases up to 1.0.3 installed into a dedicated `audit` space; 1.0.4 and later install into Default.
 
 ---
@@ -708,7 +713,8 @@ noise) deploys either way.
 `--dashboards` deploys exactly that set. A suite dashboard left by an earlier deploy and
 not in this run's set is read and removed: Platform Volume after a deploy without `--with`, and
 every retired id in `RETIRED_IDS` (`lib/suite.mjs`): Command Center's pre-1.0.2 `cloud-audit-00-command-center`
-and the numbered `cloud-audit-<NN>-<name>` ids of 1.0.2, Platform Volume's included. `--clean dashboards`
+and the numbered `cloud-audit-<NN>-<name>` ids of 1.0.2, Platform Volume's included. After that it deletes the
+numbered Vega and Discover ids of 1.0.5 and earlier (`RETIRED_OBJECTS` in `lib/env.mjs`). `--clean dashboards`
 removes them too. `dashboards/*.json` is written for the
 set too, so the committed files are the default seven; a `--with` run (without `AUDIT_ID_NS`) adds
 `dashboards/06-platform-volume.json` and the eighth nav link to the others.

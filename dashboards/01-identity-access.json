@@ -106,7 +106,7 @@
         "h": 6
       },
       "config": {
-        "content": "### Who signed in, how, and what failed\n\nSee which sign-in methods and credentials are in use, your busiest people and API keys, every key and when it was last used, and each failed or denied attempt.\n\nUse it to check that access looks as expected, review API keys, or follow up on failed sign-ins. Empty failure panels are good news. Raw records: [All audit events](/app/discover#/view/cloud-audit-search-00-all-events), [Raw signal feed](/app/discover#/view/cloud-audit-search-10-raw-signal-feed).\n\n**How to use it:** choose a Project, Person (email), API key or Client IP in the controls and set the time picker. Click an email in a table to filter the whole suite to that person.\n"
+        "content": "### Who signed in, how, and what failed\n\nSee which sign-in methods and credentials are in use, your busiest people and API keys, every key and when it was last used, and each failed or denied attempt.\n\nUse it to check that access looks as expected, review API keys, or follow up on failed sign-ins. Empty failure panels are good news. Raw records: [All audit events](/app/discover#/view/cloud-audit-search-all-events), [Raw signal feed](/app/discover#/view/cloud-audit-search-raw-signal-feed).\n\n**How to use it:** choose a Project, Person (email), API key or Client IP in the controls and set the time picker. Click an email in a table to filter the whole suite to that person.\n"
       }
     },
     {
@@ -471,7 +471,7 @@
         "h": 12
       },
       "config": {
-        "ref_id": "cloud-audit-vega-02-auth-matrix",
+        "ref_id": "cloud-audit-vega-auth-matrix",
         "title": "Credential type by identity · Elasticsearch requests",
         "description": "Which credential type each of the 12 busiest identities uses, with its Elasticsearch request count in each cell. Colors match the time chart beside it. People should sign in by token (SSO); services by API key."
       }
@@ -773,7 +773,7 @@
         "h": 12
       },
       "config": {
-        "ref_id": "cloud-audit-search-02-failed-authentications",
+        "ref_id": "cloud-audit-search-failed-authentications",
         "title": "Failed sign-ins and denied access · newest 1,000 at most (empty = good)",
         "description": "The newest failed sign-ins and refused requests, record by record, up to 1,000; the Failed or denied tile has the total. Credential reads “not authenticated” when no credential worked; Country reads “internal” for Kibana or the platform acting for someone."
       }
@@ -788,7 +788,7 @@
         "h": 12
       },
       "config": {
-        "ref_id": "cloud-audit-search-07-api-key-activity",
+        "ref_id": "cloud-audit-search-api-key-activity",
         "title": "API key inventory",
         "description": "Every API key used in range (up to 1,000), Cloud and Elasticsearch, busiest first, with owner, volume, IP spread, indices touched and first and last use. Owner is its creator: a person or the Cloud API key that minted it."
       }
@@ -803,7 +803,7 @@
         "h": 14
       },
       "config": {
-        "ref_id": "cloud-audit-search-06-actor-first-seen",
+        "ref_id": "cloud-audit-search-actor-first-seen",
         "title": "Identity first and last seen",
         "description": "Every identity in range (up to 1,000), all traffic, newest first appearance on top, with all its events and its signal events after the noise gate. Widen the time range to tell a brand-new identity from a quiet one."
       }

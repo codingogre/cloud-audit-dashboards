@@ -100,8 +100,8 @@ test('every dashboard opens with a full-width intro under the nav strip: an in-p
         // The How to read list is not in it (1.0.5): it is the collapsed section under it (panels.test.mjs).
         assert.match(intro.config.content, /^### [^\n.]+\n\n(?!#)[^\n<]+(\n\n(?!#)[^\n<]+)+\n$/, name);
         // Every intro links to the raw events: both Discover sessions, by their ids in this namespace.
-        for (const ref of ['00-all-events', '10-raw-signal-feed']) {
-          assert.ok(intro.config.content.includes(`](/app/discover#/view/${nsId(`cloud-audit-search-${ref}`)})`), `${name}: links to ${ref}`);
+        for (const slug of ['all-events', 'raw-signal-feed']) {
+          assert.ok(intro.config.content.includes(`](/app/discover#/view/${nsId(`cloud-audit-search-${slug}`)})`), `${name}: links to ${slug}`);
         }
         assert.doesNotMatch(intro.config.content, /@search:|https?:/, `${name}: links resolved and relative`);
         const below = def.panels.slice(2).map((p) => p.grid.y);
@@ -126,7 +126,7 @@ test('AUDIT_ID_NS namespaces Command Center too, so a private deploy never touch
     const built = buildAll();
     const nav = navOf(built['07-actor-360']);
     // The intro's raw-event links point at the private copy of each Discover session, not production's.
-    assert.match(built['00-command-center'].panels[1].config.content, /\]\(\/app\/discover#\/view\/cloud-audit-pm1-search-00-all-events\)/);
+    assert.match(built['00-command-center'].panels[1].config.content, /\]\(\/app\/discover#\/view\/cloud-audit-pm1-search-all-events\)/);
     assert.deepEqual(nav.slice(0, 2).map((l) => l.destination), ['elastic_cloud-audit-pm1-dashboard', 'elastic_cloud-audit-pm1-actor-360']);
     assert.ok(nav.every((l) => /^elastic_cloud-audit-pm1-[a-z0-9-]+$/.test(l.destination)));
     assert.equal(new Set(nav.map((l) => l.destination)).size, nav.length, 'namespaced ids stay unique');
@@ -244,7 +244,7 @@ test('identity tables (1.0.5): a raw Principal id / API key click column on each
     assert.ok(!hasFilterableColumn(find('03-data-access', 'Denied requests by identity')));
     // Actor 360's Who this is leaves the placeholders out, so its 165px Principal id never cuts one.
     assert.match(find('07-actor-360', 'Who this is').config.data_source.query, /NOT STARTS_WITH\(user\.name, "<"\)/);
-    assert.equal(discoverUrl('00-all-events'), '/app/discover#/view/cloud-audit-search-00-all-events');
+    assert.equal(discoverUrl('00-all-events'), '/app/discover#/view/cloud-audit-search-all-events');
     assert.throws(() => discoverUrl('99-nope'), /no searches\/99-nope\.json/);
   });
 });

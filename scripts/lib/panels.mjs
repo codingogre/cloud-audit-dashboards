@@ -64,7 +64,7 @@
 
 import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { cfg, nsId, ROOT, DEFAULT_STREAM } from './env.mjs';
+import { cfg, nsId, objId, ROOT, DEFAULT_STREAM } from './env.mjs';
 import { deployed } from './suite.mjs';
 
 /** The audit stream, from config — one definition, so a rename is an .env change, not a code change. */
@@ -1409,7 +1409,7 @@ export const regionMap = (x, y, w, h, title, q, regionCol, metricCol, desc) => (
 /** Vega panels are legacy `visualization` saved objects; see dashboards.mjs repointVega(). */
 export const vega = (x, y, w, h, ref, title, desc) => ({
   type: 'vis', id: nid('vega'), grid: { x, y, w, h },
-  config: { ref_id: nsId(`cloud-audit-vega-${ref}`), title, description: desc },
+  config: { ref_id: objId('vega', ref), title, description: desc },
 });
 
 /**
@@ -1652,7 +1652,7 @@ export const search = (x, y, w, h, ref, title, desc, { empty } = {}) => {
   if (!existsSync(join(ROOT, 'searches', `${ref}.json`))) throw new Error(`search ${ref}: no searches/${ref}.json`);
   return {
     type: 'discover_session', id: nid('ds'), grid: { x, y, w, h }, ...(empty ? { lint: { empty } } : {}),
-    config: { ref_id: nsId(`cloud-audit-search-${ref}`), title: withEmptyTitle(title, empty), description: desc },
+    config: { ref_id: objId('search', ref), title: withEmptyTitle(title, empty), description: desc },
   };
 };
 
@@ -1734,7 +1734,7 @@ export const INTRO_PT = 9;
  */
 export const discoverUrl = (ref) => {
   if (!existsSync(join(ROOT, 'searches', `${ref}.json`))) throw new Error(`@search:${ref}: no searches/${ref}.json`);
-  return `/app/discover#/view/${nsId(`cloud-audit-search-${ref}`)}`;
+  return `/app/discover#/view/${objId('search', ref)}`;
 };
 const searchLinks = (text) => text.replace(/\]\(@search:([\w-]+)\)/g, (_, ref) => `](${discoverUrl(ref)})`);
 export const HOW_TO_LABEL = 'How to read this page';

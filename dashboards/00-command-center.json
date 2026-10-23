@@ -106,7 +106,7 @@
         "h": 6
       },
       "config": {
-        "content": "### See who did what across your Elastic Cloud projects\n\nThis overview shows how much activity there was, who was busiest, which identities carry the most risk, and the latest events as they arrive.\n\nStart here for a routine review or when something looks wrong, then use the links above to go deeper on one person, sign-ins, Kibana objects, data access, security or location.\n\n**How to use it:** choose a Project, Person (email), API key or Client IP in the controls to focus every panel, and set the time picker. Raw records: [All audit events](/app/discover#/view/cloud-audit-search-00-all-events), [Raw signal feed](/app/discover#/view/cloud-audit-search-10-raw-signal-feed).\n"
+        "content": "### See who did what across your Elastic Cloud projects\n\nThis overview shows how much activity there was, who was busiest, which identities carry the most risk, and the latest events as they arrive.\n\nStart here for a routine review or when something looks wrong, then use the links above to go deeper on one person, sign-ins, Kibana objects, data access, security or location.\n\n**How to use it:** choose a Project, Person (email), API key or Client IP in the controls to focus every panel, and set the time picker. Raw records: [All audit events](/app/discover#/view/cloud-audit-search-all-events), [Raw signal feed](/app/discover#/view/cloud-audit-search-raw-signal-feed).\n"
       }
     },
     {
@@ -142,7 +142,7 @@
         "h": 5
       },
       "config": {
-        "ref_id": "cloud-audit-vega-15-prev-total-events",
+        "ref_id": "cloud-audit-vega-prev-total-events",
         "title": "",
         "description": "Every audited event in range, routine machine traffic included. Compare with Signal events to see how much the noise gate removes. The line above the number compares it with the prior period of the same length."
       }
@@ -277,7 +277,7 @@
         "h": 5
       },
       "config": {
-        "ref_id": "cloud-audit-vega-15-prev-failed-events",
+        "ref_id": "cloud-audit-vega-prev-failed-events",
         "title": "",
         "description": "Failed outcomes and anonymous access denials across all traffic, routine included. The first place to look during an incident. The line above the number compares it with the prior period of the same length."
       }
@@ -382,7 +382,7 @@
         "h": 5
       },
       "config": {
-        "ref_id": "cloud-audit-vega-14-data-coverage",
+        "ref_id": "cloud-audit-vega-data-coverage",
         "title": "",
         "description": "How far back this project's audit stream goes: its first stored event and the days since. It ignores the time picker and the controls. The retention line is the data stream's setting, read when the dashboards were installed."
       }
@@ -397,7 +397,7 @@
         "h": 15
       },
       "config": {
-        "ref_id": "cloud-audit-vega-01-actor-risk-treemap",
+        "ref_id": "cloud-audit-vega-actor-risk-treemap",
         "title": "Actor footprint · area by √events, color by risk total",
         "description": "The busiest identities as tiles, grouped by kind: named API key, person, Cloud API key, platform, user without email, unattributed. Bigger means more activity, but read the printed count, not the area. Stronger color means more risk."
       }
@@ -650,7 +650,7 @@
         "h": 25
       },
       "config": {
-        "ref_id": "cloud-audit-search-10-raw-signal-feed",
+        "ref_id": "cloud-audit-search-raw-signal-feed",
         "title": "Live signal feed · Kibana key clean-up left out",
         "description": "The newest 200 signal events, with routine traffic and Kibana’s own key clean-up left out. Long runs of near-identical rows from one identity are automation: pick a Person, or filter it out in Discover, to read past it."
       }

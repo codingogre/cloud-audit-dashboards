@@ -106,7 +106,7 @@
         "h": 6
       },
       "config": {
-        "content": "### Everything one person did, on one page\n\nUse it to check whether their activity is normal, see what they changed and read, and gather evidence for a review or investigation. Raw records: [All audit events](/app/discover#/view/cloud-audit-search-00-all-events), [Raw signal feed](/app/discover#/view/cloud-audit-search-10-raw-signal-feed).\n\n**How to use it:** pick someone in the Person (email) control, or click an email in a table; with nobody selected, the page covers everyone. ① *Is this normal?* always looks at the last 7 days in UTC, ② *What they did* follows the time picker, and ③ *Evidence* ends in the raw records. Table times are in your time zone.\n"
+        "content": "### Everything one person did, on one page\n\nUse it to check whether their activity is normal, see what they changed and read, and gather evidence for a review or investigation. Raw records: [All audit events](/app/discover#/view/cloud-audit-search-all-events), [Raw signal feed](/app/discover#/view/cloud-audit-search-raw-signal-feed).\n\n**How to use it:** pick someone in the Person (email) control, or click an email in a table; with nobody selected, the page covers everyone. ① *Is this normal?* always looks at the last 7 days in UTC, ② *What they did* follows the time picker, and ③ *Evidence* ends in the raw records. Table times are in your time zone.\n"
       }
     },
     {
@@ -405,7 +405,7 @@
         "h": 14
       },
       "config": {
-        "ref_id": "cloud-audit-vega-08-actor-baseline-band",
+        "ref_id": "cloud-audit-vega-actor-baseline-band",
         "title": "Is this normal for them? — hourly, last 7 days (UTC)",
         "description": "Hourly activity over the last 7 days against this selection’s own usual range for each hour of day (the shaded band). A marked point is an hour well outside their usual range. A sanity check, not a detector. UTC."
       }
@@ -420,7 +420,7 @@
         "h": 14
       },
       "config": {
-        "ref_id": "cloud-audit-vega-12-actor-cohort",
+        "ref_id": "cloud-audit-vega-actor-cohort",
         "title": "Where they rank — last 7 days",
         "description": "Up to 40 busiest people over the last 7 days, ranked by percentile on three measures: how much they did, how many different things, and kinds of Kibana object. The selected person is an orange diamond; hover for raw numbers."
       }
@@ -435,7 +435,7 @@
         "h": 14
       },
       "config": {
-        "ref_id": "cloud-audit-vega-09-activity-punchcard",
+        "ref_id": "cloud-audit-vega-activity-punchcard",
         "title": "Working rhythm — last 7 days (UTC)",
         "description": "Every event for this selection by hour of day and day of week, last 7 days in UTC. Each cell is one real hour; stronger color means more. Grey means no activity; the current hour is outlined while it fills."
       }
@@ -463,7 +463,7 @@
         "h": 11
       },
       "config": {
-        "ref_id": "cloud-audit-vega-11-actor-object-flow",
+        "ref_id": "cloud-audit-vega-actor-object-flow",
         "title": "How they reached what they touched in Kibana — credential → space → object → operation",
         "description": "This selection’s Kibana activity: credential, space, object type, then what was done. Wider ribbons mean more events. A person in a browser arrives by SAML SSO; a script by API key. Click a credential or space to pin it."
       }
@@ -648,7 +648,7 @@
         "h": 12
       },
       "config": {
-        "ref_id": "cloud-audit-vega-10-actor-geography",
+        "ref_id": "cloud-audit-vega-actor-geography",
         "title": "Where they connected from",
         "description": "Where this selection connected from: dots are locations sized by activity; lines join one location to the next, colored by the travel speed implied. Read the title line first: many events cannot be placed. Not an impossible-travel detector."
       }
@@ -735,7 +735,7 @@
         "h": 7
       },
       "config": {
-        "ref_id": "cloud-audit-vega-13-session-gantt",
+        "ref_id": "cloud-audit-vega-session-gantt",
         "title": "Kibana browser sessions · fixed last 24 hours, your time zone",
         "description": "The 12 most recent Kibana browser sessions in the last 24 hours: length is how long, shade is how much was done. Click a bar to show that session’s records below. API-key work has no session. Ignores the time picker."
       }
@@ -750,7 +750,7 @@
         "h": 12
       },
       "config": {
-        "ref_id": "cloud-audit-search-09-session-reconstruction",
+        "ref_id": "cloud-audit-search-session-reconstruction",
         "title": "Session records · newest 1,000 at most (empty when none in range)",
         "description": "The raw Kibana events behind the session timeline, newest first. Click a timeline bar or filter on a session id to read one session. Capped at the newest 1,000; an hour with only an idle Kibana tab is empty."
       }

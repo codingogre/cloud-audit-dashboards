@@ -7,7 +7,7 @@
  */
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, basename } from 'node:path';
-import { cfg, ROOT, withStream, nsId } from './lib/env.mjs';
+import { cfg, ROOT, withStream, objId } from './lib/env.mjs';
 import { kb, es } from './lib/http.mjs';
 import { writeTileSpecs, retentionText, COVERAGE_DEFAULT_RETENTION } from './lib/panels.mjs';
 import { dataViewObject } from './lib/controls.mjs';
@@ -35,7 +35,7 @@ export function vegaObject(file, signals = {}) {
   // A top-level `description` wins, for the same reason: the subtitle may be an expression.
   const sub = str(spec.description) || (typeof t === 'object' && t ? str(t.subtitle) : '');
   return {
-    id: nsId(`cloud-audit-vega-${name}`), type: 'visualization',
+    id: objId('vega', name), type: 'visualization',
     coreMigrationVersion: '8.8.0', typeMigrationVersion: '8.5.0', references: [],
     attributes: {
       title: `[Audit] ${title}`, description: sub, uiStateJSON: '{}',
@@ -85,7 +85,7 @@ function searchObject(file) {
   };
   const searchSource = { query: { esql: d.esql }, index: adhoc, filter: [], highlightAll: true, version: true };
   return {
-    id: nsId(`cloud-audit-search-${slug}`), type: 'search',
+    id: objId('search', slug), type: 'search',
     coreMigrationVersion: '8.8.0', typeMigrationVersion: '10.15.0', references: [],
     attributes: {
       title: d.title, description: d.description || '',

@@ -18,7 +18,7 @@
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { cfg, ROOT, DEFAULT_STREAM, parseStream } from './lib/env.mjs';
+import { cfg, ROOT, DEFAULT_STREAM, parseStream, objFile } from './lib/env.mjs';
 import { es } from './lib/http.mjs';
 import { info, success, fail, detail, warn } from './lib/log.mjs';
 
@@ -175,13 +175,9 @@ function refsOf(node, out = new Set()) {
  * inventory stays complete — they are timed but have no page load.
  */
 export function groupByDashboard(defs, esqlItems, dslItems) {
-  const fileFor = (ref) => {
-    // Ids carry an optional AUDIT_ID_NS segment (cloud-audit-<ns>-vega-…, see nsId()); without
-    // tolerating it every embedded spec would silently fall into "(unreferenced)".
-    let m = /^cloud-audit(?:-.+?)?-vega-(.+)$/.exec(ref); if (m) return `vega/${m[1]}.json`;
-    m = /^cloud-audit(?:-.+?)?-search-(.+)$/.exec(ref); if (m) return `searches/${m[1]}.json`;
-    return null;
-  };
+  // Ids drop the file's order number and may carry an AUDIT_ID_NS segment; objFile() (env.mjs) maps either
+  // back to the numbered file, or every embedded spec would silently fall into "(unreferenced)".
+  const fileFor = (ref) => (typeof ref === 'string' ? objFile(ref) : null);
   const all = [
     ...esqlItems.map((x) => ({ kind: 'esql', key: `${x.src}[${x.i}]`, ...x })),
     ...dslItems.map((x) => ({ kind: 'dsl', key: `${x.src}[dsl ${x.i}]`, ...x })),

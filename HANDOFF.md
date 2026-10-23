@@ -5,9 +5,12 @@ conflict. This file is "where we are right now" and should be assumed stale.
 
 ## Next: 1.0.5.1 identity dropdowns, then 1.0.6 starter alert pack
 
-- **1.0.5.1, first:** Discover session and Vega ids lose their numbers (`cloud-audit-search-all-events`,
-  `cloud-audit-vega-actor-risk-treemap`). File names stay numbered; the leading `NN-` is stripped when the id is
-  built, and the old numbered ids are deleted after the dashboards repoint (user request, 2026-10-23).
+- **1.0.5.1, first (done on branch `1.0.5.1`, not yet deployed):** Discover session and Vega ids lose their numbers
+  (`cloud-audit-search-all-events`, `cloud-audit-vega-actor-risk-treemap`). File names stay numbered; `objId()` in
+  `lib/env.mjs` strips the leading `NN-` when the id is built, `objFile()` maps an id back to its file (the --lint ref
+  check, --perf grouping), and `RETIRED_OBJECTS` (the numbered ids) are deleted by `--dashboards` after every panel is
+  re-pointed, and by `--clean`. Deploy order in production: `--objects` (new ids) → `--dashboards` (re-point, then
+  retire) → `_export` by an old id returns 404.
 - **1.0.5.1, research:** why 11 of 20 Vega charts are query DSL, and whether they can move to ES|QL. Kibana 9.6 adds
   the picker's time range as a hidden filter to every ES|QL request (Lens and Vega), so fixed windows, prior periods and
   stream-wide minimums need DSL. That matters because DSL charts won't follow the planned ES|QL Identity dropdowns.

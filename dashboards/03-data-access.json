@@ -106,7 +106,7 @@
         "h": 6
       },
       "config": {
-        "content": "### What data was read or written in Elasticsearch, and by whom\n\nSee which indices each identity uses, the kinds of requests they made, any denied requests, and every touch of system or hidden indices. Raw records: [All audit events](/app/discover#/view/cloud-audit-search-00-all-events), [Raw signal feed](/app/discover#/view/cloud-audit-search-10-raw-signal-feed).\n\nRelated indices are grouped into one family, so a data stream and its daily backing indices read as a single row. Use it to confirm that sensitive data is reached only by the people and keys you expect.\n\n**How to use it:** choose a Project, Person (email), API key or Client IP in the controls and set the time picker. Empty denied and system-index panels usually mean all is well.\n"
+        "content": "### What data was read or written in Elasticsearch, and by whom\n\nSee which indices each identity uses, the kinds of requests they made, any denied requests, and every touch of system or hidden indices. Raw records: [All audit events](/app/discover#/view/cloud-audit-search-all-events), [Raw signal feed](/app/discover#/view/cloud-audit-search-raw-signal-feed).\n\nRelated indices are grouped into one family, so a data stream and its daily backing indices read as a single row. Use it to confirm that sensitive data is reached only by the people and keys you expect.\n\n**How to use it:** choose a Project, Person (email), API key or Client IP in the controls and set the time picker. Empty denied and system-index panels usually mean all is well.\n"
       }
     },
     {
@@ -142,7 +142,7 @@
         "h": 5
       },
       "config": {
-        "ref_id": "cloud-audit-vega-15-prev-es-events",
+        "ref_id": "cloud-audit-vega-prev-es-events",
         "title": "",
         "description": "All Elasticsearch audit events in range. The line above the number compares it with the prior period of the same length."
       }
@@ -215,7 +215,7 @@
         "h": 5
       },
       "config": {
-        "ref_id": "cloud-audit-vega-15-prev-esql-queries",
+        "ref_id": "cloud-audit-vega-prev-esql-queries",
         "title": "",
         "description": "ES|QL queries submitted, one per query rather than per shard or sub-step. Includes the queries these dashboards run to draw themselves. The line above the number compares it with the prior period of the same length."
       }
@@ -259,7 +259,7 @@
         "h": 5
       },
       "config": {
-        "ref_id": "cloud-audit-vega-15-prev-access-denied",
+        "ref_id": "cloud-audit-vega-prev-access-denied",
         "title": "",
         "description": "Authorization denials. Sustained non-zero values mean a misconfigured client or a probe. The line above the number compares it with the prior period of the same length."
       }
@@ -404,7 +404,7 @@
         "h": 30
       },
       "config": {
-        "ref_id": "cloud-audit-vega-04-actor-index-matrix",
+        "ref_id": "cloud-audit-vega-actor-index-matrix",
         "title": "Who reads which index family · up to 10 identities",
         "description": "The busiest identities (up to 10) across the top, the index families they read down the side. Color runs teal (fewest events) to pink (most), on a log scale. A blank cell means few or no reads."
       }
@@ -669,7 +669,7 @@
         "h": 12
       },
       "config": {
-        "ref_id": "cloud-audit-search-05-system-index-access",
+        "ref_id": "cloud-audit-search-system-index-access",
         "title": "Raw system index requests · newest 1,000 at most (empty when none in range)",
         "description": "The raw requests behind the system index table above, one row per index named, newest first: one request naming ten indices is ten rows. Capped at 1,000, so it can show fewer than the tile counts."
       }

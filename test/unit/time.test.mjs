@@ -135,7 +135,7 @@ test('every previous-period tile is on exactly one dashboard, as a title-less Ve
   const all = buildAll();
   const panels = Object.values(all).flatMap((d) => d.panels);
   for (const [key, t] of Object.entries(PREV_TILES)) {
-    const on = panels.filter((p) => p.config?.ref_id === nsId(`cloud-audit-vega-${prevRef(key)}`));
+    const on = panels.filter((p) => p.config?.ref_id === nsId(`cloud-audit-vega-prev-${key}`));
     assert.equal(on.length, 1, key);
     assert.equal(on[0].config.title, '', `${key}: the spec draws the title`);
     assert.match(on[0].config.description, /prior period/, `${key}: the tooltip explains the second line`);
@@ -153,7 +153,7 @@ test('the coverage tile reads the whole stream, ignores the controls, and is on 
   assert.match(body, /"@timestamp":\{"gte"/);
   assert.equal(spec.signals.find((s) => s.name === 'retention').value, COVERAGE_DEFAULT_RETENTION);
   const cc = buildAll()['00-command-center'];
-  const p = cc.panels.filter((q) => q.config?.ref_id === nsId(`cloud-audit-vega-${COVERAGE_REF}`));
+  const p = cc.panels.filter((q) => q.config?.ref_id === nsId('cloud-audit-vega-data-coverage'));
   assert.equal(p.length, 1);
   assert.ok(p[0].config.description.split(/\s+/).length <= 40, 'tip of 40 words at most');
 });

@@ -106,7 +106,7 @@
         "h": 6
       },
       "config": {
-        "content": "### The activity most worth a second look\n\nEach sensitive action earns a risk weight, from 10 for a workflow run up to 50 for a security setting change, while routine work scores zero. Raw records: [All audit events](/app/discover#/view/cloud-audit-search-00-all-events), [Raw signal feed](/app/discover#/view/cloud-audit-search-10-raw-signal-feed).\n\nPanels rank identities by that risk, show newly seen identities, and list every security configuration change. Elastic's own routine API key clean-up is counted separately, so it never hides real changes.\n\n**How to use it:** choose a Project, Person (email), API key or Client IP in the controls and set the time picker. Hover the ⓘ beside a panel title to see how it is scored.\n"
+        "content": "### The activity most worth a second look\n\nEach sensitive action earns a risk weight, from 10 for a workflow run up to 50 for a security setting change, while routine work scores zero. Raw records: [All audit events](/app/discover#/view/cloud-audit-search-all-events), [Raw signal feed](/app/discover#/view/cloud-audit-search-raw-signal-feed).\n\nPanels rank identities by that risk, show newly seen identities, and list every security configuration change. Elastic's own routine API key clean-up is counted separately, so it never hides real changes.\n\n**How to use it:** choose a Project, Person (email), API key or Client IP in the controls and set the time picker. Hover the ⓘ beside a panel title to see how it is scored.\n"
       }
     },
     {
@@ -408,7 +408,7 @@
         "h": 13
       },
       "config": {
-        "ref_id": "cloud-audit-vega-05-rare-event-scatter",
+        "ref_id": "cloud-audit-vega-rare-event-scatter",
         "title": "Highest-severity actions, by how rare",
         "description": "The highest-severity scoring actions in range, placed by how often each happened: rarer is further left, so look top-left first. Color repeats the risk weight, blue for 10 up to deep red for 50. Hover for who and when."
       }
@@ -822,7 +822,7 @@
         "h": 25
       },
       "config": {
-        "ref_id": "cloud-audit-search-03-security-config-changes",
+        "ref_id": "cloud-audit-search-security-config-changes",
         "title": "Config-change event feed · newest 1,000 at most (empty = good)",
         "description": "Every security configuration change, one event per row, newest first. The payload is cut at the panel edge: expand a row to read it whole. Capped at the newest 1,000; the Config changes tile has the total."
       }
@@ -837,7 +837,7 @@
         "h": 25
       },
       "config": {
-        "ref_id": "cloud-audit-search-01-all-mutations",
+        "ref_id": "cloud-audit-search-all-mutations",
         "title": "Mutation feed · newest 1,000 at most",
         "description": "Every create, update and delete in Kibana and in Elasticsearch security configuration, newest first, with what each change named. Capped at the newest 1,000, so the result count is that cap; narrow the time range to reach older events."
       }

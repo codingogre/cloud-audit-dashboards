@@ -6,13 +6,10 @@
  *                        removing a field mapping requires a reindex)
  *   --clean all          both (the suite lives in the Default space, which is never deleted)
  */
-import { cfg, nsId } from './lib/env.mjs';
+import { cfg, nsId, objId, objFiles, RETIRED_OBJECTS } from './lib/env.mjs';
 import { kb, es } from './lib/http.mjs';
 import { success, info, warn, detail } from './lib/log.mjs';
 import { SUITE, RETIRED_IDS } from './lib/suite.mjs';
-import { readdirSync } from 'node:fs';
-import { join } from 'node:path';
-import { ROOT } from './lib/env.mjs';
 import { DATA_VIEW_ID, RETIRED_DATA_VIEW_IDS } from './lib/controls.mjs';
 
 async function cleanDashboards() {
@@ -24,10 +21,10 @@ async function cleanDashboards() {
     detail(`dashboard ${id}: ${r.status}`);
   }
   const objs = [
-    ...readdirSync(join(ROOT, 'vega')).filter((f) => f.endsWith('.json'))
-      .map((f) => ({ type: 'visualization', id: nsId(`cloud-audit-vega-${f.replace('.json', '')}`) })),
-    ...readdirSync(join(ROOT, 'searches')).filter((f) => f.endsWith('.json'))
-      .map((f) => ({ type: 'search', id: nsId(`cloud-audit-search-${f.replace('.json', '')}`) })),
+    ...objFiles('vega').map((f) => ({ type: 'visualization', id: objId('vega', f) })),
+    ...objFiles('search').map((f) => ({ type: 'search', id: objId('search', f) })),
+    // The numbered ids of 1.0.5 and earlier, in case a deploy never got as far as retiring them.
+    ...RETIRED_OBJECTS(),
     // The controls' data view lives in neither vega/ nor searches/, so it has to be named
     // explicitly or `--clean dashboards` silently orphans it.
     { type: 'index-pattern', id: DATA_VIEW_ID },
