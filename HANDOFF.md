@@ -3,6 +3,17 @@
 `CLAUDE.md`-style durable context lives in `README.md` and `esql/fragments.md` and wins on
 conflict. This file is "where we are right now" and should be assumed stale.
 
+## Next: 1.0.5.1 identity dropdowns, then 1.0.6 starter alert pack
+
+- **1.0.5.1:** dropdowns that make sense for "who acted". `user.email`, `user.name` and `api_key.name` change meaning by
+  credential (for an Elasticsearch API key, `user.name` is the key's owner; a Cloud API key exists only as an id in
+  `user.name`), so today's Person (email) and API key controls can't show every identity. Recommended: a query-time
+  identity (one ES|QL CASE) driving ES|QL variable controls "Identity type" → "Identity", which Kibana 9.6 accepts as
+  `pinned_panels` `esql_control` through the Dashboards API. The user still has to choose this over the ingest-time
+  route. Full facts, probe results and the open questions are in the session handoff under `.sessions/` (local).
+- **1.0.6:** five ES|QL alert rules shipped as code (failed-sign-in burst, success after failures, new key or role
+  change, security change after hours, first-seen identity), built from the shared fragments.
+
 ## Release 1.0.5 — security-practitioner review fixes, 2026-10-23
 
 Deployed to the Default space on 2026-10-23; the rc105 test copy was removed. Came out of the
