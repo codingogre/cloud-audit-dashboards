@@ -87,6 +87,21 @@
   "marks": [
     {
       "type": "text",
+      "name": "theme",
+      "style": "guide-label",
+      "encode": {
+        "enter": {
+          "text": {
+            "value": ""
+          },
+          "opacity": {
+            "value": 0
+          }
+        }
+      }
+    },
+    {
+      "type": "text",
       "name": "title",
       "style": "guide-title",
       "from": {
@@ -119,6 +134,9 @@
           },
           "limit": {
             "signal": "width - 2 * pad"
+          },
+          "fill": {
+            "signal": "length(data('theme')) && luminance(data('theme')[0].fill) > 0.18 ? '#E3E8F2' : '#111C2C'"
           }
         }
       }
@@ -157,6 +175,9 @@
           },
           "text": {
             "field": "value"
+          },
+          "fill": {
+            "signal": "length(data('theme')) && luminance(data('theme')[0].fill) > 0.18 ? '#E3E8F2' : '#111C2C'"
           }
         }
       }
@@ -198,6 +219,9 @@
           },
           "limit": {
             "signal": "width - 2 * pad"
+          },
+          "fill": {
+            "signal": "length(data('theme')) && luminance(data('theme')[0].fill) > 0.18 ? '#CAD3E2' : '#1D2A3E'"
           }
         }
       }
@@ -236,6 +260,9 @@
           },
           "limit": {
             "signal": "width - 2 * pad - 140"
+          },
+          "fill": {
+            "signal": "length(data('theme')) && luminance(data('theme')[0].fill) > 0.18 ? '#CAD3E2' : '#1D2A3E'"
           }
         }
       }

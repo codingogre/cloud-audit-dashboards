@@ -119,7 +119,7 @@ async function applyImportOnlyState(all) {
     const panels = JSON.parse(obj.attributes.panelsJSON);
     checkSections(id, obj, panels, sections);
     // Drop the control-group references a pre-1.0.5.1 deploy patched in (controlGroup_<id>:optionsListDataView).
-    // The pinned_panels controls' own references (<id>:optionsListDataView) come from the PUT and stay.
+    // The ES|QL controls in pinned_panels reference no data view (1.0.5.2); the PUT replaced the classic ones'.
     let refs = (obj.references || []).filter((r) => !isControlRef(r.name) && !isDrilldownRef(r.name));
     let changed = 0;
     for (const p of panels) {
@@ -212,8 +212,8 @@ export async function run() {
   const all = emit();
   // The prior-period tiles read the events view, which --objects creates; without it they render an error.
   await requireView();
-  // The classic controls name the data view by id, so it must exist before the first PUT. Imported here
-  // rather than relying on `--objects` having run: a control on a missing data view renders an empty bar.
+  // The suite's data view. No control names it since 1.0.5.2 (the classic Project and Client IP controls did,
+  // which is why it is ensured before the first PUT), but it is a public id and still deploys with the suite.
   await kb.importObjects([dataViewObject()]);
   detail(`data view ${dataViewObject().id} ensured`);
   detail(`generated ${Object.keys(all).length} dashboard definitions`);

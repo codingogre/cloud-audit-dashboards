@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { VEGA_WINDOWS, windowMs, fixedWindow, vega, TIME, TIME_ONLY, IDENTITY_WHERE, HOUR_AGO, flatPanels } from '../../scripts/lib/panels.mjs';
+import { VEGA_WINDOWS, windowMs, fixedWindow, vega, TIME, TIME_ONLY, IDENTITY_WHERE, CLIENT_IP_WHERE, PROJECT_WHERE, HOUR_AGO, flatPanels } from '../../scripts/lib/panels.mjs';
 import { buildAll } from '../../scripts/lib/definitions.mjs';
 import { checkLayout, checkTwoDatasets } from '../../scripts/lib/layout.mjs';
 import { PARAMS, gatherDsl } from '../../scripts/esql.mjs';
@@ -106,7 +106,7 @@ test('the hourly specs keep the 168 hours ending with the one filling, keyed the
   assert.deepEqual(spec('09-activity-punchcard').transform[0], { impute: 'doc_count', key: 'ago', keyvals: { start: 0, stop: 168 }, value: 0 });
 });
 
-test('the cohort: one selection dataset (control bar + dropdowns), estate datasets on TIME_ONLY, both by project', () => {
+test('the cohort: one selection dataset (pills + all four dropdowns), estate datasets on TIME_ONLY and the Project dropdown, both by project', () => {
   const s = spec('12-actor-cohort');
   const ok = []; checkTwoDatasets('vega/12-actor-cohort.json', s, ok);
   assert.deepEqual(ok, []);
@@ -114,13 +114,16 @@ test('the cohort: one selection dataset (control bar + dropdowns), estate datase
   assert.deepEqual(Object.keys(urls).sort(), ['estate', 'scope', 'whole']);
   assert.equal(urls.scope['%context%'], true);
   for (const n of ['estate', 'whole']) {
-    assert.equal(urls[n]['%context%'], undefined, `${n}: no pills, KQL or classic controls`);
-    assert.ok(!urls[n].query.includes(IDENTITY_WHERE), `${n}: not narrowed by the dropdowns`);
+    assert.equal(urls[n]['%context%'], undefined, `${n}: no pills or KQL`);
+    assert.ok(urls[n].query.includes(`${TIME_ONLY} AND ${PROJECT_WHERE} |`), `${n}: follows the Project dropdown (1.0.5.2)`);
+    assert.ok(!urls[n].query.includes(IDENTITY_WHERE) && !urls[n].query.includes(CLIENT_IP_WHERE), `${n}: not narrowed by the other dropdowns`);
   }
   // The guard trips on each way the estate half could quietly become the selection, or lose the Project control.
   const broken = (mutate) => { const c = structuredClone(s); mutate(Object.fromEntries(esqlUrls(c).map((d) => [d.name, d.url]))); const p = []; checkTwoDatasets('x', c, p); return p.join('\n'); };
   assert.match(broken((u) => { u.estate['%context%'] = true; }), /exactly one ES\|QL dataset/);
   assert.match(broken((u) => { u.whole.query = u.whole.query.replace(TIME_ONLY, TIME); }), /exactly one ES\|QL dataset/);
+  // An estate that dropped the Project dropdown would rank one project's person against every project again.
+  assert.match(broken((u) => { u.estate.query = u.estate.query.replace(` AND ${PROJECT_WHERE}`, ''); }), /exactly one ES\|QL dataset/);
   assert.match(broken((u) => { u.estate.query = u.estate.query.replace('BY project = project.name, ', 'BY '); }), /no estate dataset grouped BY project\.name/);
   assert.match(broken((u) => { u.scope.query = u.scope.query.replace('BY project = project.name, ', 'BY '); }), /selection dataset scope does not group BY project\.name/);
   // The empty states read the same words as before the port.

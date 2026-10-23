@@ -166,34 +166,65 @@ test('--with is folded into AUDIT_WITH, adds to .env, and an unknown name is ref
   assert.deepEqual(SUITE.filter((d) => d.optional).map((d) => d.name), ['06-platform-volume']);
 });
 
-test('control bar (1.0.5.1): Project, Identity type, Identity, Client IP; identity is ES|QL, single-select, chained', async () => {
+test('control bar (1.0.5.2): Project, Identity type, Identity, Client IP; all four ES|QL, single-select, open on Any', async () => {
   const { CONTROLS, pinnedPanels } = await import('../../scripts/lib/controls.mjs');
   const { stableUuid } = await import('../../scripts/lib/ids.mjs');
   const { payload } = await import('../../scripts/dashboards.mjs');
   assert.deepEqual(CONTROLS.map((c) => c.title), ['Project', 'Identity type', 'Identity', 'Client IP']);
   const pp = pinnedPanels();
-  assert.deepEqual(pp.map((p) => p.type), ['options_list_control', 'esql_control', 'esql_control', 'options_list_control']);
-  assert.deepEqual(pp.filter((p) => p.config.field_name).map((p) => p.config.field_name), ['project.name', 'client.ip']);
-  // Classic control ids stay keyed on the field, so Project and Client IP keep their 1.0.5 ids.
-  assert.equal(pp[0].id, stableUuid('cloud-audit-control:project.name'));
-  assert.equal(pp[3].id, stableUuid('cloud-audit-control:client.ip'));
-  const [kind, who] = [pp[1].config, pp[2].config];
-  assert.deepEqual([kind.variable_name, who.variable_name], ['identity_kind', 'identity']);
-  for (const c of [kind, who]) {
+  assert.deepEqual(pp.map((p) => p.type), ['esql_control', 'esql_control', 'esql_control', 'esql_control'], 'all four behave alike');
+  const vars = ['project', 'identity_kind', 'identity', 'client_ip'];
+  assert.deepEqual(pp.map((p) => p.config.variable_name), vars);
+  // Identity type and Identity keep their 1.0.5.1 ids; every id is keyed on its variable.
+  assert.deepEqual(pp.map((p) => p.id), vars.map((v) => stableUuid(`cloud-audit-control:esql:${v}`)));
+  for (const { config: c } of pp) {
     assert.equal(c.single_select, true, 'single-select: multi-select has no fast path');
     assert.equal(c.variable_type, 'values');
     assert.equal(c.control_type, 'VALUES_FROM_QUERY');
-    assert.deepEqual(c.selected_options, ['Any'], 'opens on Any, like the classic controls');
+    assert.deepEqual(c.selected_options, ['Any'], 'opens on Any');
+    assert.ok(!c.data_view_id && !c.field_name, 'no classic options list left');
+    // "Any" heads every list: an ES|QL single-select cannot otherwise be cleared.
+    assert.match(c.esql_query, /\| FORK \(STATS n = SUM\(n\) BY \w+\) \(STATS n = COUNT\(\*\) \| EVAL \w+ = "Any", n = 9223372036854775807\) \| SORT n DESC/);
+    assert.ok(c.esql_query.endsWith(`| KEEP ${c.variable_name}`), `${c.title} lists one column, named for its variable`);
+    assert.ok(!new RegExp(`\\?${c.variable_name}\\b`).test(c.esql_query), `${c.title}: an options query never reads the variable it sets`);
+  }
+  const [project, kind, who, ip] = pp.map((p) => p.config);
+  for (const c of [kind, who]) {
     assert.match(c.esql_query, /^SET unmapped_fields="nullify"; FROM /, 'names api_key.*, so it carries the SET');
     assert.match(c.esql_query, /STATS n = COUNT\(\*\) BY user\.email, api_key\.name, user\.domain, user\.name/, 'counts first');
-    assert.ok(!/\?identity\b(?!_kind)/.test(c.esql_query), 'an options query never reads the variable it sets');
   }
   assert.ok(!kind.esql_query.includes('?identity_kind'));
   assert.match(who.esql_query, /\?identity_kind == "" OR \?identity_kind == "Any" OR identity_kind == \?identity_kind/, 'Identity chains on Identity type');
-  // "Any" heads both lists: an ES|QL single-select cannot otherwise be cleared.
-  for (const c of [kind, who]) assert.match(c.esql_query, /\| FORK \(STATS n = SUM\(n\) BY \w+\) \(STATS n = COUNT\(\*\) \| EVAL \w+ = "Any", n = 9223372036854775807\) \| SORT n DESC/);
+  // Project and Client IP chain on nothing, so no choice can strand another.
+  for (const c of [project, ip]) {
+    assert.ok(!/\?(?!_t(start|end)\b)\w+/.test(c.esql_query), `${c.title} reads no other dropdown`);
+    assert.ok(!c.esql_query.startsWith('SET '), `${c.title} names no api_key.*`);
+  }
+  assert.match(project.esql_query, /STATS n = COUNT\(\*\) BY project\.name \| WHERE project\.name IS NOT NULL \| EVAL project = project\.name \|/);
+  // A control's value is text: the list is too, and CLIENT_IP_WHERE turns the choice back into an ip.
+  assert.match(ip.esql_query, /STATS n = COUNT\(\*\) BY client\.ip \| WHERE client\.ip IS NOT NULL \| EVAL client_ip = TO_STRING\(client\.ip\) \|/);
   // Every dashboard sends the bar in the PUT; nothing is patched in afterwards.
   for (const [name, def] of Object.entries(buildAll())) assert.deepEqual(payload(def).pinned_panels, pp, name);
+});
+
+test('1.0.5.2: TIME reads all four dropdowns, and "" or Any in one leaves it out', async () => {
+  const { TIME, TIME_ONLY, CONTROLS_WHERE, PROJECT_WHERE, IDENTITY_WHERE, CLIENT_IP_WHERE } = await import('../../scripts/lib/panels.mjs');
+  const { compile } = await import('./esql-expr.mjs');
+  assert.equal(TIME, `${TIME_ONLY} AND ${CONTROLS_WHERE}`);
+  assert.equal(CONTROLS_WHERE, `${PROJECT_WHERE} AND ${IDENTITY_WHERE} AND ${CLIENT_IP_WHERE}`, 'in the control bar order');
+  const project = (v) => compile(PROJECT_WHERE.replaceAll('?project', JSON.stringify(v)));
+  for (const v of ['', 'Any']) {
+    assert.equal(project(v)({ 'project.name': 'a' }), true, `${JSON.stringify(v)}: every project`);
+    assert.equal(project(v)({}), true, `${JSON.stringify(v)}: an event with no project too`);
+  }
+  assert.equal(project('a')({ 'project.name': 'a' }), true);
+  assert.equal(project('a')({ 'project.name': 'b' }), false);
+  assert.notEqual(project('a')({}), true, 'an event with no project is not in a chosen one');
+  // client.ip is an ip and the variable text: compare as an ip (term test, ~35ms), never TO_STRING(client.ip) per
+  // event (~340ms), and hand TO_IP a null when unset, or every panel warns that TO_IP("Any") failed (probed, 9.6).
+  assert.equal(CLIENT_IP_WHERE,
+    '((?client_ip == "" OR ?client_ip == "Any") OR client.ip == TO_IP(CASE((?client_ip == "" OR ?client_ip == "Any"), null, ?client_ip)))');
+  assert.ok(!CLIENT_IP_WHERE.includes('TO_STRING'));
 });
 
 test('a dashboard drilldown carries the reference Kibana navigates by, so "Open in …" never lands on #/create', async () => {
@@ -261,7 +292,7 @@ test('identity tables (1.0.5): a raw Principal id / API key click column on each
 });
 
 test('1.0.5.1: the identity a panel shows is resolved on grouped rows (by ACTOR_KEYS) or on a row feed\'s returned rows, never per event of a wide scan', async () => {
-  const { ACTOR_RESOLVE, ACTOR_LABEL, IDENTITY_WHERE } = await import('../../scripts/lib/panels.mjs');
+  const { ACTOR_RESOLVE, ACTOR_LABEL, CONTROLS_WHERE } = await import('../../scripts/lib/panels.mjs');
   const { readFileSync, readdirSync } = await import('node:fs');
   // Filtered to a few hundred events before resolving, and measured (22ms and 10ms at 30 days): panels.mjs.
   const PER_EVENT_OK = ['🚨 Config changes', 'Top failures and denials'];
@@ -279,8 +310,8 @@ test('1.0.5.1: the identity a panel shows is resolved on grouped rows (by ACTOR_
       for (const p of d.panels.flatMap((x) => (x.section ? x.panels : [x]))) {
         const q = p.config?.data_source?.query;
         if (q?.includes(ACTOR_RESOLVE)) { n++; check(`${name}: ${p.config.title}`, q); }
-        // Every Lens ES|QL panel follows the Identity dropdowns (07's whole-minute window ignored them until 1.0.5.1).
-        if (q) assert.ok(q.includes(IDENTITY_WHERE), `${name}: ${p.config.title} ignores Identity type / Identity`);
+        // Every Lens ES|QL panel follows all four dropdowns (07's whole-minute window ignored them until 1.0.5.1).
+        if (q) assert.ok(q.includes(CONTROLS_WHERE), `${name}: ${p.config.title} ignores the dropdowns`);
         // Every table that shows the identity shortens a key id the one shared way.
         if (q && p.config.rows?.some((r) => r.column === 'actor')) assert.ok(q.endsWith(ACTOR_LABEL), `${name}: ${p.config.title}`);
       }
@@ -298,7 +329,7 @@ test('1.0.5.1: the identity a panel shows is resolved on grouped rows (by ACTOR_
 
 test('record feeds (1.0.5.1): no Discover session panel; each record list is a Lens table that follows the identity dropdowns', async () => {
   const { checkClickFilters } = await import('../../scripts/lib/layout.mjs');
-  const { TIME, IDENTITY_WHERE, BOUNDED, flatPanels } = await import('../../scripts/lib/panels.mjs');
+  const { TIME, CONTROLS_WHERE, BOUNDED, flatPanels } = await import('../../scripts/lib/panels.mjs');
   withEnv({ AUDIT_WITH: 'platform-volume', AUDIT_ID_NS: undefined }, () => {
     const all = buildAll();
     for (const [name, def] of Object.entries(all)) {
@@ -320,7 +351,7 @@ test('record feeds (1.0.5.1): no Discover session panel; each record list is a L
         assert.ok(p, `${name}: ${title}`);
         const q = p.config.data_source.query;
         assert.equal(p.config.type, 'data_table', `${name}: ${title} is a Lens table`);
-        assert.ok(q.includes(TIME) && TIME.includes(IDENTITY_WHERE), `${name}: ${title} is bounded by TIME, so the dropdowns narrow it`);
+        assert.ok(q.includes(TIME) && TIME.includes(CONTROLS_WHERE), `${name}: ${title} is bounded by TIME, so the dropdowns narrow it`);
         assert.ok(p.lint.scroll && BOUNDED(p.lint.limit).test(p.config.title), `${name}: ${title} scrolls to the bound its title states`);
         assert.deepEqual(p.config.rows.filter((r) => r.click_filter).map((r) => r.column), cols, `${name}: ${title} click columns`);
         assert.equal(hasFilterableColumn(p), cols.length > 0, `${name}: ${title} drills only when something is clickable`);

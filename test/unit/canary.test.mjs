@@ -57,7 +57,8 @@ test('tilesOn() finds the prior-period tiles each dashboard places', () => {
 });
 
 const S = Date.UTC(2026, 9, 22, 10), E = S + 864e5;
-const P = [{ _tstart: new Date(S).toISOString() }, { _tend: new Date(E).toISOString() }, { identity_kind: '' }, { identity: '' }];
+// The tile's request as Kibana sends it, a Client IP chosen (1.0.5.2): the truth must be narrowed the same way.
+const P = [{ _tstart: new Date(S).toISOString() }, { _tend: new Date(E).toISOString() }, { project: '' }, { identity_kind: '' }, { identity: '' }, { client_ip: '203.0.113.7' }];
 const state = ({ ranges = [], prev = 2200, stream = true } = {}) => ({
   requests: [{ key: 'total-events', ranges, params: P }, { key: 'stream', ranges: [], params: [] }],
   rows: [{ key: 'total-events', row: { cur: 9, prev, s: S, e: E }, params: P }, ...(stream ? [{ key: 'stream', row: { t0: S - 9 * 864e5 }, params: [] }] : [])],
@@ -67,6 +68,8 @@ const truth = (n) => async (q, params) => {
   assert.equal(q, prevEsql('total-events'));
   assert.equal(params[0]._tstart, new Date(2 * S - E).toISOString(), 'the prior window starts one length before the picker');
   assert.equal(params[1]._tend, new Date(S).toISOString(), 'and ends where the picker starts');
+  // Every variable TIME reads is bound (an unbound one is a hard error), each with the tile's own value.
+  assert.deepEqual(params.slice(2), [{ project: '' }, { identity_kind: '' }, { identity: '' }, { client_ip: '203.0.113.7' }]);
   return { ok: true, body: { values: [[n]] } };
 };
 

@@ -101,14 +101,20 @@ export const nsId = (id) => {
 };
 
 /**
- * The identity dropdowns' ES|QL variables (panels.mjs, IDENTITY), as Kibana sends them: "" when nothing is
- * selected. Every script that runs a panel query outside Kibana (--lint, --perf, the prior-period parity check)
- * passes these beside ?_tstart/?_tend, or TIME's guards fail on an unbound variable. AUDIT_IDENTITY and
- * AUDIT_IDENTITY_KIND run the same queries with a selection, e.g.
- * `AUDIT_IDENTITY_KIND=Person AUDIT_IDENTITY=someone@example.com ./audit --lint`.
+ * The four dropdowns' ES|QL variables (controls.mjs; CONTROLS_WHERE in panels.mjs), as Kibana sends them: "" when
+ * nothing is selected. Every script that runs a panel query outside Kibana (--lint, --perf, the prior-period parity
+ * check) passes these beside ?_tstart/?_tend, or TIME's guards fail on an unbound variable. AUDIT_PROJECT,
+ * AUDIT_IDENTITY_KIND, AUDIT_IDENTITY and AUDIT_CLIENT_IP run the same queries with a selection, e.g.
+ * `AUDIT_IDENTITY_KIND=Person AUDIT_IDENTITY=someone@example.com ./audit --lint` or `AUDIT_CLIENT_IP=203.0.113.7`.
  */
-export const identityParams = ({ identity = process.env.AUDIT_IDENTITY ?? '', kind = process.env.AUDIT_IDENTITY_KIND ?? '' } = {}) =>
-  [{ identity }, { identity_kind: kind }];
+export const controlParams = ({
+  project = process.env.AUDIT_PROJECT ?? '', kind = process.env.AUDIT_IDENTITY_KIND ?? '',
+  identity = process.env.AUDIT_IDENTITY ?? '', clientIp = process.env.AUDIT_CLIENT_IP ?? '',
+} = {}) => [{ project }, { identity_kind: kind }, { identity }, { client_ip: clientIp }];
+/** Nothing selected in any dropdown. */
+export const NO_SELECTION = Object.freeze({ project: '', kind: '', identity: '', clientIp: '' });
+/** The four variable names, in the control bar's order. */
+export const CONTROL_VARS = controlParams(NO_SELECTION).map((p) => Object.keys(p)[0]);
 
 /**
  * VEGA AND DISCOVER IDS (1.0.5.1). The files in vega/ and searches/ are numbered (`01-actor-risk-treemap.json`)

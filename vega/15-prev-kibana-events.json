@@ -34,7 +34,7 @@
       "url": {
         "%type%": "esql",
         "%context%": true,
-        "query": "SET unmapped_fields=\"nullify\"; FROM logs-cloud-audit-events-view | WHERE event_time <= TO_DATETIME(?_tend) AND event_time > TO_DATETIME(2 * TO_LONG(TO_DATETIME(?_tstart)) - TO_LONG(TO_DATETIME(?_tend))) AND (event_time > TO_DATETIME(?_tstart) OR event_time >= NOW() - 15 days) AND ((?identity == \"\" OR ?identity == \"Any\") OR user.email == ?identity OR api_key.name == ?identity OR user.name == ?identity OR user.name == REPLACE(REPLACE(?identity, \" · Cloud API key$\", \"\"), \"^Unnamed key of \", \"\") OR (?identity == \"(unattributed)\" AND user.name IS NULL)) AND ((?identity_kind == \"\" OR ?identity_kind == \"Any\") OR (?identity_kind == \"Person\" AND user.email IS NOT NULL) OR (?identity_kind == \"Elasticsearch API key\" AND user.email IS NULL AND api_key.name IS NOT NULL) OR (?identity_kind == \"Elasticsearch API key (name not recorded)\" AND user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_es_api_key\") OR (?identity_kind == \"Cloud API key\" AND user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_cloud_api_key\") OR (?identity_kind == \"Service account\" AND user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_service_account\") OR (?identity_kind == \"Failed sign-in\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\",\"_service_account\")) AND event.action IN (\"authentication_failed\",\"anonymous_access_denied\")) OR (?identity_kind == \"Unattributed\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\",\"_service_account\")) AND (event.action IS NULL OR NOT event.action IN (\"authentication_failed\",\"anonymous_access_denied\")) AND user.name IS NULL) OR (?identity_kind == \"Other\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\",\"_service_account\")) AND (event.action IS NULL OR NOT event.action IN (\"authentication_failed\",\"anonymous_access_denied\")) AND user.name IS NOT NULL)) AND ((?identity == \"\" OR ?identity == \"Any\") OR user.email == ?identity OR (user.email IS NULL AND api_key.name == ?identity) OR (user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_cloud_api_key\" AND ENDS_WITH(?identity, \" · Cloud API key\") AND user.name == REPLACE(?identity, \" · Cloud API key$\", \"\")) OR (user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_es_api_key\" AND STARTS_WITH(?identity, \"Unnamed key of \") AND user.name == REPLACE(?identity, \"^Unnamed key of \", \"\")) OR (user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\")) AND user.name == ?identity) OR (?identity == \"(unattributed)\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\")) AND user.name IS NULL)) | WHERE service.name == \"serverless-kibana\" | STATS cur = COUNT(*) WHERE event_time > TO_DATETIME(?_tstart), prev = COUNT(*) WHERE event_time <= TO_DATETIME(?_tstart) | EVAL s = TO_LONG(TO_DATETIME(?_tstart)), e = TO_LONG(TO_DATETIME(?_tend))"
+        "query": "SET unmapped_fields=\"nullify\"; FROM logs-cloud-audit-events-view | WHERE event_time <= TO_DATETIME(?_tend) AND event_time > TO_DATETIME(2 * TO_LONG(TO_DATETIME(?_tstart)) - TO_LONG(TO_DATETIME(?_tend))) AND (event_time > TO_DATETIME(?_tstart) OR event_time >= NOW() - 15 days) AND ((?project == \"\" OR ?project == \"Any\") OR project.name == ?project) AND ((?identity == \"\" OR ?identity == \"Any\") OR user.email == ?identity OR api_key.name == ?identity OR user.name == ?identity OR user.name == REPLACE(REPLACE(?identity, \" · Cloud API key$\", \"\"), \"^Unnamed key of \", \"\") OR (?identity == \"(unattributed)\" AND user.name IS NULL)) AND ((?identity_kind == \"\" OR ?identity_kind == \"Any\") OR (?identity_kind == \"Person\" AND user.email IS NOT NULL) OR (?identity_kind == \"Elasticsearch API key\" AND user.email IS NULL AND api_key.name IS NOT NULL) OR (?identity_kind == \"Elasticsearch API key (name not recorded)\" AND user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_es_api_key\") OR (?identity_kind == \"Cloud API key\" AND user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_cloud_api_key\") OR (?identity_kind == \"Service account\" AND user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_service_account\") OR (?identity_kind == \"Failed sign-in\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\",\"_service_account\")) AND event.action IN (\"authentication_failed\",\"anonymous_access_denied\")) OR (?identity_kind == \"Unattributed\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\",\"_service_account\")) AND (event.action IS NULL OR NOT event.action IN (\"authentication_failed\",\"anonymous_access_denied\")) AND user.name IS NULL) OR (?identity_kind == \"Other\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\",\"_service_account\")) AND (event.action IS NULL OR NOT event.action IN (\"authentication_failed\",\"anonymous_access_denied\")) AND user.name IS NOT NULL)) AND ((?identity == \"\" OR ?identity == \"Any\") OR user.email == ?identity OR (user.email IS NULL AND api_key.name == ?identity) OR (user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_cloud_api_key\" AND ENDS_WITH(?identity, \" · Cloud API key\") AND user.name == REPLACE(?identity, \" · Cloud API key$\", \"\")) OR (user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_es_api_key\" AND STARTS_WITH(?identity, \"Unnamed key of \") AND user.name == REPLACE(?identity, \"^Unnamed key of \", \"\")) OR (user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\")) AND user.name == ?identity) OR (?identity == \"(unattributed)\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\")) AND user.name IS NULL)) AND ((?client_ip == \"\" OR ?client_ip == \"Any\") OR client.ip == TO_IP(CASE((?client_ip == \"\" OR ?client_ip == \"Any\"), null, ?client_ip))) | WHERE service.name == \"serverless-kibana\" | STATS cur = COUNT(*) WHERE event_time > TO_DATETIME(?_tstart), prev = COUNT(*) WHERE event_time <= TO_DATETIME(?_tstart) | EVAL s = TO_LONG(TO_DATETIME(?_tstart)), e = TO_LONG(TO_DATETIME(?_tend))"
       },
       "transform": [
         {
@@ -65,12 +65,32 @@
         {
           "type": "formula",
           "as": "detail",
-          "expr": "!datum.full ? 'no full prior ' + datum.span : datum.prev === 0 ? (datum.cur === 0 ? '0 in prior ' + datum.span + ' too' : 'none in prior ' + datum.span) : datum.cur >= 10 * datum.prev ? '▲ ' + round(datum.cur / datum.prev) + '× vs prior ' + datum.span : datum.cur === datum.prev ? 'same as prior ' + datum.span : (datum.cur > datum.prev ? '▲ ' : '▼ ') + (abs(datum.pct) < 1 ? '<1' : abs(datum.pct)) + '% vs prior ' + datum.span"
+          "expr": "!datum.full ? 'no full prior ' + datum.span : datum.prev === 0 ? (datum.cur === 0 ? '0 in prior ' + datum.span + ' too' : 'none in prior ' + datum.span) : datum.cur >= 10 * datum.prev ? round(datum.cur / datum.prev) + '× vs prior ' + datum.span : datum.cur === datum.prev ? 'same as prior ' + datum.span : (abs(datum.pct) < 1 ? '<1' : abs(datum.pct)) + '% vs prior ' + datum.span"
+        },
+        {
+          "type": "formula",
+          "as": "arrow",
+          "expr": "datum.full && datum.prev > 0 && datum.cur !== datum.prev ? (datum.cur > datum.prev ? '▲' : '▼') : ''"
         }
       ]
     }
   ],
   "marks": [
+    {
+      "type": "text",
+      "name": "theme",
+      "style": "guide-label",
+      "encode": {
+        "enter": {
+          "text": {
+            "value": ""
+          },
+          "opacity": {
+            "value": 0
+          }
+        }
+      }
+    },
     {
       "type": "text",
       "name": "title",
@@ -105,6 +125,9 @@
           },
           "limit": {
             "signal": "width - 2 * pad"
+          },
+          "fill": {
+            "signal": "length(data('theme')) && luminance(data('theme')[0].fill) > 0.18 ? '#E3E8F2' : '#111C2C'"
           }
         }
       }
@@ -143,6 +166,9 @@
           },
           "text": {
             "field": "value"
+          },
+          "fill": {
+            "signal": "length(data('theme')) && luminance(data('theme')[0].fill) > 0.18 ? '#E3E8F2' : '#111C2C'"
           }
         }
       }
@@ -183,7 +209,51 @@
             "field": "detail"
           },
           "limit": {
-            "signal": "width - 2 * pad"
+            "signal": "width - 2 * pad - 20"
+          },
+          "fill": {
+            "signal": "length(data('theme')) && luminance(data('theme')[0].fill) > 0.18 ? '#CAD3E2' : '#1D2A3E'"
+          }
+        }
+      }
+    },
+    {
+      "type": "text",
+      "name": "trend",
+      "style": "guide-label",
+      "from": {
+        "data": "detail"
+      },
+      "encode": {
+        "enter": {
+          "font": {
+            "value": "\"Elastic UI Numeric\", Inter, system-ui, sans-serif"
+          },
+          "fontSize": {
+            "value": 16
+          },
+          "fontWeight": {
+            "value": 500
+          },
+          "align": {
+            "value": "right"
+          },
+          "baseline": {
+            "value": "top"
+          }
+        },
+        "update": {
+          "x": {
+            "signal": "datum.bounds.x1 - 4"
+          },
+          "y": {
+            "signal": "datum.y"
+          },
+          "text": {
+            "signal": "datum.datum.arrow"
+          },
+          "fill": {
+            "signal": "length(data('theme')) && luminance(data('theme')[0].fill) > 0.18 ? '#CAD3E2' : '#1D2A3E'"
           }
         }
       }

@@ -8,13 +8,14 @@
  */
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { ROOT, cfg, withStream, identityParams } from './lib/env.mjs';
+import { ROOT, cfg, withStream, controlParams, NO_SELECTION } from './lib/env.mjs';
+import { pinnedPanels } from './lib/controls.mjs';
 import { es, kb } from './lib/http.mjs';
 import { success, fail, detail, warn } from './lib/log.mjs';
 import { buildAll } from './lib/definitions.mjs';
 import { checkLayout } from './lib/layout.mjs';
 import { requireView } from './lib/view.mjs';
-import { PREV_TILES, PREV_LOOKBACK_DAYS, prevSpec, prevEsql, fixedWindow, windowMs, prevQuery, prevStreamQuery, VIEW_TIME } from './lib/panels.mjs';
+import { PREV_TILES, PREV_LOOKBACK_DAYS, prevSpec, prevEsql, fixedWindow, windowMs, prevQuery, prevStreamQuery, VIEW_TIME, ANY } from './lib/panels.mjs';
 
 /**
  * Every query runs through es.esqlRun(), which cancels it on overrun — a plain /_query keeps
@@ -33,7 +34,7 @@ const SLOW_MS = 5e3;
 export const PARAMS = (src) => {
   const win = fixedWindow(src);
   const end = new Date(), start = new Date(Date.now() - (win ? windowMs(win) : 3600e3));
-  return [{ _tstart: start.toISOString() }, { _tend: end.toISOString() }, ...identityParams()];
+  return [{ _tstart: start.toISOString() }, { _tend: end.toISOString() }, ...controlParams()];
 };
 
 const TIME_BOUND = 'WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart';
@@ -132,8 +133,8 @@ export function stripContext(node, win = lintWindow()) {
  * current window and over the prior one, to the event: over the 7 days ending five minutes ago (whole seconds, so
  * nothing in it is still arriving; a quiet filter is often 0 for a day, and 0 = 0 proves little) and the 24 hours
  * a dashboard opens on. 7 + 7 days keeps the prior window inside the 15-day lookback, which would otherwise cut it.
- * It runs with the dropdowns empty, and again with AUDIT_IDENTITY / AUDIT_IDENTITY_KIND when either is set, so
- * both counts are proven to follow a selection. The stream dataset's first event is checked against the stream's.
+ * It runs with the dropdowns empty, and again with the selection AUDIT_PROJECT, AUDIT_IDENTITY_KIND, AUDIT_IDENTITY and
+ * AUDIT_CLIENT_IP make when any is set, so both counts are proven to follow a selection. The stream dataset's first event is checked against the stream's.
  */
 export const parityWindows = (now = Date.now()) => {
   const end = Math.floor((now - 300e3) / 1000) * 1000;
@@ -142,9 +143,10 @@ export const parityWindows = (now = Date.now()) => {
 const iso = (ms) => new Date(ms).toISOString();
 const paramsFor = (s, e, who) => [{ _tstart: iso(s) }, { _tend: iso(e) }, ...who];
 export async function prevParity({ budgetMs = BUDGET_MS } = {}) {
-  const env = identityParams();
-  const selections = [{ label: 'nothing selected', who: identityParams({ identity: '', kind: '' }) }];
-  if (env.some((p) => Object.values(p)[0] !== '')) selections.push({ label: `identity ${JSON.stringify(env.map((p) => Object.values(p)[0]))}`, who: env });
+  const env = controlParams();
+  const selections = [{ label: 'nothing selected', who: controlParams(NO_SELECTION) }];
+  const chosen = env.filter((p) => Object.values(p)[0] !== '');
+  if (chosen.length) selections.push({ label: `selected ${JSON.stringify(Object.assign({}, ...chosen))}`, who: env });
   const one = (r) => (r.ok ? r.body.values?.[0] : undefined);
   const why = (r) => (r.ok ? '' : JSON.stringify(r.body).slice(0, 160));
   const out = [];
@@ -235,6 +237,8 @@ export function gatherQueries() {
       qs.forEach((q, i) => items.push({ src: `${dir}/${f}`, i, q }));
     }
   }
+  // The dropdowns' option queries (controls.mjs): a broken one leaves a control with nothing to pick.
+  pinnedPanels().forEach((p, i) => items.push({ src: `controls/${p.config.variable_name}`, i, q: p.config.esql_query, control: true }));
   return items;
 }
 
@@ -258,10 +262,16 @@ export async function run() {
   const items = gatherQueries();
   const timings = [];
   let bad = 0;
-  for (const { src, i, q: raw } of items) {
+  for (const { src, i, q: raw, control } of items) {
     const q = bounded(raw);
     const res = await es.esqlRun(q, PARAMS(src), { budgetMs: BUDGET_MS });
     timings.push({ src: `${src}[${i}]`, ms: res.ms });
+    // A dropdown's list must open on "Any": it is the only way back to no selection (panels.mjs, ANY).
+    if (res.ok && control && res.body.values?.[0]?.[0] !== ANY) {
+      bad++;
+      fail(`${src} lists ${JSON.stringify(res.body.values?.[0]?.[0])} first, not "${ANY}" — a viewer could not clear it`);
+      continue;
+    }
     if (res.ok) continue;
     bad++;
     const reason = res.body?.error?.root_cause?.[0]?.reason || res.body?.error?.reason || JSON.stringify(res.body);
@@ -270,7 +280,7 @@ export async function run() {
   }
 
   // SET unmapped_fields="nullify" turns a misspelt field into a silent null column, and since TIME names
-  // api_key.name (IDENTITY_WHERE) nearly every query carries it. So plan each such query once more without it,
+  // api_key.name (IDENTITY_WHERE, inside CONTROLS_WHERE) nearly every query carries it. So plan each such query once more without it,
   // cheaply (LIMIT 0): only an api_key.* field — legitimately unmapped on a project that never used a key — may be
   // unknown. Anything else unknown is a typo the SET was hiding.
   for (const { src, i, q: raw } of items) {

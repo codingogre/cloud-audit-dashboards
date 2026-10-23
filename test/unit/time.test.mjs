@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   PREV_TILES, PREV_LOOKBACK_DAYS, prevSpec, prevEsql, prevQuery, prevStreamQuery, prevRef, prevKpi, tileSpecs, coverageSpec,
-  retentionText, COVERAGE_REF, COVERAGE_DEFAULT_RETENTION, DEFAULT_FROM, TIME, IDENTITY_WHERE, NULL_SAFE, VIEW_TIME,
+  retentionText, COVERAGE_REF, COVERAGE_DEFAULT_RETENTION, DEFAULT_FROM, TIME, CONTROLS_WHERE, NULL_SAFE, VIEW_TIME,
 } from '../../scripts/lib/panels.mjs';
 import { buildAll } from '../../scripts/lib/definitions.mjs';
 import { checkLayout, checkEscape } from '../../scripts/lib/layout.mjs';
@@ -27,7 +27,8 @@ test('PREV_TILES: a title and one ES|QL WHERE per tile', () => {
   const keys = Object.keys(PREV_TILES);
   assert.ok(keys.length >= 6, 'about six simple headline tiles');
   for (const [key, t] of Object.entries(PREV_TILES)) {
-    assert.deepEqual(Object.keys(t).sort(), ['esql', 'title'], key);
+    assert.deepEqual(Object.keys(t).filter((k) => k !== 'rise').sort(), ['esql', 'title'], key);
+    assert.ok(t.rise === undefined || t.rise === 'bad', `${key}: rise is 'bad' or unset`);
     assert.equal(typeof t.title, 'string', key);
     assert.ok(t.title.length > 0 && t.title.length <= 28, `${key}: a title an 8-column tile holds`);
     assert.equal(typeof t.esql, 'string', key);
@@ -49,9 +50,9 @@ test('a previous-period spec: ES|QL on the events view, its own window, the drop
       assert.ok(!d.url.query.includes('@timestamp'), `${key} ${d.name}: the view has no @timestamp`);
       assert.ok(d.url.query.includes(`${VIEW_TIME} >= NOW() - ${PREV_LOOKBACK_DAYS} days`), `${key} ${d.name}: capped at the lookback`);
     }
-    assert.equal(tile.url['%context%'], true, `${key}: pills, KQL and the control bar reach the tile`);
+    assert.equal(tile.url['%context%'], true, `${key}: pills and KQL reach the tile`);
     assert.equal(tile.url.query, prevQuery(key));
-    assert.ok(tile.url.query.includes(IDENTITY_WHERE), `${key}: both counts follow the Identity dropdowns`);
+    assert.ok(tile.url.query.includes(CONTROLS_WHERE), `${key}: both counts follow all four dropdowns`);
     assert.ok(tile.url.query.startsWith(NULL_SAFE), `${key}: it names api_key.*, so it is null-safe`);
     if (PREV_TILES[key].esql) assert.ok(tile.url.query.includes(`| ${PREV_TILES[key].esql} |`), `${key}: the table's WHERE`);
     assert.equal(stream.url['%context%'], undefined, `${key}: the stream's first event ignores the pills`);
@@ -114,31 +115,36 @@ test('the t0 signal reads the stream dataset\'s first event, or null', () => {
 });
 
 test('the second line: change, ×, zero cases and the stream-start guard', () => {
-  assert.equal(tile(row({ cur: 134, prev: 100 })).detail, '▲ 34% vs prior 24h');
-  assert.equal(tile(row({ cur: 50, prev: 100 })).detail, '▼ 50% vs prior 24h');
-  assert.equal(tile(row({ cur: 0, prev: 100 })).detail, '▼ 100% vs prior 24h');
-  assert.equal(tile(row({ cur: 1000, prev: 100 })).detail, '▲ 10× vs prior 24h');
-  assert.equal(tile(row({ cur: 34809, prev: 2285 })).detail, '▲ 15× vs prior 24h');
-  assert.equal(tile(row({ cur: 999, prev: 100 })).detail, '▲ 899% vs prior 24h');
-  assert.equal(tile(row({ cur: 1001, prev: 1000 })).detail, '▲ <1% vs prior 24h');
-  assert.equal(tile(row({ cur: 100, prev: 100 })).detail, 'same as prior 24h');
-  assert.equal(tile(row({ cur: 7, prev: 0 })).detail, 'none in prior 24h');
-  assert.equal(tile(row({ cur: 0, prev: 0 })).detail, '0 in prior 24h too');
-  assert.equal(tile(row({ cur: 7, prev: 1, hours: 1 })).detail, '▲ 600% vs prior 1h');
-  assert.equal(tile(row({ cur: 7, prev: 1, hours: 24 * 7 })).detail, '▲ 600% vs prior 7d');
-  assert.equal(tile(row({ cur: 7, prev: 1, hours: 0.5 })).detail, '▲ 600% vs prior 30m');
+  // The triangle is its own mark since 1.0.5.2 (trendMark), so it alone can take a colour: read the two together.
+  const line = (d) => (d.arrow ? `${d.arrow} ${d.detail}` : d.detail);
+  assert.equal(line(tile(row({ cur: 134, prev: 100 }))), '▲ 34% vs prior 24h');
+  assert.equal(line(tile(row({ cur: 50, prev: 100 }))), '▼ 50% vs prior 24h');
+  assert.equal(line(tile(row({ cur: 0, prev: 100 }))), '▼ 100% vs prior 24h');
+  assert.equal(line(tile(row({ cur: 1000, prev: 100 }))), '▲ 10× vs prior 24h');
+  assert.equal(line(tile(row({ cur: 34809, prev: 2285 }))), '▲ 15× vs prior 24h');
+  assert.equal(line(tile(row({ cur: 999, prev: 100 }))), '▲ 899% vs prior 24h');
+  assert.equal(line(tile(row({ cur: 1001, prev: 1000 }))), '▲ <1% vs prior 24h');
+  assert.equal(line(tile(row({ cur: 100, prev: 100 }))), 'same as prior 24h');
+  assert.equal(line(tile(row({ cur: 7, prev: 0 }))), 'none in prior 24h');
+  assert.equal(line(tile(row({ cur: 0, prev: 0 }))), '0 in prior 24h too');
+  assert.equal(line(tile(row({ cur: 7, prev: 1, hours: 1 }))), '▲ 600% vs prior 1h');
+  assert.equal(line(tile(row({ cur: 7, prev: 1, hours: 24 * 7 }))), '▲ 600% vs prior 7d');
+  assert.equal(line(tile(row({ cur: 7, prev: 1, hours: 0.5 }))), '▲ 600% vs prior 30m');
   // The picker's presets end a minute early (TIME_TO), and still read as the preset.
-  assert.equal(tile(row({ cur: 7, prev: 1, hours: 59 / 60 })).detail, '▲ 600% vs prior 1h');
-  assert.equal(tile(row({ cur: 7, prev: 1, hours: 24 - 1 / 60 })).detail, '▲ 600% vs prior 24h');
-  assert.equal(tile(row({ cur: 7, prev: 1, hours: 24 * 7 - 1 / 60 })).detail, '▲ 600% vs prior 7d');
-  assert.equal(tile(row({ cur: 7, prev: 1, hours: 15 / 60 - 1 / 60 })).detail, '▲ 600% vs prior 14m');
+  assert.equal(line(tile(row({ cur: 7, prev: 1, hours: 59 / 60 }))), '▲ 600% vs prior 1h');
+  assert.equal(line(tile(row({ cur: 7, prev: 1, hours: 24 - 1 / 60 }))), '▲ 600% vs prior 24h');
+  assert.equal(line(tile(row({ cur: 7, prev: 1, hours: 24 * 7 - 1 / 60 }))), '▲ 600% vs prior 7d');
+  assert.equal(line(tile(row({ cur: 7, prev: 1, hours: 15 / 60 - 1 / 60 }))), '▲ 600% vs prior 14m');
   // The stream started inside the prior window: no false ▲ against a period nothing was recorded in.
-  assert.equal(tile(row({ cur: 900, prev: 10 }), { first: Date.UTC(2026, 9, 21, 0) }).detail, 'no full prior 24h');
+  assert.equal(line(tile(row({ cur: 900, prev: 10 }), { first: Date.UTC(2026, 9, 21, 0) })), 'no full prior 24h');
   // The prior window reaches past the lookback (30 days back from a 15-day read).
-  assert.equal(tile(row({ cur: 900, prev: 10, hours: 24 * 30 })).detail, 'no full prior 30d');
+  assert.equal(line(tile(row({ cur: 900, prev: 10, hours: 24 * 30 }))), 'no full prior 30d');
   // An empty stream.
-  assert.equal(tile(row({ cur: 0, prev: 0 }), { first: null }).detail, 'no full prior 24h');
+  assert.equal(line(tile(row({ cur: 0, prev: 0 }), { first: null })), 'no full prior 24h');
   assert.equal(tile(row({ cur: 88929, prev: 1 })).value, '88,929');
+  // No triangle where there is nothing to compare, or nothing changed.
+  for (const r of [{ cur: 100, prev: 100 }, { cur: 7, prev: 0 }, { cur: 0, prev: 0 }]) assert.equal(tile(row(r)).arrow, '', JSON.stringify(r));
+  assert.equal(tile(row({ cur: 900, prev: 10 }), { first: Date.UTC(2026, 9, 21, 0) }).arrow, '', 'no full prior: no triangle');
   for (const d of ['▲ 1234× vs prior 24h', 'no full prior 24h']) assert.ok(d.length <= 20, `"${d}" fits an 8-column tile at 1440px`);
 });
 
@@ -197,4 +203,43 @@ test('stripContext() binds %timefilter% to the window and refuses what it cannot
   const w = lintWindow();
   assert.equal(w.max - w.min, 864e5);
   assert.throws(() => stripContext({ x: { '%timefilter%': 'min', shift: 1 } }, { min: 1, max: 2 }), /unsupported/);
+});
+
+test('1.0.5.2: the Vega metric tiles print in a Lens metric\'s colours, chosen by a theme probe', async () => {
+  const { prevSpec, coverageSpec, TILE_INK, PREV_TILES } = await import('../../scripts/lib/panels.mjs');
+  const specs = [...Object.keys(PREV_TILES).map((k) => [k, prevSpec(k)]), ['coverage', coverageSpec()]];
+  for (const [name, spec] of specs) {
+    const probe = spec.marks.find((m) => m.name === 'theme');
+    assert.ok(probe && probe.style === 'guide-label' && !probe.from, `${name}: an unbound probe on the themed label style`);
+    assert.ok(spec.marks.indexOf(probe) === 0 && probe.encode.enter.opacity.value === 0, `${name}: drawn first, invisible`);
+    for (const m of spec.marks.filter((x) => x !== probe && x.name !== 'trend')) {
+      const fill = m.encode.update.fill?.signal || '';
+      const tone = ['title', 'value'].includes(m.name) ? 'strong' : 'soft';
+      assert.ok(fill.includes(`luminance(data('theme')[0].fill)`), `${name} ${m.name}: reads the probe`);
+      assert.ok(fill.includes(TILE_INK.dark[tone]) && fill.includes(TILE_INK.light[tone]), `${name} ${m.name}: Lens ${tone} ink in both themes`);
+    }
+  }
+  assert.deepEqual(TILE_INK, { dark: { strong: '#E3E8F2', soft: '#CAD3E2' }, light: { strong: '#111C2C', soft: '#1D2A3E' } });
+});
+
+test('1.0.5.2: a prior-period triangle is red for worse and green for better where a rise is bad, neutral elsewhere', async () => {
+  const { prevSpec, PREV_TILES, TREND_INK, TILE_INK } = await import('../../scripts/lib/panels.mjs');
+  assert.deepEqual(Object.keys(PREV_TILES).filter((k) => PREV_TILES[k].rise === 'bad'), ['failed-events', 'access-denied']);
+  for (const key of Object.keys(PREV_TILES)) {
+    const marks = prevSpec(key).marks;
+    const trend = marks.find((m) => m.name === 'trend');
+    assert.deepEqual(trend.from, { data: 'detail' }, `${key}: placed against the line's own text`);
+    assert.ok(marks.indexOf(trend) > marks.findIndex((m) => m.name === 'detail'), `${key}: after the line it reads`);
+    const fill = trend.encode.update.fill.signal;
+    const colours = [TREND_INK.dark.worse, TREND_INK.dark.better, TREND_INK.light.worse, TREND_INK.light.better];
+    if (PREV_TILES[key].rise === 'bad') {
+      for (const c of colours) assert.ok(fill.includes(c), `${key}: ${c}`);
+      // ▲ takes the worse colour: the first branch of the test on '▲'.
+      assert.match(fill, new RegExp(`^datum\\.datum\\.arrow === '▲' \\? \\(.*'${TREND_INK.dark.worse}' : '${TREND_INK.light.worse}'\\) : \\(.*'${TREND_INK.dark.better}'`));
+    } else {
+      for (const c of colours) assert.ok(!fill.includes(c), `${key}: a volume tile's triangle is not red or green`);
+      assert.ok(fill.includes(TILE_INK.dark.soft) && fill.includes(TILE_INK.light.soft), `${key}: in the line's own colour`);
+    }
+  }
+  assert.ok(!prevSpec('total-events').marks.find((m) => m.name === 'detail').encode.update.text.signal, 'the line itself has no triangle');
 });

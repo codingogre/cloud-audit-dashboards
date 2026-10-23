@@ -24,7 +24,7 @@
  *
  * A fixed window on a now-24h dashboard (Actor 360's 7-day baseline, the 24-hour session timeline) is the
  * middle row with a VEGA_WINDOWS entry (1.0.5.1): an ES|QL spec bounded by TIME, so it also follows the
- * identity dropdowns, which no DSL spec can read. The last row is left for what a panel range cannot say:
+ * dropdowns, which no DSL spec can read. The last row is left for what a panel range cannot say:
  * a previous period (PREV_TILES, an ES|QL spec on the events view) and the stream's first event (vega/14, DSL). Read from the 9.6 source
  * (es_query_parser.ts / esql_query_parser.ts) and confirmed on live dashboards.
  *
@@ -117,13 +117,14 @@ export const nullSafe = (q) => (/(?<![\w.])api_key\./.test(q) && !q.trimStart().
  *
  * An empty dropdown sends "" (or "Any", see ANY) and every guard folds to true before the query runs (270ms → 270ms unselected).
  * Measured over 30 days on the live stream; selecting the Cloud API key, 98% of all events, costs ~850ms.
- * TIME carries IDENTITY_WHERE, so every ES|QL panel that bounds its window with TIME follows the dropdowns.
+ * TIME carries IDENTITY_WHERE (inside CONTROLS_WHERE, below), so every ES|QL panel that bounds its window with
+ * TIME follows the dropdowns.
  */
 export const CLOUD_KEY_SUFFIX = ' · Cloud API key';
 export const UNNAMED_KEY_PREFIX = 'Unnamed key of ';
 export const UNATTRIBUTED = '(unattributed)';
 /**
- * The first option of both dropdowns. Kibana 9.6 gives an ES|QL control no way to clear a single-select
+ * The first option of every dropdown (Project and Client IP too, since 1.0.5.2). Kibana 9.6 gives an ES|QL control no way to clear a single-select
  * choice (no Clear button, and clicking the chosen value again keeps it), so "Any" is how a viewer goes back
  * to everyone. The guards treat it exactly like an empty selection (""), which is what a fresh page sends.
  */
@@ -176,6 +177,24 @@ const IDENTITY_EXACT =
   // Not a key realm: there IDENTITY's CONCAT leaves a null name, so such a row is never shown as (unattributed).
   `OR (?identity == "${UNATTRIBUTED}" AND ${UNNAMED} AND (user.domain IS NULL OR NOT user.domain IN ("_cloud_api_key","_es_api_key")) AND user.name IS NULL))`;
 export const IDENTITY_WHERE = `${IDENTITY_PRE} AND ${IDENTITY_KIND_TEST} AND ${IDENTITY_EXACT}`;
+
+/**
+ * PROJECT AND CLIENT IP (1.0.5.2) are ES|QL variable controls too (controls.mjs), so all four dropdowns behave
+ * alike: each opens on "Any", each sets a variable (?project, ?client_ip), and TIME reads all four. Until 1.0.5.2
+ * these two were classic options lists whose choice became a filter pill.
+ *
+ *   PROJECT_WHERE    project.name against ?project: a term test on a keyword
+ *   CLIENT_IP_WHERE  client.ip against ?client_ip, which arrives as text. TO_IP of the text keeps it a term test
+ *                    on the ip field (~35ms at 30 days with an address selected); TO_STRING(client.ip) == ?client_ip
+ *                    converts every event (~340ms). The CASE hands TO_IP a null when nothing is selected: a bare
+ *                    TO_IP("Any") still folds, and every panel would carry a "treating result as null" warning.
+ *
+ * CONTROLS_WHERE is all four, in the control bar's order. TIME carries it, and so do the panels that bound their
+ * own window (the prior-period tiles, Actor 360's whole-minute tiles).
+ */
+export const PROJECT_WHERE = `(${unset('project')} OR project.name == ?project)`;
+export const CLIENT_IP_WHERE = `(${unset('client_ip')} OR client.ip == TO_IP(CASE(${unset('client_ip')}, null, ?client_ip)))`;
+export const CONTROLS_WHERE = `${PROJECT_WHERE} AND ${IDENTITY_WHERE} AND ${CLIENT_IP_WHERE}`;
 
 /**
  * THE IDENTITY A PANEL SHOWS (1.0.5.1) is the Identity dropdown's own value, so a name read in a table can be
@@ -881,9 +900,9 @@ export const BAND =
 export const IP_GEO =
   'country = MAX(client.geo.country_name), city = MAX(client.geo.city_name), placed = COUNT(client.geo.country_iso_code)';
 
-/** The picker window AND the identity dropdowns (IDENTITY above). TIME_ONLY is the bare window. */
+/** The picker window AND the four dropdowns (CONTROLS_WHERE above). TIME_ONLY is the bare window. */
 export const TIME_ONLY = 'WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart';
-export const TIME   = `${TIME_ONLY} AND ${IDENTITY_WHERE}`;
+export const TIME   = `${TIME_ONLY} AND ${CONTROLS_WHERE}`;
 export const BUCKET = 'BUCKET(@timestamp, 75, ?_tstart, ?_tend)';
 export const KIB    = 'WHERE service.name == "serverless-kibana"';
 /** Elasticsearch's source name; `elasticsearch-serverless` before the 2026 schema change. */
@@ -1530,7 +1549,7 @@ export const regionMap = (x, y, w, h, title, q, regionCol, metricCol, desc) => (
 
 /**
  * FIXED-WINDOW VEGA (1.0.5.1). A Vega chart that must ignore the time picker (Actor 360's "Is this normal?"
- * row over 7 days, the 24-hour session timeline) is an ES|QL spec bounded by TIME, so it follows the identity
+ * row over 7 days, the 24-hour session timeline) is an ES|QL spec bounded by TIME, so it follows the four
  * dropdowns, on a panel with its own time range. Kibana sends that range as ?_tstart/?_tend and as the hidden
  * range filter, and badges the panel with it ("Last 7 days"; a viewer can click the badge to change it).
  *
@@ -1592,12 +1611,13 @@ export const vega = (x, y, w, h, ref, title, desc) => {
  *   - `--verify` captures the tiles' esql_async requests and fails if one carries a range filter, or if a
  *     prior count reads 0 where the stream has events (the canary for a Kibana change);
  *   - `--lint` parity: each tile's current AND prior counts must equal prevEsql(key), the plain TIME-bounded
- *     count on the stream, over the same two windows, with the dropdowns empty and with AUDIT_IDENTITY set.
+ *     count on the stream, over the same two windows, with the dropdowns empty and with AUDIT_IDENTITY (or
+ *     AUDIT_PROJECT, AUDIT_CLIENT_IP) set.
  *
  * The query (prevQuery) reads (2·start − end, end], the prior and current windows together, with the same
- * open-start, closed-end bounds as TIME, and splits them with STATS … WHERE. It carries IDENTITY_WHERE, so
- * both counts follow the Identity type and Identity dropdowns; `%context%` brings the pills, KQL and the
- * Project and Client IP controls, whose filters run on the stream's raw fields under the view. It also caps
+ * open-start, closed-end bounds as TIME, and splits them with STATS … WHERE. It carries CONTROLS_WHERE, so
+ * both counts follow all four dropdowns; `%context%` brings the pills and KQL, whose filters run on the
+ * stream's raw fields under the view. It also caps
  * the read at PREV_LOOKBACK_DAYS: without that a 30-day picker would scan 60 days on every load.
  *
  * The second dataset (prevStreamQuery, `stream`) finds the first event of that lookback with no %context%
@@ -1613,12 +1633,17 @@ export const vega = (x, y, w, h, ref, title, desc) => {
  * from 1h to 7d, ~40ms with a person selected; the stream dataset ~30ms.
  */
 export const PREV_LOOKBACK_DAYS = 15;
+/**
+ * `rise: 'bad'` colours the line's triangle (1.0.5.2): ▲ in the theme's danger colour, ▼ in its success colour.
+ * Only where a direction means something: more failures or denials is worse. A volume tile's triangle stays in
+ * the line's own colour, because more traffic is neither good nor bad.
+ */
 export const PREV_TILES = {
   'total-events': { title: 'Total events · all traffic', esql: '' },
-  'failed-events': { title: 'Failed events · all traffic', esql: 'WHERE event.outcome == "failure" OR event.action == "anonymous_access_denied"' },
+  'failed-events': { title: 'Failed events · all traffic', rise: 'bad', esql: 'WHERE event.outcome == "failure" OR event.action == "anonymous_access_denied"' },
   'es-events': { title: 'Elasticsearch events', esql: ESS },
   'esql-queries': { title: 'ES|QL queries', esql: 'WHERE elasticsearch.audit.action == "indices:data/read/esql"' },
-  'access-denied': { title: 'Access denied', esql: 'WHERE event.action == "access_denied" OR event.action == "anonymous_access_denied"' },
+  'access-denied': { title: 'Access denied', rise: 'bad', esql: 'WHERE event.action == "access_denied" OR event.action == "anonymous_access_denied"' },
   'kibana-events': { title: 'Kibana events', esql: KIB },
 };
 export const prevRef = (key) => `15-prev-${key}`;
@@ -1638,7 +1663,7 @@ export const prevQuery = (key, view = DEFAULT_VIEW) => {
   // The lookback caps the PRIOR window only: the current count is the picker's and is never cut, so a 30-day
   // picker's headline matches the Lens tiles beside it (the prior line then reads "no full prior").
   return nullSafe(`FROM ${view} | WHERE ${VIEW_TIME} <= ${T_END} AND ${VIEW_TIME} > ${PRIOR_START}`
-    + ` AND (${VIEW_TIME} > ${T_START} OR ${VIEW_TIME} >= NOW() - ${PREV_LOOKBACK_DAYS} days) AND ${IDENTITY_WHERE}${t.esql ? ` | ${t.esql}` : ''}`
+    + ` AND (${VIEW_TIME} > ${T_START} OR ${VIEW_TIME} >= NOW() - ${PREV_LOOKBACK_DAYS} days) AND ${CONTROLS_WHERE}${t.esql ? ` | ${t.esql}` : ''}`
     + ` | STATS cur = COUNT(*) WHERE ${VIEW_TIME} > ${T_START}, prev = COUNT(*) WHERE ${VIEW_TIME} <= ${T_START}`
     + ` | EVAL s = TO_LONG(${T_START}), e = TO_LONG(${T_END})`);
 };
@@ -1653,26 +1678,67 @@ export const prevEsql = (key) => `FROM ${IDX} | ${TIME}${PREV_TILES[key].esql ? 
 // marks in a monospaced face with a slashed zero, and the letters fall through to Inter — on a canvas
 // exactly as in Lens, so "101,329" and "ES|QL" print as they do in the tiles beside these.
 const TILE_FONT = '"Elastic UI Numeric", Inter, system-ui, sans-serif';
-const tileText = (name, style, size, update) => ({
+/**
+ * THE TILES' COLOURS (1.0.5.2) are a Lens metric's, measured on a rendered page: the title and number in the
+ * heading colour, the line under the title in the paragraph colour.
+ */
+export const TILE_INK = {
+  dark: { strong: '#E3E8F2', soft: '#CAD3E2' },
+  light: { strong: '#111C2C', soft: '#1D2A3E' },
+};
+/**
+ * A spec cannot ask Kibana for the theme, but Kibana does theme the guide-label style, and a named mark's items
+ * can be read as data. So `theme` is an empty, invisible text mark on guide-label, and every tile mark picks its
+ * ink by that mark's fill: a light fill means a dark page. Luminance, not an exact colour, so a retuned theme still
+ * reads right. The probe has no data, so it is one item whatever the query returns.
+ */
+const THEME_PROBE = { type: 'text', name: 'theme', style: 'guide-label', encode: { enter: { text: { value: '' }, opacity: { value: 0 } } } };
+const DARK_PAGE = "length(data('theme')) && luminance(data('theme')[0].fill) > 0.18";
+const tileInk = (tone) => ({ signal: `${DARK_PAGE} ? '${TILE_INK.dark[tone]}' : '${TILE_INK.light[tone]}'` });
+/** EUI's danger and success text colours (Borealis), for a triangle that says worse or better. */
+export const TREND_INK = {
+  dark: { worse: '#F6726A', better: '#24C292' },
+  light: { worse: '#A71627', better: '#09724D' },
+};
+/**
+ * The triangle in front of the prior-period line, a mark of its own so that it alone takes a colour. It is drawn
+ * from the `detail` mark's items (a named mark's items are data), right-aligned 4px (a space at 16px) left of the
+ * line's own left edge, so it sits where the "▲ " used to be, however long the line is.
+ */
+const trendMark = (rise) => {
+  const neutral = `${DARK_PAGE} ? '${TILE_INK.dark.soft}' : '${TILE_INK.light.soft}'`;
+  const ink = (k) => `(${DARK_PAGE} ? '${TREND_INK.dark[k]}' : '${TREND_INK.light[k]}')`;
+  return {
+    type: 'text', name: 'trend', style: 'guide-label', from: { data: 'detail' },
+    encode: {
+      enter: { font: { value: TILE_FONT }, fontSize: { value: 16 }, fontWeight: { value: 500 }, align: { value: 'right' }, baseline: { value: 'top' } },
+      update: {
+        x: { signal: 'datum.bounds.x1 - 4' }, y: { signal: 'datum.y' }, text: { signal: 'datum.datum.arrow' },
+        fill: { signal: rise === 'bad' ? `datum.datum.arrow === '▲' ? ${ink('worse')} : ${ink('better')}` : neutral },
+      },
+    },
+  };
+};
+const tileText = (name, style, size, update, tone) => ({
   type: 'text', name, style, from: { data: 'tile' },
-  encode: { enter: { font: { value: TILE_FONT }, fontSize: { value: size }, fontWeight: { value: 500 } }, update },
+  encode: { enter: { font: { value: TILE_FONT }, fontSize: { value: size }, fontWeight: { value: 500 } }, update: { ...update, fill: tileInk(tone) } },
 });
 /**
  * Offsets measured on a rendered Lens metric at 1920 and 1440 (1.0.5): the title's line box starts 16px
  * in from the panel's top-left, the number's 43px line box ends 16px above the bottom, and the secondary
  * line's 19px box ends 4px above the number. Kibana insets a Vega view 8px inside its panel, hence
  * TILE_PAD 8; the y offsets were then nudged until the glyph rows matched a Lens tile's to the pixel in
- * both themes at 1920 and 1440. What cannot match is the colour: Kibana gives every Vega guide style the
- * theme's subdued text colour (measured: rgb(152,168,195) dark, rgb(81,99,129) light, the same for
- * guide-title, guide-label, group-title and titles), where a Lens metric prints its title and number in
- * the full text colour, and a spec has no way to read the theme. So these tiles' words are a step
- * softer than their neighbours'; the README themes row is why they stay on the theme styles.
+ * both themes at 1920 and 1440. Until 1.0.5.2 the colour could not match: Kibana gives every Vega guide style
+ * the theme's subdued text colour (rgb(152,168,195) dark, rgb(81,99,129) light), so the tiles' words were a step
+ * softer than their neighbours'. The marks keep their guide styles, but tileInk() now sets the Lens colours.
  */
-export const tileMarks = (title, { bottomLeft = false } = {}) => [
-  tileText('title', 'guide-title', 16, { x: { signal: 'pad' }, y: { signal: 'pad + 2.5' }, baseline: { value: 'top' }, text: { value: title }, limit: { signal: 'width - 2 * pad' } }),
-  tileText('value', 'guide-title', 36, { x: { signal: 'width - pad' }, y: { signal: 'height - pad - 36.6' }, align: { value: 'right' }, baseline: { value: 'top' }, text: { field: 'value' } }),
-  tileText('detail', 'guide-label', 16, { x: { signal: 'width - pad' }, y: { signal: 'height - pad - 63.3' }, align: { value: 'right' }, baseline: { value: 'top' }, text: { field: 'detail' }, limit: { signal: 'width - 2 * pad' } }),
-  ...(bottomLeft ? [tileText('note', 'guide-label', 14, { x: { signal: 'pad' }, y: { signal: 'height - pad - 12' }, baseline: { value: 'alphabetic' }, text: { field: 'note' }, limit: { signal: 'width - 2 * pad - 140' } })] : []),
+export const tileMarks = (title, { bottomLeft = false, trend } = {}) => [
+  THEME_PROBE,
+  tileText('title', 'guide-title', 16, { x: { signal: 'pad' }, y: { signal: 'pad + 2.5' }, baseline: { value: 'top' }, text: { value: title }, limit: { signal: 'width - 2 * pad' } }, 'strong'),
+  tileText('value', 'guide-title', 36, { x: { signal: 'width - pad' }, y: { signal: 'height - pad - 36.6' }, align: { value: 'right' }, baseline: { value: 'top' }, text: { field: 'value' } }, 'strong'),
+  tileText('detail', 'guide-label', 16, { x: { signal: 'width - pad' }, y: { signal: 'height - pad - 63.3' }, align: { value: 'right' }, baseline: { value: 'top' }, text: { field: 'detail' }, limit: { signal: trend ? 'width - 2 * pad - 20' : 'width - 2 * pad' } }, 'soft'),
+  ...(trend ? [trendMark(trend.rise)] : []),
+  ...(bottomLeft ? [tileText('note', 'guide-label', 14, { x: { signal: 'pad' }, y: { signal: 'height - pad - 12' }, baseline: { value: 'alphabetic' }, text: { field: 'note' }, limit: { signal: 'width - 2 * pad - 140' } }, 'soft')] : []),
 ];
 export const TILE_PAD = 8;
 
@@ -1685,9 +1751,11 @@ const SPAN = "(datum.len < 3300 ? round(datum.len / 60) + 'm' : datum.len < 1710
 const PREV_LINE =
   "!datum.full ? 'no full prior ' + datum.span"
   + " : datum.prev === 0 ? (datum.cur === 0 ? '0 in prior ' + datum.span + ' too' : 'none in prior ' + datum.span)"
-  + " : datum.cur >= 10 * datum.prev ? '▲ ' + round(datum.cur / datum.prev) + '× vs prior ' + datum.span"
+  + " : datum.cur >= 10 * datum.prev ? round(datum.cur / datum.prev) + '× vs prior ' + datum.span"
   + " : datum.cur === datum.prev ? 'same as prior ' + datum.span"
-  + " : (datum.cur > datum.prev ? '▲ ' : '▼ ') + (abs(datum.pct) < 1 ? '<1' : abs(datum.pct)) + '% vs prior ' + datum.span";
+  + " : (abs(datum.pct) < 1 ? '<1' : abs(datum.pct)) + '% vs prior ' + datum.span";
+/** The line's triangle, drawn by trendMark(): ▲ for a rise, ▼ for a fall, none when there is no comparison. */
+const PREV_ARROW = "datum.full && datum.prev > 0 && datum.cur !== datum.prev ? (datum.cur > datum.prev ? '▲' : '▼') : ''";
 
 export const prevSpec = (key) => {
   const t = PREV_TILES[key];
@@ -1715,10 +1783,11 @@ export const prevSpec = (key) => {
           { type: 'formula', as: 'pct', expr: 'datum.prev > 0 ? round((datum.cur - datum.prev) * 100 / datum.prev) : 0' },
           { type: 'formula', as: 'value', expr: "format(datum.cur, ',d')" },
           { type: 'formula', as: 'detail', expr: PREV_LINE },
+          { type: 'formula', as: 'arrow', expr: PREV_ARROW },
         ],
       },
     ],
-    marks: tileMarks(t.title),
+    marks: tileMarks(t.title, { trend: { rise: t.rise } }),
   };
 };
 
@@ -1804,12 +1873,12 @@ export const writeTileSpecs = () => {
 
 /**
  * RECORD FEEDS (1.0.5.1). Every record-level list on a dashboard is a Lens ES|QL table built with table(), not a
- * Discover session panel: a Discover panel takes no ES|QL control variables, so it ignored the Identity type and
- * Identity dropdowns (controls.mjs) while every panel around it followed them. A feed is
+ * Discover session panel: a Discover panel takes no ES|QL control variables, so it ignored the dropdowns
+ * (controls.mjs) while every panel around it followed them. A feed is
  *
  *   FROM … | TIME | <filter> | SORT @timestamp DESC | LIMIT n | <per-row EVALs> | KEEP …
  *
- * TIME carries IDENTITY_WHERE, so the dropdowns narrow it. The SORT and LIMIT come straight after the filter
+ * TIME carries CONTROLS_WHERE, so the dropdowns narrow it. The SORT and LIMIT come straight after the filter
  * (QUERY SHAPE rule 3), so a classifying CASE runs on the n rows returned, never on every row matched. The time
  * is a metric column (`@timestamp`, "Time"), because a Lens data_table with no metric is rejected by the API;
  * it therefore sits at the right end, as Last seen does on every other table. `{ scroll: true }` keeps the

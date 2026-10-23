@@ -3,26 +3,58 @@
 `CLAUDE.md`-style durable context lives in `README.md` and `esql/fragments.md` and wins on
 conflict. This file is "where we are right now" and should be assumed stale.
 
-## Next: deploy 1.0.5.1, then 1.0.6 starter alert pack
+## Next: 1.0.6 starter alert pack
 
-- **1.0.5.1, first (done on branch `1.0.5.1`, not yet deployed):** Discover session and Vega ids lose their numbers
-  (`cloud-audit-search-all-events`, `cloud-audit-vega-actor-risk-treemap`). File names stay numbered; `objId()` in
-  `lib/env.mjs` strips the leading `NN-` when the id is built, `objFile()` maps an id back to its file (the --lint ref
-  check, --perf grouping), and `RETIRED_OBJECTS` (the numbered ids) are deleted by `--dashboards` after every panel is
-  re-pointed, and by `--clean`. Deploy order in production: `--objects` (new ids) → `--dashboards` (re-point, then
-  retire) → `_export` by an old id returns 404.
-- **1.0.5.1, research (done on branch):** Vega 08, 09, 12 and 13 moved to ES|QL with per-panel time ranges
-  (`VEGA_WINDOWS`). The six prior-period tiles are ES|QL Vega specs on the ES|QL view `logs-cloud-audit-events-view`, which
-  gets no hidden time filter, so they follow the Identity dropdowns (named `logs-…` so a viewer role on `logs-*` can read it). Only vega/14
-  (*Audit data held*) stays DSL. `--deploy` creates the events view before it lints.
-- **1.0.5.1, identity (done on branch):** a query-time identity (`IDENTITY_KIND`, `IDENTITY`, one ES|QL `CASE`) drives
-  single-select ES|QL variable controls "Identity type" → "Identity" in `pinned_panels`, replacing Person (email) and
-  API key. Both open on "Any", which is also how a viewer clears them. `TIME` = `TIME_ONLY AND IDENTITY_WHERE`, so every
-  `TIME`-bound ES|QL panel follows them. Every dashboard Discover-session panel is now a Lens ES|QL table; the Discover
-  sessions still deploy and the intros link to them. Decisions and probe results are in the session handoff under
-  `.sessions/` (local).
-- **1.0.6:** five ES|QL alert rules shipped as code (failed-sign-in burst, success after failures, new key or role
-  change, security change after hours, first-seen identity), built from the shared fragments.
+Five ES|QL alert rules shipped as code with `--deploy`, each linked to the dashboard that explains it: failed-sign-in
+burst (by client IP, and by user name excluding platform internals), sign-in success after a failure burst, new API key
+or role change, security change outside business hours, first-seen identity. Build the conditions from the shared
+fragments so the drift check covers them, and name identities the way the Identity dropdown does (`ACTOR_KEYS` then
+`ACTOR_RESOLVE`). A rule query must not use `TIME`: it carries `IDENTITY_WHERE`, whose `?identity` variables only a
+dashboard binds. Open questions for the human (connectors, thresholds, enabled or disabled, first-seen baseline) and the
+starting material are in the session handoff under `.sessions/` (local).
+
+## Release 1.0.5.2 — four ES|QL dropdowns, Lens-coloured Vega tiles, 2026-10-23
+
+Committed to main, **not deployed to production** (rendered on a private `AUDIT_ID_NS=r1052` copy, since removed).
+Deploy with `./audit --deploy`.
+
+- **Project and Client IP are ES|QL variable controls** (`?project`, `?client_ip`), single-select, opening on "Any",
+  like Identity type and Identity. `TIME` = `TIME_ONLY AND CONTROLS_WHERE` (`PROJECT_WHERE AND IDENTITY_WHERE AND
+  CLIENT_IP_WHERE`). Client IP compares `client.ip == TO_IP(CASE(unset, null, ?client_ip))`: a term query (~35ms at
+  30 days; `TO_STRING(client.ip)` was ~340ms), and the CASE stops `TO_IP("Any")` warning on every panel. Nothing chains
+  except Identity on Identity type. No dropdown travels with the nav links now; pills (Client IP cells included) do.
+- **Cohort (vega/12)**: the estate reads `TIME_ONLY AND PROJECT_WHERE` (`checkTwoDatasets` enforces it).
+- **Lint** runs the four option queries and fails one whose first row is not "Any"; `controlParams()` binds all four
+  variables (`AUDIT_PROJECT`, `AUDIT_CLIENT_IP` beside the identity pair). The `--verify` canary binds all four too.
+- **Vega metric tiles print in Lens colours**: an invisible `theme` mark on `guide-label` is read back as data and
+  its fill's luminance picks `TILE_INK` (pixel-identical to the Lens tiles in both themes).
+- **Prior-period triangles**: a separate `trend` mark; red ▲ / green ▼ on Failed events and Access denied
+  (`rise: 'bad'`), neutral on the volume tiles.
+- The data view `elastic_cloud-audit-logs` no longer backs a control but still deploys (public id).
+
+## Release 1.0.5.1 — identity dropdowns, unnumbered ids, 2026-10-23
+
+Deployed to the Default space on 2026-10-23; the r1051 test copy was removed.
+
+- **Vega and Discover ids have no numbers** (`cloud-audit-vega-actor-risk-treemap`, `cloud-audit-search-all-events`).
+  Files stay numbered; `objId()` in `lib/env.mjs` builds the id, `objFile()` maps it back, and `--dashboards` deleted
+  the 31 numbered ids (`RETIRED_OBJECTS`) after re-pointing every panel (verified 404 in production).
+- **Identity type and Identity** replace Person (email) and API key: single-select ES|QL variable controls in the
+  PUT's `pinned_panels` (no more `controlGroupInput` import patch), fed by `IDENTITY_KIND` / `IDENTITY`. Both open on
+  "Any", which is also how a viewer clears them (an ES|QL single-select has no Clear in 9.6). `TIME` =
+  `TIME_ONLY AND IDENTITY_WHERE` (plain boolean tests on raw fields: a selected person costs ~20ms over 30 days).
+- **Every dashboard Discover panel is a Lens ES|QL table** (Discover panels cannot read ES|QL variables); raw columns
+  are click-to-filter, session id included. The Discover sessions still deploy and the intros link to them.
+- **Vega 08, 09, 12, 13 are ES|QL** on per-panel time ranges (`VEGA_WINDOWS`); **the six prior-period tiles are ES|QL
+  Vega on the view `logs-cloud-audit-events-view`** (`@timestamp` renamed, so Kibana attaches no hidden time filter).
+  Named `logs-…` so viewer roles on `logs-*` read it; wildcards do not pick views up (tested). Only vega/14 is DSL.
+- **Tables name an identity as the dropdown lists it**; Kibana events made with an unnamed Elasticsearch key read
+  "Unnamed key of <owner>" instead of being credited to the owner.
+- **Guards added:** `AUDIT_ID_NS` refuses words production ids start with; `--deploy` creates the view before it lints;
+  a strict lint pass catches misspelt fields the `nullify` SET hid; prior-period parity covers current and prior and a
+  20-day window; `--verify` checks the tiles' real requests; a test keeps `dashboards/*.json` equal to the build.
+- **Known:** an intermittent console error "Unknown query parameter [identity]" on page load (~1 in 12, recovers, no
+  broken panel).
 
 ## Release 1.0.5 — security-practitioner review fixes, 2026-10-23
 

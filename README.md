@@ -19,8 +19,9 @@ that link needs no `/s/<space>` prefix. The Cloud UI's *Log delivery* page
 links to that id, so it is fixed. Every other dashboard is `elastic_cloud-audit-<name>`, with no number:
 `elastic_cloud-audit-actor-360`, `-identity-access`, `-kibana-objects`, `-data-access`, `-security-anomalies`,
 `-geo-network` and, when deployed, `-platform-volume`. The numbered ids of 1.0.2 and earlier
-(`cloud-audit-<NN>-<name>`) are retired: `--dashboards` removes them. The data view the controls use is
-**`elastic_cloud-audit-logs`**; it replaced `cloud-audit-dv` in 1.0.4, and `--dashboards` removes the old one.
+(`cloud-audit-<NN>-<name>`) are retired: `--dashboards` removes them. The suite's data view is
+**`elastic_cloud-audit-logs`** (no control reads it since 1.0.5.2, but it still deploys); it replaced `cloud-audit-dv`
+in 1.0.4, and `--dashboards` removes the old one.
 Vega charts and Discover sessions have no number in their ids either (1.0.5.1): `searches/00-all-events.json` deploys
 as `cloud-audit-search-all-events` and `vega/01-actor-risk-treemap.json` as `cloud-audit-vega-actor-risk-treemap`. The
 files keep their numbers, which only order the repo; `objId()` in `lib/env.mjs` drops the number when it builds the id.
@@ -138,8 +139,8 @@ the highest weight.
 ### Drill-down
 
 The suite ships **controls** and **drilldowns**. The controls go out in the PUT (1.0.5.1):
-`PUT /api/dashboards/{id}` takes a top-level `pinned_panels` array holding classic option lists
-(`options_list_control`) and ES|QL variable controls (`esql_control`) alike, and an `_export` → `_import`
+`PUT /api/dashboards/{id}` takes a top-level `pinned_panels` array holding ES|QL variable controls
+(`esql_control`; classic option lists, `options_list_control`, go there too), and an `_export` → `_import`
 round trip keeps it (verified on 9.6 by PUT, GET and the round trip; `payload()` in `scripts/dashboards.mjs`).
 Until 1.0.5.1 they were patched in after the deploy as `controlGroupInput`, which the PUT silently drops.
 Drilldowns still cannot go through the API: the PUT drops `enhancements.dynamicActions`, and a GET→edit→PUT
@@ -168,15 +169,18 @@ the reload the filter itself causes has already replaced the view and the zoom i
 the flow clears every pill on the page.
 
 **The control bar** — four dropdowns on every dashboard, defined in `scripts/lib/controls.mjs` (width `small`
-with grow, so the four share one row at 1440px and at 1920px). Project and Client IP are option lists on a raw
-field; Identity type and Identity are ES|QL variable controls, single choice:
+with grow, so the four share one row at 1440px and at 1920px). All four are ES|QL variable controls since
+1.0.5.2, single choice, and behave alike: each opens on "Any", lists what an ES|QL query finds in the time
+range (busiest first, up to 10,000), and sets a variable that every ES|QL panel reads through `TIME`
+(`CONTROLS_WHERE` in `scripts/lib/panels.mjs`). Until 1.0.5.2 Project and Client IP were classic option lists,
+whose choice became a filter pill, so one bar held two kinds of control that answered differently:
 
 | Control | Reads | Why |
 |---|---|---|
-| Project | `project.name` | The serverless project that **emitted** the event. An audit project usually collects the audit streams of several projects; this narrows the whole dashboard — and, through hierarchical chaining, every dropdown after it — to one of them. Populated on every Elasticsearch and Kibana event. Names are not unique in Elastic Cloud, so projects that share a name share an option. **Actor 360's cohort rank follows Project and nothing else:** it ranks against everyone active in the projects the selection is active in, so an identity or Client IP selection highlights that identity instead of shrinking the cohort to one. Exact across all projects or within one; across several (not all) it sums events and takes each distinct count's per-project maximum, and its title says *approximate*. |
+| Project | `?project`, against `project.name` (`PROJECT_WHERE`) | The serverless project that **emitted** the event. An audit project usually collects the audit streams of several projects; this narrows the whole dashboard to one of them. It does not shorten the other dropdowns' lists (none chains on it, so no choice can leave another stranded). Populated on every Elasticsearch and Kibana event. Names are not unique in Elastic Cloud, so projects that share a name share an option. **Actor 360's cohort rank follows Project and nothing else:** it ranks against everyone active in the projects the selection is active in, so an identity or Client IP selection highlights that identity instead of shrinking the cohort to one. Exact across all projects or within one; across several (not all) it sums events and takes each distinct count's per-project maximum, and its title says *approximate*. |
 | Identity type | `?identity_kind`, worked out per event (`IDENTITY_KIND`) | What kind of credential made the request: Person, Elasticsearch API key, Elasticsearch API key (name not recorded), Cloud API key, Service account, Failed sign-in, Unattributed or Other. Eight values at most, so the list is always complete; picking one first shortens the Identity list. |
 | Identity | `?identity`, worked out per event (`IDENTITY`), chained on Identity type | One person, key or account, named exactly as every table names it (below). It replaced Person (email) and API key in 1.0.5.1: they read one raw field each, so a Cloud API key was in neither list and `user.name` meant a different thing on different rows. Single choice keeps a selected panel at ~20ms over 30 days; a multi-select has no fast path (~0.25s). Its query aggregates every event in range and lists the busiest identities in it, up to 10,000, rather than an option list's sample. |
-| Client IP | `client.ip` | Can hold more distinct addresses than anyone could eyeball, which is the point of a searchable dropdown. |
+| Client IP | `?client_ip`, against `client.ip` (`CLIENT_IP_WHERE`) | Can hold more distinct addresses than anyone could eyeball; type in the dropdown to search the list. A control's value is text, so the list is `TO_STRING(client.ip)` and the filter turns the choice back with `TO_IP`, which keeps it a term test on the ip field: ~35ms over 30 days, against ~340ms for comparing text per event. The `TO_IP` is handed a null when nothing is chosen, because `TO_IP("Any")` would put a warning on every panel. |
 
 **What the identity fields mean.** Elastic's audit log records the account a request ran as, which is not
 always the credential that was used:
@@ -205,8 +209,8 @@ one, and every table and chart names an identity the same way (`IDENTITY` and `A
 | Failed sign-in | `user.name`, the name tried, or `(unattributed)` when no name was sent (mostly `anonymous_access_denied`) | the same |
 | Unattributed | `(unattributed)`: no principal at all, mostly `connection_granted`; a failed sign-in with no name is kind Failed sign-in, not Unattributed | the same |
 
-A choice reaches every ES|QL panel through `TIME`, which carries `IDENTITY_WHERE`: plain boolean tests on the
-raw fields, which the index answers. Measured over 30 days: 270ms with nothing chosen, 20ms for a person,
+A choice reaches every ES|QL panel through `TIME`, which carries `IDENTITY_WHERE` (with the Project and Client
+IP tests, in `CONTROLS_WHERE`): plain boolean tests on the raw fields, which the index answers. Measured over 30 days: 270ms with nothing chosen, 20ms for a person,
 ~850ms for the Cloud API key that is ~98% of the stream. Until 1.0.5.1 a Kibana event made with an
 Elasticsearch key was shown as the key's owner, so the Elasticsearch keys a Cloud API key created read as the
 Cloud API key itself.
@@ -217,18 +221,16 @@ until 1.0.2): it is null for some identities, so a name dropdown silently missed
 field on the data view was tried in 1.0.5 and rejected: its pill is a filter on a field the index does not
 have, and every ES|QL panel went empty.
 
-The option lists need a real data view, so `elastic_cloud-audit-logs` is deployed as an `index-pattern` saved
-object (`data_view_id` in `pinned_panels`; the saved object references it as `<control id>:optionsListDataView`).
-The Discover sessions keep their inline ad-hoc one, and the ES|QL controls name the stream in their query.
+The classic option lists needed a real data view, so `elastic_cloud-audit-logs` is deployed as an
+`index-pattern` saved object. No control reads it since 1.0.5.2 (the ES|QL controls name the stream in their
+query), but it still deploys under its public id. The Discover sessions keep their inline ad-hoc one.
 
-**What "sticky across dashboards" actually means**, measured end to end in a browser: choosing a Project or
-Client IP scopes every panel, KPIs included, and clicking through the nav bar carries the *filter* to the
-destination, where every panel is correctly scoped and a pill reads `project.name: <project>`. The
-destination's **dropdown itself reads "Any"** — control selections live in dashboard app state, which
-`use_filters` does not carry. Read the pill, not the dropdown. **Identity type and Identity do not travel
-at all**: they set query variables, not filters, so each dashboard opens with them on "Any" (no identity
-scoping), and picking "Any" is how a viewer clears them. To take an identity
-across the suite, pin it from a table (an email, an API key or a Principal id cell), which is a filter.
+**What "sticky across dashboards" actually means.** The dropdowns **do not travel**: they set query
+variables, not filters, so each dashboard opens with all four on "Any", and picking "Any" is how a viewer
+clears one. (Until 1.0.5.2 a Project or Client IP choice left a filter pill that the nav links carried while
+the destination's dropdown read "Any"; that mismatch is gone with the classic controls.) To take a selection
+across the suite, pin it from a table, which is a filter: an email, an API key, a Principal id or a Client IP
+cell. The nav links carry pills and the time range (`use_filters`).
 
 The older click-to-filter path still exists and needs neither:
 
@@ -434,13 +436,13 @@ Probed against Kibana 9.6 serverless. Several are undocumented and cost real tim
 | Reporting API rejects `pngV2` / `printablePdfV2` | Verification drives Chromium directly |
 | **Every Lens ES\|QL request carries a hidden `@timestamp` range filter for exactly the picker's window**, whether or not the query uses `?_tstart`/`?_tend` (captured in the browser: `"filter":{"bool":{"filter":[{"range":{"@timestamp":{"gte":…,"lte":…}}}]}}` beside the params, on a query that never compares `@timestamp` with `?_tstart`). Kibana adds it for the layer's time field — the column first compared with the params, else `@timestamp` at run time; another column only moves it | No Lens panel can read outside the range: a previous-period count comes back 0, and a lower bound below `?_tstart` is silently cut there (it was on Actor 360's whole-minute window until 1.0.5). The prior-period tiles read the events view instead (next rows), and *Audit data held* is a DSL Vega spec (`coverageSpec()` in `panels.mjs`) |
 | A DSL Vega body can read the picker without being bound to it: `{"%timefilter%": "min"}` / `"max"` anywhere in `body.query` or `body.aggs` becomes the window's start or end in ms (a script's `params` included) | Used by the prior-period tiles until 1.0.5.1; no spec uses it now. `--lint` still binds the placeholders to a fixed window, so one that does is linted rather than rejected |
-| An ES\|QL Vega spec **always** follows its panel's time range — omitting `%timefield%` does not opt out — and that is the picker's unless the panel has its own | A panel that needs its own window (a 7-day baseline on a 24h dashboard) is an ES\|QL spec bounded by `TIME` on a `vis` panel with `config.time_range` (`VEGA_WINDOWS` in `panels.mjs`; vega/08, 09, 12, 13): `?_tstart`/`?_tend` and the hidden range filter are then that window, and the identity dropdowns still apply. Kibana badges the panel with the window (*Last 7 days*); a viewer can click it to change the range. The re-point keeps it (stored as `embeddableConfig.time_range`). A rounded range badges long (*Last 167 hours rounded to the hour*), so the hourly charts take `now-7d` and keep their 168 hours in the query. `--lint` and `--perf` run these specs over that window. A **DSL** spec (`url.index` + `url.body`, explicit `@timestamp` range, `%dashboard_context-*%` placeholders) is left for what neither a panel range nor the events view can express: the stream's first event (vega/14). The prior period is an ES\|QL spec on `cloud-audit-events-view` (next rows) |
-| A Vega ES\|QL dataset gets the dashboard's filters (pills, KQL, classic controls) only with `"%context%": true`, and then all of them | Every ES\|QL spec sets it, except the estate half of 07's cohort (vega/12), which must not be narrowed by the selection: it is grouped by project and the spec keeps the projects the selection's dataset reports, so it still follows the Project control (`TWO_DATASET_SPECS` in `layout.mjs`), and the six prior-period tiles' `stream` dataset, which finds the stream's first event and is unfiltered by design |
-| An ES\|QL Vega spec on an **ES\|QL view that has no `@timestamp`** gets no time filter: `get_timefield` finds no time column (answers `{}`; the same query with `event_time > ?_tstart` answers `event_time`). Undocumented: it follows a Kibana code comment | The prior-period tiles read `logs-cloud-audit-events-view` (`FROM <stream> \| RENAME @timestamp AS event_time`, `lib/view.mjs`) and bound their own window, so they can count the period before the picker **and** follow the Identity dropdowns, pills, KQL and the control bar (all four tested live). The query never compares a column bare with `?_tstart`/`?_tend` (always `TO_DATETIME(?_tstart)`), never `BUCKET`s on them, never sets `%timefield%` and names no column `first` (reserved): each brings the filter back or breaks the query, and `layout.mjs` fails a spec that does. `--lint` asks `get_timefield` about every query on the view, and `--verify` fails if a tile's request carries a range filter or its prior count differs from the stream's (*Prior-period tiles*) |
+| An ES\|QL Vega spec **always** follows its panel's time range — omitting `%timefield%` does not opt out — and that is the picker's unless the panel has its own | A panel that needs its own window (a 7-day baseline on a 24h dashboard) is an ES\|QL spec bounded by `TIME` on a `vis` panel with `config.time_range` (`VEGA_WINDOWS` in `panels.mjs`; vega/08, 09, 12, 13): `?_tstart`/`?_tend` and the hidden range filter are then that window, and the dropdowns still apply. Kibana badges the panel with the window (*Last 7 days*); a viewer can click it to change the range. The re-point keeps it (stored as `embeddableConfig.time_range`). A rounded range badges long (*Last 167 hours rounded to the hour*), so the hourly charts take `now-7d` and keep their 168 hours in the query. `--lint` and `--perf` run these specs over that window. A **DSL** spec (`url.index` + `url.body`, explicit `@timestamp` range, `%dashboard_context-*%` placeholders) is left for what neither a panel range nor the events view can express: the stream's first event (vega/14). The prior period is an ES\|QL spec on `cloud-audit-events-view` (next rows) |
+| A Vega ES\|QL dataset gets the dashboard's filters (pills, KQL) only with `"%context%": true`, and then all of them; ES\|QL control variables reach every dataset, `%context%` or not | Every ES\|QL spec sets it, except the estate half of 07's cohort (vega/12), which must not be narrowed by the selection: it reads the Project dropdown directly (`TIME_ONLY AND PROJECT_WHERE`), is grouped by project, and the spec keeps the projects the selection's dataset reports, so a project pill narrows it too (`TWO_DATASET_SPECS` in `layout.mjs`), and the six prior-period tiles' `stream` dataset, which finds the stream's first event and is unfiltered by design |
+| An ES\|QL Vega spec on an **ES\|QL view that has no `@timestamp`** gets no time filter: `get_timefield` finds no time column (answers `{}`; the same query with `event_time > ?_tstart` answers `event_time`). Undocumented: it follows a Kibana code comment | The prior-period tiles read `logs-cloud-audit-events-view` (`FROM <stream> \| RENAME @timestamp AS event_time`, `lib/view.mjs`) and bound their own window, so they can count the period before the picker **and** follow the dropdowns, pills and KQL (tested live). The query never compares a column bare with `?_tstart`/`?_tend` (always `TO_DATETIME(?_tstart)`), never `BUCKET`s on them, never sets `%timefield%` and names no column `first` (reserved): each brings the filter back or breaks the query, and `layout.mjs` fails a spec that does. `--lint` asks `get_timefield` about every query on the view, and `--verify` fails if a tile's request carries a range filter or its prior count differs from the stream's (*Prior-period tiles*) |
 | ES\|QL views are **index-level** resources with their own privileges (measured with narrowed API keys, 1.0.5.1): creating or replacing one needs `create_view` on its name (no read on the stream is checked at create time), deleting it `delete_view`, reading its definition `read_view_metadata`; `manage_view` (or `manage`) covers all three. Querying it needs `read` on the view name **and** on the stream. Cluster `manage` alone grants none of it | `--objects` creates the view and reads it back, `--clean dashboards` deletes it, `--dashboards` and `--verify` fail with "run ./audit --objects" when it is missing or defined differently. **Every dashboard viewer's role needs `read` on the view too**, which is why it is named `logs-cloud-audit-events-view`: a role that reads `logs-*` covers it (tested with a key limited to `logs-*`). Wildcards do not pick views up: `FROM logs-*` and `GET logs-*/_count` returned the same count with the view present as without it, so nothing on the project counts these events twice |
 | A query through an ES\|QL view costs more than the same text inlined on wide windows: 0.2–0.37s through the view against ~0.04s inlined over 7–30 days of ~3M events (1.0.5.1, live) | Still small. The tiles' 15-day lookback caps only the prior window; the current count reads the whole picker range. `--perf` times the tiles through a view of the same definition over its replica (`<view>-perf`), not inlined, so the numbers are the view's |
 | Two **unnamed** DSL datasets in one Vega spec cross their responses — the second gets nothing and the panel shows a bare "Error" | Every DSL dataset carries a unique `name`; `layout.mjs` fails the build otherwise. (Kibana's `es_query_parser` matches results by the result's index, not the request's) |
-| Kibana themes axis, legend and title text, but **not text marks** — an unstyled text mark is `#000` on the dark theme | Full Vega text marks take `style: "guide-label"` / `"guide-title"`, which Kibana colours per theme. Vega-Lite `style` does not reach text marks at all; there, words go in a `title` whose `text` is an expression. Every themed Vega style is the same *subdued* text colour (measured: `rgb(152,168,195)` dark, `rgb(81,99,129)` light), a step softer than a Lens metric's title and number, and a spec cannot read the theme, so the Vega metric tiles' words are that step softer than the Lens tiles beside them |
+| Kibana themes axis, legend and title text, but **not text marks** — an unstyled text mark is `#000` on the dark theme | Full Vega text marks take `style: "guide-label"` / `"guide-title"`, which Kibana colours per theme. Vega-Lite `style` does not reach text marks at all; there, words go in a `title` whose `text` is an expression. Every themed Vega style is the same *subdued* text colour (measured: `rgb(152,168,195)` dark, `rgb(81,99,129)` light), a step softer than a Lens metric, and a spec cannot ask for the theme. It can infer it, though (1.0.5.2): the Vega metric tiles carry an invisible text mark named `theme` on `guide-label`, read its fill back as data (`data('theme')[0].fill`, a named mark's items are a dataset), and pick a Lens metric's colours by its luminance: `#E3E8F2` / `#111C2C` for title and number, `#CAD3E2` / `#1D2A3E` for the line under the title (`TILE_INK`, `tileMarks()` in `panels.mjs`; pixel-identical to the Lens tiles beside them in both themes). Kibana main (#298989, after the 9.6 build of 2026-10-21) themes unstyled text marks with the paragraph colour |
 | `kibanaAddFilter(query, index)` resolves `index` by data view **title** | Pass `logs-elastic_cloud.serverless_audit.otel-default`; the id `elastic_cloud-audit-logs` renders *Index "elastic_cloud-audit-logs" not found* |
 | External URLs are blocked in Vega on serverless | The basemap is Elastic Maps Service: `{"%type%": "emsfile", "name": "World Countries"}` with `format: {type: "topojson", feature: "data"}` — not `property: "features"`, which yields one useless row |
 | Vega errors render inside the panel as `li.vgaVis__message--err`, often as a bare "Error" | `--verify` counts those elements in addition to reading text |
@@ -449,12 +451,12 @@ Probed against Kibana 9.6 serverless. Several are undocumented and cost real tim
 | An `xy` chart's legend defaults to `hidden`, even with a `breakdown_by` | `xy()` emits `config.legend` (`bottom` list by default when there is a split) and the `eui_amsterdam` palette; Kibana's `default` palette pairs each hue with a pale tint that vanishes on white |
 | Markdown panels have no font-size setting, `###` renders at ~20px, and raw HTML is **dropped** before render: a `<style>` block or a `<div class>` never reaches the page (probed: no style element in the DOM; the old `CSS_NAV` block on Command Center never styled anything) | `md()` lifts a leading heading into the panel title; `layout.mjs` rejects `#`–`###` anywhere else. The intros need small text, which only the legacy markdown *visualization* has (`fontSize` in pt), so the post-pass swaps each intro for a by-value one at 9pt: 12px paragraphs, a 17px `###` heading, theme colours (see *Presentation conventions*) |
 | A **collapsible section** is an ordinary entry of the Dashboards API's top-level `panels` array with **no `type` key**: `{ id, title, collapsed, grid: { y }, panels: [...] }`. A top-level `sections` key and `"type": "section"` are both 400 `unrecognized_keys`. Inner panels' grid y is relative to the section; a top-level panel after it keeps its own y, one row below the section's. The saved object stores it differently: inner panels stay in `panelsJSON` with `gridData.sectionId`, and the headers are a separate `sections` attribute (`[{ title, collapsed, gridData: { i, y } }]`). `GET /api/dashboards` omits legacy `visualization` panels, so a section whose panel the post-pass made a legacy markdown visualization reads back with `panels: []` there (the export has it) | `howToSection()` / `collapsible()` build `{ section: true, … }` in memory; `payload()` turns it into the API shape; `layout.mjs` treats the header as one full-width row and checks the inner grid separately; the post-pass leaves `sections` untouched and `checkSections()` reads the object back after `_import` and fails on a missing, open or orphaned section; `--verify` counts collapsed headers, opens them and captures `<id>.open.png` |
-| Controls go in the PUT's top-level `pinned_panels` (`options_list_control`, `esql_control`), which survives an `_export` → `_import` round trip. `controlGroupInput` in the PUT is silently dropped | `payload()` sends `pinnedPanels()` (`controls.mjs`) on every PUT; nothing is patched in afterwards (until 1.0.5.1 the control group went in through the `_import` post-pass) |
-| An **ES\|QL variable control** sets a query variable, not a filter: its choice is **not in the URL**, and a `dashboardLink` with `use_filters: true` does not carry it | Each dashboard opens with Identity type and Identity on "Any". The How to read blocks say so; an identity travels as a pin from a table (an email, API key or Principal id cell) |
-| Only ES\|QL panels read a variable: an ES\|QL Vega spec receives `?identity`, while **Discover sessions and DSL Vega specs ignore it** | 1.0.5.1 moves the dashboards' Discover panels to Lens ES\|QL tables and the DSL charts to ES\|QL. *Audit data held* (vega/14) stays DSL by design: it describes the whole stream. The Discover sessions the intros link to ignore the dropdowns |
-| An unbound `?variable` is a hard error, and an empty single-select control sends `""` (a multi-select `[]`) | The controls open on "Any". Every test in `IDENTITY_WHERE` is guarded with `?identity == ""` / `?identity_kind == ""` and treats "Any" the same way, so both fold to true. `--lint`, `--perf` and the parity check bind both (`identityParams()`; `AUDIT_IDENTITY` / `AUDIT_IDENTITY_KIND` choose one) |
-| A multi-select variable matches nothing through `IN (?list)` or `==` (0 rows, no error); only `MV_CONTAINS` works, and `MV_CONTAINS(list, null)` is true | Identity type and Identity are single choice, which also keeps a selection fast (~20ms for a person over 30 days); `(unattributed)` stands for a null identity |
-| A classic control (Project) does not narrow an ES\|QL control's options; one ES\|QL control chains on another only through its query | Identity's query reads `?identity_kind`. With a Project chosen, Identity still lists identities from every project |
+| Controls go in the PUT's top-level `pinned_panels` (`esql_control`; `options_list_control` too), which survives an `_export` → `_import` round trip. `controlGroupInput` in the PUT is silently dropped | `payload()` sends `pinnedPanels()` (`controls.mjs`) on every PUT; nothing is patched in afterwards (until 1.0.5.1 the control group went in through the `_import` post-pass) |
+| An **ES\|QL variable control** sets a query variable, not a filter: its choice is **not in the URL**, and a `dashboardLink` with `use_filters: true` does not carry it | Each dashboard opens with all four dropdowns on "Any". The How to read blocks say so; an identity or address travels as a pin from a table (an email, API key, Principal id or Client IP cell) |
+| Only ES\|QL panels read a variable: an ES\|QL Vega spec receives `?identity` (and `?project`, `?client_ip`), while **Discover sessions and DSL Vega specs ignore it** | 1.0.5.1 moves the dashboards' Discover panels to Lens ES\|QL tables and the DSL charts to ES\|QL. *Audit data held* (vega/14) stays DSL by design: it describes the whole stream. The Discover sessions the intros link to ignore the dropdowns |
+| An unbound `?variable` is a hard error, and an empty single-select control sends `""` (a multi-select `[]`) | The controls open on "Any". Every test in `CONTROLS_WHERE` is guarded with `?project == ""`, `?identity_kind == ""`, `?identity == ""` or `?client_ip == ""` and treats "Any" the same way, so each folds to true. `--lint`, `--perf` and the parity check bind all four (`controlParams()`; `AUDIT_PROJECT`, `AUDIT_IDENTITY_KIND`, `AUDIT_IDENTITY` and `AUDIT_CLIENT_IP` choose one) |
+| A multi-select variable matches nothing through `IN (?list)` or `==` (0 rows, no error); only `MV_CONTAINS` works, and `MV_CONTAINS(list, null)` is true | All four dropdowns are single choice, which also keeps a selection fast (~20ms for a person over 30 days); `(unattributed)` stands for a null identity |
+| One ES\|QL control chains on another only through its query (a classic control never narrowed one) | Identity's query reads `?identity_kind`; nothing else chains. With a Project chosen, Identity and Client IP still list values from every project, so no choice strands another |
 | A **stale chained selection is not cleared**: change Identity type and an Identity of the old type stays chosen | The dropdown warns, and panels read 0 until Identity is set back to "Any" (a single-select ES\|QL control has no Clear button; "Any" is the reset) |
 | Discover in ES\|QL mode ignores the ad-hoc data view's `fieldAttrs.customLabel` | Session headers come from a trailing `RENAME` — see *Presentation conventions* for the filter trade-off |
 | A Discover session panel takes no ES\|QL control variables (`?identity_kind`, `?identity`) | No dashboard embeds one since 1.0.5.1: every record list is a Lens ES\|QL table bounded by `TIME`, so the Identity dropdowns narrow it. The sessions still deploy, for the intros' *Raw records* links and for Discover |
@@ -603,8 +605,9 @@ denied* — show the change against the same length of time just before the rang
 *"▼ 50% …"*, *"▲ 15× …"* at ten times or more, *"none in prior 24h"*, and *"no full prior 24h"* when the audit
 stream (or the tiles' 15-day lookback) starts inside that earlier period, so a new project never shows a false
 rise. The lookback caps only the prior window: the headline count always covers the whole range, so a range
-longer than 15 days reads *"no full prior …"* rather than a cut number. Both numbers follow the Identity type and Identity dropdowns, the pills, the KQL bar and the Project and
-Client IP controls: pick a person and the line compares that person's activity with their own prior period.
+longer than 15 days reads *"no full prior …"* rather than a cut number. On *Failed events* and *Access denied* the triangle is coloured (1.0.5.2): ▲ red, because more failures or denials is
+worse, and ▼ green; on the four volume tiles it stays the line's colour, because more traffic is neither (`rise` in
+`PREV_TILES`). Both numbers follow all four dropdowns, the pills and the KQL bar: pick a person and the line compares that person's activity with their own prior period.
 Lens cannot read outside the picker (*Platform constraints*), so each is a generated ES\|QL Vega spec on the
 events view (`logs-cloud-audit-events-view`, which `--objects` creates; under `AUDIT_ID_NS=x` it is
 `logs-cloud-audit-x-events-view`): one dataset counts the current and prior windows, carrying `IDENTITY_WHERE`; a
@@ -615,7 +618,7 @@ above are documented here, not in the tooltip. Each spec (`vega/15-prev-*.json` 
 and 1440 in both themes. Three guards hold the route, because it rests on undocumented Kibana behaviour:
 `layout.mjs` rejects a query on the view that would bring the hidden filter back; `--lint` checks each tile's
 current **and** prior counts against plain `TIME`-bounded ES\|QL on the stream over the same windows (the last
-7 days and 24 hours, with nothing chosen in the dropdowns and again with `AUDIT_IDENTITY` set), any difference failing, and
+7 days and 24 hours, with nothing chosen in the dropdowns and again with `AUDIT_IDENTITY` or another dropdown's variable set), any difference failing, and
 asks Kibana's `get_timefield` that no time filter would be attached; and `--verify` captures the tiles'
 `esql_async` requests on every render and fails if one carries a range filter or a prior count differs from the
 stream's, including reading 0 while the picker starts after the stream's first event. A tile whose filter is
@@ -746,7 +749,7 @@ legends over an empty domain, decade axes, solid placeholder cells, a flat line 
 - *Full Vega*: a signal such as `empty`, a centred `style: "guide-label"` text mark or the existing
   headline, and `opacity` on each legend part (`title`, `labels`, `symbols`, `gradient`) — opacity on
   the legend *group* does not reach its children.
-- Verify by rendering with the Project control set to **Exclude** the only project: every panel is empty.
+- Verify by rendering with a KQL query that matches nothing (`project.name : "none"`): every panel is empty.
 
 ---
 
@@ -758,7 +761,8 @@ legends over an empty domain, decade axes, solid placeholder cells, a flat line 
 ./audit --lint           Execute every query in the repo — ES|QL and the DSL behind Vega specs — under a
                          time budget that cancels overruns; fails the build on any error
                          AUDIT_IDENTITY_KIND=Person AUDIT_IDENTITY=<email> runs it as if
-                         Identity type and Identity were chosen (also --perf; default: nothing chosen)
+                         Identity type and Identity were chosen; AUDIT_PROJECT and AUDIT_CLIENT_IP
+                         likewise (also --perf; default: nothing chosen)
 ./audit --objects        Deploy the data view, 20 Vega visualizations, 11 Discover sessions and the
                          ES|QL view the prior-period tiles read (logs-cloud-audit-events-view)
 ./audit --dashboards     Generate dashboards/*.json and deploy every dashboard
@@ -822,8 +826,8 @@ spec registered, DSL specs windowed, scoped and named, fixed-window specs ES\|QL
 their declared panel range (and no other panel carrying one), text marks readable in both themes. Nothing may sit
 on the events view that would bring Kibana's hidden time filter back. After the queries it runs the prior-period
 *parity* check: each `PREV_TILES` tile's current and prior counts must equal plain `TIME`-bounded ES\|QL on the
-stream over the same windows, with nothing chosen and with `AUDIT_IDENTITY` / `AUDIT_IDENTITY_KIND` when
-set. Then it asks Kibana (`/internal/esql/get_timefield`, the lint's one Kibana call) whether it would attach a
+stream over the same windows, with nothing chosen and with `AUDIT_PROJECT`, `AUDIT_IDENTITY_KIND`,
+`AUDIT_IDENTITY` or `AUDIT_CLIENT_IP` when set. Then it asks Kibana (`/internal/esql/get_timefield`, the lint's one Kibana call) whether it would attach a
 time filter to any query on the events view.
 
 `--verify` exists because static checks cannot see a panel that renders empty, clipped or

@@ -246,7 +246,7 @@ export async function run(argv = []) {
         say: 'One selection, and every panel on every dashboard narrows to them — what they authenticated with, what they read, what they changed, where they were. No query writing, no rebuilding a view.',
         note: {
           kind: 'stop', label: 'Clear the pill before you touch a dropdown again',
-          body: 'The Identity dropdowns do not travel: each dashboard opens with them on “Any”, and only the pill carries the selection. Choosing a different person there does not replace the pill — it ANDs with it, and every panel drops to zero. Remove the pill first. Same rule before the next section: a pill left up silently scopes every number you show afterwards.',
+          body: 'The dropdowns do not travel, Project included: each dashboard opens with all four on “Any”, and only the pill carries the selection: pick the Project again on each page. Choosing a different person in Identity does not replace the pill — it ANDs with it, and every panel drops to zero. Remove the pill first. Same rule before the next section: a pill left up silently scopes every number you show afterwards.',
         },
       }),
       step('Or drop into the raw events for that identity', {

@@ -17,12 +17,11 @@
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { ROOT, cfg, objFile } from './env.mjs';
-import { CONTROLS } from './controls.mjs';
 import {
   NAV_H, NOISE, BAND, BAND_KEYS, RISK, RISK_KEYS, RISK_RESTORE, VERB, ACTOR_RESOLVE, ACTOR_KEYS, OBJ, OBJ_ID, OBJ_TYPE, CHANGE_PRED, CRED, OBJ_PRESENT,
   CRED_TYPE_LABEL, INDEX_FAMILY, CONCRETE, SYS_INDEX, ACTOR_LABEL, MAGNITUDE_RAMP, SEVERITY_RAMP, fitRows, tableLimit,
   KIBANA_INTERNALS, BOUNDED, BARE_COUNT, grouped, FAILED_OR_DENIED, PREV_TILES, prevRef, COVERAGE_REF, flatPanels,
-  HOW_TO_LABEL, TIME, TIME_ONLY, IDENTITY_WHERE, HOUR_AGO, VEGA_WINDOWS, windowMs, NULL_SAFE, VIEW_TIME,
+  HOW_TO_LABEL, TIME, TIME_ONLY, IDENTITY_WHERE, PROJECT_WHERE, CONTROLS_WHERE, HOUR_AGO, VEGA_WINDOWS, windowMs, NULL_SAFE, VIEW_TIME,
 } from './panels.mjs';
 import { DEFAULT_VIEW } from './env.mjs';
 
@@ -38,8 +37,8 @@ export const GRID_W = 48;
  * This is not hypothetical: RISK had drifted in two Vega specs and VERB in a third by the time
  * this check was written.
  */
-// TIME: every ES|QL Vega spec bounds its window with TIME, which carries the identity dropdowns' filter
-// (IDENTITY_WHERE, panels.mjs), so a spec that kept the bare window would silently ignore the dropdowns.
+// TIME: every ES|QL Vega spec bounds its window with TIME, which carries the four dropdowns' filter
+// (CONTROLS_WHERE, panels.mjs), so a spec that kept the bare window would silently ignore the dropdowns.
 // ACTOR_RESOLVE: every static file that names an identity names it as the Identity dropdown does (1.0.5.1).
 // ACTOR_KEYS: where it resolves after a STATS, the STATS groups on the fields it reads (user.domain included).
 // ACTOR_LABEL: every static file that DISPLAYS an identity shortens a Cloud API key the one shared way
@@ -55,10 +54,10 @@ const FRAGMENT_USES = {
   // Fixed-window specs (VEGA_WINDOWS, panels.mjs): their panel carries the window, TIME still the dropdowns.
   'vega/08-actor-baseline-band.json': { TIME, HOUR_AGO },
   'vega/09-activity-punchcard.json': { TIME, HOUR_AGO },
-  // TIME on the selection, TIME_ONLY on the estate it is ranked against (TWO_DATASET_SPECS below).
-  'vega/12-actor-cohort.json': { TIME, TIME_ONLY },
+  // TIME on the selection, TIME_ONLY and the Project dropdown on the estate it is ranked against (TWO_DATASET_SPECS below).
+  'vega/12-actor-cohort.json': { TIME, TIME_ONLY, PROJECT_WHERE },
   'vega/13-session-gantt.json': { TIME },
-  // Groups on the real user.email (never the actor COALESCE); TIME pins the identity dropdowns' filter.
+  // Groups on the real user.email (never the actor COALESCE); TIME pins the dropdowns' filter.
   'vega/10-actor-geography.json': { TIME },
   'vega/11-actor-object-flow.json': { TIME, OBJ_PRESENT, CRED, VERB, OBJ_TYPE },
   // 00 is the unfiltered full data set: no noise gate by design, only the shared identity.
@@ -78,10 +77,10 @@ const FRAGMENT_USES = {
   'searches/09-session-reconstruction.json': { ACTOR_RESOLVE, ACTOR_LABEL },
   'searches/10-raw-signal-feed.json': { ACTOR_RESOLVE, NOISE, ACTOR_LABEL },
   // The prior-period tiles (PREV_TILES, generated) read the events view, not the stream, so they bound their own
-  // window and cannot embed TIME: they pin IDENTITY_WHERE, which is what makes both counts follow the dropdowns,
+  // window and cannot embed TIME: they pin CONTROLS_WHERE, which is what makes both counts follow the dropdowns,
   // and the tile's own filter. --lint parity then checks both counts against TIME on the stream.
   ...Object.fromEntries(Object.entries(PREV_TILES).map(([k, t]) => [`vega/${prevRef(k)}.json`,
-    { IDENTITY_WHERE, NULL_SAFE, ...(t.esql ? { [`PREV_TILES['${k}'].esql`]: t.esql } : {}) }])),
+    { CONTROLS_WHERE, NULL_SAFE, ...(t.esql ? { [`PREV_TILES['${k}'].esql`]: t.esql } : {}) }])),
 };
 
 function checkGrid(name, panels, problems) {
@@ -227,19 +226,20 @@ const WHOLE_STREAM_SPECS = new Set([`vega/${COVERAGE_REF}.json`]);
  * it, so a person can be drawn against everyone else. The estate-wide half looks like a forgotten filter,
  * which is exactly why its shape is asserted rather than trusted.
  *
- *   selection  exactly one dataset with "%context%": true (pills, KQL and the classic controls) bounded by
- *              TIME (the identity dropdowns)
- *   estate     the rest: no %context% and TIME_ONLY, so neither the pills nor the dropdowns narrow it
+ *   selection  exactly one dataset with "%context%": true (pills and KQL) bounded by TIME (all four dropdowns)
+ *   estate     the rest: no %context%, bounded by TIME_ONLY AND PROJECT_WHERE, so the Project dropdown narrows
+ *              it and nothing else does: no pill, no KQL, no identity, no client IP
  *
- * A Vega ES|QL dataset gets the dashboard's filters only through %context% (esql_query_parser.ts), and it
- * is all of them or none — so the estate cannot take the Project control alone, and would otherwise go back
- * to ranking across every project whatever the control says. The selection reports which projects it is
- * active in, an estate dataset is broken down by project, and the spec picks the rows: both must group BY
- * the Project control's field. (Through 1.0.5 the same rule held for the DSL form and its three
- * %dashboard_context% clauses.)
+ * A Vega ES|QL dataset gets the dashboard's filters only through %context% (esql_query_parser.ts), and it is all
+ * of them or none. Until 1.0.5.2 Project was a classic control, a pill, so the estate could not take it alone: the
+ * selection reported which projects it was active in, an estate dataset was broken down by project, and the spec
+ * picked the rows. Project is a variable now and the estate reads it directly, but a project pill (clicked in a
+ * table) still reaches only the selection, so the spec keeps that logic and both halves still group BY project.name.
  */
 const TWO_DATASET_SPECS = new Set(['vega/12-actor-cohort.json']);
 const CONTEXT_CLAUSES = ['%dashboard_context-must_clause%', '%dashboard_context-must_not_clause%', '%dashboard_context-filter_clause%'];
+const PROJECT_FIELD = 'project.name';
+const ESTATE_TIME = `${TIME_ONLY} AND ${PROJECT_WHERE}`;
 
 function dataEntries(node, out = []) {
   if (Array.isArray(node)) { node.forEach((n) => dataEntries(n, out)); return out; }
@@ -255,17 +255,16 @@ const groupsBy = (q, field) => new RegExp(`\\bBY\\b[^|]*?(?:=\\s*)?${field.repla
 export function checkTwoDatasets(file, spec, problems) {
   const ds = esqlEntries(spec);
   const sel = ds.filter((d) => d.url['%context%'] === true && d.url.query.includes(TIME));
-  const estate = ds.filter((d) => d.url['%context%'] === undefined && d.url.query.includes(TIME_ONLY) && !d.url.query.includes(IDENTITY_WHERE));
+  const estate = ds.filter((d) => d.url['%context%'] === undefined && d.url.query.includes(ESTATE_TIME) && !d.url.query.includes(IDENTITY_WHERE));
   if (sel.length !== 1 || !estate.length || sel.length + estate.length !== ds.length) {
-    problems.push(`vega: ${file} must hold exactly one ES|QL dataset with "%context%": true bounded by TIME, and estate datasets with no %context% bounded by TIME_ONLY `
+    problems.push(`vega: ${file} must hold exactly one ES|QL dataset with "%context%": true bounded by TIME, and estate datasets with no %context% bounded by TIME_ONLY AND PROJECT_WHERE `
       + `(found ${ds.length}: ${sel.length} selection, ${estate.length} estate, ${ds.length - sel.length - estate.length} neither)`);
   }
-  const field = CONTROLS[0].field;
-  if (sel.length === 1 && !groupsBy(sel[0].url.query, field)) {
-    problems.push(`vega: ${file} selection dataset ${sel[0].name} does not group BY ${field} — the spec cannot tell which projects the ${CONTROLS[0].title} control left in`);
+  if (sel.length === 1 && !groupsBy(sel[0].url.query, PROJECT_FIELD)) {
+    problems.push(`vega: ${file} selection dataset ${sel[0].name} does not group BY ${PROJECT_FIELD} — the spec cannot tell which projects a project pill left in`);
   }
-  if (estate.length && !estate.some((d) => groupsBy(d.url.query, field))) {
-    problems.push(`vega: ${file} has no estate dataset grouped BY ${field} — the cohort would stop following the ${CONTROLS[0].title} control`);
+  if (estate.length && !estate.some((d) => groupsBy(d.url.query, PROJECT_FIELD))) {
+    problems.push(`vega: ${file} has no estate dataset grouped BY ${PROJECT_FIELD} — the cohort would stop following a project pill`);
   }
 }
 

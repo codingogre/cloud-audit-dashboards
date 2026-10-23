@@ -1,6 +1,6 @@
 /**
- * The dashboard control bar: Project, Identity type, Identity, Client IP (CONTROLS below), and the data view
- * the classic controls aggregate against.
+ * The dashboard control bar: Project, Identity type, Identity, Client IP (CONTROLS below), and the suite's data
+ * view.
  *
  * Fields NOT offered, and why: `user.name` alone (a numeric id, a key id or a key's owner, depending on the
  * credential — Identity covers it); `user.full_name` (removed in 1.0.2, NULL for some identities); a runtime
@@ -11,9 +11,9 @@ import { cfg, nsId } from './env.mjs';
 import { stableUuid } from './ids.mjs';
 import { IDENTITY_KEYS, IDENTITY_KIND, IDENTITY, ANY, nullSafe } from './panels.mjs';
 
-/** The data view the controls aggregate against. Real saved object, not the ad-hoc one
- *  the Discover sessions carry inline — a control resolves its field list by reference.
- *  A public id, like the dashboards' (`elastic_cloud-audit-*`); it replaced `cloud-audit-dv` in 1.0.4. */
+/** The suite's data view on the stream. The classic Project and Client IP controls aggregated against it until
+ *  1.0.5.2; no control does now, but it still deploys: a public id, like the dashboards' (`elastic_cloud-audit-*`),
+ *  which it replaced `cloud-audit-dv` with in 1.0.4, and a viewer may have built a Lens chart or a rule on it. */
 export const DATA_VIEW_ID = nsId('elastic_cloud-audit-logs');
 
 /** Data view ids earlier releases deployed. --objects and --clean delete them. */
@@ -32,85 +32,82 @@ export const dataViewObject = () => ({
 });
 
 /**
- * THE CONTROL BAR (1.0.5.1): Project · Identity type · Identity · Client IP.
+ * THE CONTROL BAR: Project · Identity type · Identity · Client IP, all four ES|QL variable controls (1.0.5.2).
  *
- * Project and Client IP are classic options lists on raw fields: a choice becomes a filter pill, which every
- * panel honours — Lens, both kinds of Vega, Discover — and which the nav links carry to the next dashboard.
+ * Each lists the values an ES|QL query works out, opens on "Any" (panels.mjs, ANY) and sets one variable:
+ * ?project, ?identity_kind, ?identity, ?client_ip. TIME's CONTROLS_WHERE (panels.mjs) reads all four in every
+ * ES|QL panel. Single-select (the user's choice): it keeps a selected panel at ~20-35ms over 30 days; multi-select
+ * has no fast path.
  *
- * Identity type and Identity replace Person (email) and API key. Those two read one raw field each, and the
- * fields change meaning with the credential (panels.mjs, IDENTITY), so a Cloud API key was in neither list and
- * user.name was sometimes a person, sometimes a key id, sometimes a key's owner. They are ES|QL variable
- * controls instead: each lists the values an ES|QL query works out (IDENTITY_KIND, IDENTITY), and a choice
- * sets ?identity_kind / ?identity, which TIME's IDENTITY_WHERE reads in every ES|QL panel. Single-select
- * (the user's choice): it keeps a selected panel at ~20ms over 30 days; multi-select has no fast path.
+ * Identity type and Identity replaced Person (email) and API key in 1.0.5.1. Those two read one raw field each,
+ * and the fields change meaning with the credential (panels.mjs, IDENTITY), so a Cloud API key was in neither
+ * list and user.name was sometimes a person, sometimes a key id, sometimes a key's owner. Project and Client IP
+ * were classic options lists on raw fields until 1.0.5.2, when they moved to ES|QL so that all four behave alike:
+ * the same "Any", the same single choice, the same reach. Before that a viewer met two kinds of control on one bar,
+ * one that left a filter pill and travelled with the nav links, one that did neither.
  *
  * What a variable control cannot do, all measured on 9.6 (.sessions research, esql-controls-probe):
  *   - a panel that is not ES|QL ignores it: DSL Vega specs (vega/14 Audit data held, by design) and Discover
  *     sessions (1.0.5.1 converted every dashboard Discover panel to a Lens table for this reason);
- *   - its selection is not in the URL and the nav links do not carry it: each dashboard opens at "Any";
- *   - a classic control (Project) does not narrow its option list;
+ *   - its selection is not in the URL and the nav links do not carry it: each dashboard opens at "Any". A pill
+ *     does travel, which is why the tables' raw columns (Client IP among them) stay click-to-filter;
  *   - Identity chains on Identity type through its query (?identity_kind), but a stale Identity is not cleared
- *     when the type changes: the dropdown shows a warning and the panels read 0 until it is set back to Any;
+ *     when the type changes: the dropdown shows a warning and the panels read 0 until it is set back to Any.
+ *     Project and Client IP chain on nothing, so no choice can strand another;
  *   - a single-select choice cannot be cleared (no Clear button; re-clicking keeps it), so each list starts
- *     with "Any" (panels.mjs, ANY), which every guard treats as no selection.
+ *     with "Any", which every guard treats as no selection.
  *
  * Project leads, because one audit project usually collects the streams of several serverless projects. project.*
  * names the project that EMITTED the event, populated on every Elasticsearch and Kibana event (verified
  * 2026-10-14); the name, not the 32-hex id. Actor 360's cohort rank (vega/12) ranks the selection against an
- * estate that follows the Project control and no other control or dropdown; see TWO_DATASET_SPECS in layout.mjs. Client IP is last: it answers "who was at this address".
+ * estate that follows the Project dropdown and no other (TWO_DATASET_SPECS in layout.mjs). Client IP is last: it
+ * answers "who was at this address". Its list is the busiest addresses in range, as text; the dropdown searches it.
  *
- * Every control goes out in the PUT payload's `pinned_panels` (the 9.6 Dashboards API accepts both kinds there;
+ * Every control goes out in the PUT payload's `pinned_panels` (the 9.6 Dashboards API accepts them there;
  * verified by PUT, GET and an _export/_import round trip), so nothing is patched in after the deploy.
  */
 // width 'small' with grow: four 'medium' controls wrapped Client IP onto a second row at a 1440px viewport
 // (rendered, 1.0.5); 'small' is a minimum, and grow shares the row out evenly at any width.
 const OPTIONS_TIME = 'WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart';
-/** ES|QL's own row ceiling, written out: the list is the busiest identities in range, up to this many. */
+/** ES|QL's own row ceiling, written out: each list is the busiest values in range, up to this many. */
 export const OPTIONS_MAX = 10000;
 /**
- * An options query: count first by the raw identity keys, derive the column, then list the values busiest
- * first behind one "Any" row (panels.mjs, ANY: the only way to clear an ES|QL control). FORK runs both branches
- * over the same counted rows; the Any branch carries the largest long, so it sorts to the top.
+ * An options query: count first by the raw keys, derive the column, then list the values busiest first behind
+ * one "Any" row (panels.mjs, ANY: the only way to clear an ES|QL control). FORK runs both branches over the same
+ * counted rows; the Any branch carries the largest long, so it sorts to the top. A value that is null (an event
+ * with no project or no client IP) is not listed: nothing could select it.
  */
-const optionsQuery = (col, derive) => nullSafe(
-  `FROM ${cfg.dataStream} | ${OPTIONS_TIME} | STATS n = COUNT(*) BY ${IDENTITY_KEYS} | ${derive} ` +
+const optionsQuery = (col, keys, derive) => nullSafe(
+  `FROM ${cfg.dataStream} | ${OPTIONS_TIME} | STATS n = COUNT(*) BY ${keys} | ${derive} ` +
   `| FORK (STATS n = SUM(n) BY ${col}) (STATS n = COUNT(*) | EVAL ${col} = "${ANY}", n = 9223372036854775807) ` +
   `| SORT n DESC | LIMIT ${OPTIONS_MAX} | KEEP ${col}`);
 export const CONTROLS = [
-  { field: 'project.name', title: 'Project', width: 'small', search: 'prefix' },
+  { variable: 'project', title: 'Project', width: 'small',
+    query: () => optionsQuery('project', 'project.name', 'WHERE project.name IS NOT NULL | EVAL project = project.name') },
   { variable: 'identity_kind', title: 'Identity type', width: 'small',
-    query: () => optionsQuery('identity_kind', `EVAL ${IDENTITY_KIND}`) },
+    query: () => optionsQuery('identity_kind', IDENTITY_KEYS, `EVAL ${IDENTITY_KIND}`) },
   // Chained on Identity type through ?identity_kind; "" or "Any" lists every identity.
   { variable: 'identity', title: 'Identity', width: 'small',
-    query: () => optionsQuery('identity', `EVAL ${IDENTITY_KIND}, ${IDENTITY} ` +
+    query: () => optionsQuery('identity', IDENTITY_KEYS, `EVAL ${IDENTITY_KIND}, ${IDENTITY} ` +
       `| WHERE ?identity_kind == "" OR ?identity_kind == "${ANY}" OR identity_kind == ?identity_kind`) },
-  // 'wildcard', not 'prefix': prefix search on an `ip` field only matches whole octets, so
-  // typing "100.64" returns nothing while "100.64.0.10" works. Wildcard matches substrings.
-  { field: 'client.ip', title: 'Client IP', width: 'small', search: 'wildcard' },
+  // Text, because a control's value is text: CLIENT_IP_WHERE turns the choice back into an ip.
+  { variable: 'client_ip', title: 'Client IP', width: 'small',
+    query: () => optionsQuery('client_ip', 'client.ip', 'WHERE client.ip IS NOT NULL | EVAL client_ip = TO_STRING(client.ip)') },
 ];
 
-/** Deterministic per field or variable, so redeploys do not churn control ids. */
-const controlId = (c) => stableUuid(`cloud-audit-control:${c.field || `esql:${c.variable}`}`);
+/** Deterministic per variable, so redeploys do not churn control ids. */
+const controlId = (c) => stableUuid(`cloud-audit-control:esql:${c.variable}`);
 
 /** The control bar as the Dashboards API's `pinned_panels`, in order. */
 export function pinnedPanels() {
-  return CONTROLS.map((c) => (c.field
-    ? {
-      id: controlId(c), type: 'options_list_control', width: c.width, grow: true,
-      config: {
-        title: c.title, data_view_id: DATA_VIEW_ID, field_name: c.field, search_technique: c.search,
-        selected_options: [], single_select: false, exclude: false, exists_selected: false,
-        use_global_filters: true, ignore_validations: false, sort: { by: '_count', direction: 'desc' },
-      },
-    }
-    : {
-      id: controlId(c), type: 'esql_control', width: c.width, grow: true,
-      config: {
-        title: c.title, control_type: 'VALUES_FROM_QUERY', variable_name: c.variable, variable_type: 'values',
-        // Starts on Any, so all four dropdowns read "Any" on a fresh page (the user's preference, 1.0.5.1).
-        esql_query: c.query(), selected_options: [ANY], single_select: true,
-      },
-    }));
+  return CONTROLS.map((c) => ({
+    id: controlId(c), type: 'esql_control', width: c.width, grow: true,
+    config: {
+      title: c.title, control_type: 'VALUES_FROM_QUERY', variable_name: c.variable, variable_type: 'values',
+      // Starts on Any, so all four dropdowns read "Any" on a fresh page (the user's preference, 1.0.5.1).
+      esql_query: c.query(), selected_options: [ANY], single_select: true,
+    },
+  }));
 }
 
 /**

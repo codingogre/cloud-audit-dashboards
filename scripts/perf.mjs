@@ -18,7 +18,7 @@
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { cfg, ROOT, DEFAULT_STREAM, parseStream, objFile, identityParams } from './lib/env.mjs';
+import { cfg, ROOT, DEFAULT_STREAM, parseStream, objFile, controlParams } from './lib/env.mjs';
 import { es } from './lib/http.mjs';
 import { info, success, fail, detail, warn } from './lib/log.mjs';
 
@@ -82,7 +82,7 @@ export function parseWindows(spec) {
 
 /** The picker params Kibana injects, for one window ending `now`. Same shape as esql.mjs PARAMS(). */
 export const windowParams = (ms, now = Date.now()) =>
-  [{ _tstart: new Date(now - ms).toISOString() }, { _tend: new Date(now).toISOString() }, ...identityParams()];
+  [{ _tstart: new Date(now - ms).toISOString() }, { _tend: new Date(now).toISOString() }, ...controlParams()];
 
 function mulberry32(seed) {
   let a = seed >>> 0;

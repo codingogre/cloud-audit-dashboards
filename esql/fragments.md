@@ -83,10 +83,24 @@ pins it. A raw `user.name` column that holds a key's owner or creator takes `clo
 which gives the same `_4KEO… · Cloud API key` from the bare id (API key inventory:
 `COALESCE(api_key.name, <cloudKeyLabel(user.name, "(no name)")>)`).
 
-### The dropdowns' filter: `IDENTITY_WHERE`, inside `TIME`
+### The dropdowns' filter: `CONTROLS_WHERE`, inside `TIME`
 
-`TIME` is the picker's window AND `IDENTITY_WHERE`, so every ES|QL panel that bounds its window with `TIME`
-follows the dropdowns. It is plain boolean tests on raw fields (no `CASE`, no `COALESCE`), so Elasticsearch
+`TIME` is the picker's window AND `CONTROLS_WHERE`, so every ES|QL panel that bounds its window with `TIME`
+follows all four dropdowns. `CONTROLS_WHERE` is three parts, in the control bar's order (1.0.5.2; Project and
+Client IP were classic option lists until then):
+
+```esql
+(?project == "" OR ?project == "Any" OR project.name == ?project)                          -- PROJECT_WHERE
+AND <IDENTITY_WHERE>                                       -- Identity type and Identity, below
+AND ((?client_ip == "" OR ?client_ip == "Any")
+     OR client.ip == TO_IP(CASE((?client_ip == "" OR ?client_ip == "Any"), null, ?client_ip)))  -- CLIENT_IP_WHERE
+```
+
+A control's value is text and `client.ip` is an ip: `TO_IP` of the value keeps the test a term query on the ip
+field (~35ms over 30 days), where `TO_STRING(client.ip) == ?client_ip` converts every event (~340ms). The `CASE`
+hands `TO_IP` a null when nothing is chosen, because a bare `TO_IP("Any")` warns on every panel.
+
+`IDENTITY_WHERE` is plain boolean tests on raw fields (no `CASE`, no `COALESCE`), so Elasticsearch
 answers most of it from the index: a cheap superset (`PRE`), the kind's test, then the identity matched branch
 by branch. The dropdowns open on "Any" (also how a viewer clears them; a single-select ES|QL control has no
 Clear button); "Any" and an empty `""` both fold every guard to true. 30 days: unselected 270ms, a person 20ms.

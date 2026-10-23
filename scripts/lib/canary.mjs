@@ -10,7 +10,7 @@
  *     own dropdown values), which includes reading 0 where the stream has events.
  * Exported pieces are pure, so the unit tests can feed them captured bodies.
  */
-import { cfg, withStream, objId } from './env.mjs';
+import { cfg, withStream, objId, CONTROL_VARS } from './env.mjs';
 import { es } from './http.mjs';
 import { PREV_TILES, prevQuery, prevStreamQuery, prevEsql, prevRef, flatPanels } from './panels.mjs';
 
@@ -99,7 +99,8 @@ export async function judge(state, expected, { budgetMs = 30e3, esqlRun = es.esq
     const got = state.rows.filter((r) => r.key === key).at(-1);
     if (!got) { problems.push(`prior-period ${key}: no answer could be read${state.unread.some((u) => u.key === key) ? ' (unparseable response)' : ''}`); continue; }
     const { cur, prev, s, e } = got.row;
-    const who = ['identity', 'identity_kind'].map((n) => ({ [n]: paramValue(got.params, n) ?? '' }));
+    // Every variable TIME reads (CONTROLS_WHERE), as the tile's own request sent it: an unbound one is a hard error.
+    const who = CONTROL_VARS.map((n) => ({ [n]: paramValue(got.params, n) ?? '' }));
     const truth = await esqlRun(prevEsql(key), [{ _tstart: new Date(2 * s - e).toISOString() }, { _tend: new Date(s).toISOString() }, ...who], { budgetMs });
     const want = truth.ok ? truth.body.values?.[0]?.[0] : undefined;
     tiles.push({ key, cur, prev, priorOnStream: want, from: new Date(2 * s - e).toISOString(), to: new Date(s).toISOString() });

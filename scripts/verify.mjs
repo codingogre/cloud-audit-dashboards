@@ -115,8 +115,8 @@ const pageStats = (page) => page.evaluate(() => {
     stillLoading: document.querySelectorAll('[data-test-subj="embeddablePanelLoadingIndicator"], .euiProgress').length,
     noData: hits(/No results found|No data to display|no results match/gi),
     rawStyleLeak: txt.includes('a:hover') || txt.includes('<style>') || txt.includes('&lt;style&gt;'),
-    // The control bar is import-only state that every --dashboards run wipes and
-    // re-applies, so assert it rather than trusting the deploy log.
+    // The control bar goes out in every PUT (pinned_panels): assert it rendered rather than trusting the
+    // deploy log. ES|QL controls render as option lists too (9.6), so all four match this selector.
     controls: document.querySelectorAll('[data-test-subj^="optionsList-control-"]').length,
     textOverflow: mkd.filter((m) => m.spare < 0).map((m) => `${m.e.innerText.trim().slice(0, 50)}… (${-m.spare}px over)`),
     textSparePx: mkd.length ? Math.min(...mkd.map((m) => m.spare)) : 0,
