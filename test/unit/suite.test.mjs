@@ -258,7 +258,7 @@ test('identity tables (1.0.5): a raw Principal id / API key click column on each
 });
 
 test('1.0.5.1: the identity a panel shows is resolved on grouped rows (by ACTOR_KEYS) or on a row feed\'s returned rows, never per event of a wide scan', async () => {
-  const { ACTOR_RESOLVE, ACTOR_LABEL } = await import('../../scripts/lib/panels.mjs');
+  const { ACTOR_RESOLVE, ACTOR_LABEL, IDENTITY_WHERE } = await import('../../scripts/lib/panels.mjs');
   const { readFileSync, readdirSync } = await import('node:fs');
   // Filtered to a few hundred events before resolving, and measured (22ms and 10ms at 30 days): panels.mjs.
   const PER_EVENT_OK = ['🚨 Config changes', 'Top failures and denials'];
@@ -276,6 +276,8 @@ test('1.0.5.1: the identity a panel shows is resolved on grouped rows (by ACTOR_
       for (const p of d.panels.flatMap((x) => (x.section ? x.panels : [x]))) {
         const q = p.config?.data_source?.query;
         if (q?.includes(ACTOR_RESOLVE)) { n++; check(`${name}: ${p.config.title}`, q); }
+        // Every Lens ES|QL panel follows the Identity dropdowns (07's whole-minute window ignored them until 1.0.5.1).
+        if (q) assert.ok(q.includes(IDENTITY_WHERE), `${name}: ${p.config.title} ignores Identity type / Identity`);
         // Every table that shows the identity shortens a key id the one shared way.
         if (q && p.config.rows?.some((r) => r.column === 'actor')) assert.ok(q.endsWith(ACTOR_LABEL), `${name}: ${p.config.title}`);
       }

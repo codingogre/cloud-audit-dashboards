@@ -46,7 +46,7 @@ export const legendPanel = (x, y, w, h) => introMd(x, y, w, h, 'How to read this
   `**Routine traffic is left out** unless a panel title says *all traffic*. That covers health checks, the background requests behind each search and page load, API key lookups, bulk sign-in records, and these dashboards' own activity${
     isDeployed('06-platform-volume') ? '. **📊 Platform Volume** shows everything' : ''}.`,
   "**Each identity is named as in the Identity dropdown:** a person's email, an API key's name, or else the account name the request ran as.",
-  '**Cloud API keys have no name** in the audit log, so tables show the start of their ID, such as `_4KEO… · Cloud API key`. A key Kibana did not name reads *Unnamed key of* its owner.',
+  '**Cloud API keys have no name** in the audit log, so tables show the start of their ID, such as `_4KEO… · Cloud API key`. An Elasticsearch API key used through Kibana reads *Unnamed key of* its owner.',
   "**Locations use the real client address,** not Elastic's own network hops. *Hover the ⓘ beside a panel title for details.*",
 ]);
 

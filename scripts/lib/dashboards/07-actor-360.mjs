@@ -1,6 +1,6 @@
 /** 07 Actor 360 — see scripts/lib/definitions.mjs for how the suite is assembled. */
 import {
-  IDX, TIME, ACTOR_KEYS, ACTOR_RESOLVE, INDEX_FAMILY, IP_GEO, indexFamily, dash, kpi, table, vega, search, section, row, stack, resetIds, sized, filterable, grouped,
+  IDX, TIME, IDENTITY_WHERE, ACTOR_KEYS, ACTOR_RESOLVE, INDEX_FAMILY, IP_GEO, indexFamily, dash, kpi, table, vega, search, section, row, stack, resetIds, sized, filterable, grouped,
   SYS_INDEX, fitRows
 } from '../panels.mjs';
 import { rawId } from '../suite.mjs';
@@ -164,8 +164,12 @@ const INTRO = {
  * silently cut those up-to-59 seconds back off. So the real window began at each panel's own _tstart,
  * the start edge was not whole minutes at all, and the two panels could still differ by whatever landed
  * in the second between their starts. Rounded up, the start is inside the filter and the same for both.
+ *
+ * It carries IDENTITY_WHERE as TIME does (1.0.5.1): without it the Risk tile and its receipts ignored the
+ * Identity dropdowns and read the whole estate's risk beside an Events tile narrowed to one identity.
  */
-const WHOLE_MINUTES = 'WHERE @timestamp < DATE_TRUNC(1 minute, TO_DATETIME(?_tend)) AND @timestamp >= DATE_TRUNC(1 minute, TO_DATETIME(?_tstart)) + 1 minute';
+const WHOLE_MINUTES = 'WHERE @timestamp < DATE_TRUNC(1 minute, TO_DATETIME(?_tend)) AND @timestamp >= DATE_TRUNC(1 minute, TO_DATETIME(?_tstart)) + 1 minute' +
+  ` AND ${IDENTITY_WHERE}`;
 
 export function build() {
   resetIds();
