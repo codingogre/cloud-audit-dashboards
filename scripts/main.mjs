@@ -77,6 +77,11 @@ async function runModule(file, fn = 'run') {
 
 async function doDeploy() {
   await runModule('./ingest.mjs');
+  // The lint's prior-period queries read the events view, which a first install (production included) does not
+  // have yet. putView is create-or-replace, so --objects creating it again below is harmless.
+  const { putView } = await import('./lib/view.mjs');
+  const v = await putView();
+  success(`ES|QL view ${v.name} ready for the lint`);
   await runModule('./esql.mjs');
   await runModule('./objects.mjs');
   await runModule('./dashboards.mjs');

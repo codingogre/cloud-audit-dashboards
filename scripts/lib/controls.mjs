@@ -65,6 +65,8 @@ export const dataViewObject = () => ({
 // width 'small' with grow: four 'medium' controls wrapped Client IP onto a second row at a 1440px viewport
 // (rendered, 1.0.5); 'small' is a minimum, and grow shares the row out evenly at any width.
 const OPTIONS_TIME = 'WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart';
+/** ES|QL's own row ceiling, written out: the list is the busiest identities in range, up to this many. */
+export const OPTIONS_MAX = 10000;
 /**
  * An options query: count first by the raw identity keys, derive the column, then list the values busiest
  * first behind one "Any" row (panels.mjs, ANY: the only way to clear an ES|QL control). FORK runs both branches
@@ -73,7 +75,7 @@ const OPTIONS_TIME = 'WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart';
 const optionsQuery = (col, derive) => nullSafe(
   `FROM ${cfg.dataStream} | ${OPTIONS_TIME} | STATS n = COUNT(*) BY ${IDENTITY_KEYS} | ${derive} ` +
   `| FORK (STATS n = SUM(n) BY ${col}) (STATS n = COUNT(*) | EVAL ${col} = "${ANY}", n = 9223372036854775807) ` +
-  `| SORT n DESC | KEEP ${col}`);
+  `| SORT n DESC | LIMIT ${OPTIONS_MAX} | KEEP ${col}`);
 export const CONTROLS = [
   { field: 'project.name', title: 'Project', width: 'small', search: 'prefix' },
   { variable: 'identity_kind', title: 'Identity type', width: 'small',

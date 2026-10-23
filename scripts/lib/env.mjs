@@ -34,6 +34,20 @@ export function parseStream(name) {
   return { dataset: m[1], namespace: m[2] };
 }
 
+/**
+ * AUDIT_ID_NS must not be a word a production id already starts with. nsId() leaves an id that already starts
+ * with `cloud-audit-<ns>-` alone, so AUDIT_ID_NS=vega would make `cloud-audit-vega-01-…` (production's) look
+ * namespaced: a private --dashboards would then retire production's objects, and --clean would delete them.
+ * RESERVED_NS is every first segment of an un-namespaced suite id (a unit test keeps it complete); a digit start
+ * covers the retired numbered dashboard ids (cloud-audit-00-command-center).
+ */
+export const RESERVED_NS = ['vega', 'search', 'events', 'logs', 'dashboard', 'adhoc', 'control', 'dv',
+  'actor', 'identity', 'kibana', 'data', 'security', 'geo', 'platform'];
+export function checkNamespace(n) {
+  if (!/^[a-z][a-z0-9]*$/.test(n)) throw new Error(`AUDIT_ID_NS "${n}" must be lowercase letters and digits, starting with a letter`);
+  if (RESERVED_NS.includes(n)) throw new Error(`AUDIT_ID_NS "${n}" is the first word of a production id (cloud-audit-${n}-…), so a private deploy could touch production: pick another name`);
+}
+
 export const cfg = {
   get es()      { return strip(req('EC_URL')); },
   get kibana()  { return strip(req('KB_URL')); },
@@ -54,7 +68,12 @@ export const cfg = {
    * sits beside production under its own ids. Unset, nothing changes: the deployed ids stay
    * `cloud-audit-*` / `elastic_cloud-audit-*`.
    */
-  get ns() { return process.env.AUDIT_ID_NS ? `cloud-audit-${process.env.AUDIT_ID_NS}` : 'cloud-audit'; },
+  get ns() {
+    const n = process.env.AUDIT_ID_NS;
+    if (!n) return 'cloud-audit';
+    checkNamespace(n);
+    return `cloud-audit-${n}`;
+  },
   /** The events view's name in this namespace (DEFAULT_VIEW unset). */
   get view() { return DEFAULT_VIEW.replace(/^cloud-audit/, this.ns); },
   ROOT,

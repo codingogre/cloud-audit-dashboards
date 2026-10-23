@@ -335,3 +335,15 @@ test('record feeds (1.0.5.1): no Discover session panel; each record list is a L
     }
   });
 });
+
+test('the committed dashboards/*.json are exactly what the definitions build (review: they went stale across a merge)', async () => {
+  const { payload } = await import('../../scripts/dashboards.mjs');
+  const { readFileSync } = await import('node:fs');
+  withEnv({ AUDIT_WITH: undefined, AUDIT_ID_NS: undefined, AUDIT_STREAM: undefined }, () => {
+    for (const [name, def] of Object.entries(buildAll())) {
+      const file = readFileSync(`dashboards/${name}.json`, 'utf8');
+      assert.ok(file === JSON.stringify(payload(def), null, 2) + '\n',
+        `dashboards/${name}.json is stale: regenerate with node -e "process.loadEnvFile('.env'); import('./scripts/dashboards.mjs').then(m=>m.emit())"`);
+    }
+  });
+});

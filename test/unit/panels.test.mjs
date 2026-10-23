@@ -155,6 +155,27 @@ test('nsId() is the identity unless AUDIT_ID_NS is set', () => {
   }
 });
 
+test('AUDIT_ID_NS refuses a word a production id starts with, so a private deploy cannot touch production (review)', async () => {
+  const { RESERVED_NS, checkNamespace, objFiles, objId, RETIRED_OBJECTS, DEFAULT_VIEW } = await import('../../scripts/lib/env.mjs');
+  const { SUITE, RETIRED_IDS } = await import('../../scripts/lib/suite.mjs');
+  const { RETIRED_DATA_VIEW_IDS } = await import('../../scripts/lib/controls.mjs');
+  const was = process.env.AUDIT_ID_NS;
+  try {
+    delete process.env.AUDIT_ID_NS;
+    const ids = [...SUITE.map((d) => d.id), ...RETIRED_IDS, ...RETIRED_DATA_VIEW_IDS, 'elastic_cloud-audit-logs', DEFAULT_VIEW,
+      'cloud-audit-adhoc-dv', ...['vega', 'search'].flatMap((k) => objFiles(k).map((f) => objId(k, f))), ...RETIRED_OBJECTS().map((o) => o.id)];
+    for (const id of ids) {
+      const first = id.replace(/^(elastic_)?cloud-audit-/, '').split('-')[0];
+      assert.ok(/^\d/.test(first) || RESERVED_NS.includes(first), `${id}: "${first}" must be in RESERVED_NS`);
+    }
+  } finally {
+    if (was === undefined) delete process.env.AUDIT_ID_NS; else process.env.AUDIT_ID_NS = was;
+  }
+  for (const n of RESERVED_NS) assert.throws(() => checkNamespace(n), /production id/);
+  for (const n of ['00', '7x', 'Wip', 'a-b', '']) assert.throws(() => checkNamespace(n));
+  assert.doesNotThrow(() => checkNamespace('r1051'));
+});
+
 test('Vega and Discover ids drop the file order number; files map back; the numbered ids are retired (1.0.5.1)', () => {
   const was = process.env.AUDIT_ID_NS;
   try {
@@ -315,6 +336,12 @@ test('1.0.5.1: a table names an identity as the Identity dropdown lists it, and 
   }
   // The shape-H fix: the Cloud API key no longer claims the events of the keys it owns.
   assert.notEqual(where(`${CLOUD} · Cloud API key`)({ 'user.domain': '_es_api_key', 'user.name': CLOUD }), true);
+  // A bare name equal to a key id or an owner (a failed sign-in typed it, say) selects neither key's events (review).
+  assert.notEqual(where(CLOUD)({ 'user.domain': '_cloud_api_key', 'user.name': CLOUD }), true, 'bare id vs the Cloud key');
+  assert.notEqual(where(CLOUD)({ 'user.domain': '_es_api_key', 'user.name': CLOUD }), true, 'bare id vs its unnamed keys');
+  assert.equal(where(CLOUD)({ 'user.name': CLOUD, 'event.action': 'authentication_failed' }), true, 'but still its own failed sign-in');
+  // "Any" is the same as nothing picked, for both dropdowns.
+  for (const [doc] of IDENTITY_FIXTURES) assert.equal(where('Any', 'Any')(doc), true);
   // Only a 20-character key id is shortened; a person's numeric id and any other name are left alone.
   assert.equal(compile(identityLabel('x'))({ x: 'Unnamed key of 3512997522' }), 'Unnamed key of 3512997522');
 });
@@ -447,6 +474,17 @@ test('nullSafe (1.0.4): every shipped query that names api_key.* carries the SET
     assert.equal(q.startsWith('SET unmapped_fields="nullify"; FROM '), names(q), `${src}: SET iff api_key.*`);
   }
   assert.ok(items.filter(({ q }) => q.startsWith('SET ')).length >= 45);
+});
+
+test('the strict lint pass: a typo hidden by SET nullify fails; an unmapped api_key.* field does not (review)', async () => {
+  const { strictQuery, strictProblem } = await import('../../scripts/esql.mjs');
+  assert.equal(strictQuery('FROM x | KEEP a'), null);
+  assert.equal(strictQuery('SET unmapped_fields="nullify"; FROM x | KEEP a'), 'FROM x | KEEP a | LIMIT 0');
+  const err = (reason) => ({ ok: false, body: { error: { reason } } });
+  assert.equal(strictProblem({ ok: true }), null);
+  assert.equal(strictProblem(err('Found 1 problem\nline 1:20: Unknown column [api_key.name]')), null);
+  assert.match(strictProblem(err('Found 2 problems\nline 1:20: Unknown column [api_key.name]\nline 1:40: Unknown column [user.emial]')), /user\.emial/);
+  assert.match(strictProblem(err('parsing_exception')), /fails without the nullify SET/);
 });
 
 test('bounded() keeps SET first and splices the time bound after FROM', async () => {

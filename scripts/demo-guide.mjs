@@ -169,17 +169,17 @@ export async function run(argv = []) {
           body: 'An earlier gate used `NOT (field IN (...))` on a field that does not exist on Kibana events. In ES|QL that is null, and `WHERE null` drops the row — so the gate silently discarded 100% of Kibana audit. This is why every noise predicate is explicitly null-guarded.',
         },
       }),
-      step('Then check whether a "person" is really a shared credential', {
+      step('Then check whether one credential is shared across many clients', {
         mins: '1 min', link: gv('00-command-center', 'Back to Command Center'),
-        act: 'Scroll to **Busiest identities**. Read the `actor` column, then the `api_key` column beside it.',
+        act: 'Scroll to **Busiest identities**. Find the busiest named API key (it reads as the key\'s name), then pick it in the **Identity** dropdown.',
         table: fleetKey ? {
-          head: ['Identity', 'API key', 'Events', 'Distinct client IPs'],
-          body: [[`\`${mask(fleetOwner, redact)}\``, `\`${fleetKey}\``, fmt(fleetEvents), fmt(fleetIps)]],
+          head: ['Identity (API key)', 'Events', 'Distinct client IPs'],
+          body: [[`\`${fleetKey}\``, fmt(fleetEvents), fmt(fleetIps)]],
         } : null,
-        say: `Look at the email beside the busiest named API key. Elasticsearch stamps the key's **creator** on every event that key emits — so every workload authenticating with one shared key resolves to whoever minted it. Over the last 24 hours that key carried ${fmt(fleetEvents)} events from ${fmt(fleetIps)} distinct client IPs. When the addresses far outnumber what one person could use, the name on screen is a credential, not a person.`,
+        say: `A named API key reads as its own name, never as the account that owns it, so its traffic is not credited to a person. Over the last 24 hours that key carried ${fmt(fleetEvents)} events from ${fmt(fleetIps)} distinct client IPs. When the addresses far outnumber what one workload would use, many clients share one credential.`,
         notes: [{
           kind: 'stop', label: 'Land this as a process finding, not an accusation',
-          body: 'If a shared key does show up, nobody did anything wrong. The point is three practical consequences: when the key’s creator leaves, this breaks silently; you cannot tell their own activity from the workloads’; and any single compromised client’s blast radius is the whole credential. The fix is a service account, and the audit log is how you find every key that needs one.',
+          body: 'If a shared key does show up, nobody did anything wrong. The point is three practical consequences: when the key’s creator leaves, this breaks silently; you cannot tell one workload’s activity from another’s; and any single compromised client’s blast radius is the whole credential. The fix is a service account, and the audit log is how you find every key that needs one.',
         }],
       }),
     ],
@@ -246,7 +246,7 @@ export async function run(argv = []) {
         say: 'One selection, and every panel on every dashboard narrows to them — what they authenticated with, what they read, what they changed, where they were. No query writing, no rebuilding a view.',
         note: {
           kind: 'stop', label: 'Clear the pill before you touch a dropdown again',
-          body: 'The Identity dropdowns do not travel: each dashboard opens with them empty, and only the pill carries the selection. Choosing a different person there does not replace the pill — it ANDs with it, and every panel drops to zero. Remove the pill first. Same rule before the next section: a pill left up silently scopes every number you show afterwards.',
+          body: 'The Identity dropdowns do not travel: each dashboard opens with them on “Any”, and only the pill carries the selection. Choosing a different person there does not replace the pill — it ANDs with it, and every panel drops to zero. Remove the pill first. Same rule before the next section: a pill left up silently scopes every number you show afterwards.',
         },
       }),
       step('Or drop into the raw events for that identity', {
@@ -285,7 +285,7 @@ export async function run(argv = []) {
         say: `${fmt(mutCount)} Kibana state changes in this window — saved objects, alerting rules, workflows, ML jobs, the lot — and the one I just made is at the top of the list — who, what, which object, which space, to the second. That is the whole point: not "someone changed a dashboard", but a name, a timestamp and an object.`,
         note: {
           kind: 'tip', label: 'The honest caveat',
-          body: 'This panel is a recency-sorted top 30, not an exhaustive export. For the exhaustive version, use the Discover session beneath it — that is what you would attach to an audit response.',
+          body: 'This panel is a recency-sorted top 30, not an exhaustive export. For the exhaustive version, open this panel’s query in Discover (Explore in Discover) and remove the LIMIT — that is what you would attach to an audit response.',
         },
       }),
     ],

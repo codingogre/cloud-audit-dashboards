@@ -54,8 +54,9 @@ const COUNT_W = 72;
  * Live signal feed: searches/10-raw-signal-feed.json's logic, bounded by TIME so the identity dropdowns narrow it
  * (RECORD FEEDS, panels.mjs). Sorted and cut straight after the filter (QUERY SHAPE rule 3); the GROK and the
  * CASEs that word each row run on the 200 rows kept. Detail is Kibana's own message, else the transport action,
- * else the security change in words ("API key ci-deploy + 3 more"). The address is tagged "internal" where it is
- * Kibana or the platform acting for someone, so it is a display column, not a click filter.
+ * else the security change in words ("API key ci-deploy + 3 more"). client.ip is kept raw, with no "internal" tag
+ * (searches/10 adds one), so the column filters on click; the How to read block says what a 100.64/10 or private
+ * address means.
  */
 const LIVE_FEED = `FROM ${IDX} | ${TIME} | ${NOISE} | WHERE NOT ${HOUSEKEEPING} | SORT @timestamp DESC | LIMIT 200 | ${ACTOR_RESOLVE} ` +
   String.raw`| GROK elasticsearch.audit.security_config_change """^\{"(?<scc_obj>[a-z_]+)":\{(?:.*?"name":"(?<scc_name>[^"]+))?(?:.*?"ids?":\[?"(?<scc_id>[^"]+))?""" ` +
@@ -82,7 +83,7 @@ const INTRO = {
     'Identities read as in the Identity dropdown; a Cloud API key is shortened to the start of its id, “_4KEO… · Cloud API key”.',
     'Identity type and Identity apply to this page only: the links above carry Project, Client IP and pinned filters, not them.',
     'Click a Principal id to filter the page or open Actor 360; a Cloud API key’s id also covers the API keys it created.',
-    'A Client IP marked *internal* is Kibana or the platform acting for someone, not where they are.',
+    'In the Live signal feed, a Client IP in 100.64/10 or a private range is Kibana or the platform acting for someone, not where they are.',
     'The last time bucket is partial, and panels side by side can differ by an event or two at the edges of the range.',
   ],
 };
@@ -104,7 +105,7 @@ export function build() {
     kpi(15, 0, 7, 5, `FROM ${IDX} | ${TIME} | ${NOISE} | STATS n = COUNT(*) BY ${ACTOR_KEYS} | ${ACTOR_RESOLVE} | STATS \`Distinct actors\` = COUNT_DISTINCT(actor)`, 'Distinct actors',
       `Identities with signal traffic, named as in Busiest identities. Someone whose only events are routine (browsing dashboards, health checks) is not counted here${pv ? '; Platform Volume counts all traffic' : ''}.`),
     kpi(22, 0, 7, 5, `FROM ${IDX} | ${TIME} | ${NOISE} | WHERE user.email IS NOT NULL | STATS \`Human actors\` = COUNT_DISTINCT(user.email)`, 'Human actors',
-      'Distinct people with signal traffic, counted by email address. API keys never carry an email, so their traffic is not counted here, even when a person created the key.'),
+      'Distinct people with signal traffic, counted by email address. API key traffic has carried no email in this audit log, so it is not counted here, even for a key a person created.'),
     // Widths follow the titles at a 1440px viewport, where a metric tile clips its secondary line and
     // wraps its title: the two "· all traffic" tiles need 9 columns, and Privileged ops' title 10. The
     // three short titles give up a column each.

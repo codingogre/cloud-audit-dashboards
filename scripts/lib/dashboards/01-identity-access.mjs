@@ -154,7 +154,7 @@ const INTRO = {
   ],
   howTo: [
     'Identities read as in the Identity dropdown: an email, else an API key’s name, else the account name. A key named after a person is still a key.',
-    'No API key carries an email. Kibana does not record which Elasticsearch key it was given, so those rows read “Unnamed key of” the key’s owner.',
+    'API key traffic has carried no email in this audit log. Kibana does not record which Elasticsearch key it was given, so those rows read “Unnamed key of” the key’s owner.',
     'Cloud API keys have no name or owner: tables show the start of the id, “_4KEO… · Cloud API key”, with Owner “Cloud organization”.',
     'A re-issued key keeps its name under a new id, so key ids can outnumber names.',
     'A failed sign-in counts once per attempt. Credential type exists only on Elasticsearch requests, so those panels leave out Kibana traffic.',
@@ -182,7 +182,7 @@ export function build() {
       'Identities', 'Distinct identities, all traffic: people, API keys, service accounts, user names tried in failed sign-ins, and placeholders for anonymous requests. The line above the number counts the API key names among them. Identity first and last seen lists each.',
       { secondary: 'detail' }),
     kpi(8, 0, 8, 5, `FROM ${IDX} | ${TIME} | STATS \`Humans\` = COUNT_DISTINCT(user.email), sso = COUNT_DISTINCT(user.email) WHERE user.domain == "cloud-saml-kibana" | EVAL detail = CASE(sso == 0, "none used SSO", CONCAT(${grouped('sso')}, " used SSO")) | KEEP \`Humans\`, detail`,
-      'Humans', 'Distinct email addresses across all traffic: the people Busiest human identities ranks. Only a person’s own sign-in carries an email, never an API key; the line above the number says how many used SAML SSO.',
+      'Humans', 'Distinct email addresses across all traffic: the people Busiest human identities ranks. A person’s own sign-in carries an email; API key traffic has not; the line above the number says how many used SAML SSO.',
       { secondary: 'detail' }),
     kpi(16, 0, 8, 5, `FROM ${IDX} | ${TIME} | ${KEYED} | STATS BY api_key.id, api_key.name, user.name | ${KEY_DERIVE}, name = COALESCE(api_key.name, user.name) | STATS \`API keys\` = COUNT_DISTINCT(key_id), names = COUNT_DISTINCT(name) | EVAL detail = CASE(\`API keys\` == 0, "none in range", names == 1, "1 name", CONCAT(${grouped('names')}, " names")) | KEEP \`API keys\`, detail`,
       'API keys', 'Distinct API keys used in range, Cloud and Elasticsearch, one per row of API key inventory. The line above the number counts their names: a name with many ids is one key re-issued many times.',

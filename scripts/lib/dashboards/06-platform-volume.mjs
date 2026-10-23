@@ -102,7 +102,7 @@ const INTRO = {
     'Nothing is filtered here, so these numbers are larger than the same counts on the other dashboards.',
     'One request often writes several audit records; the All events tile counts records, and the line above its number counts requests.',
     'Much of the volume is dashboards querying the audit stream, these included, usually through the Cloud API key that runs them.',
-    'No API key carries an email, so a key’s traffic never counts under the person who made it; a Cloud API key has no name.',
+    'API key traffic has carried no email in this audit log, so it does not count under the person who made the key; a Cloud API key has no name.',
     IDENTITY_HOW_TO,
   ],
 };

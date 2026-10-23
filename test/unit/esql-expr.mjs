@@ -62,14 +62,16 @@ export function compile(src) {
         return args.length % 2 ? args[args.length - 1](d) : null;
       };
     }
-    // CONCAT and REPLACE (1.0.5.1, the identity display rule): null in, null out; REPLACE's pattern is a Java
-    // regex, which for the patterns the suite uses reads the same in JavaScript, $1 included.
-    if (t.t === 'id' && /^(CONCAT|REPLACE)$/i.test(t.v) && tk[i + 1]?.v === '(') {
+    // CONCAT, REPLACE, STARTS_WITH and ENDS_WITH (1.0.5.1, the identity rule): null in, null out; REPLACE's pattern
+    // is a Java regex, which for the patterns the suite uses reads the same in JavaScript, $1 included.
+    if (t.t === 'id' && /^(CONCAT|REPLACE|STARTS_WITH|ENDS_WITH)$/i.test(t.v) && tk[i + 1]?.v === '(') {
       const fn = t.v.toUpperCase();
       i += 2; const args = [orE()]; while (kw(',')) args.push(orE()); eat(')');
       return (d) => {
         const vs = args.map((f) => f(d));
         if (vs.includes(null)) return null;
+        if (fn === 'STARTS_WITH') return vs[0].startsWith(vs[1]);
+        if (fn === 'ENDS_WITH') return vs[0].endsWith(vs[1]);
         return fn === 'CONCAT' ? vs.join('') : vs[0].replace(new RegExp(vs[1], 'g'), vs[2]);
       };
     }

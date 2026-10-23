@@ -168,10 +168,13 @@ const IDENTITY_KIND_TEST =
 const IDENTITY_EXACT =
   `(${unset('identity')} OR user.email == ?identity ` +
   `OR (${NO_EMAIL} AND api_key.name == ?identity) ` +
-  `OR (${UNNAMED} AND user.domain == "_cloud_api_key" AND user.name == REPLACE(?identity, "${CLOUD_KEY_SUFFIX}$", "")) ` +
-  `OR (${UNNAMED} AND user.domain == "_es_api_key" AND user.name == REPLACE(?identity, "^${UNNAMED_KEY_PREFIX}", "")) ` +
+  // A key branch matches only a value carrying that key's suffix or prefix: a bare name (a failed sign-in's, say)
+  // equal to a key id must not pull in that key's events.
+  `OR (${UNNAMED} AND user.domain == "_cloud_api_key" AND ENDS_WITH(?identity, "${CLOUD_KEY_SUFFIX}") AND user.name == REPLACE(?identity, "${CLOUD_KEY_SUFFIX}$", "")) ` +
+  `OR (${UNNAMED} AND user.domain == "_es_api_key" AND STARTS_WITH(?identity, "${UNNAMED_KEY_PREFIX}") AND user.name == REPLACE(?identity, "^${UNNAMED_KEY_PREFIX}", "")) ` +
   `OR (${UNNAMED} AND (user.domain IS NULL OR NOT user.domain IN ("_cloud_api_key","_es_api_key")) AND user.name == ?identity) ` +
-  `OR (?identity == "${UNATTRIBUTED}" AND ${UNNAMED} AND user.name IS NULL))`;
+  // Not a key realm: there IDENTITY's CONCAT leaves a null name, so such a row is never shown as (unattributed).
+  `OR (?identity == "${UNATTRIBUTED}" AND ${UNNAMED} AND (user.domain IS NULL OR NOT user.domain IN ("_cloud_api_key","_es_api_key")) AND user.name IS NULL))`;
 export const IDENTITY_WHERE = `${IDENTITY_PRE} AND ${IDENTITY_KIND_TEST} AND ${IDENTITY_EXACT}`;
 
 /**
@@ -1632,8 +1635,10 @@ const PRIOR_START = `TO_DATETIME(2 * TO_LONG(${T_START}) - TO_LONG(${T_END}))`;
 export const prevQuery = (key, view = DEFAULT_VIEW) => {
   const t = PREV_TILES[key];
   if (!t) throw new Error(`no previous-period tile "${key}"`);
+  // The lookback caps the PRIOR window only: the current count is the picker's and is never cut, so a 30-day
+  // picker's headline matches the Lens tiles beside it (the prior line then reads "no full prior").
   return nullSafe(`FROM ${view} | WHERE ${VIEW_TIME} <= ${T_END} AND ${VIEW_TIME} > ${PRIOR_START}`
-    + ` AND ${VIEW_TIME} >= NOW() - ${PREV_LOOKBACK_DAYS} days AND ${IDENTITY_WHERE}${t.esql ? ` | ${t.esql}` : ''}`
+    + ` AND (${VIEW_TIME} > ${T_START} OR ${VIEW_TIME} >= NOW() - ${PREV_LOOKBACK_DAYS} days) AND ${IDENTITY_WHERE}${t.esql ? ` | ${t.esql}` : ''}`
     + ` | STATS cur = COUNT(*) WHERE ${VIEW_TIME} > ${T_START}, prev = COUNT(*) WHERE ${VIEW_TIME} <= ${T_START}`
     + ` | EVAL s = TO_LONG(${T_START}), e = TO_LONG(${T_END})`);
 };

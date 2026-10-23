@@ -13,6 +13,7 @@ import { es, kb } from './lib/http.mjs';
 import { success, fail, detail, warn } from './lib/log.mjs';
 import { buildAll } from './lib/definitions.mjs';
 import { checkLayout } from './lib/layout.mjs';
+import { requireView } from './lib/view.mjs';
 import { PREV_TILES, PREV_LOOKBACK_DAYS, prevSpec, prevEsql, fixedWindow, windowMs, prevQuery, prevStreamQuery, VIEW_TIME } from './lib/panels.mjs';
 
 /**
@@ -49,6 +50,22 @@ const TIME_BOUND = 'WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart';
  * gate costs 45–56ms over 7 days: the negation is cheap. What is expensive is a CASE with two or
  * more conditions evaluated per row (QUERY SHAPE in panels.mjs).
  */
+/** The query without the nullify SET, planned but not run (LIMIT 0); null when it has no SET. */
+export function strictQuery(q) {
+  const m = /^\s*SET unmapped_fields="nullify";\s*/.exec(q);
+  return m ? `${q.slice(m[0].length)} | LIMIT 0` : null;
+}
+/** What a strict plan's failure means: null when it ran, or when only api_key.* columns were unknown. */
+export function strictProblem(res) {
+  if (res.ok) return null;
+  const reason = String(res.body?.error?.root_cause?.[0]?.reason || res.body?.error?.reason || JSON.stringify(res.body));
+  const unknown = [...reason.matchAll(/Unknown column \[([^\]]+)\]/g)].map((x) => x[1]);
+  if (unknown.length && unknown.every((c) => c.startsWith('api_key.'))) return null;
+  return unknown.length
+    ? `names ${unknown.filter((c) => !c.startsWith('api_key.')).join(', ')}, which the stream does not map — the nullify SET would show it as an empty column`
+    : `fails without the nullify SET: ${reason.replace(/\n/g, ' ').slice(0, 200)}`;
+}
+
 export function bounded(q) {
   // A query on the events view (the prior-period tiles) bounds its own window, on VIEW_TIME: it has no @timestamp.
   if (/\?_tstart|\?_tend|@timestamp\s*[<>]/.test(q) || new RegExp(`\\b${VIEW_TIME}\\s*[<>]`).test(q)) return q;
@@ -147,10 +164,27 @@ export async function prevParity({ budgetMs = BUDGET_MS } = {}) {
     }
   }
   // The "no full prior" gate: the stream dataset's first event must be the stream's own, read with @timestamp.
+  // Both reads cut the lookback at one fixed instant: with NOW() in each, two requests a moment apart disagree
+  // whenever the oldest event leaves the lookback between them, which happens daily once the stream is older.
+  const cut = `TO_DATETIME("${iso(Date.now() - PREV_LOOKBACK_DAYS * 864e5)}")`;
+  const lookback = /NOW\(\) - \d+ days/;
+  if (!lookback.test(prevStreamQuery())) throw new Error('prevStreamQuery() no longer bounds its lookback with NOW() - N days; update prevParity');
   const [g, d] = await Promise.all([
-    es.esqlRun(withStream(prevStreamQuery()), undefined, { budgetMs }),
-    es.esqlRun(`FROM ${cfg.dataStream} | WHERE @timestamp >= NOW() - ${prevStreamQuery().match(/NOW\(\) - (\d+ days)/)[1]} | STATS t0 = MIN(@timestamp) | EVAL t0 = TO_LONG(t0)`, undefined, { budgetMs }),
+    es.esqlRun(withStream(prevStreamQuery()).replace(lookback, cut), undefined, { budgetMs }),
+    es.esqlRun(`FROM ${cfg.dataStream} | WHERE @timestamp >= ${cut} | STATS t0 = MIN(@timestamp) | EVAL t0 = TO_LONG(t0)`, undefined, { budgetMs }),
   ]);
+  // A picker longer than the lookback: the headline (current) count is never cut, only the prior window is.
+  const long = parityWindows().map((w) => ({ ...w, label: `${PREV_LOOKBACK_DAYS + 5}d`, s: w.e - (PREV_LOOKBACK_DAYS + 5) * 864e5 }))[0];
+  for (const key of Object.keys(PREV_TILES)) {
+    const who = selections[0].who;
+    const [tile, cur] = await Promise.all([
+      es.esqlRun(withStream(prevQuery(key)), paramsFor(long.s, long.e, who), { budgetMs }),
+      es.esqlRun(prevEsql(key), paramsFor(long.s, long.e, who), { budgetMs }),
+    ]);
+    const got = one(tile)?.[0], want = one(cur)?.[0];
+    out.push({ key: `${key} ${long.label} current only`, got: [got], want: [want], ok: want !== undefined && got === want,
+      ms: Math.max(tile.ms || 0, cur.ms || 0), error: why(tile) || why(cur) || undefined });
+  }
   const gv = one(g)?.[0], dv = one(d)?.[0];
   out.push({ key: 'stream first event', got: [gv], want: [dv], ok: gv !== undefined && gv === dv, ms: Math.max(g.ms || 0, d.ms || 0), error: why(g) || why(d) || undefined });
   return out;
@@ -218,6 +252,9 @@ export async function run() {
   success(`${layout.dashboards} dashboards, ${layout.panelCount} panels, grid clean`);
   layout.rows.filter((r) => r.includes('advisory')).forEach((r) => warn(r));
 
+  // The prior-period tiles read the events view: without it every one of their queries would fail with an unknown
+  // index, so say what to run instead (--deploy creates it before it lints).
+  await requireView();
   const items = gatherQueries();
   const timings = [];
   let bad = 0;
@@ -230,6 +267,20 @@ export async function run() {
     const reason = res.body?.error?.root_cause?.[0]?.reason || res.body?.error?.reason || JSON.stringify(res.body);
     fail(`${src}[${i}] ${String(reason).replace(/\n/g, ' ').slice(0, 220)}`);
     detail(q.slice(0, 200));
+  }
+
+  // SET unmapped_fields="nullify" turns a misspelt field into a silent null column, and since TIME names
+  // api_key.name (IDENTITY_WHERE) nearly every query carries it. So plan each such query once more without it,
+  // cheaply (LIMIT 0): only an api_key.* field — legitimately unmapped on a project that never used a key — may be
+  // unknown. Anything else unknown is a typo the SET was hiding.
+  for (const { src, i, q: raw } of items) {
+    const strict = strictQuery(bounded(raw));
+    if (!strict) continue;
+    const res = await es.esqlRun(strict, PARAMS(src), { budgetMs: BUDGET_MS });
+    const typo = strictProblem(res);
+    if (!typo) continue;
+    bad++;
+    fail(`${src}[${i}] ${typo}`);
   }
 
   const dsl = gatherDsl();

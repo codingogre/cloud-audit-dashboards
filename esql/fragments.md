@@ -15,7 +15,7 @@ No one raw field names every identity, because they change meaning with the cred
 
 | Field | Holds |
 | --- | --- |
-| `user.email` | Only for a person signed in through Elastic Cloud SSO. No API key event carries one, not even a key a person created. |
+| `user.email` | Only for a person signed in through Elastic Cloud SSO. No API key event on this project carries one; an earlier observation that a person-owned key carries its creator's email is untested here, and if it does, that key's events count as the Person. |
 | `api_key.name` | A named Elasticsearch API key, and only on Elasticsearch events. |
 | `user.domain` | The realm: `cloud-saml-kibana`, `_cloud_api_key`, `_es_api_key`, `_service_account`, or none. |
 | `user.name` | Who the request ran as: a person's numeric Cloud user id (`3512997522`), a Cloud API key's 20-character id (nothing else names it), a service account (`elastic/kibana`), a name tried at sign-in (`admin`), a placeholder (`<unauthenticated-cloud-access-token>`) or, for an Elasticsearch API key, the key's **owner**. On a Kibana event made with an Elasticsearch key (`user.domain` `_es_api_key`) Kibana records only the owner, never the key. |
@@ -30,7 +30,7 @@ of the **Identity type** and **Identity** dropdowns (ES|QL variable controls `?i
 | Elasticsearch API key (name not recorded) | `Unnamed key of <user.name>` | `Unnamed key of _4KEO…` when the owner is a Cloud API key |
 | Cloud API key | `<user.name> · Cloud API key` | `_4KEO… · Cloud API key` |
 | Service account | `user.name` | the account |
-| Failed sign-in | `user.name` | the name tried |
+| Failed sign-in | `user.name`, or `(unattributed)` when no name was sent (mostly `anonymous_access_denied`) | the name tried |
 | Unattributed | `(unattributed)` | the same |
 | Other | `user.name` | the same |
 
@@ -88,7 +88,8 @@ which gives the same `_4KEO… · Cloud API key` from the bare id (API key inven
 `TIME` is the picker's window AND `IDENTITY_WHERE`, so every ES|QL panel that bounds its window with `TIME`
 follows the dropdowns. It is plain boolean tests on raw fields (no `CASE`, no `COALESCE`), so Elasticsearch
 answers most of it from the index: a cheap superset (`PRE`), the kind's test, then the identity matched branch
-by branch. An empty dropdown sends `""` and every guard folds to true. 30 days: unselected 270ms, a person 20ms.
+by branch. The dropdowns open on "Any" (also how a viewer clears them; a single-select ES|QL control has no
+Clear button); "Any" and an empty `""` both fold every guard to true. 30 days: unselected 270ms, a person 20ms.
 
 ### Where traffic comes from: `actor_org`
 
@@ -618,7 +619,7 @@ through one `CONCAT` measured 484ms and is not worth it.
 | `body.text` is only on Kibana events | always pair with the `serverless-kibana` source filter |
 | Keys inside `attributes` are literal dotted strings | matters for ingest processors, not for ES\|QL |
 | Root mapping is `dynamic: false` | enriched fields must be explicitly mapped (see `ingest/`) |
-| Filter pills bind to a **source field**, not a derived column | `click_filter` goes on `user.email`; a pill on the `actor` COALESCE matches nothing |
+| Filter pills bind to a **source field**, not a derived column | `click_filter` goes on `user.email`; a pill on the `actor` `CASE` matches nothing |
 | Wide windows used to "time out past `now-1h`" | that timing was confounded: the queries ran back to back — a synchronous query outlives its client and cannot be cancelled on serverless. Dashboards defaulted to 1h until 1.0.5 and to 24h since; see *Query shape decides cost* for what actually costs |
 | `_field_caps` reports `url.path` / `url.original` as `keyword` | they are `wildcard` in the backing index mapping — read `_mapping`, and never group on them unguarded |
 | `LAST` is reserved | `last = MAX(@timestamp)` is a parse error; use `last_ts` |

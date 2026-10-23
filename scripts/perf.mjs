@@ -406,7 +406,10 @@ async function cmdRun(args) {
   const view = perfView();
   const pv = await es.raw(`/_query/view/${view}`, { method: 'PUT', body: { query: (await import('./lib/panels.mjs')).EVENTS_VIEW_QUERY(perf) } });
   if (!pv.ok) throw new Error(`could not create ${view} over ${perf} (${pv.status}: ${reasonOf(pv).slice(0, 160)})`);
-  const esqlItems = lib.gatherQueries().map((x) => ({ ...x, q: x.q.replaceAll(cfg.view, view) }));
+  // The prior-period tiles cap their lookback with NOW(); with --anchor data the picker windows end at the replica's
+  // newest event, so the cap must end there too, or a replica older than the lookback times an empty read.
+  const atAnchor = (q) => (anchorMode === 'data' ? q.replaceAll('NOW()', `TO_DATETIME("${new Date(anchor).toISOString()}")`) : q);
+  const esqlItems = lib.gatherQueries().map((x) => ({ ...x, q: atAnchor(x.q.replaceAll(cfg.view, view)) }));
   const dslItems = lib.gatherDsl();
   // If anything still names the live stream the replica is not what is being measured; refuse.
   const stray = [...esqlItems.map((x) => x.q), ...dslItems.map((x) => x.index)].filter((t) => t.includes(live) || (!t.includes(perf) && !t.includes(view)));

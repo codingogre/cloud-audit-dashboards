@@ -3,7 +3,7 @@
 `CLAUDE.md`-style durable context lives in `README.md` and `esql/fragments.md` and wins on
 conflict. This file is "where we are right now" and should be assumed stale.
 
-## Next: 1.0.5.1 identity dropdowns, then 1.0.6 starter alert pack
+## Next: deploy 1.0.5.1, then 1.0.6 starter alert pack
 
 - **1.0.5.1, first (done on branch `1.0.5.1`, not yet deployed):** Discover session and Vega ids lose their numbers
   (`cloud-audit-search-all-events`, `cloud-audit-vega-actor-risk-treemap`). File names stay numbered; `objId()` in
@@ -11,16 +11,16 @@ conflict. This file is "where we are right now" and should be assumed stale.
   check, --perf grouping), and `RETIRED_OBJECTS` (the numbered ids) are deleted by `--dashboards` after every panel is
   re-pointed, and by `--clean`. Deploy order in production: `--objects` (new ids) → `--dashboards` (re-point, then
   retire) → `_export` by an old id returns 404.
-- **1.0.5.1, research:** why 11 of 20 Vega charts are query DSL, and whether they can move to ES|QL. Kibana 9.6 adds
-  the picker's time range as a hidden filter to every ES|QL request (Lens and Vega), so fixed windows, prior periods and
-  stream-wide minimums need DSL. That matters because DSL charts won't follow the planned ES|QL Identity dropdowns.
-  Test whether the hidden filter can be redirected or turned off before concluding they must stay DSL.
-- **1.0.5.1:** dropdowns that make sense for "who acted". `user.email`, `user.name` and `api_key.name` change meaning by
-  credential (for an Elasticsearch API key, `user.name` is the key's owner; a Cloud API key exists only as an id in
-  `user.name`), so today's Person (email) and API key controls can't show every identity. Recommended: a query-time
-  identity (one ES|QL CASE) driving ES|QL variable controls "Identity type" → "Identity", which Kibana 9.6 accepts as
-  `pinned_panels` `esql_control` through the Dashboards API. The user still has to choose this over the ingest-time
-  route. Full facts, probe results and the open questions are in the session handoff under `.sessions/` (local).
+- **1.0.5.1, research (done on branch):** Vega 08, 09, 12 and 13 moved to ES|QL with per-panel time ranges
+  (`VEGA_WINDOWS`). The six prior-period tiles are ES|QL Vega specs on the ES|QL view `cloud-audit-events-view`, which
+  gets no hidden time filter, so they follow the Identity dropdowns (viewers need `read` on the view). Only vega/14
+  (*Audit data held*) stays DSL. `--deploy` creates the events view before it lints.
+- **1.0.5.1, identity (done on branch):** a query-time identity (`IDENTITY_KIND`, `IDENTITY`, one ES|QL `CASE`) drives
+  single-select ES|QL variable controls "Identity type" → "Identity" in `pinned_panels`, replacing Person (email) and
+  API key. Both open on "Any", which is also how a viewer clears them. `TIME` = `TIME_ONLY AND IDENTITY_WHERE`, so every
+  `TIME`-bound ES|QL panel follows them. Every dashboard Discover-session panel is now a Lens ES|QL table; the Discover
+  sessions still deploy and the intros link to them. Decisions and probe results are in the session handoff under
+  `.sessions/` (local).
 - **1.0.6:** five ES|QL alert rules shipped as code (failed-sign-in burst, success after failures, new key or role
   change, security change after hours, first-seen identity), built from the shared fragments.
 
