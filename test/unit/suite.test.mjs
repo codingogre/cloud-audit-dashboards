@@ -188,7 +188,9 @@ test('control bar (1.0.5.1): Project, Identity type, Identity, Client IP; identi
     assert.ok(!/\?identity\b(?!_kind)/.test(c.esql_query), 'an options query never reads the variable it sets');
   }
   assert.ok(!kind.esql_query.includes('?identity_kind'));
-  assert.match(who.esql_query, /\?identity_kind == "" OR identity_kind == \?identity_kind/, 'Identity chains on Identity type');
+  assert.match(who.esql_query, /\?identity_kind == "" OR \?identity_kind == "Any" OR identity_kind == \?identity_kind/, 'Identity chains on Identity type');
+  // "Any" heads both lists: an ES|QL single-select cannot otherwise be cleared.
+  for (const c of [kind, who]) assert.match(c.esql_query, /\| FORK \(STATS n = SUM\(n\) BY \w+\) \(STATS n = COUNT\(\*\) \| EVAL \w+ = "Any", n = 9223372036854775807\) \| SORT n DESC/);
   // Every dashboard sends the bar in the PUT; nothing is patched in afterwards.
   for (const [name, def] of Object.entries(buildAll())) assert.deepEqual(payload(def).pinned_panels, pp, name);
 });

@@ -125,13 +125,20 @@ export const ACTOR =
  *   KIND   ?identity_kind's test                                                             for a person
  *   EXACT  ?identity against the display rule, branch by branch                              (720ms with COALESCE)
  *
- * An empty dropdown sends "" and every guard folds to true before the query runs (270ms → 270ms unselected).
+ * An empty dropdown sends "" (or "Any", see ANY) and every guard folds to true before the query runs (270ms → 270ms unselected).
  * Measured over 30 days on the live stream; selecting the Cloud API key, 98% of all events, costs ~850ms.
  * TIME carries IDENTITY_WHERE, so every ES|QL panel that bounds its window with TIME follows the dropdowns.
  */
 export const CLOUD_KEY_SUFFIX = ' · Cloud API key';
 export const UNNAMED_KEY_PREFIX = 'Unnamed key of ';
 export const UNATTRIBUTED = '(unattributed)';
+/**
+ * The first option of both dropdowns. Kibana 9.6 gives an ES|QL control no way to clear a single-select
+ * choice (no Clear button, and clicking the chosen value again keeps it), so "Any" is how a viewer goes back
+ * to everyone. The guards treat it exactly like an empty selection (""), which is what a fresh page sends.
+ */
+export const ANY = 'Any';
+const unset = (v) => `(?${v} == "" OR ?${v} == "${ANY}")`;
 const KEY_DOMAINS = '"_cloud_api_key","_es_api_key","_service_account"';
 const SIGNIN_FAILED_ACTIONS = '"authentication_failed","anonymous_access_denied"';
 const NO_EMAIL = 'user.email IS NULL';
@@ -162,13 +169,13 @@ export const IDENTITY =
   `user.domain == "_es_api_key", CONCAT("${UNNAMED_KEY_PREFIX}", user.name), ` +
   `user.name IS NOT NULL, user.name, "${UNATTRIBUTED}")`;
 const IDENTITY_PRE =
-  '(?identity == "" OR user.email == ?identity OR api_key.name == ?identity OR user.name == ?identity ' +
+  `(${unset('identity')} OR user.email == ?identity OR api_key.name == ?identity OR user.name == ?identity ` +
   `OR user.name == REPLACE(REPLACE(?identity, "${CLOUD_KEY_SUFFIX}$", ""), "^${UNNAMED_KEY_PREFIX}", "") ` +
   `OR (?identity == "${UNATTRIBUTED}" AND user.name IS NULL))`;
 const IDENTITY_KIND_TEST =
-  `(?identity_kind == "" OR ${IDENTITY_KINDS.map(([k, t]) => `(?identity_kind == "${k}" AND ${t})`).join(' OR ')})`;
+  `(${unset('identity_kind')} OR ${IDENTITY_KINDS.map(([k, t]) => `(?identity_kind == "${k}" AND ${t})`).join(' OR ')})`;
 const IDENTITY_EXACT =
-  '(?identity == "" OR user.email == ?identity ' +
+  `(${unset('identity')} OR user.email == ?identity ` +
   `OR (${NO_EMAIL} AND api_key.name == ?identity) ` +
   `OR (${UNNAMED} AND user.domain == "_cloud_api_key" AND user.name == REPLACE(?identity, "${CLOUD_KEY_SUFFIX}$", "")) ` +
   `OR (${UNNAMED} AND user.domain == "_es_api_key" AND user.name == REPLACE(?identity, "^${UNNAMED_KEY_PREFIX}", "")) ` +

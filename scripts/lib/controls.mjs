@@ -9,7 +9,7 @@
  */
 import { cfg, nsId } from './env.mjs';
 import { stableUuid } from './ids.mjs';
-import { IDENTITY_KEYS, IDENTITY_KIND, IDENTITY, nullSafe } from './panels.mjs';
+import { IDENTITY_KEYS, IDENTITY_KIND, IDENTITY, ANY, nullSafe } from './panels.mjs';
 
 /** The data view the controls aggregate against. Real saved object, not the ad-hoc one
  *  the Discover sessions carry inline — a control resolves its field list by reference.
@@ -50,7 +50,9 @@ export const dataViewObject = () => ({
  *   - its selection is not in the URL and the nav links do not carry it: each dashboard opens at "Any";
  *   - a classic control (Project) does not narrow its option list;
  *   - Identity chains on Identity type through its query (?identity_kind), but a stale Identity is not cleared
- *     when the type changes: the dropdown shows a warning and the panels read 0 until it is cleared.
+ *     when the type changes: the dropdown shows a warning and the panels read 0 until it is set back to Any;
+ *   - a single-select choice cannot be cleared (no Clear button; re-clicking keeps it), so each list starts
+ *     with "Any" (panels.mjs, ANY), which every guard treats as no selection.
  *
  * Project leads, because one audit project usually collects the streams of several serverless projects. project.*
  * names the project that EMITTED the event, populated on every Elasticsearch and Kibana event (verified
@@ -63,16 +65,23 @@ export const dataViewObject = () => ({
 // width 'small' with grow: four 'medium' controls wrapped Client IP onto a second row at a 1440px viewport
 // (rendered, 1.0.5); 'small' is a minimum, and grow shares the row out evenly at any width.
 const OPTIONS_TIME = 'WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart';
-const optionsQuery = (tail) => nullSafe(
-  `FROM ${cfg.dataStream} | ${OPTIONS_TIME} | STATS n = COUNT(*) BY ${IDENTITY_KEYS} | ${tail}`);
+/**
+ * An options query: count first by the raw identity keys, derive the column, then list the values busiest
+ * first behind one "Any" row (panels.mjs, ANY: the only way to clear an ES|QL control). FORK runs both branches
+ * over the same counted rows; the Any branch carries the largest long, so it sorts to the top.
+ */
+const optionsQuery = (col, derive) => nullSafe(
+  `FROM ${cfg.dataStream} | ${OPTIONS_TIME} | STATS n = COUNT(*) BY ${IDENTITY_KEYS} | ${derive} ` +
+  `| FORK (STATS n = SUM(n) BY ${col}) (STATS n = COUNT(*) | EVAL ${col} = "${ANY}", n = 9223372036854775807) ` +
+  `| SORT n DESC | KEEP ${col}`);
 export const CONTROLS = [
   { field: 'project.name', title: 'Project', width: 'small', search: 'prefix' },
   { variable: 'identity_kind', title: 'Identity type', width: 'small',
-    query: () => optionsQuery(`EVAL ${IDENTITY_KIND} | STATS n = SUM(n) BY identity_kind | SORT n DESC | KEEP identity_kind`) },
-  // Chained on Identity type through ?identity_kind; "" (nothing chosen) lists every identity.
+    query: () => optionsQuery('identity_kind', `EVAL ${IDENTITY_KIND}`) },
+  // Chained on Identity type through ?identity_kind; "" or "Any" lists every identity.
   { variable: 'identity', title: 'Identity', width: 'small',
-    query: () => optionsQuery(`EVAL ${IDENTITY_KIND}, ${IDENTITY} | WHERE ?identity_kind == "" OR identity_kind == ?identity_kind ` +
-      '| STATS n = SUM(n) BY identity | SORT n DESC | KEEP identity') },
+    query: () => optionsQuery('identity', `EVAL ${IDENTITY_KIND}, ${IDENTITY} ` +
+      `| WHERE ?identity_kind == "" OR ?identity_kind == "${ANY}" OR identity_kind == ?identity_kind`) },
   // 'wildcard', not 'prefix': prefix search on an `ip` field only matches whole octets, so
   // typing "100.64" returns nothing while "100.64.0.10" works. Wildcard matches substrings.
   { field: 'client.ip', title: 'Client IP', width: 'small', search: 'wildcard' },
