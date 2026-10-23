@@ -183,6 +183,7 @@ test('control bar (1.0.5.1): Project, Identity type, Identity, Client IP; identi
     assert.equal(c.single_select, true, 'single-select: multi-select has no fast path');
     assert.equal(c.variable_type, 'values');
     assert.equal(c.control_type, 'VALUES_FROM_QUERY');
+    assert.deepEqual(c.selected_options, ['Any'], 'opens on Any, like the classic controls');
     assert.match(c.esql_query, /^SET unmapped_fields="nullify"; FROM /, 'names api_key.*, so it carries the SET');
     assert.match(c.esql_query, /STATS n = COUNT\(\*\) BY user\.email, api_key\.name, user\.domain, user\.name/, 'counts first');
     assert.ok(!/\?identity\b(?!_kind)/.test(c.esql_query), 'an options query never reads the variable it sets');

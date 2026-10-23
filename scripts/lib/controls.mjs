@@ -105,7 +105,8 @@ export function pinnedPanels() {
       id: controlId(c), type: 'esql_control', width: c.width, grow: true,
       config: {
         title: c.title, control_type: 'VALUES_FROM_QUERY', variable_name: c.variable, variable_type: 'values',
-        esql_query: c.query(), selected_options: [], single_select: true,
+        // Starts on Any, so all four dropdowns read "Any" on a fresh page (the user's preference, 1.0.5.1).
+        esql_query: c.query(), selected_options: [ANY], single_select: true,
       },
     }));
 }

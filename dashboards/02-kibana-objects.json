@@ -784,7 +784,9 @@
         "variable_name": "identity_kind",
         "variable_type": "values",
         "esql_query": "SET unmapped_fields=\"nullify\"; FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS n = COUNT(*) BY user.email, api_key.name, user.domain, user.name, failed_signin = event.action IN (\"authentication_failed\",\"anonymous_access_denied\") | EVAL identity_kind = CASE(user.email IS NOT NULL, \"Person\", api_key.name IS NOT NULL, \"Elasticsearch API key\", user.domain == \"_es_api_key\", \"Elasticsearch API key (name not recorded)\", user.domain == \"_cloud_api_key\", \"Cloud API key\", user.domain == \"_service_account\", \"Service account\", failed_signin, \"Failed sign-in\", user.name IS NULL, \"Unattributed\", \"Other\") | FORK (STATS n = SUM(n) BY identity_kind) (STATS n = COUNT(*) | EVAL identity_kind = \"Any\", n = 9223372036854775807) | SORT n DESC | KEEP identity_kind",
-        "selected_options": [],
+        "selected_options": [
+          "Any"
+        ],
         "single_select": true
       }
     },
@@ -799,7 +801,9 @@
         "variable_name": "identity",
         "variable_type": "values",
         "esql_query": "SET unmapped_fields=\"nullify\"; FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS n = COUNT(*) BY user.email, api_key.name, user.domain, user.name, failed_signin = event.action IN (\"authentication_failed\",\"anonymous_access_denied\") | EVAL identity_kind = CASE(user.email IS NOT NULL, \"Person\", api_key.name IS NOT NULL, \"Elasticsearch API key\", user.domain == \"_es_api_key\", \"Elasticsearch API key (name not recorded)\", user.domain == \"_cloud_api_key\", \"Cloud API key\", user.domain == \"_service_account\", \"Service account\", failed_signin, \"Failed sign-in\", user.name IS NULL, \"Unattributed\", \"Other\"), identity = CASE(user.email IS NOT NULL, user.email, api_key.name IS NOT NULL, api_key.name, user.domain == \"_cloud_api_key\", CONCAT(user.name, \" · Cloud API key\"), user.domain == \"_es_api_key\", CONCAT(\"Unnamed key of \", user.name), user.name IS NOT NULL, user.name, \"(unattributed)\") | WHERE ?identity_kind == \"\" OR ?identity_kind == \"Any\" OR identity_kind == ?identity_kind | FORK (STATS n = SUM(n) BY identity) (STATS n = COUNT(*) | EVAL identity = \"Any\", n = 9223372036854775807) | SORT n DESC | KEEP identity",
-        "selected_options": [],
+        "selected_options": [
+          "Any"
+        ],
         "single_select": true
       }
     },
