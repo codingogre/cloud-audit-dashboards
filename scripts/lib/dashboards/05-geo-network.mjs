@@ -130,7 +130,7 @@ const PLACED_W = 105;
 
 /** The intro (draft 7 of the 1.0.3 customer copy; INTRO TEXT in panels.mjs). */
 const INTRO = {
-  h: 12,
+  h: 6,
   heading: "Where your users and API keys connect from",
   paragraphs: [
     `See activity by country and city, your busiest client addresses, and anyone seen in more than one country, a sign of a shared or stolen credential. ${RAW_RECORDS}`,

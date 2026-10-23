@@ -147,7 +147,7 @@ const withTotals = (p) => { p.config.legend = { ...p.config.legend, size: 'xl', 
 
 /** The intro (draft 5 of the 1.0.3 customer copy; INTRO TEXT in panels.mjs). */
 const INTRO = {
-  h: 12,
+  h: 6,
   heading: "What data was read or written in Elasticsearch, and by whom",
   paragraphs: [
     `See which indices each identity uses, the kinds of requests they made, any denied requests, and every touch of system or hidden indices. ${RAW_RECORDS}`,

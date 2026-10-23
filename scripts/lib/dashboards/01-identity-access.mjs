@@ -99,7 +99,7 @@ const compactLog = (p) => {
 
 /** The intro (draft 3 of the 1.0.3 customer copy; INTRO TEXT in panels.mjs). */
 const INTRO = {
-  h: 12,
+  h: 6,
   heading: "Who signed in, how, and what failed",
   paragraphs: [
     "See which sign-in methods and credentials are in use, your busiest people and API keys, every key and when it was last used, and each failed or denied attempt.",

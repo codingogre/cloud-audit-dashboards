@@ -62,11 +62,32 @@ conflict. This file is "where we are right now" and should be assumed stale.
   are no longer appended — the title carries the empty state, the legend and How to read blocks the Cloud-key form;
   `SCROLL_NOTE` is *"Scroll for more."*; `PREV_NOTE` is 15 words. `EDGE_NOTE`, `SIGNIN_WORDS`, `GATE_NOTE`,
   `SPACE_ID_NOTE`, `CLEANUP(_NOTE)`, `RACE_NOTE` and `PIN_NOTE(_ID)` are gone. Page-wide caveats moved into a
-  **How to read this page** list at the end of each intro (`intro.howTo`, `introMd()`, ≤6 bullets; five per page,
-  four on 06): intros are h=12 (07 and 06 h=11), measured on `rc105` at 1440 light and 1920 dark — no overflow, ~35–45px
-  spare. The detail went to README *Reading the panels* (new) and *Presentation conventions → Tooltips*. Vega
+  **How to read this page** list per page (`intro.howTo`, ≤6 bullets; five per page, four on 06), now a collapsed
+  section under the intro (next item). The detail went to README *Reading the panels* (new) and *Presentation conventions → Tooltips*. Vega
   descriptions shortened for the specs used as tooltips (04, 08–13). Hovered 31 tooltips in Playwright on 00, 02, 04,
   07 (and 06 on a throwaway `rc105pv`, since cleaned): full text shown, nothing cut.
+
+- **How to read is a collapsed section, not part of the intro** (the human's decision: the list made every intro
+  ~170px taller). `dash()` puts `intro.howTo` in a section titled *How to read this page*, collapsed, directly under
+  the intro (`howToSection()` / `collapsible()` / `flatPanels()` in `panels.mjs`, SECTIONS): one full-width 9pt
+  small-text panel of bullets (`small: true`, converted by the post-pass like an intro; `HOW_TO_ROWS(n)` = n+1, ~40px
+  spare), no heading inside. Intros are back to h=6 (25px spare at both widths; 07 ~40). Authored panels start one row
+  under the section header; ids before it did not move (intro, nav, then `sec-NN`, then its `md-NN`).
+  API shape (probed, 9.6 serverless): a `panels` entry with no `type` — `{ id, title, collapsed, grid: { y }, panels }`;
+  `payload()` emits it from the in-memory `{ section: true, grid: { x: 0, y, w: 48, h: 1 } }`. **Saved-object storage**
+  (exported from `rc105`): inner panels stay in `panelsJSON` with `gridData.sectionId: "sec-NN"`, and the header is a
+  separate `sections` attribute `[{ collapsed: true, gridData: { i, y }, title }]`; the _export → mutate → _import
+  post-pass only rewrites `panelsJSON` / `controlGroupInput` / `references`, so it rides through, and `checkSections()`
+  now reads the object back after `_import` and fails on a missing, open, retitled or orphaned section. `GET
+  /api/dashboards` lists the section with `panels: []` once its panel is a legacy visualization (it omits every such
+  panel, intros and Vega too) — expected. `layout.mjs` `checkSections`: header one full-width row, inner grid
+  tessellated on its own, collapsed, non-empty, ids unique page-wide, How to read directly under the intro; every
+  content check (tips, markdown, rows…) reads the flat list. `--verify` counts collapsed headers against the definition,
+  captures `<id>.png` collapsed, clicks every header, re-checks broken text, and captures `<id>.open.png`; it now also
+  fails on small-text overflow (`textSpare` = least room under any intro/How to read text). Rendered `rc105` 24h at
+  1920 dark (`build/r105-sections-1920-dark-231921`, 01 re-run `build/r105-sections-1920-dark-01rerun-232820` after a
+  transient network-suspend) and 1440 light (`build/r105-sections-1440-light-232929`), 06 on a throwaway `rc105pv`
+  (`build/r105pv-06-233828-*`, since cleaned): sections=1/1 collapsed, opened, no overflow, nothing overlapping.
 
 ## Release 1.0.4 — ECS field names, null-safe API key fields, Default space, 2026-10-22
 

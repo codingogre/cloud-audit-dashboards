@@ -62,7 +62,8 @@ Every dashboard carries a horizontal navigation bar pinned at the top, a short c
 directly under it (what the page is for and how to use it, as a heading over small text), a default range of the last 24 hours
 ending a minute ago (`now-24h` → `now-1m`, `DEFAULT_FROM` and `TIME_TO`),
 auto-refresh off, and a hover tooltip on every panel saying what it shows and how to read it (40 words at most;
-the intro's *How to read this page* list carries the page-wide caveats, and *Reading the panels* below the detail).
+a collapsed *How to read this page* section under the intro carries the page-wide caveats, and *Reading the panels*
+below the detail).
 The bar lists the deployed dashboards in one order on every page: Command Center, Actor 360,
 Identity & Access, Kibana Object Forensics, Elasticsearch Data Access, Security & Anomalies, Geo &
 Network, and Platform Volume last when it is deployed. The numbers below are source file names
@@ -262,7 +263,7 @@ to Elasticsearch arrive from internal `100.64.0.0/10` addresses.
 ## Reading the panels
 
 The detail behind the tooltips (see *Tooltips — two tiers* under Presentation conventions). A tooltip says what a
-panel shows in 40 words; each dashboard's *How to read this page* list says what holds for the whole page; this is
+panel shows in 40 words; each dashboard's *How to read this page* section (collapsed, under the intro) says what holds for the whole page; this is
 the rest, for whoever has to explain a number.
 
 **The noise gate, exactly.** `NOISE` drops: `cluster:monitor/main` and `elastic.maintenance` (health); search,
@@ -392,6 +393,7 @@ Probed against Kibana 9.6 serverless. Several are undocumented and cost real tim
 | `data_table` rows and metrics take `label` and `width` natively (stored as the Lens `customLabel` and column width) | `table()` titles every column and sizes it by role; see *Presentation conventions*. A label never changes the filtered field |
 | An `xy` chart's legend defaults to `hidden`, even with a `breakdown_by` | `xy()` emits `config.legend` (`bottom` list by default when there is a split) and the `eui_amsterdam` palette; Kibana's `default` palette pairs each hue with a pale tint that vanishes on white |
 | Markdown panels have no font-size setting, `###` renders at ~20px, and raw HTML is **dropped** before render: a `<style>` block or a `<div class>` never reaches the page (probed: no style element in the DOM; the old `CSS_NAV` block on Command Center never styled anything) | `md()` lifts a leading heading into the panel title; `layout.mjs` rejects `#`–`###` anywhere else. The intros need small text, which only the legacy markdown *visualization* has (`fontSize` in pt), so the post-pass swaps each intro for a by-value one at 9pt: 12px paragraphs, a 17px `###` heading, theme colours (see *Presentation conventions*) |
+| A **collapsible section** is an ordinary entry of the Dashboards API's top-level `panels` array with **no `type` key**: `{ id, title, collapsed, grid: { y }, panels: [...] }`. A top-level `sections` key and `"type": "section"` are both 400 `unrecognized_keys`. Inner panels' grid y is relative to the section; a top-level panel after it keeps its own y, one row below the section's. The saved object stores it differently: inner panels stay in `panelsJSON` with `gridData.sectionId`, and the headers are a separate `sections` attribute (`[{ title, collapsed, gridData: { i, y } }]`). `GET /api/dashboards` omits legacy `visualization` panels, so a section whose panel the post-pass made a legacy markdown visualization reads back with `panels: []` there (the export has it) | `howToSection()` / `collapsible()` build `{ section: true, … }` in memory; `payload()` turns it into the API shape; `layout.mjs` treats the header as one full-width row and checks the inner grid separately; the post-pass leaves `sections` untouched and `checkSections()` reads the object back after `_import` and fails on a missing, open or orphaned section; `--verify` counts collapsed headers, opens them and captures `<id>.open.png` |
 | Discover in ES\|QL mode ignores the ad-hoc data view's `fieldAttrs.customLabel` | Session headers come from a trailing `RENAME` — see *Presentation conventions* for the filter trade-off |
 
 ---
@@ -506,7 +508,7 @@ most** as deployed, counting what a builder appends (`SCROLL_NOTE`, `PREV_NOTE`)
 description (`searches/*.json`, Discover's info panel) is held to the same. `checkTips` and `checkSearchTips` in
 `layout.mjs` fail `--lint` and `emit()` past it (a word is a token with a letter or digit, so *—*, *·* and *×* do not
 count). Caveats that hold for a whole page (what the noise gate drops, which panels ignore the picker, why two
-panels can differ by an event) go once in that page's **How to read** list (`intro.howTo`, below); mechanics
+panels can differ by an event) go once in that page's **How to read** section (`intro.howTo`, below); mechanics
 — field names, exact gate classes, why a count is shaped as it is — go in *Reading the panels*. Plain words: no
 ES\|QL, no field path a reader would not type, no release history ("until 1.0.2"). A Vega panel's tooltip is its
 spec's `description`, so a spec shown on two pages (13, the session timeline) is worded for both. Until 1.0.5
@@ -584,10 +586,14 @@ each with a by-value legacy markdown visualization at `INTRO_PT` (9pt: 12px text
 between paragraphs). Size `h` by rendering at 1920 and at 1440 (`AUDIT_VERIFY_WIDTH=1440`): a 48-column
 intro with three one-line paragraphs is ~151px, so h=6; a paragraph that wraps at 1440 (over ~220
 characters) adds 18px. Too short shows a scrollbar, too tall a blank band, and no check sees either.
-An intro ends with **How to read this page** (`intro.howTo`, at most `HOW_TO_MAX` = 6 bullets, ~100 words; five on
-most pages): a bold label and a tight list, 18px a line, each bullet one line at 1440px. With three one-line
-paragraphs and five bullets an intro is h=12 (328px, ~40px spare at 1920 and 1440); 07, two paragraphs, is h=11; 06,
-four bullets, h=11. Technical detail (field names, exceptions) goes in *Reading the panels*, not in an intro.
+The page-wide caveats are **not** in the intro: `intro.howTo` (at most `HOW_TO_MAX` = 6 one-line bullets, ~100
+words; five on most pages, four on 06) becomes a collapsed section titled **How to read this page** directly under
+the intro (`howToSection()`), so the intro stays at its measured h=6 and a reader opens the list when they want it.
+The section is one header row in the page's grid (*"How to read this page (1 panel)"* with a chevron); clicking it
+expands one full-width small-text panel of bullets in place (the same 9pt legacy markdown visualization as the
+intro, no heading inside: the header is the heading) and pushes the page down. That panel is `HOW_TO_ROWS(n)` =
+n+1 rows: 18px a bullet, ~40px spare at 1920 and 1440, where no bullet wraps. Technical detail (field names,
+exceptions) goes in *Reading the panels*, not in either.
 Every intro (and so every dashboard) links to the raw events with `RAW_RECORDS` (`shared.mjs`): *"Raw records:
 All audit events, Raw signal feed"*, written `[words](@search:<ref>)` and resolved by `introMd()` to the
 relative `/app/discover#/view/<id>` through `nsId()`, so a private deploy links to its own sessions and no

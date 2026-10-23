@@ -1705,12 +1705,15 @@ export const md = (x, y, w, h, content, { title, description } = {}) => {
  * `headed: true` is an in-memory annotation: the layout check allows the heading there and nowhere else,
  * the post-pass finds the panel by it, and the API payload strips it.
  *
- * HOW TO READ (1.0.5). An intro may end with `howTo`, at most HOW_TO_MAX one-line bullets (~100 words in all)
- * under a bold "How to read this page": the page-wide caveats a reader needs before trusting a number (what
- * the noise gate drops, which panels ignore the picker, why two panels can differ by an event), which used to
- * be repeated inside every tooltip. A tight list is 18px a line with no gap between items; the label is one
- * more paragraph (14px above it). Each bullet stays on one line at 1440px (under ~200 characters) or costs
- * 18px. Measure the height as for the intro itself.
+ * HOW TO READ (1.0.5). A dashboard's `intro.howTo` is at most HOW_TO_MAX one-line bullets (~100 words in all):
+ * the page-wide caveats a reader needs before trusting a number (what the noise gate drops, which panels ignore
+ * the picker, why two panels can differ by an event), which used to be repeated inside every tooltip. They are
+ * NOT in the intro: dash() puts them in a collapsed section titled "How to read this page" directly under it
+ * (howToSection(), see SECTIONS below), so the intro stays at its own measured height and a reader opens the
+ * list when they want it. Inside the section is one full-width small-text panel (the same legacy markdown
+ * visualization as the intro, `small: true`), bullets only — the section header is the heading. A tight list is
+ * 18px a line with no gap between items; each bullet stays on one line at 1440px (under ~200 characters) or
+ * costs 18px. HOW_TO_ROWS(n) holds n bullets with ~25px to spare at 1920 and 1440, measured on rc105.
  *
  * TOOLTIPS (1.0.5): two tiers. A panel's description (its ⓘ tooltip) says what the panel shows and the one
  * thing needed to read it, in at most TIP_MAX_WORDS words (layout.mjs) — including anything a builder appends
@@ -1736,14 +1739,46 @@ export const discoverUrl = (ref) => {
 const searchLinks = (text) => text.replace(/\]\(@search:([\w-]+)\)/g, (_, ref) => `](${discoverUrl(ref)})`);
 export const HOW_TO_LABEL = 'How to read this page';
 export const HOW_TO_MAX = 6;
-export const introMd = (x, y, w, h, heading, paragraphs, howTo = []) => {
+const plainLines = (what, lines) => {
+  if (lines.some((p) => p.includes('\n'))) throw new Error(`${what}: one source line per paragraph or bullet`);
+  if (lines.some((p) => /<[a-z/]/i.test(p))) throw new Error(`${what}: no HTML (the legacy renderer escapes it)`);
+};
+export const introMd = (x, y, w, h, heading, paragraphs) => {
   if (/[.\n]$/.test(heading) || /^#/.test(heading)) throw new Error(`intro heading "${heading}": plain words, no trailing period`);
-  if ([...paragraphs, ...howTo].some((p) => p.includes('\n'))) throw new Error(`intro "${heading}": one source line per paragraph or bullet`);
-  if ([...paragraphs, ...howTo].some((p) => /<[a-z/]/i.test(p))) throw new Error(`intro "${heading}": no HTML (the legacy renderer escapes it)`);
-  if (howTo.length > HOW_TO_MAX) throw new Error(`intro "${heading}": ${howTo.length} How to read bullets, ${HOW_TO_MAX} at most`);
-  const list = howTo.length ? `\n**${HOW_TO_LABEL}**\n\n${howTo.map((b) => `- ${searchLinks(b)}`).join('\n')}\n` : '';
-  const content = `### ${heading}\n\n${paragraphs.map(searchLinks).join('\n\n')}\n${list}`;
+  plainLines(`intro "${heading}"`, paragraphs);
+  const content = `### ${heading}\n\n${paragraphs.map(searchLinks).join('\n\n')}\n`;
   return { type: 'markdown', id: nid('md'), grid: { x, y, w, h }, headed: true, config: { content } };
+};
+
+/**
+ * SECTIONS (1.0.5). A collapsible section is, in the 9.6 Dashboards API, an ordinary entry of the top-level
+ * `panels` array with NO `type` key: { id, title, collapsed, grid: { y }, panels: [...] } (a top-level
+ * `sections` key and `type: "section"` are both 400 unrecognized_keys; probed on serverless 9.6). Its inner
+ * panels' grid y is relative to the section; top-level panels after it keep their own y, one row below the
+ * section's. The saved object stores it differently: the inner panels stay in `panelsJSON` with
+ * `gridData.sectionId`, and the header is a separate `sections` attribute ([{ title, collapsed, gridData:
+ * { i, y } }]), which the _export → _import post-pass carries through untouched (scripts/dashboards.mjs
+ * asserts both survive).
+ *
+ * In memory a section is { section: true, id, title, collapsed, grid: { x: 0, y, w: 48, h: 1 }, panels }: the
+ * full-width one-row grid is the header's place in the top-level grid, so the layout check tessellates it
+ * like any panel and lays out its inner panels separately; payload() (scripts/dashboards.mjs) turns it into
+ * the API shape. The id comes from the same per-dashboard sequence as every panel id.
+ */
+export const collapsible = (y, title, inner, { collapsed = true } = {}) =>
+  ({ section: true, id: nid('sec'), title, collapsed, grid: { x: 0, y, w: GRID_W, h: 1 }, panels: inner });
+/** The top-level panels with every section replaced by its inner panels: what carries content. */
+export const flatPanels = (panels) => panels.flatMap((p) => (p.section ? p.panels : [p]));
+/** Grid rows for n one-line How to read bullets at INTRO_PT (see HOW TO READ). */
+export const HOW_TO_ROWS = (n) => n + 1;
+export const howToSection = (y, bullets) => {
+  if (!bullets.length) throw new Error('How to read: no bullets');
+  if (bullets.length > HOW_TO_MAX) throw new Error(`How to read: ${bullets.length} bullets, ${HOW_TO_MAX} at most`);
+  plainLines('How to read', bullets);
+  const content = `${bullets.map((b) => `- ${searchLinks(b)}`).join('\n')}\n`;
+  const sec = collapsible(y, HOW_TO_LABEL, []);
+  sec.panels.push({ type: 'markdown', id: nid('md'), grid: { x: 0, y: 0, w: GRID_W, h: HOW_TO_ROWS(bullets.length) }, small: true, config: { content } });
+  return sec;
 };
 
 /** The by-value legacy markdown visualization an intro panel becomes (see INTRO TEXT). */
@@ -1844,18 +1879,23 @@ export const NAV_H = 3;
 export const TIME_TO = 'now-1m';
 /**
  * `intro` is the dashboard's customer-facing intro ({ h, heading, paragraphs, howTo }, see INTRO TEXT): full
- * width, directly under the navigation strip, and every authored panel moves down by its height, so a
- * module authors its own panels from y=0 and the intro's height changes nothing else in it.
+ * width, directly under the navigation strip, then its `howTo` bullets as a collapsed "How to read this page"
+ * section (HOW TO READ, SECTIONS), and every authored panel moves down by the intro's height plus the section
+ * header's row, so a module authors its own panels from y=0 and neither changes anything else in it.
  */
 export const DEFAULT_FROM = 'now-24h';
 export const dash = (id, title, description, panels, { intro, timeFrom = DEFAULT_FROM } = {}) => {
-  const top = intro ? [introMd(0, NAV_H, 48, intro.h, intro.heading, intro.paragraphs, intro.howTo)] : [];
-  const below = NAV_H + (intro ? intro.h : 0);
+  // Ids in this order (intro, nav, section, its panel) so the intro's and the nav's ids did not move when
+  // the How to read list left the intro.
+  const top = intro ? [introMd(0, NAV_H, 48, intro.h, intro.heading, intro.paragraphs)] : [];
+  const nav = links(0, 0, 48, NAV_H, id);
+  const how = intro?.howTo?.length ? [howToSection(NAV_H + intro.h, intro.howTo)] : [];
+  const below = NAV_H + (intro ? intro.h : 0) + how.reduce((n, s) => n + s.grid.h, 0);
   return {
     title, description,
     time_range: { from: timeFrom, to: TIME_TO },
     refresh_interval: { pause: true, value: 60000 },
-    panels: [links(0, 0, 48, NAV_H, id), ...top,
+    panels: [nav, ...top, ...how,
              ...panels.map((p) => ({ ...p, grid: { ...p.grid, y: p.grid.y + below } }))],
   };
 };

@@ -109,7 +109,7 @@ const SERIES_ORDER = 'SORT verb != "create", verb != "update", verb != "delete"'
 
 /** The intro (draft 4 of the 1.0.3 customer copy; INTRO TEXT in panels.mjs). */
 const INTRO = {
-  h: 12,
+  h: 6,
   heading: "Every change to your Kibana content, and who made it",
   paragraphs: [
     `Dashboards, visualizations, data views, alert rules, SLOs, workflows and other saved objects: what was created, edited, deleted or opened, in which space, and by whom. ${RAW_RECORDS}`,

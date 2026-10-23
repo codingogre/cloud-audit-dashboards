@@ -97,8 +97,8 @@ test('every dashboard opens with a full-width intro under the nav strip: an in-p
         assert.equal(intro.config.title, undefined, `${name}: the heading is the title`);
         assert.ok(intro.headed, `${name}: the post-pass turns it into small text`);
         // A paragraph may carry a link whose URL has a # in it (/app/discover#/view/…), but never starts with one.
-        // Then the How to read block (1.0.5): a bold label and a tight list of one-line bullets.
-        assert.match(intro.config.content, /^### [^\n.]+\n\n(?!#)[^\n<]+(\n\n(?!#)[^\n<]+)+\n\n\*\*How to read this page\*\*\n\n(- [^\n<]+\n){3,6}$/, name);
+        // The How to read list is not in it (1.0.5): it is the collapsed section under it (panels.test.mjs).
+        assert.match(intro.config.content, /^### [^\n.]+\n\n(?!#)[^\n<]+(\n\n(?!#)[^\n<]+)+\n$/, name);
         // Every intro links to the raw events: both Discover sessions, by their ids in this namespace.
         for (const ref of ['00-all-events', '10-raw-signal-feed']) {
           assert.ok(intro.config.content.includes(`](/app/discover#/view/${nsId(`cloud-audit-search-${ref}`)})`), `${name}: links to ${ref}`);
@@ -106,6 +106,7 @@ test('every dashboard opens with a full-width intro under the nav strip: an in-p
         assert.doesNotMatch(intro.config.content, /@search:|https?:/, `${name}: links resolved and relative`);
         const below = def.panels.slice(2).map((p) => p.grid.y);
         assert.equal(Math.min(...below), intro.grid.y + intro.grid.h, `${name}: nothing overlaps or gaps under the intro`);
+        assert.ok(def.panels[2].section, `${name}: what sits directly under the intro is the How to read section`);
       }
     });
   }

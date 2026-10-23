@@ -120,7 +120,7 @@ const TH = 13;
 
 /** The intro (draft 6 of the 1.0.3 customer copy; INTRO TEXT in panels.mjs). */
 const INTRO = {
-  h: 12,
+  h: 6,
   heading: "The activity most worth a second look",
   paragraphs: [
     `Each sensitive action earns a risk weight, from 10 for a workflow run up to 50 for a security setting change, while routine work scores zero. ${RAW_RECORDS}`,

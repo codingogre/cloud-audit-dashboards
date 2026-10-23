@@ -382,7 +382,7 @@ test('bounded() keeps SET first and splices the time bound after FROM', async ()
 
 test('every tooltip is 40 words at most, appended notes included, and so is every Discover session description', async () => {
   const { checkLayout, checkTips, checkSearchTips, tipWords, TIP_MAX_WORDS } = await import('../../scripts/lib/layout.mjs');
-  const { prevKpi, PREV_NOTE, introMd, HOW_TO_MAX } = await import('../../scripts/lib/panels.mjs');
+  const { prevKpi, PREV_NOTE } = await import('../../scripts/lib/panels.mjs');
   assert.equal(TIP_MAX_WORDS, 40);
   // A word has a letter or digit in it: separators and symbols do not count, a hyphenated word counts once.
   assert.equal(tipWords('Risk is weight × events — API-key clean-up · “email · via key”'), 9);
@@ -419,14 +419,91 @@ test('every tooltip is 40 words at most, appended notes included, and so is ever
     const bad = []; checkSearchTips(bad, dir);
     assert.ok(bad.length === 1 && /searches\/x\.json: a 41-word description/.test(bad[0]), bad.join('\n'));
   } finally { rmSync(dir, { recursive: true, force: true }); }
-  // The How to read block: a bold label, then a tight list; at most HOW_TO_MAX bullets, one line each.
-  const intro = introMd(0, 0, 48, 11, 'Heading', ['One.'], ['First caveat.', 'Second caveat.']);
-  assert.match(intro.config.content, /\n\*\*How to read this page\*\*\n\n- First caveat\.\n- Second caveat\.\n$/);
-  assert.equal(introMd(0, 0, 48, 6, 'Heading', ['One.']).config.content, '### Heading\n\nOne.\n', 'no block without bullets');
-  assert.throws(() => introMd(0, 0, 48, 11, 'H', ['One.'], Array(HOW_TO_MAX + 1).fill('b')), /at most/);
-  assert.throws(() => introMd(0, 0, 48, 11, 'H', ['One.'], ['two\nlines']), /one source line/);
-  // Every dashboard carries one.
-  for (const [n, d] of Object.entries(all)) {
-    assert.ok(d.panels.some((q) => q.headed && q.config.content.includes('**How to read this page**')), `${n} has a How to read block`);
+  // A tooltip inside a section (the How to read panel, panels.mjs SECTIONS) is held to the same limit.
+  const sec = def.panels.find((x) => x.section);
+  sec.panels[0].config.description = Array(41).fill('word').join(' ');
+  assert.ok(checkLayout(all).problems.some((m) => m.startsWith(`${name}: panel ${sec.panels[0].id}`) && /41-word tooltip/.test(m)), 'inner panels are checked');
+  delete sec.panels[0].config.description;
+});
+
+test('How to read: a collapsed section under the intro, one small-text panel of bullets, and the API shape payload() sends', async () => {
+  const { introMd, howToSection, collapsible, flatPanels, HOW_TO_MAX, HOW_TO_LABEL, HOW_TO_ROWS, NAV_H, resetIds } = await import('../../scripts/lib/panels.mjs');
+  const { payload } = await import('../../scripts/dashboards.mjs');
+  // The intro no longer carries the list.
+  assert.equal(introMd(0, 0, 48, 6, 'Heading', ['One.']).config.content, '### Heading\n\nOne.\n');
+  resetIds();
+  const s = howToSection(9, ['First caveat.', 'Second caveat.']);
+  assert.deepEqual([s.section, s.id, s.title, s.collapsed, s.grid], [true, 'sec-01', HOW_TO_LABEL, true, { x: 0, y: 9, w: 48, h: 1 }]);
+  assert.equal(s.panels.length, 1);
+  const [inner] = s.panels;
+  assert.deepEqual([inner.type, inner.id, inner.small, inner.grid], ['markdown', 'md-02', true, { x: 0, y: 0, w: 48, h: HOW_TO_ROWS(2) }]);
+  assert.equal(inner.config.content, '- First caveat.\n- Second caveat.\n', 'bullets only: the section header is the heading');
+  assert.throws(() => howToSection(9, Array(HOW_TO_MAX + 1).fill('b')), /at most/);
+  assert.throws(() => howToSection(9, ['two\nlines']), /one source line/);
+  assert.throws(() => howToSection(9, []), /no bullets/);
+  assert.match(howToSection(9, ['See [it](@search:00-all-events).']).panels[0].config.content, /\]\(\/app\/discover#\/view\/[\w-]+-search-00-all-events\)/);
+  assert.deepEqual(flatPanels([{ id: 'a' }, s, { id: 'b' }]).map((p) => p.id), ['a', inner.id, 'b']);
+  // payload(): a section is a panels entry with NO type, its grid only a y, its panels stripped like any other.
+  const out = payload({ title: 't', panels: [s, collapsible(3, 'x', [{ type: 'markdown', id: 'm', headed: true, lint: {}, grid: { x: 0, y: 0, w: 48, h: 2 }, config: { content: 'c' } }])] });
+  assert.deepEqual(out.panels[0], { id: 'sec-01', title: HOW_TO_LABEL, collapsed: true, grid: { y: 9 },
+    panels: [{ type: 'markdown', id: 'md-02', grid: { x: 0, y: 0, w: 48, h: HOW_TO_ROWS(2) }, config: { content: '- First caveat.\n- Second caveat.\n' } }] });
+  assert.ok(!('type' in out.panels[1]) && !('section' in out.panels[1]) && !('headed' in out.panels[1].panels[0]) && !('lint' in out.panels[1].panels[0]));
+  // Every dashboard, both sets: intro, then the section directly under it, then the authored panels one row below.
+  for (const AUDIT_WITH of [undefined, 'platform-volume']) {
+    const prev = process.env.AUDIT_WITH;
+    if (AUDIT_WITH) process.env.AUDIT_WITH = AUDIT_WITH; else delete process.env.AUDIT_WITH;
+    try {
+      for (const [n, d] of Object.entries(buildAll())) {
+        const [, intro, sec, ...rest] = d.panels;
+        assert.ok(intro.headed && !intro.config.content.includes(HOW_TO_LABEL), `${n}: the intro has no How to read list`);
+        assert.equal(intro.grid.h, 6, `${n}: the intro is back at its measured height`);
+        assert.ok(sec.section && sec.title === HOW_TO_LABEL && sec.collapsed, `${n}: How to read section, collapsed`);
+        assert.equal(sec.grid.y, NAV_H + intro.grid.h, `${n}: directly under the intro`);
+        assert.equal(Math.min(...rest.map((p) => p.grid.y)), sec.grid.y + 1, `${n}: the page resumes one row under the section header`);
+        assert.ok(rest.every((p) => !p.section), `${n}: one section`);
+        const bullets = sec.panels[0].config.content.trimEnd().split('\n');
+        assert.ok(bullets.length >= 3 && bullets.length <= HOW_TO_MAX && bullets.every((b) => /^- [^\n<]+$/.test(b)), `${n}: 3–${HOW_TO_MAX} one-line bullets`);
+      }
+    } finally { if (prev === undefined) delete process.env.AUDIT_WITH; else process.env.AUDIT_WITH = prev; }
   }
+});
+
+test('the layout check understands sections: one header row on the page, its own grid inside, collapsed, under the intro', async () => {
+  const { checkLayout } = await import('../../scripts/lib/layout.mjs');
+  const fresh = () => buildAll();
+  const first = (all) => { const [name, def] = Object.entries(all)[0]; return { name, def, sec: def.panels.find((p) => p.section) }; };
+  assert.deepEqual(checkLayout(fresh()).problems, [], 'the shipped set is clean');
+  const probs = (mut) => { const all = fresh(); const c = first(all); mut(c); return { ...c, problems: checkLayout(all).problems }; };
+  let r = probs(({ sec }) => { sec.collapsed = false; });
+  assert.ok(r.problems.some((m) => m === `${r.name}: section ${r.sec.id} "How to read this page" is not collapsed`), r.problems.join('\n'));
+  r = probs(({ sec }) => { sec.grid.h = 2; });
+  assert.ok(r.problems.some((m) => /header is \(0, 48x2\), expected one full-width row/.test(m)));
+  r = probs(({ sec }) => { sec.panels[0].grid.y = 1; });
+  assert.ok(r.problems.some((m) => m.startsWith(`${r.name} § How to read this page: grid has gaps`)), 'inner panels tessellate from y=0');
+  r = probs(({ sec, def }) => { sec.panels[0].id = def.panels[0].id; });
+  assert.ok(r.problems.some((m) => m.includes(`duplicate id ${r.def.panels[0].id}`)));
+  r = probs(({ sec }) => { sec.panels = []; });
+  assert.ok(r.problems.some((m) => /is empty$/.test(m)));
+  // Moving the section one row down leaves a hole under the intro AND puts it away from the intro.
+  r = probs(({ sec, def }) => { for (const p of def.panels.slice(def.panels.indexOf(sec))) p.grid.y += 1; });
+  assert.ok(r.problems.some((m) => /grid has gaps/.test(m)) && r.problems.some((m) => /not directly under the intro/.test(m)), r.problems.join('\n'));
+  // A panel after it on the header's row collides with the header.
+  r = probs(({ sec, def }) => { def.panels[def.panels.indexOf(sec) + 1].grid.y -= 1; });
+  assert.ok(r.problems.some((m) => m.includes(`panels ${r.sec.id} `) && / overlap$/.test(m)), r.problems.join('\n'));
+});
+
+test('the post-pass refuses a saved object whose sections do not match the definition', async () => {
+  const { checkSections } = await import('../../scripts/dashboards.mjs');
+  const { collapsible } = await import('../../scripts/lib/panels.mjs');
+  const sec = { ...collapsible(9, 'How to read this page', [{ type: 'markdown', id: 'md-19', grid: { x: 0, y: 0, w: 48, h: 6 } }]), id: 'sec-18' };
+  // The shape _export returns (probed on 9.6): inner panels carry gridData.sectionId, headers sit in `sections`.
+  const obj = (sections) => ({ attributes: { sections } });
+  const stored = [{ collapsed: true, gridData: { i: 'sec-18', y: 9 }, title: 'How to read this page' }];
+  const panels = [{ panelIndex: 'md-16', gridData: { y: 3 } }, { panelIndex: 'md-19', gridData: { y: 0, sectionId: 'sec-18' } }];
+  assert.doesNotThrow(() => checkSections('d', obj(stored), panels, [sec]));
+  assert.doesNotThrow(() => checkSections('d', obj(undefined), [panels[0]], []), 'no sections, none expected');
+  assert.throws(() => checkSections('d', obj(undefined), panels, [sec]), /0 section\(s\), the definition 1/);
+  assert.throws(() => checkSections('d', obj([{ ...stored[0], collapsed: false }]), panels, [sec]), /collapsed=false/);
+  assert.throws(() => checkSections('d', obj(stored), [panels[0], { ...panels[1], gridData: { y: 0 } }], [sec]), /holds \[\], defined \[md-19\]/);
+  assert.throws(() => checkSections('d', obj(stored), [...panels, { panelIndex: 'x', gridData: { sectionId: 'sec-99' } }], [sec]), /holds|sec-99/);
 });

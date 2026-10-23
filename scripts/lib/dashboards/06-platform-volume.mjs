@@ -91,7 +91,7 @@ import { RAW_RECORDS } from './shared.mjs';
  * creator rule (Kind "human + key") in Highest-volume identities'. Bands are named exactly as the tiles.
  */
 const INTRO = {
-  h: 11,
+  h: 6,
   heading: 'All audit traffic, with nothing left out',
   paragraphs: [
     `The other dashboards hide routine traffic so the meaningful events stand out. This page counts everything, in four groups that add up to the total. ${RAW_RECORDS}`,

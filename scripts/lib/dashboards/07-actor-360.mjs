@@ -107,7 +107,7 @@ const weightWords = (col) => `CASE(${WEIGHT_WORDS.map(([w, words]) => `${col} ==
  * section bands below carry the section headings.
  */
 const INTRO = {
-  h: 11,
+  h: 6,
   heading: 'Everything one person did, on one page',
   paragraphs: [
     `Use it to check whether their activity is normal, see what they changed and read, and gather evidence for a review or investigation. ${RAW_RECORDS}`,

@@ -103,18 +103,41 @@
         "x": 0,
         "y": 3,
         "w": 48,
-        "h": 12
+        "h": 6
       },
       "config": {
-        "content": "### The activity most worth a second look\n\nEach sensitive action earns a risk weight, from 10 for a workflow run up to 50 for a security setting change, while routine work scores zero. Raw records: [All audit events](/app/discover#/view/cloud-audit-search-00-all-events), [Raw signal feed](/app/discover#/view/cloud-audit-search-10-raw-signal-feed).\n\nPanels rank identities by that risk, show newly seen identities, and list every security configuration change. Elastic's own routine API key clean-up is counted separately, so it never hides real changes.\n\n**How to use it:** choose a Project, Person (email), API key or Client IP in the controls and set the time picker. Hover the ⓘ beside a panel title to see how it is scored.\n\n**How to read this page**\n\n- Weights: security config change 50, key invalidation 45, failure 40, anonymous denial 35, destructive change 30, other Kibana change 25, workflow run 10.\n- Risk total is weight × events, not an event count. A failed action scores on its own row, marked (failed).\n- Kibana’s own API-key clean-up and this suite’s automated install score 0; the line above a tile’s number counts them.\n- Scope separates your identities, Elastic platform automation and unauthenticated requests; an identity without an email is not necessarily external.\n- Click an API key or Principal id to filter the page or open Actor 360; a Cloud API key’s id also covers the API keys it created.\n"
+        "content": "### The activity most worth a second look\n\nEach sensitive action earns a risk weight, from 10 for a workflow run up to 50 for a security setting change, while routine work scores zero. Raw records: [All audit events](/app/discover#/view/cloud-audit-search-00-all-events), [Raw signal feed](/app/discover#/view/cloud-audit-search-10-raw-signal-feed).\n\nPanels rank identities by that risk, show newly seen identities, and list every security configuration change. Elastic's own routine API key clean-up is counted separately, so it never hides real changes.\n\n**How to use it:** choose a Project, Person (email), API key or Client IP in the controls and set the time picker. Hover the ⓘ beside a panel title to see how it is scored.\n"
       }
+    },
+    {
+      "id": "sec-18",
+      "title": "How to read this page",
+      "collapsed": true,
+      "grid": {
+        "y": 9
+      },
+      "panels": [
+        {
+          "type": "markdown",
+          "id": "md-19",
+          "grid": {
+            "x": 0,
+            "y": 0,
+            "w": 48,
+            "h": 6
+          },
+          "config": {
+            "content": "- Weights: security config change 50, key invalidation 45, failure 40, anonymous denial 35, destructive change 30, other Kibana change 25, workflow run 10.\n- Risk total is weight × events, not an event count. A failed action scores on its own row, marked (failed).\n- Kibana’s own API-key clean-up and this suite’s automated install score 0; the line above a tile’s number counts them.\n- Scope separates your identities, Elastic platform automation and unauthenticated requests; an identity without an email is not necessarily external.\n- Click an API key or Principal id to filter the page or open Actor 360; a Cloud API key’s id also covers the API keys it created.\n"
+          }
+        }
+      ]
     },
     {
       "type": "vis",
       "id": "kpi-01",
       "grid": {
         "x": 0,
-        "y": 15,
+        "y": 10,
         "w": 8,
         "h": 5
       },
@@ -143,7 +166,7 @@
       "id": "kpi-02",
       "grid": {
         "x": 8,
-        "y": 15,
+        "y": 10,
         "w": 8,
         "h": 5
       },
@@ -176,7 +199,7 @@
       "id": "kpi-03",
       "grid": {
         "x": 16,
-        "y": 15,
+        "y": 10,
         "w": 8,
         "h": 5
       },
@@ -209,7 +232,7 @@
       "id": "kpi-04",
       "grid": {
         "x": 24,
-        "y": 15,
+        "y": 10,
         "w": 8,
         "h": 5
       },
@@ -238,7 +261,7 @@
       "id": "kpi-05",
       "grid": {
         "x": 32,
-        "y": 15,
+        "y": 10,
         "w": 8,
         "h": 5
       },
@@ -267,7 +290,7 @@
       "id": "kpi-06",
       "grid": {
         "x": 40,
-        "y": 15,
+        "y": 10,
         "w": 8,
         "h": 5
       },
@@ -300,7 +323,7 @@
       "id": "tbl-07",
       "grid": {
         "x": 0,
-        "y": 20,
+        "y": 15,
         "w": 48,
         "h": 7
       },
@@ -380,7 +403,7 @@
       "id": "vega-08",
       "grid": {
         "x": 0,
-        "y": 27,
+        "y": 22,
         "w": 24,
         "h": 13
       },
@@ -395,7 +418,7 @@
       "id": "xy-09",
       "grid": {
         "x": 24,
-        "y": 27,
+        "y": 22,
         "w": 24,
         "h": 13
       },
@@ -489,7 +512,7 @@
       "id": "tbl-10",
       "grid": {
         "x": 0,
-        "y": 40,
+        "y": 35,
         "w": 48,
         "h": 13
       },
@@ -564,7 +587,7 @@
       "id": "tbl-11",
       "grid": {
         "x": 0,
-        "y": 53,
+        "y": 48,
         "w": 48,
         "h": 13
       },
@@ -644,7 +667,7 @@
       "id": "tbl-12",
       "grid": {
         "x": 0,
-        "y": 66,
+        "y": 61,
         "w": 48,
         "h": 13
       },
@@ -719,7 +742,7 @@
       "id": "tbl-13",
       "grid": {
         "x": 0,
-        "y": 79,
+        "y": 74,
         "w": 48,
         "h": 13
       },
@@ -794,7 +817,7 @@
       "id": "ds-14",
       "grid": {
         "x": 0,
-        "y": 117,
+        "y": 112,
         "w": 48,
         "h": 25
       },
@@ -809,7 +832,7 @@
       "id": "ds-15",
       "grid": {
         "x": 0,
-        "y": 92,
+        "y": 87,
         "w": 48,
         "h": 25
       },

@@ -103,18 +103,41 @@
         "x": 0,
         "y": 3,
         "w": 48,
-        "h": 11
+        "h": 6
       },
       "config": {
-        "content": "### Everything one person did, on one page\n\nUse it to check whether their activity is normal, see what they changed and read, and gather evidence for a review or investigation. Raw records: [All audit events](/app/discover#/view/cloud-audit-search-00-all-events), [Raw signal feed](/app/discover#/view/cloud-audit-search-10-raw-signal-feed).\n\n**How to use it:** pick someone in the Person (email) control, or click an email in a table; with nobody selected, the page covers everyone. ① *Is this normal?* always looks at the last 7 days in UTC, ② *What they did* follows the time picker, and ③ *Evidence* ends in the raw records. Table times are in your time zone.\n\n**How to read this page**\n\n- A person’s own API keys carry their email, so their counts can include machine traffic; a Cloud API key belongs to no person.\n- The ① panels read a fixed 7 days with no noise gate, so they will not match Signal events or the time picker.\n- Baseline: the band is their usual range for each hour; with under three days of history no band is drawn.\n- The Risk tile and Every scoring action count whole minutes only, so they can stop up to a minute short of the panels around them.\n- Session timeline: click a bar to pin a session (Elasticsearch panels then read empty); API-only identities have no sessions.\n"
+        "content": "### Everything one person did, on one page\n\nUse it to check whether their activity is normal, see what they changed and read, and gather evidence for a review or investigation. Raw records: [All audit events](/app/discover#/view/cloud-audit-search-00-all-events), [Raw signal feed](/app/discover#/view/cloud-audit-search-10-raw-signal-feed).\n\n**How to use it:** pick someone in the Person (email) control, or click an email in a table; with nobody selected, the page covers everyone. ① *Is this normal?* always looks at the last 7 days in UTC, ② *What they did* follows the time picker, and ③ *Evidence* ends in the raw records. Table times are in your time zone.\n"
       }
+    },
+    {
+      "id": "sec-23",
+      "title": "How to read this page",
+      "collapsed": true,
+      "grid": {
+        "y": 9
+      },
+      "panels": [
+        {
+          "type": "markdown",
+          "id": "md-24",
+          "grid": {
+            "x": 0,
+            "y": 0,
+            "w": 48,
+            "h": 6
+          },
+          "config": {
+            "content": "- A person’s own API keys carry their email, so their counts can include machine traffic; a Cloud API key belongs to no person.\n- The ① panels read a fixed 7 days with no noise gate, so they will not match Signal events or the time picker.\n- Baseline: the band is their usual range for each hour; with under three days of history no band is drawn.\n- The Risk tile and Every scoring action count whole minutes only, so they can stop up to a minute short of the panels around them.\n- Session timeline: click a bar to pin a session (Elasticsearch panels then read empty); API-only identities have no sessions.\n"
+          }
+        }
+      ]
     },
     {
       "type": "vis",
       "id": "tbl-01",
       "grid": {
         "x": 0,
-        "y": 14,
+        "y": 10,
         "w": 16,
         "h": 7
       },
@@ -164,7 +187,7 @@
       "id": "kpi-02",
       "grid": {
         "x": 16,
-        "y": 14,
+        "y": 10,
         "w": 8,
         "h": 7
       },
@@ -197,7 +220,7 @@
       "id": "kpi-03",
       "grid": {
         "x": 24,
-        "y": 14,
+        "y": 10,
         "w": 8,
         "h": 7
       },
@@ -230,7 +253,7 @@
       "id": "kpi-04",
       "grid": {
         "x": 32,
-        "y": 14,
+        "y": 10,
         "w": 8,
         "h": 7
       },
@@ -263,7 +286,7 @@
       "id": "kpi-05",
       "grid": {
         "x": 40,
-        "y": 14,
+        "y": 10,
         "w": 8,
         "h": 7
       },
@@ -296,7 +319,7 @@
       "id": "tbl-06",
       "grid": {
         "x": 0,
-        "y": 21,
+        "y": 17,
         "w": 48,
         "h": 13
       },
@@ -364,7 +387,7 @@
       "id": "md-07",
       "grid": {
         "x": 0,
-        "y": 34,
+        "y": 30,
         "w": 48,
         "h": 2
       },
@@ -377,7 +400,7 @@
       "id": "vega-08",
       "grid": {
         "x": 0,
-        "y": 36,
+        "y": 32,
         "w": 20,
         "h": 14
       },
@@ -392,7 +415,7 @@
       "id": "vega-09",
       "grid": {
         "x": 20,
-        "y": 36,
+        "y": 32,
         "w": 12,
         "h": 14
       },
@@ -407,7 +430,7 @@
       "id": "vega-10",
       "grid": {
         "x": 32,
-        "y": 36,
+        "y": 32,
         "w": 16,
         "h": 14
       },
@@ -422,7 +445,7 @@
       "id": "md-11",
       "grid": {
         "x": 0,
-        "y": 50,
+        "y": 46,
         "w": 48,
         "h": 2
       },
@@ -435,7 +458,7 @@
       "id": "vega-12",
       "grid": {
         "x": 0,
-        "y": 52,
+        "y": 48,
         "w": 48,
         "h": 11
       },
@@ -450,7 +473,7 @@
       "id": "tbl-13",
       "grid": {
         "x": 0,
-        "y": 63,
+        "y": 59,
         "w": 48,
         "h": 12
       },
@@ -513,7 +536,7 @@
       "id": "tbl-14",
       "grid": {
         "x": 0,
-        "y": 75,
+        "y": 71,
         "w": 20,
         "h": 11
       },
@@ -561,7 +584,7 @@
       "id": "tbl-15",
       "grid": {
         "x": 20,
-        "y": 75,
+        "y": 71,
         "w": 28,
         "h": 11
       },
@@ -620,7 +643,7 @@
       "id": "vega-16",
       "grid": {
         "x": 0,
-        "y": 86,
+        "y": 82,
         "w": 18,
         "h": 12
       },
@@ -635,7 +658,7 @@
       "id": "tbl-17",
       "grid": {
         "x": 18,
-        "y": 86,
+        "y": 82,
         "w": 30,
         "h": 12
       },
@@ -694,7 +717,7 @@
       "id": "md-18",
       "grid": {
         "x": 0,
-        "y": 98,
+        "y": 94,
         "w": 48,
         "h": 2
       },
@@ -707,7 +730,7 @@
       "id": "vega-19",
       "grid": {
         "x": 0,
-        "y": 100,
+        "y": 96,
         "w": 48,
         "h": 7
       },
@@ -722,7 +745,7 @@
       "id": "ds-20",
       "grid": {
         "x": 0,
-        "y": 107,
+        "y": 103,
         "w": 48,
         "h": 12
       },

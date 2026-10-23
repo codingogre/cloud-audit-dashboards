@@ -103,18 +103,41 @@
         "x": 0,
         "y": 3,
         "w": 48,
-        "h": 12
+        "h": 6
       },
       "config": {
-        "content": "### What data was read or written in Elasticsearch, and by whom\n\nSee which indices each identity uses, the kinds of requests they made, any denied requests, and every touch of system or hidden indices. Raw records: [All audit events](/app/discover#/view/cloud-audit-search-00-all-events), [Raw signal feed](/app/discover#/view/cloud-audit-search-10-raw-signal-feed).\n\nRelated indices are grouped into one family, so a data stream and its daily backing indices read as a single row. Use it to confirm that sensitive data is reached only by the people and keys you expect.\n\n**How to use it:** choose a Project, Person (email), API key or Client IP in the controls and set the time picker. Empty denied and system-index panels usually mean all is well.\n\n**How to read this page**\n\n- This page counts all traffic, these dashboards’ own reads included: on a page about who reads what, those reads are the subject.\n- A request counts once per index it names; shard copies and internal sub-steps are left out. Ranked tables show the top rows; the tiles count everything.\n- Matrix: a blank cell means no reads, or too few to be among the 500 busiest identity–family pairs.\n- System and hidden index access is expected from Kibana and platform automation; from anyone else, look closer.\n- The chart legend’s totals leave out the partial bucket at the right edge, so they can run behind the tiles.\n"
+        "content": "### What data was read or written in Elasticsearch, and by whom\n\nSee which indices each identity uses, the kinds of requests they made, any denied requests, and every touch of system or hidden indices. Raw records: [All audit events](/app/discover#/view/cloud-audit-search-00-all-events), [Raw signal feed](/app/discover#/view/cloud-audit-search-10-raw-signal-feed).\n\nRelated indices are grouped into one family, so a data stream and its daily backing indices read as a single row. Use it to confirm that sensitive data is reached only by the people and keys you expect.\n\n**How to use it:** choose a Project, Person (email), API key or Client IP in the controls and set the time picker. Empty denied and system-index panels usually mean all is well.\n"
       }
+    },
+    {
+      "id": "sec-16",
+      "title": "How to read this page",
+      "collapsed": true,
+      "grid": {
+        "y": 9
+      },
+      "panels": [
+        {
+          "type": "markdown",
+          "id": "md-17",
+          "grid": {
+            "x": 0,
+            "y": 0,
+            "w": 48,
+            "h": 6
+          },
+          "config": {
+            "content": "- This page counts all traffic, these dashboards’ own reads included: on a page about who reads what, those reads are the subject.\n- A request counts once per index it names; shard copies and internal sub-steps are left out. Ranked tables show the top rows; the tiles count everything.\n- Matrix: a blank cell means no reads, or too few to be among the 500 busiest identity–family pairs.\n- System and hidden index access is expected from Kibana and platform automation; from anyone else, look closer.\n- The chart legend’s totals leave out the partial bucket at the right edge, so they can run behind the tiles.\n"
+          }
+        }
+      ]
     },
     {
       "type": "vis",
       "id": "vega-01",
       "grid": {
         "x": 0,
-        "y": 15,
+        "y": 10,
         "w": 8,
         "h": 5
       },
@@ -129,7 +152,7 @@
       "id": "kpi-02",
       "grid": {
         "x": 8,
-        "y": 15,
+        "y": 10,
         "w": 8,
         "h": 5
       },
@@ -158,7 +181,7 @@
       "id": "kpi-03",
       "grid": {
         "x": 16,
-        "y": 15,
+        "y": 10,
         "w": 8,
         "h": 5
       },
@@ -187,7 +210,7 @@
       "id": "vega-04",
       "grid": {
         "x": 24,
-        "y": 15,
+        "y": 10,
         "w": 8,
         "h": 5
       },
@@ -202,7 +225,7 @@
       "id": "kpi-05",
       "grid": {
         "x": 32,
-        "y": 15,
+        "y": 10,
         "w": 8,
         "h": 5
       },
@@ -231,7 +254,7 @@
       "id": "vega-06",
       "grid": {
         "x": 40,
-        "y": 15,
+        "y": 10,
         "w": 8,
         "h": 5
       },
@@ -246,7 +269,7 @@
       "id": "xy-07",
       "grid": {
         "x": 0,
-        "y": 20,
+        "y": 15,
         "w": 24,
         "h": 15
       },
@@ -376,7 +399,7 @@
       "id": "vega-08",
       "grid": {
         "x": 24,
-        "y": 20,
+        "y": 15,
         "w": 24,
         "h": 30
       },
@@ -391,7 +414,7 @@
       "id": "tbl-09",
       "grid": {
         "x": 0,
-        "y": 35,
+        "y": 30,
         "w": 24,
         "h": 15
       },
@@ -444,7 +467,7 @@
       "id": "tbl-10",
       "grid": {
         "x": 0,
-        "y": 50,
+        "y": 45,
         "w": 48,
         "h": 14
       },
@@ -502,7 +525,7 @@
       "id": "tbl-11",
       "grid": {
         "x": 0,
-        "y": 64,
+        "y": 59,
         "w": 48,
         "h": 12
       },
@@ -568,7 +591,7 @@
       "id": "tbl-12",
       "grid": {
         "x": 0,
-        "y": 76,
+        "y": 71,
         "w": 48,
         "h": 10
       },
@@ -641,7 +664,7 @@
       "id": "ds-13",
       "grid": {
         "x": 0,
-        "y": 86,
+        "y": 81,
         "w": 48,
         "h": 12
       },

@@ -103,18 +103,41 @@
         "x": 0,
         "y": 3,
         "w": 48,
-        "h": 12
+        "h": 6
       },
       "config": {
-        "content": "### See who did what across your Elastic Cloud projects\n\nThis overview shows how much activity there was, who was busiest, which identities carry the most risk, and the latest events as they arrive.\n\nStart here for a routine review or when something looks wrong, then use the links above to go deeper on one person, sign-ins, Kibana objects, data access, security or location.\n\n**How to use it:** choose a Project, Person (email), API key or Client IP in the controls to focus every panel, and set the time picker. Raw records: [All audit events](/app/discover#/view/cloud-audit-search-00-all-events), [Raw signal feed](/app/discover#/view/cloud-audit-search-10-raw-signal-feed).\n\n**How to read this page**\n\n- Risk is weight × events, from 10 for a workflow run to 50 for a security change, so it runs far above event counts.\n- An API key carries its creator’s email, so a person’s row can include a machine’s traffic (“email · via key”).\n- Click a Principal id to filter the page or open Actor 360; a Cloud API key’s id also covers the API keys it created.\n- A Client IP marked *internal* is Kibana or the platform acting for someone, not where they are.\n- The last time bucket is partial, and panels side by side can differ by an event or two at the edges of the range.\n"
+        "content": "### See who did what across your Elastic Cloud projects\n\nThis overview shows how much activity there was, who was busiest, which identities carry the most risk, and the latest events as they arrive.\n\nStart here for a routine review or when something looks wrong, then use the links above to go deeper on one person, sign-ins, Kibana objects, data access, security or location.\n\n**How to use it:** choose a Project, Person (email), API key or Client IP in the controls to focus every panel, and set the time picker. Raw records: [All audit events](/app/discover#/view/cloud-audit-search-00-all-events), [Raw signal feed](/app/discover#/view/cloud-audit-search-10-raw-signal-feed).\n"
       }
+    },
+    {
+      "id": "sec-18",
+      "title": "How to read this page",
+      "collapsed": true,
+      "grid": {
+        "y": 9
+      },
+      "panels": [
+        {
+          "type": "markdown",
+          "id": "md-19",
+          "grid": {
+            "x": 0,
+            "y": 0,
+            "w": 48,
+            "h": 6
+          },
+          "config": {
+            "content": "- Risk is weight × events, from 10 for a workflow run to 50 for a security change, so it runs far above event counts.\n- An API key carries its creator’s email, so a person’s row can include a machine’s traffic (“email · via key”).\n- Click a Principal id to filter the page or open Actor 360; a Cloud API key’s id also covers the API keys it created.\n- A Client IP marked *internal* is Kibana or the platform acting for someone, not where they are.\n- The last time bucket is partial, and panels side by side can differ by an event or two at the edges of the range.\n"
+          }
+        }
+      ]
     },
     {
       "type": "vis",
       "id": "vega-01",
       "grid": {
         "x": 0,
-        "y": 15,
+        "y": 10,
         "w": 8,
         "h": 5
       },
@@ -129,7 +152,7 @@
       "id": "kpi-02",
       "grid": {
         "x": 8,
-        "y": 15,
+        "y": 10,
         "w": 7,
         "h": 5
       },
@@ -158,7 +181,7 @@
       "id": "kpi-03",
       "grid": {
         "x": 15,
-        "y": 15,
+        "y": 10,
         "w": 7,
         "h": 5
       },
@@ -187,7 +210,7 @@
       "id": "kpi-04",
       "grid": {
         "x": 22,
-        "y": 15,
+        "y": 10,
         "w": 7,
         "h": 5
       },
@@ -216,7 +239,7 @@
       "id": "kpi-05",
       "grid": {
         "x": 29,
-        "y": 15,
+        "y": 10,
         "w": 10,
         "h": 5
       },
@@ -249,7 +272,7 @@
       "id": "vega-06",
       "grid": {
         "x": 39,
-        "y": 15,
+        "y": 10,
         "w": 9,
         "h": 5
       },
@@ -264,7 +287,7 @@
       "id": "xy-07",
       "grid": {
         "x": 0,
-        "y": 20,
+        "y": 15,
         "w": 32,
         "h": 16
       },
@@ -341,7 +364,7 @@
       "id": "md-08",
       "grid": {
         "x": 32,
-        "y": 20,
+        "y": 15,
         "w": 16,
         "h": 11
       },
@@ -354,7 +377,7 @@
       "id": "vega-09",
       "grid": {
         "x": 32,
-        "y": 31,
+        "y": 26,
         "w": 16,
         "h": 5
       },
@@ -369,7 +392,7 @@
       "id": "vega-10",
       "grid": {
         "x": 0,
-        "y": 36,
+        "y": 31,
         "w": 24,
         "h": 15
       },
@@ -384,7 +407,7 @@
       "id": "xy-11",
       "grid": {
         "x": 24,
-        "y": 36,
+        "y": 31,
         "w": 24,
         "h": 15
       },
@@ -471,7 +494,7 @@
       "id": "tbl-12",
       "grid": {
         "x": 0,
-        "y": 51,
+        "y": 46,
         "w": 13,
         "h": 13
       },
@@ -519,7 +542,7 @@
       "id": "tbl-13",
       "grid": {
         "x": 13,
-        "y": 51,
+        "y": 46,
         "w": 22,
         "h": 13
       },
@@ -568,7 +591,7 @@
       "id": "xy-14",
       "grid": {
         "x": 35,
-        "y": 51,
+        "y": 46,
         "w": 13,
         "h": 13
       },
@@ -622,7 +645,7 @@
       "id": "ds-15",
       "grid": {
         "x": 0,
-        "y": 64,
+        "y": 59,
         "w": 48,
         "h": 25
       },

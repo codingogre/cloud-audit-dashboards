@@ -21,7 +21,8 @@ import { CONTROLS } from './controls.mjs';
 import {
   NAV_H, NOISE, BAND, BAND_KEYS, RISK, RISK_KEYS, RISK_RESTORE, VERB, ACTOR_RESOLVE, OBJ, OBJ_ID, OBJ_TYPE, CHANGE_PRED, CRED, OBJ_PRESENT,
   CRED_TYPE_LABEL, INDEX_FAMILY, CONCRETE, SYS_INDEX, ACTOR_LABEL, MAGNITUDE_RAMP, SEVERITY_RAMP, fitRows, tableLimit,
-  KIBANA_INTERNALS, BOUNDED, BARE_COUNT, grouped, FAILED_OR_DENIED, PREV_TILES, prevRef, COVERAGE_REF,
+  KIBANA_INTERNALS, BOUNDED, BARE_COUNT, grouped, FAILED_OR_DENIED, PREV_TILES, prevRef, COVERAGE_REF, flatPanels,
+  HOW_TO_LABEL,
 } from './panels.mjs';
 
 export const GRID_W = 48;
@@ -529,16 +530,48 @@ export function ungroupedSecondaries(panels) {
   return out;
 }
 
+/**
+ * SECTIONS (panels.mjs). A collapsible section takes ONE full-width row in the top-level grid (its header), so
+ * checkGrid tessellates it like a panel; its inner panels are a grid of their own, from y=0, checked the same
+ * way. Every section is collapsed, titled and non-empty; an id is unique across the page, sections and inner
+ * panels included; a section holds no section; and the How to read section sits directly under the intro.
+ */
+export function checkSections(name, panels, problems) {
+  // checkGrid already reports a duplicate within one grid; this catches one across the page and a section.
+  const ids = new Set(panels.map((p) => p.id));
+  for (const q of panels.filter((p) => p.section).flatMap((p) => p.panels || [])) {
+    if (ids.has(q.id)) problems.push(`${name}: duplicate id ${q.id} (a section's panels share the page's ids)`);
+    ids.add(q.id);
+  }
+  for (const [i, s] of panels.entries()) {
+    if (!s.section) continue;
+    const { x, w, h } = s.grid;
+    if (x !== 0 || w !== GRID_W || h !== 1) problems.push(`${name}: section ${s.id} header is (${x}, ${w}x${h}), expected one full-width row`);
+    if (!s.title) problems.push(`${name}: section ${s.id} has no title`);
+    if (s.collapsed !== true) problems.push(`${name}: section ${s.id} "${s.title}" is not collapsed`);
+    if (!s.panels?.length) { problems.push(`${name}: section ${s.id} "${s.title}" is empty`); continue; }
+    if (s.panels.some((q) => q.section)) problems.push(`${name}: section ${s.id} nests a section`);
+    checkGrid(`${name} § ${s.title}`, s.panels, problems);
+    if (s.title === HOW_TO_LABEL) {
+      const intro = panels[i - 1];
+      if (!intro?.headed || intro.grid.y + intro.grid.h !== s.grid.y) problems.push(`${name}: the "${HOW_TO_LABEL}" section is not directly under the intro`);
+    }
+  }
+}
+
 /** Returns an array of human-readable problems; empty means clean. */
 export function checkLayout(all) {
   const problems = [];
   let panelCount = 0;
   const rows = [];
   for (const [name, def] of Object.entries(all)) {
-    const panels = def.panels;
+    // Geometry reads the top level (a section is its header row) and each section's own grid; every content
+    // check reads the flat list, so a panel inside a section is held to the same rules as one outside.
+    const panels = flatPanels(def.panels);
     panelCount += panels.length;
-    checkNav(name, panels, problems);
-    const maxY = checkGrid(name, panels, problems);
+    checkNav(name, def.panels, problems);
+    const maxY = checkGrid(name, def.panels, problems);
+    checkSections(name, def.panels, problems);
     checkRefs(name, panels, problems);
     checkMarkdown(name, panels, problems);
     checkTips(name, panels, problems);

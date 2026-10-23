@@ -52,7 +52,7 @@ const COUNT_W = 72;
 
 /** The intro (draft 1 of the 1.0.3 customer copy; INTRO TEXT in panels.mjs). */
 const INTRO = {
-  h: 12,
+  h: 6,
   heading: "See who did what across your Elastic Cloud projects",
   paragraphs: [
     "This overview shows how much activity there was, who was busiest, which identities carry the most risk, and the latest events as they arrive.",

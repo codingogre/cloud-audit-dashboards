@@ -28,16 +28,24 @@ import { buildAll } from './lib/definitions.mjs';
 import { controlGroup, dataViewObject, isControlRef, CONTROLS, RETIRED_DATA_VIEW_IDS } from './lib/controls.mjs';
 import { panelDrilldown, hasFilterableColumn, ACTOR_360, drilldownRefs, isDrilldownRef } from './lib/drilldowns.mjs';
 import { checkLayout } from './lib/layout.mjs';
-import { smallMarkdown, writeTileSpecs } from './lib/panels.mjs';
+import { smallMarkdown, writeTileSpecs, flatPanels } from './lib/panels.mjs';
 
 /**
  * The Dashboards API payload: the definitions minus the in-memory annotations the post-pass and the
  * layout check read. `PUT /api/dashboards/{id}` is Zod-strict, so a panel's `drill` destination and
  * table()'s `narrow1440` flag and the `lint` annotation (table(), search()) cannot ride along — they are kept on the in-memory definition and
  * stripped here, which is also what gets written to dashboards/*.json, since those files are the
- * payload as sent.
+ * payload as sent. So are `headed` and `small` (the post-pass's small-text markers, panels.mjs INTRO TEXT).
  */
-const payload = (def) => ({ ...def, panels: def.panels.map(({ drill, narrow1440, lint, headed, ...p }) => p) });
+const strip = ({ drill, narrow1440, lint, headed, small, ...p }) => p;
+/**
+ * A section (panels.mjs, SECTIONS) goes out as the API's shape — a `panels` entry with no `type`, its grid only
+ * a y — and its own panels stripped the same way. Exported for the unit tests.
+ */
+const apiEntry = (p) => (p.section
+  ? { id: p.id, title: p.title, collapsed: p.collapsed, grid: { y: p.grid.y }, panels: p.panels.map(strip) }
+  : strip(p));
+export const payload = (def) => ({ ...def, panels: def.panels.map(apiEntry) });
 
 /** Write the generated definitions to disk so they are diffable in review. */
 export function emit() {
@@ -63,6 +71,30 @@ export function emit() {
   return all;
 }
 
+/**
+ * The saved object's view of the sections (panels.mjs, SECTIONS) must match the definition: one `sections`
+ * entry per defined section, by id, titled and collapsed as defined, and exactly that section's panels
+ * carrying its id in gridData.sectionId. Exported for the unit tests.
+ */
+export function checkSections(id, obj, panels, sections) {
+  const stored = new Map((obj.attributes.sections || []).map((s) => [s.gridData?.i, s]));
+  if (stored.size !== sections.length) throw new Error(`${id}: saved object has ${stored.size} section(s), the definition ${sections.length}`);
+  for (const sec of sections) {
+    const s = stored.get(sec.id);
+    if (!s) throw new Error(`${id}: section ${sec.id} "${sec.title}" is missing from the saved object`);
+    if (s.title !== sec.title || s.collapsed !== sec.collapsed) {
+      throw new Error(`${id}: section ${sec.id} is "${s.title}" collapsed=${s.collapsed}, defined "${sec.title}" collapsed=${sec.collapsed}`);
+    }
+    const inside = panels.filter((p) => p.gridData?.sectionId === sec.id).map((p) => p.panelIndex).sort();
+    const want = sec.panels.map((p) => p.id).sort();
+    if (JSON.stringify(inside) !== JSON.stringify(want)) throw new Error(`${id}: section ${sec.id} holds [${inside.join(', ')}], defined [${want.join(', ')}]`);
+  }
+  for (const p of panels) {
+    const sid = p.gridData?.sectionId;
+    if (sid && !stored.has(sid)) throw new Error(`${id}: panel ${p.panelIndex} is in section ${sid}, which the saved object does not define`);
+  }
+}
+
 async function applyImportOnlyState(all) {
   const { controlGroupInput, references: controlRefs } = controlGroup();
 
@@ -76,17 +108,23 @@ async function applyImportOnlyState(all) {
   let drillTotal = 0;
   for (const [name, def] of Object.entries(all)) {
     const id = dashId(name);
-    const introPanels = Object.fromEntries(def.panels.filter((p) => p.headed).map((p) => [p.id, p.config.content]));
+    // Section headers are not panels: the export keeps their inner panels in panelsJSON (gridData.sectionId)
+    // and the headers in a separate `sections` attribute. So everything below reads the flat panel list, and
+    // `sections` rides the import untouched (asserted after the import).
+    const flat = flatPanels(def.panels);
+    const sections = def.panels.filter((p) => p.section);
+    const introPanels = Object.fromEntries(flat.filter((p) => p.headed || p.small).map((p) => [p.id, p.config.content]));
     const vegaPanels = Object.fromEntries(
-      def.panels.filter((p) => p.type === 'vis' && p.config?.ref_id).map((p) => [p.id, p.config.ref_id]));
+      flat.filter((p) => p.type === 'vis' && p.config?.ref_id).map((p) => [p.id, p.config.ref_id]));
     // Drilldowns fire on FILTER_TRIGGER, so they belong only on panels that already carry a
     // click-to-filter column. Everywhere else drills IN to Actor 360; Actor 360's panels drill OUT
     // only where a panel names its destination — drilling from it to itself would be a no-op.
-    const drillPanels = new Map(def.panels.filter(hasFilterableColumn)
+    const drillPanels = new Map(flat.filter(hasFilterableColumn)
       .map((p) => [p.id, id === ACTOR_360 ? p.drill : ACTOR_360]).filter(([, dest]) => dest));
 
     const [obj] = await kb.exportObjects([{ type: 'dashboard', id }]);
     const panels = JSON.parse(obj.attributes.panelsJSON);
+    checkSections(id, obj, panels, sections);
     // Drop any control references from a previous deploy before re-adding, or each run
     // appends a duplicate set and the import eventually rejects the object.
     let refs = (obj.references || []).filter((r) => !isControlRef(r.name) && !isDrilldownRef(r.name));
@@ -131,8 +169,12 @@ async function applyImportOnlyState(all) {
     obj.attributes.controlGroupInput = controlGroupInput;
     obj.references = [...refs, ...controlRefs];
     await kb.importObjects([obj]);
+    // Read it back: an import that dropped or re-ordered the `sections` attribute would leave the inner
+    // panels orphaned on a sectionId nothing defines, and that renders, silently, as a different layout.
+    const [back] = await kb.exportObjects([{ type: 'dashboard', id }]);
+    checkSections(`${id} (after import)`, back, JSON.parse(back.attributes.panelsJSON), sections);
     if (intros !== Object.keys(introPanels).length) throw new Error(`${id}: ${intros} of ${Object.keys(introPanels).length} intro panels found in the export`);
-    detail(`${id}: ${changed} vega re-pointed, ${intros} intro(s), ${CONTROLS.length} controls, ${drilled} drilldown(s)`);
+    detail(`${id}: ${changed} vega re-pointed, ${intros} small-text panel(s), ${sections.length} section(s), ${CONTROLS.length} controls, ${drilled} drilldown(s)`);
     vegaTotal += changed;
     drillTotal += drilled;
   }

@@ -103,18 +103,41 @@
         "x": 0,
         "y": 3,
         "w": 48,
-        "h": 12
+        "h": 6
       },
       "config": {
-        "content": "### Who signed in, how, and what failed\n\nSee which sign-in methods and credentials are in use, your busiest people and API keys, every key and when it was last used, and each failed or denied attempt.\n\nUse it to check that access looks as expected, review API keys, or follow up on failed sign-ins. Empty failure panels are good news. Raw records: [All audit events](/app/discover#/view/cloud-audit-search-00-all-events), [Raw signal feed](/app/discover#/view/cloud-audit-search-10-raw-signal-feed).\n\n**How to use it:** choose a Project, Person (email), API key or Client IP in the controls and set the time picker. Click an email in a table to filter the whole suite to that person.\n\n**How to read this page**\n\n- An identity is an email, else an API key’s name, else a user ID; a key named after a person is still a key.\n- An Elasticsearch API key carries its creator’s email, so its traffic counts under that person.\n- Cloud API keys have no name or owner: they read “_4KEO… · Cloud API key”, with Owner “Cloud organization”.\n- A re-issued key keeps its name under a new id, so key ids can outnumber names.\n- A failed sign-in counts once per attempt. Credential type exists only on Elasticsearch requests, so those panels leave out Kibana traffic.\n"
+        "content": "### Who signed in, how, and what failed\n\nSee which sign-in methods and credentials are in use, your busiest people and API keys, every key and when it was last used, and each failed or denied attempt.\n\nUse it to check that access looks as expected, review API keys, or follow up on failed sign-ins. Empty failure panels are good news. Raw records: [All audit events](/app/discover#/view/cloud-audit-search-00-all-events), [Raw signal feed](/app/discover#/view/cloud-audit-search-10-raw-signal-feed).\n\n**How to use it:** choose a Project, Person (email), API key or Client IP in the controls and set the time picker. Click an email in a table to filter the whole suite to that person.\n"
       }
+    },
+    {
+      "id": "sec-19",
+      "title": "How to read this page",
+      "collapsed": true,
+      "grid": {
+        "y": 9
+      },
+      "panels": [
+        {
+          "type": "markdown",
+          "id": "md-20",
+          "grid": {
+            "x": 0,
+            "y": 0,
+            "w": 48,
+            "h": 6
+          },
+          "config": {
+            "content": "- An identity is an email, else an API key’s name, else a user ID; a key named after a person is still a key.\n- An Elasticsearch API key carries its creator’s email, so its traffic counts under that person.\n- Cloud API keys have no name or owner: they read “_4KEO… · Cloud API key”, with Owner “Cloud organization”.\n- A re-issued key keeps its name under a new id, so key ids can outnumber names.\n- A failed sign-in counts once per attempt. Credential type exists only on Elasticsearch requests, so those panels leave out Kibana traffic.\n"
+          }
+        }
+      ]
     },
     {
       "type": "vis",
       "id": "kpi-01",
       "grid": {
         "x": 0,
-        "y": 15,
+        "y": 10,
         "w": 8,
         "h": 5
       },
@@ -147,7 +170,7 @@
       "id": "kpi-02",
       "grid": {
         "x": 8,
-        "y": 15,
+        "y": 10,
         "w": 8,
         "h": 5
       },
@@ -180,7 +203,7 @@
       "id": "kpi-03",
       "grid": {
         "x": 16,
-        "y": 15,
+        "y": 10,
         "w": 8,
         "h": 5
       },
@@ -213,7 +236,7 @@
       "id": "kpi-04",
       "grid": {
         "x": 24,
-        "y": 15,
+        "y": 10,
         "w": 8,
         "h": 5
       },
@@ -246,7 +269,7 @@
       "id": "kpi-05",
       "grid": {
         "x": 32,
-        "y": 15,
+        "y": 10,
         "w": 8,
         "h": 5
       },
@@ -279,7 +302,7 @@
       "id": "kpi-06",
       "grid": {
         "x": 40,
-        "y": 15,
+        "y": 10,
         "w": 8,
         "h": 5
       },
@@ -312,7 +335,7 @@
       "id": "xy-07",
       "grid": {
         "x": 0,
-        "y": 20,
+        "y": 15,
         "w": 24,
         "h": 12
       },
@@ -443,7 +466,7 @@
       "id": "vega-08",
       "grid": {
         "x": 24,
-        "y": 20,
+        "y": 15,
         "w": 24,
         "h": 12
       },
@@ -458,7 +481,7 @@
       "id": "xy-09",
       "grid": {
         "x": 0,
-        "y": 32,
+        "y": 27,
         "w": 12,
         "h": 12
       },
@@ -518,7 +541,7 @@
       "id": "xy-10",
       "grid": {
         "x": 12,
-        "y": 32,
+        "y": 27,
         "w": 12,
         "h": 12
       },
@@ -578,7 +601,7 @@
       "id": "tbl-11",
       "grid": {
         "x": 24,
-        "y": 32,
+        "y": 27,
         "w": 24,
         "h": 12
       },
@@ -638,7 +661,7 @@
       "id": "tbl-12",
       "grid": {
         "x": 0,
-        "y": 44,
+        "y": 39,
         "w": 12,
         "h": 12
       },
@@ -682,7 +705,7 @@
       "id": "tbl-13",
       "grid": {
         "x": 12,
-        "y": 44,
+        "y": 39,
         "w": 36,
         "h": 12
       },
@@ -745,7 +768,7 @@
       "id": "ds-14",
       "grid": {
         "x": 0,
-        "y": 56,
+        "y": 51,
         "w": 48,
         "h": 12
       },
@@ -760,7 +783,7 @@
       "id": "ds-15",
       "grid": {
         "x": 0,
-        "y": 68,
+        "y": 63,
         "w": 48,
         "h": 12
       },
@@ -775,7 +798,7 @@
       "id": "ds-16",
       "grid": {
         "x": 0,
-        "y": 80,
+        "y": 75,
         "w": 48,
         "h": 14
       },

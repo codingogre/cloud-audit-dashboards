@@ -103,18 +103,41 @@
         "x": 0,
         "y": 3,
         "w": 48,
-        "h": 12
+        "h": 6
       },
       "config": {
-        "content": "### Where your users and API keys connect from\n\nSee activity by country and city, your busiest client addresses, and anyone seen in more than one country, a sign of a shared or stolen credential. Raw records: [All audit events](/app/discover#/view/cloud-audit-search-00-all-events), [Raw signal feed](/app/discover#/view/cloud-audit-search-10-raw-signal-feed).\n\nLocations come from each client's real address, not Elastic's own network hops. Country is reliable; city is often your internet provider's nearest hub. Private network addresses cannot be placed on a map.\n\n**How to use it:** choose a Project, Person (email), API key or Client IP in the controls and set the time picker. Click an address or email in a table to filter the whole suite to it.\n\n**How to read this page**\n\n- Every address is the real client, forwarded by Elastic Cloud’s proxy; the proxy’s own address is never used for location.\n- Only placed events appear on maps; “Geo resolution of audited events” accounts for the rest.\n- Platform-internal (100.64/10) is Kibana calling Elasticsearch for a user, not a failed lookup; private and no-IP events cannot be placed.\n- Location lookup applies only to events after it was switched on, so an address’s older events count in All events, not Placed events.\n- Impossible travel lists people only; machines are multi-region by design.\n"
+        "content": "### Where your users and API keys connect from\n\nSee activity by country and city, your busiest client addresses, and anyone seen in more than one country, a sign of a shared or stolen credential. Raw records: [All audit events](/app/discover#/view/cloud-audit-search-00-all-events), [Raw signal feed](/app/discover#/view/cloud-audit-search-10-raw-signal-feed).\n\nLocations come from each client's real address, not Elastic's own network hops. Country is reliable; city is often your internet provider's nearest hub. Private network addresses cannot be placed on a map.\n\n**How to use it:** choose a Project, Person (email), API key or Client IP in the controls and set the time picker. Click an address or email in a table to filter the whole suite to it.\n"
       }
+    },
+    {
+      "id": "sec-16",
+      "title": "How to read this page",
+      "collapsed": true,
+      "grid": {
+        "y": 9
+      },
+      "panels": [
+        {
+          "type": "markdown",
+          "id": "md-17",
+          "grid": {
+            "x": 0,
+            "y": 0,
+            "w": 48,
+            "h": 6
+          },
+          "config": {
+            "content": "- Every address is the real client, forwarded by Elastic Cloud’s proxy; the proxy’s own address is never used for location.\n- Only placed events appear on maps; “Geo resolution of audited events” accounts for the rest.\n- Platform-internal (100.64/10) is Kibana calling Elasticsearch for a user, not a failed lookup; private and no-IP events cannot be placed.\n- Location lookup applies only to events after it was switched on, so an address’s older events count in All events, not Placed events.\n- Impossible travel lists people only; machines are multi-region by design.\n"
+          }
+        }
+      ]
     },
     {
       "type": "vis",
       "id": "kpi-01",
       "grid": {
         "x": 0,
-        "y": 15,
+        "y": 10,
         "w": 8,
         "h": 5
       },
@@ -143,7 +166,7 @@
       "id": "kpi-02",
       "grid": {
         "x": 8,
-        "y": 15,
+        "y": 10,
         "w": 8,
         "h": 5
       },
@@ -172,7 +195,7 @@
       "id": "kpi-03",
       "grid": {
         "x": 16,
-        "y": 15,
+        "y": 10,
         "w": 8,
         "h": 5
       },
@@ -201,7 +224,7 @@
       "id": "kpi-04",
       "grid": {
         "x": 24,
-        "y": 15,
+        "y": 10,
         "w": 8,
         "h": 5
       },
@@ -234,7 +257,7 @@
       "id": "kpi-05",
       "grid": {
         "x": 32,
-        "y": 15,
+        "y": 10,
         "w": 8,
         "h": 5
       },
@@ -267,7 +290,7 @@
       "id": "kpi-06",
       "grid": {
         "x": 40,
-        "y": 15,
+        "y": 10,
         "w": 8,
         "h": 5
       },
@@ -300,7 +323,7 @@
       "id": "vega-07",
       "grid": {
         "x": 0,
-        "y": 20,
+        "y": 15,
         "w": 24,
         "h": 17
       },
@@ -315,7 +338,7 @@
       "id": "tbl-08",
       "grid": {
         "x": 24,
-        "y": 20,
+        "y": 15,
         "w": 24,
         "h": 8
       },
@@ -368,7 +391,7 @@
       "id": "tbl-09",
       "grid": {
         "x": 24,
-        "y": 28,
+        "y": 23,
         "w": 24,
         "h": 9
       },
@@ -426,7 +449,7 @@
       "id": "tbl-10",
       "grid": {
         "x": 0,
-        "y": 37,
+        "y": 32,
         "w": 24,
         "h": 8
       },
@@ -484,7 +507,7 @@
       "id": "tbl-11",
       "grid": {
         "x": 24,
-        "y": 37,
+        "y": 32,
         "w": 24,
         "h": 8
       },
@@ -543,7 +566,7 @@
       "id": "xy-12",
       "grid": {
         "x": 0,
-        "y": 45,
+        "y": 40,
         "w": 24,
         "h": 13
       },
@@ -625,7 +648,7 @@
       "id": "tbl-13",
       "grid": {
         "x": 24,
-        "y": 45,
+        "y": 40,
         "w": 24,
         "h": 13
       },
