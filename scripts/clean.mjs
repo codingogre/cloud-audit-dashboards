@@ -11,7 +11,7 @@ import { kb, es } from './lib/http.mjs';
 import { success, info, warn, detail } from './lib/log.mjs';
 import { SUITE, RETIRED_IDS } from './lib/suite.mjs';
 import { DATA_VIEW_ID, RETIRED_DATA_VIEW_IDS } from './lib/controls.mjs';
-import { deleteView } from './lib/view.mjs';
+import { deleteView, deleteRetiredViews } from './lib/view.mjs';
 
 async function cleanDashboards() {
   // Every suite dashboard, opted in or not, and every id an earlier release used: --clean removes what
@@ -41,6 +41,7 @@ async function cleanDashboards() {
   if (failed.length) throw new Error(`could not delete: ${failed.join(', ')}`);
   // After the visualizations that read it, so no deployed tile is left pointing at a missing view.
   detail(`ES|QL view ${cfg.view}: ${await deleteView()}`);
+  for (const r of await deleteRetiredViews()) detail(`ES|QL view ${r.name}: ${r.status}`);
   success(`removed up to ${ids.length} dashboards, ${objs.length} saved objects and the ES|QL view ${cfg.view}`);
 }
 

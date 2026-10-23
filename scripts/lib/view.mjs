@@ -2,7 +2,7 @@
  * THE EVENTS VIEW (1.0.5.1): the one Elasticsearch object the suite deploys. An ES|QL view over the audit stream
  * with @timestamp renamed (EVENTS_VIEW_QUERY), which the prior-period tiles read so that Kibana attaches no hidden
  * time filter to them (panels.mjs, PREVIOUS-PERIOD TILES). Named per namespace (cfg.view): AUDIT_ID_NS=x deploys
- * `cloud-audit-x-events-view` beside production's `cloud-audit-events-view`.
+ * `logs-cloud-audit-x-events-view` beside production's `logs-cloud-audit-events-view`.
  *
  * Privileges, measured on serverless with narrowed API keys (1.0.5.1). Views are index-level resources:
  *   create or replace   index privilege create_view on the view name (no read on the stream is needed to create)
@@ -10,10 +10,11 @@
  *   read the definition read_view_metadata (requireView() below; it falls back to a query without it)
  *   all three           manage_view (or manage)
  *   query it            read on the view name AND on the stream — so does every dashboard viewer, or the
- *                       prior-period tiles show an error for them
+ *                       prior-period tiles show an error for them. The `logs-` name is why a viewer role on
+ *                       `logs-*` already covers it (env.mjs, DEFAULT_VIEW)
  * No cluster privilege is involved: cluster `manage` alone could do none of it.
  */
-import { cfg } from './env.mjs';
+import { cfg, RETIRED_VIEWS } from './env.mjs';
 import { es } from './http.mjs';
 import { EVENTS_VIEW_QUERY } from './panels.mjs';
 
@@ -57,4 +58,15 @@ export async function deleteView() {
   const r = await es.raw(path(), { method: 'DELETE' });
   if (!r.ok && r.status !== 404) throw new Error(`could not delete the ES|QL view ${cfg.view} (${r.status}: ${reason(r)}); the key needs delete_view on it`);
   return r.status;
+}
+
+/** Delete the view names earlier builds used (env.mjs RETIRED_VIEWS); a 404 is "was not there". */
+export async function deleteRetiredViews() {
+  const out = [];
+  for (const name of RETIRED_VIEWS()) {
+    const r = await es.raw(`/_query/view/${encodeURIComponent(name)}`, { method: 'DELETE' });
+    if (!r.ok && r.status !== 404) throw new Error(`could not delete the retired ES|QL view ${name} (${r.status}: ${reason(r)})`);
+    out.push({ name, status: r.status });
+  }
+  return out;
 }

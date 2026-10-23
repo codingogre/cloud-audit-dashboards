@@ -14,7 +14,7 @@ import { writeTileSpecs, retentionText, COVERAGE_DEFAULT_RETENTION } from './lib
 import { dataViewObject } from './lib/controls.mjs';
 import { stableUuid } from './lib/ids.mjs';
 import { success, detail, warn } from './lib/log.mjs';
-import { putView } from './lib/view.mjs';
+import { putView, deleteRetiredViews } from './lib/view.mjs';
 
 const titleCase = (s) => s.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
@@ -121,6 +121,7 @@ export async function run() {
   writeTileSpecs();
   // The prior-period tiles read the events view (lib/view.mjs), so it exists before any spec that names it.
   const view = await putView();
+  for (const r of await deleteRetiredViews()) if (r.status !== 404) detail(`retired ES|QL view ${r.name} removed`);
   detail(`ES|QL view ${view.name}: ${view.query}`);
   const signals = { retention: await retention() };
   detail(`coverage tile: ${signals.retention}`);

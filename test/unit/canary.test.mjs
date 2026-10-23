@@ -19,8 +19,8 @@ test('the events view is named per namespace, and withStream() rewrites it in th
     assert.equal(cfg.view, DEFAULT_VIEW);
     assert.equal(withStream(`FROM ${DEFAULT_VIEW} | LIMIT 1`), `FROM ${DEFAULT_VIEW} | LIMIT 1`);
     process.env.AUDIT_ID_NS = 'x';
-    assert.equal(cfg.view, 'cloud-audit-x-events-view');
-    assert.equal(withStream(`FROM ${DEFAULT_VIEW} | LIMIT 1`), 'FROM cloud-audit-x-events-view | LIMIT 1');
+    assert.equal(cfg.view, 'logs-cloud-audit-x-events-view');
+    assert.equal(withStream(`FROM ${DEFAULT_VIEW} | LIMIT 1`), 'FROM logs-cloud-audit-x-events-view | LIMIT 1');
     assert.ok(!withStream(prevQuery('total-events')).includes(DEFAULT_VIEW));
   } finally { if (was === undefined) delete process.env.AUDIT_ID_NS; else process.env.AUDIT_ID_NS = was; }
 });

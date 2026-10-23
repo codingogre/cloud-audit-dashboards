@@ -12,8 +12,8 @@ conflict. This file is "where we are right now" and should be assumed stale.
   re-pointed, and by `--clean`. Deploy order in production: `--objects` (new ids) → `--dashboards` (re-point, then
   retire) → `_export` by an old id returns 404.
 - **1.0.5.1, research (done on branch):** Vega 08, 09, 12 and 13 moved to ES|QL with per-panel time ranges
-  (`VEGA_WINDOWS`). The six prior-period tiles are ES|QL Vega specs on the ES|QL view `cloud-audit-events-view`, which
-  gets no hidden time filter, so they follow the Identity dropdowns (viewers need `read` on the view). Only vega/14
+  (`VEGA_WINDOWS`). The six prior-period tiles are ES|QL Vega specs on the ES|QL view `logs-cloud-audit-events-view`, which
+  gets no hidden time filter, so they follow the Identity dropdowns (named `logs-…` so a viewer role on `logs-*` can read it). Only vega/14
   (*Audit data held*) stays DSL. `--deploy` creates the events view before it lints.
 - **1.0.5.1, identity (done on branch):** a query-time identity (`IDENTITY_KIND`, `IDENTITY`, one ES|QL `CASE`) drives
   single-select ES|QL variable controls "Identity type" → "Identity" in `pinned_panels`, replacing Person (email) and

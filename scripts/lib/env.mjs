@@ -22,10 +22,18 @@ export const DEFAULT_STREAM = 'logs-elastic_cloud.serverless_audit.otel-default'
 /**
  * THE EVENTS VIEW (1.0.5.1): an ES|QL view over the audit stream that renames @timestamp (panels.mjs, PRIOR-PERIOD
  * TILES, for why). --objects creates it, --clean dashboards deletes it. Its name is namespaced like every other
- * object the suite deploys (cfg.view: `cloud-audit-<ns>-events-view` under AUDIT_ID_NS), and the committed specs
+ * object the suite deploys (cfg.view: `logs-cloud-audit-<ns>-events-view` under AUDIT_ID_NS), and the committed specs
  * spell the default name, which withStream() rewrites at load time beside the stream.
+ *
+ * Named `logs-…` so a viewer role that reads `logs-*` can read it: Elasticsearch checks `read` on the view's own
+ * name, and a `cloud-audit-…` name would have needed a role change for every viewer. Measured before the rename
+ * (1.0.5.1, live, throwaway view): a key with read on `logs-*` only queries it; and wildcards do NOT pick views
+ * up, so `FROM logs-*`, `FROM logs-elastic_cloud*` and a `_count` search on `logs-*` returned the same count with the view
+ * present as without it (5,518,036 = 5,518,036). Nothing else on the project counts these events twice.
  */
-export const DEFAULT_VIEW = 'cloud-audit-events-view';
+export const DEFAULT_VIEW = 'logs-cloud-audit-events-view';
+/** View names earlier 1.0.5.1 builds deployed (only ever under AUDIT_ID_NS); --objects and --clean remove them. */
+export const RETIRED_VIEWS = () => [`${cfg.ns}-events-view`];
 export const withStream = (text) => text.replaceAll(DEFAULT_STREAM, cfg.dataStream).replaceAll(DEFAULT_VIEW, cfg.view);
 
 export function parseStream(name) {
@@ -75,7 +83,7 @@ export const cfg = {
     return `cloud-audit-${n}`;
   },
   /** The events view's name in this namespace (DEFAULT_VIEW unset). */
-  get view() { return DEFAULT_VIEW.replace(/^cloud-audit/, this.ns); },
+  get view() { return `logs-${this.ns}-events-view`; },
   ROOT,
 };
 
