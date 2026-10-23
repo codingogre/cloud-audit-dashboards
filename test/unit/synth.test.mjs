@@ -206,7 +206,9 @@ test('rng is deterministic per seed', () => {
 test('seed data is reproducible and the bulk body is valid NDJSON', () => {
   for (const idx of SEED_INDICES) {
     assert.ok(idx.startsWith(PREFIX));
-    const a = seedDocs(idx, rng('x'), 20), b = seedDocs(idx, rng('x'), 20);
+    // A fixed clock: the app-log docs are stamped with it, and two calls can straddle a millisecond.
+    const now = new Date('2026-10-14T12:00:00Z');
+    const a = seedDocs(idx, rng('x'), 20, now), b = seedDocs(idx, rng('x'), 20, now);
     assert.deepEqual(a, b);
     const lines = bulkBody(idx, a).trim().split('\n');
     assert.equal(lines.length, 40);

@@ -26,7 +26,8 @@ const MAPPINGS = {
   'syn-app-logs':    { '@timestamp': 'date', level: 'keyword', service: 'keyword', message: 'text' },
 };
 
-export function seedDocs(index, r, n) {
+/** `now` stamps the app-log docs; pass a fixed one to get identical output from two calls. */
+export function seedDocs(index, r, n, now = new Date()) {
   const regions = ['us-east', 'us-west', 'eu-west', 'ap-south'];
   const statuses = ['new', 'paid', 'shipped', 'refunded', 'cancelled'];
   const out = [];
@@ -40,7 +41,7 @@ export function seedDocs(index, r, n) {
       case 'syn-customers': out.push({ _id: id, customer: `C-${i}`, name: `Customer ${i}`, tier: r.pick(['gold', 'silver', 'bronze']), country: r.pick(['US', 'DE', 'IN', 'BR', 'JP']) }); break;
       case 'syn-hr-salaries': out.push({ _id: id, employee: `E-${id}`, department: r.pick(['eng', 'sales', 'finance', 'ops']),
         salary: 60000 + r.int(0, 140000), band: r.pick(['L3', 'L4', 'L5', 'L6']) }); break;
-      default: out.push({ _id: id, '@timestamp': new Date().toISOString(), level: r.pick(['info', 'info', 'info', 'warn', 'error']),
+      default: out.push({ _id: id, '@timestamp': now.toISOString(), level: r.pick(['info', 'info', 'info', 'warn', 'error']),
         service: r.pick(['checkout', 'cart', 'search']), message: `synthetic event ${id}` });
     }
   }
