@@ -1,0 +1,8 @@
+{
+  "enabledPlugins": {
+    "elastic-cloud@elastic-agent-skills": true,
+    "elastic-elasticsearch@elastic-agent-skills": true,
+    "elastic-kibana@elastic-agent-skills": true,
+    "elastic-observability@elastic-agent-skills": true
+  }
+}
