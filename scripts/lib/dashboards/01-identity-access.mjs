@@ -1,6 +1,6 @@
 /** 01 Identity & Access — see scripts/lib/definitions.mjs for how the suite is assembled. */
 import {
-  IDX, ACTOR_RESOLVE, ORG, CRED_TYPE_LABEL, CRED_TYPE_COLORS, TIME, dash, kpi, xy, table, sized,
+  IDX, ACTOR_RESOLVE, ACTOR_KEYS, ORG, CRED_TYPE_LABEL, CRED_TYPE_COLORS, TIME, dash, kpi, xy, table, sized,
   vega, search, resetIds, bar, filterable, grouped, FAILED_OR_DENIED, SIGNIN_FAILED
 } from '../panels.mjs';
 import { rawId } from '../suite.mjs';
@@ -15,8 +15,9 @@ import { WHO, RAW_RECORDS } from './shared.mjs';
  *                          key's id. It carried ~880k events a day — far the busiest credential — and the
  *                          old `api_key.name IS NOT NULL` filter left it off every API-key panel, so the
  *                          tile read "0 · none in range" beside a chart of thousands of API-key requests.
- *   Elasticsearch API key  api_key.id and .name; user.* is the principal that CREATED it — a person's
- *                          email, or (here) the Cloud API key that minted it, as user.name.
+ *   Elasticsearch API key  api_key.id and .name; user.name is the principal that OWNS it (here, the
+ *                          Cloud API key that minted it). No key event carries an email (0 of ~39,000
+ *                          over 30 days, 1.0.5.1).
  *
  * So a key is `COALESCE(api_key.id, user.name)` under this filter, and the two kinds never collide: a
  * row with no api_key.id is a Cloud key by construction. Kibana logs a call made with an Elasticsearch
@@ -104,23 +105,25 @@ const INTRO = {
   paragraphs: [
     "See which sign-in methods and credentials are in use, your busiest people and API keys, every key and when it was last used, and each failed or denied attempt.",
     `Use it to check that access looks as expected, review API keys, or follow up on failed sign-ins. Empty failure panels are good news. ${RAW_RECORDS}`,
-    "**How to use it:** choose a Project, Person (email), API key or Client IP in the controls and set the time picker. Click an email in a table to filter the whole suite to that person.",
+    "**How to use it:** choose a Project, Identity type, Identity or Client IP in the controls and set the time picker. Click an email in a table to filter the whole suite to that person.",
   ],
   howTo: [
-    'An identity is an email, else an API key’s name, else a user ID; a key named after a person is still a key.',
-    'An Elasticsearch API key carries its creator’s email, so its traffic counts under that person.',
-    'Cloud API keys have no name or owner: they read “_4KEO… · Cloud API key”, with Owner “Cloud organization”.',
+    'Identities read as in the Identity dropdown: an email, else an API key’s name, else the account name. A key named after a person is still a key.',
+    'No API key carries an email. Kibana does not record which Elasticsearch key it was given, so those rows read “Unnamed key of” the key’s owner.',
+    'Cloud API keys have no name or owner: tables show the start of the id, “_4KEO… · Cloud API key”, with Owner “Cloud organization”.',
     'A re-issued key keeps its name under a new id, so key ids can outnumber names.',
     'A failed sign-in counts once per attempt. Credential type exists only on Elasticsearch requests, so those panels leave out Kibana traffic.',
+    'Identity type and Identity apply to this page only: the links above carry Project, Client IP and pinned filters, not them.',
   ],
 };
 
 export function build() {
   resetIds();
   const P = [
-    // Counted on the actor COALESCE — the key Identity first and last seen groups by — over all traffic,
-    // like that session, so the tile and the session's row count are the same number. A person is an
-    // identity with an email (the COALESCE prefers it), so the people here are the Humans tile beside it.
+    // Counted on the actor (ACTOR_RESOLVE, the Identity dropdown's values) — the key Identity first and last
+    // seen groups by — over all traffic, like that session, so the tile and the session's row count are the
+    // same number. A person is an identity with an email (the rule prefers it), so the people here are the
+    // Humans tile beside it. "Unnamed key of …" identities (1.0.5.1) are neither a person nor a key name.
     // The line under the number used to read "1 human · 31 machine": the 31 lumped the synthetic
     // syn-new-hire-* API keys (named like people), user names tried in a failed sign-in and the
     // <anonymous> placeholders under one word that fitted none of them. It now counts the one kind it can
@@ -130,11 +133,11 @@ export function build() {
     // under several ids (22 names, 103 ids at 24h). Grouped on the raw identity fields first (QUERY SHAPE
     // rule 2): a filtered COUNT_DISTINCT(actor) per event cost ~370ms over 7 days on the replica against
     // ~250ms for the old tile; counted on the grouped rows it is ~290ms.
-    kpi(0, 0, 8, 5, `FROM ${IDX} | ${TIME} | STATS BY user.email, api_key.name, user.name, user.domain | ${ACTOR_RESOLVE} | STATS \`Identities\` = COUNT_DISTINCT(actor), keys = COUNT_DISTINCT(actor) WHERE user.email IS NULL AND (api_key.name IS NOT NULL OR user.domain == "_cloud_api_key") | EVAL detail = CASE(keys == 0, "no API keys", keys == 1, "incl. 1 key name", CONCAT("incl. ", ${grouped('keys')}, " key names")) | KEEP \`Identities\`, detail`,
+    kpi(0, 0, 8, 5, `FROM ${IDX} | ${TIME} | STATS BY ${ACTOR_KEYS} | ${ACTOR_RESOLVE} | STATS \`Identities\` = COUNT_DISTINCT(actor), keys = COUNT_DISTINCT(actor) WHERE user.email IS NULL AND (api_key.name IS NOT NULL OR user.domain == "_cloud_api_key") | EVAL detail = CASE(keys == 0, "no API keys", keys == 1, "incl. 1 key name", CONCAT("incl. ", ${grouped('keys')}, " key names")) | KEEP \`Identities\`, detail`,
       'Identities', 'Distinct identities, all traffic: people, API keys, service accounts, user names tried in failed sign-ins, and placeholders for anonymous requests. The line above the number counts the API key names among them. Identity first and last seen lists each.',
       { secondary: 'detail' }),
     kpi(8, 0, 8, 5, `FROM ${IDX} | ${TIME} | STATS \`Humans\` = COUNT_DISTINCT(user.email), sso = COUNT_DISTINCT(user.email) WHERE user.domain == "cloud-saml-kibana" | EVAL detail = CASE(sso == 0, "none used SSO", CONCAT(${grouped('sso')}, " used SSO")) | KEEP \`Humans\`, detail`,
-      'Humans', 'Distinct email addresses across all traffic: the people Busiest human identities ranks. A person can count through an API key they created without signing in; the line above the number says how many used SAML SSO.',
+      'Humans', 'Distinct email addresses across all traffic: the people Busiest human identities ranks. Only a person’s own sign-in carries an email, never an API key; the line above the number says how many used SAML SSO.',
       { secondary: 'detail' }),
     kpi(16, 0, 8, 5, `FROM ${IDX} | ${TIME} | ${KEYED} | STATS BY api_key.id, api_key.name, user.name | ${KEY_DERIVE}, name = COALESCE(api_key.name, user.name) | STATS \`API keys\` = COUNT_DISTINCT(key_id), names = COUNT_DISTINCT(name) | EVAL detail = CASE(\`API keys\` == 0, "none in range", names == 1, "1 name", CONCAT(${grouped('names')}, " names")) | KEEP \`API keys\`, detail`,
       'API keys', 'Distinct API keys used in range, Cloud and Elasticsearch, one per row of API key inventory. The line above the number counts their names: a name with many ids is one key re-issued many times.',
@@ -241,7 +244,7 @@ export function build() {
     // address (anonymous_access_denied) reads "no IP", the page's words for it, not a bare "-"; the
     // column is display-only (no click filter), so it can be assigned in ES|QL.
     table(12, 29, 36, 12, 'Top failed or denied access',
-      `FROM ${IDX} | ${TIME} | ${FAILED_OR_DENIED} | STATS events = COUNT(*), last_seen = MAX(@timestamp) BY user.email, api_key.name, user.name, action = event.action, ip = client.ip | ${ACTOR_RESOLVE} | STATS events = SUM(events), last_seen = MAX(last_seen) BY actor, action, ip | EVAL result = CASE(action IN (${SIGNIN_FAILED}), "failed sign-in", action == "access_denied", "denied", "failed"), ip = COALESCE(TO_STRING(ip), "no IP") | SORT events DESC, last_seen DESC, actor, action, ip | LIMIT 10`,
+      `FROM ${IDX} | ${TIME} | ${FAILED_OR_DENIED} | STATS events = COUNT(*), last_seen = MAX(@timestamp) BY ${ACTOR_KEYS}, action = event.action, ip = client.ip | ${ACTOR_RESOLVE} | STATS events = SUM(events), last_seen = MAX(last_seen) BY actor, action, ip | EVAL result = CASE(action IN (${SIGNIN_FAILED}), "failed sign-in", action == "access_denied", "denied", "failed"), ip = COALESCE(TO_STRING(ip), "no IP") | SORT events DESC, last_seen DESC, actor, action, ip | LIMIT 10`,
       ['actor', sized('action', 175), 'result', 'ip'], ['events', 'last_seen'],
       'Failed sign-ins and refused requests by identity, action and source IP, most frequent first. Result names the kind: failed sign-in, denied (refused an action) or failed (any other failure).',
       { empty: 'good' }),

@@ -1,11 +1,11 @@
 /** 02 Kibana Object Forensics — see scripts/lib/definitions.mjs for how the suite is assembled. */
 import {
-  IDX, ACTOR, TIME, BUCKET, KIB, VERB, CHANGE, OBJ_GROK, OBJ_NAME, OBJ_ID, OBJ_TYPE, PALETTE, KIBANA_INTERNALS, dash, kpi, prevKpi, xy, bar, table,
+  IDX, ACTOR_KEYS, ACTOR_RESOLVE, TIME, BUCKET, KIB, VERB, CHANGE, OBJ_GROK, OBJ_NAME, OBJ_ID, OBJ_TYPE, PALETTE, KIBANA_INTERNALS, dash, kpi, prevKpi, xy, bar, table,
   vega, search, resetIds, sized
 } from '../panels.mjs';
 import { rawId } from '../suite.mjs';
 import {
-  CHANGED, CHANGED_KEYS, CHANGED_DERIVE, specDescription, PIN_PRINCIPAL_SHORT, RAW_RECORDS
+  CHANGED, CHANGED_KEYS, CHANGED_DERIVE, specDescription, PIN_PRINCIPAL_SHORT, RAW_RECORDS, IDENTITY_HOW_TO
 } from './shared.mjs';
 
 /**
@@ -114,7 +114,7 @@ const INTRO = {
   paragraphs: [
     `Dashboards, visualizations, data views, alert rules, SLOs, workflows and other saved objects: what was created, edited, deleted or opened, in which space, and by whom. ${RAW_RECORDS}`,
     "Use it to answer questions such as \"Who deleted that dashboard?\" or \"What changed before the alert stopped firing?\" Panels marked *noise gate applied* skip these audit dashboards' own activity, so you see your team's work.",
-    "**How to use it:** choose a Project, Person (email), API key or Client IP in the controls and set the time picker. At the bottom, click a session bar or a session ID to replay that browser session step by step.",
+    "**How to use it:** choose a Project, Identity type, Identity or Client IP in the controls and set the time picker. At the bottom, click a session bar or a session ID to replay that browser session step by step.",
   ],
   howTo: [
     '*Noise gate applied* leaves out page loads, usage counters, paging and these dashboards’ own views and install; real changes, test spaces included, stay.',
@@ -122,6 +122,7 @@ const INTRO = {
     'Spaces show by the id in their URL, not by name, which the audit log does not record. A sign-in belongs to no space.',
     'Click a session bar to pin that session and zoom to it; remove the pill and reset the time to return. Shift-click pins the person.',
     'While a session is pinned, Elasticsearch panels read empty: only browser sign-ins carry a session id, so API-only identities have no bars.',
+    IDENTITY_HOW_TO,
   ],
 };
 
@@ -137,13 +138,13 @@ export function build() {
     kpi(24, 0, 8, 5, `FROM ${IDX} | ${TIME} | ${KIB} | ${OBJ_ID} | WHERE obj_id IS NOT NULL | STATS n = COUNT(*) BY ${CHANGED_KEYS} | ${OBJ_TYPE} | STATS \`Object types\` = COUNT_DISTINCT(obj_type)`, 'Object types',
       'How many kinds of Kibana object were involved: dashboard, alert, index-pattern, tag, workflow and so on. Only events that name an object count.'),
     kpi(32, 0, 8, 5, `FROM ${IDX} | ${TIME} | STATS \`Spaces\` = COUNT_DISTINCT(kibana.space.id)`, 'Spaces', 'Distinct Kibana spaces with activity.'),
-    kpi(40, 0, 8, 5, `FROM ${IDX} | ${TIME} | ${CHANGE} | ${ACTOR} | STATS \`Editors\` = COUNT_DISTINCT(actor)`, 'Editors',
+    kpi(40, 0, 8, 5, `FROM ${IDX} | ${TIME} | ${CHANGE} | STATS BY ${ACTOR_KEYS} | ${ACTOR_RESOLVE} | STATS \`Editors\` = COUNT_DISTINCT(actor)`, 'Editors',
       'Distinct identities that changed anything in Kibana, including those that only enabled a rule, ran a workflow or created an ML job, and credentials with no email.'),
     // A row is a GROUP — one identity making one kind of change to one object in one space with one
     // result, over the whole range — so "the 30 most recent state changes" over a row reading Events 17
     // promised 30 changes and showed up to 30 × 17 (round-5 review). The title says it is grouped.
     table(0, 5, 48, 14, '⚠️ Mutations — most recent Kibana state changes, repeats grouped into one row',
-      `FROM ${IDX} | ${TIME} | ${CHANGED} | ${EXEC_FLAG} | ${ACTOR} | STATS n = COUNT(*), last_ts = MAX(@timestamp) BY actor, user.name, ${CHANGED_KEYS}, obj_name, space = kibana.space.id, result, is_exec | ${CHANGED_DERIVE} | STATS events = SUM(n), last_change = MAX(last_ts) BY actor, user.name, verb, type = obj_type, name = obj_name, space, result, is_exec | SORT last_change DESC | LIMIT 30 | ${EXEC_LABEL} | ${objLabel('name', 'type')}`,
+      `FROM ${IDX} | ${TIME} | ${CHANGED} | ${EXEC_FLAG} | STATS n = COUNT(*), last_ts = MAX(@timestamp) BY ${ACTOR_KEYS}, ${CHANGED_KEYS}, obj_name, space = kibana.space.id, result, is_exec | ${ACTOR_RESOLVE} | ${CHANGED_DERIVE} | STATS events = SUM(n), last_change = MAX(last_ts) BY actor, user.name, verb, type = obj_type, name = obj_name, space, result, is_exec | SORT last_change DESC | LIMIT 30 | ${EXEC_LABEL} | ${objLabel('name', 'type')}`,
       [sized('actor', 230), PIN_PRINCIPAL_SHORT, 'verb', sized('type', 160, { label: 'Object type' }), sized('name', 430, { label: 'Object' }),
         'space', 'result'], ['events', 'last_change'],
       'Kibana state changes, with who, which object and which space. Repeats of the same change share a row; Events counts them. “attempted” is how Kibana logs most changes; “failure” means the change was denied.',
@@ -174,7 +175,7 @@ export function build() {
       // skeptic render) — and a renamed object into one row per title. Two objects that share a title
       // (the same dashboard installed in two spaces) then read alike, so a title two objects of one type share carries the id.
       // INLINE STATS runs on the grouped rows, never per event.
-      `FROM ${IDX} | ${TIME} | WHERE kibana.saved_object.id IS NOT NULL | ${NOT_INTERNAL} | ${ACTOR} | STATS events = COUNT(*), actors = COUNT_DISTINCT(actor), title = MAX(kibana.saved_object.name) BY id = kibana.saved_object.id, type = kibana.saved_object.type | EVAL name = COALESCE(title, id) | INLINE STATS same = COUNT(*) BY name, type | EVAL name = CASE(same > 1, CONCAT(name, " · ", id), name) | ${objLabel('name', 'type')} | DROP title, id, same | SORT events DESC | LIMIT 10`,
+      `FROM ${IDX} | ${TIME} | WHERE kibana.saved_object.id IS NOT NULL | ${NOT_INTERNAL} | STATS n = COUNT(*), title = MAX(kibana.saved_object.name) BY id = kibana.saved_object.id, type = kibana.saved_object.type, ${ACTOR_KEYS} | ${ACTOR_RESOLVE} | STATS events = SUM(n), actors = COUNT_DISTINCT(actor), title = MAX(title) BY id, type | EVAL name = COALESCE(title, id) | INLINE STATS same = COUNT(*) BY name, type | EVAL name = CASE(same > 1, CONCAT(name, " · ", id), name) | ${objLabel('name', 'type')} | DROP title, id, same | SORT events DESC | LIMIT 10`,
       // Object type 155, not 100: "ingest_manager_settings" broke at its underscore into two lines that read
       // as two values (round-5 review). At a 1440px viewport Object still gets ~230px and wraps.
       [{ column: 'name', label: 'Object' }, sized('type', 155, { label: 'Object type' })], ['events', 'actors'],
@@ -185,7 +186,7 @@ export function build() {
       // row is still one line.
       { wrap: true, empty: 'empty when only internals' }),
     table(22, 32, 26, 12, 'Latest high-value object access · noise gate applied',
-      `FROM ${IDX} | ${TIME} | ${KIB} | ${NOT_HTTP} | ${NOT_INTERNAL} | ${OBJ_GROK} | ${OBJ_NAME} | ${EXEC_FLAG} | ${ACTOR} | STATS n = COUNT(*), last_ts = MAX(@timestamp) BY actor, ${CHANGED_KEYS}, obj_name, is_exec | ${CHANGED_DERIVE} | WHERE obj_type IN ("dashboard","slo","alert","alerting_rule","tag","index-pattern","workflow","agent-builder-agent","agent-builder-tool","ml-job") | STATS last_seen = MAX(last_ts) BY actor, verb, type = obj_type, name = obj_name, is_exec | SORT last_seen DESC | LIMIT 10 | ${EXEC_LABEL}`,
+      `FROM ${IDX} | ${TIME} | ${KIB} | ${NOT_HTTP} | ${NOT_INTERNAL} | ${OBJ_GROK} | ${OBJ_NAME} | ${EXEC_FLAG} | STATS n = COUNT(*), last_ts = MAX(@timestamp) BY ${ACTOR_KEYS}, ${CHANGED_KEYS}, obj_name, is_exec | ${ACTOR_RESOLVE} | ${CHANGED_DERIVE} | WHERE obj_type IN ("dashboard","slo","alert","alerting_rule","tag","index-pattern","workflow","agent-builder-agent","agent-builder-tool","ml-job") | STATS last_seen = MAX(last_ts) BY actor, verb, type = obj_type, name = obj_name, is_exec | SORT last_seen DESC | LIMIT 10 | ${EXEC_LABEL}`,
       // 26 of 48 columns: at half width its six columns clipped at a 1440px viewport (the layout
       // advisory); with five (no Events) 26 holds them, and the two columns it gave back let the table
       // beside it carry its empty condition. Every pixel the fixed columns do not need goes to Object,

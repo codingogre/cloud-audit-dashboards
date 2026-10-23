@@ -1,10 +1,10 @@
 /** 06 Platform Volume — see scripts/lib/definitions.mjs for how the suite is assembled. */
 import {
-  IDX, ACTOR, ACTOR_RESOLVE, NOISE, BAND, BAND_KEYS, TIME, BUCKET, KIND_REFINE, SOURCE_LABEL, SOURCE_COLORS,
-  dash, kpi, xy, table, vega, filterable, resetIds, cloudKeyLabel, isCloudKeyId, grouped
+  IDX, ACTOR, ACTOR_RESOLVE, ACTOR_KEYS, CLOUD_KEY_SUFFIX, UNNAMED_KEY_PREFIX, NOISE, BAND, BAND_KEYS, TIME, BUCKET, KIND_REFINE, SOURCE_LABEL, SOURCE_COLORS,
+  dash, kpi, xy, table, vega, filterable, resetIds, cloudKeyLabel, identityLabel, grouped
 } from '../panels.mjs';
 import { rawId } from '../suite.mjs';
-import { RAW_RECORDS } from './shared.mjs';
+import { RAW_RECORDS, IDENTITY_HOW_TO } from './shared.mjs';
 
 /**
  * SIGNAL VS NOISE OVER TIME is one full-Vega panel (vega/07), not a Vega stream above a Lens share chart.
@@ -87,8 +87,8 @@ import { RAW_RECORDS } from './shared.mjs';
 /**
  * The intro (draft 8 of the 1.0.3 customer copy, INTRO TEXT in panels.mjs). It replaces "The quarantine
  * dashboard" note that sat under the tiles; what that note said in field names now lives in the tiles'
- * tooltips (authentication_success, cluster:monitor/main, the band sum on All events), and the API key
- * creator rule (Kind "human + key") in Highest-volume identities'. Bands are named exactly as the tiles.
+ * tooltips (authentication_success, cluster:monitor/main, the band sum on All events). Bands are named
+ * exactly as the tiles.
  */
 const INTRO = {
   h: 6,
@@ -96,13 +96,14 @@ const INTRO = {
   paragraphs: [
     `The other dashboards hide routine traffic so the meaningful events stand out. This page counts everything, in four groups that add up to the total. ${RAW_RECORDS}`,
     "**Signal** is what the other dashboards show. **Auth success** is logged once for every authenticated request. **Query internals** are the background steps behind searches and page loads. **Infra health** is Elastic's own monitoring.",
-    'Use it to understand audit volume and to see how busy each API key is. **How to use it:** choose a Project, Person (email), API key or Client IP in the controls and set the time picker.',
+    'Use it to understand audit volume and to see how busy each API key is. **How to use it:** choose a Project, Identity type, Identity or Client IP in the controls and set the time picker.',
   ],
   howTo: [
     'Nothing is filtered here, so these numbers are larger than the same counts on the other dashboards.',
     'One request often writes several audit records; the All events tile counts records, and the line above its number counts requests.',
     'Much of the volume is dashboards querying the audit stream, these included, usually through the Cloud API key that runs them.',
-    'A key made by a person counts under that person’s email (Kind “human + key”); a Cloud API key has no name.',
+    'No API key carries an email, so a key’s traffic never counts under the person who made it; a Cloud API key has no name.',
+    IDENTITY_HOW_TO,
   ],
 };
 
@@ -151,9 +152,9 @@ export function build() {
     // above it, which read as a sliver of a thirteenth row (round-5 review).
     // The empty words name the condition in four words: "(empty when none in range)" read as a developer
     // note (round-5 review), and "(empty when no named key was used)" runs off an 18-column title at 1440px.
-    // Created by reconciles with Highest-volume identities: a key made by a person has that person's email
-    // on its events (so its traffic is under the person there), any other key has its creator's user.name —
-    // for a Cloud API key, its id, shown in the suite's one form.
+    // Created by is the key's owner as Elasticsearch records it, user.name (no key event carries an email;
+    // emails stays in the query in case one ever does) — for a Cloud API key, its id, shown in the suite's
+    // short form.
     // Created by at 140px and Events at 72px leave the key name ~260px at a 1440px viewport: at 150 / 90
     // "syn-new-hire-20261014-152111-2820" ran under Created by, and at 140 / 80 it touched it.
     table(30, 5, 18, 15, 'Named API keys',
@@ -172,30 +173,29 @@ export function build() {
       { breakdown: 'source', colors: SOURCE_COLORS }),
     // Busiest identity replaces an Identities count that read 1 on every row at 1h (one machine identity
     // drives the whole firehose in a short window) and told the reader nothing; who is behind the noise
-    // does, in every window, and "+ N more" keeps the count. Counted by action and the ACTOR_RESOLVE
-    // COALESCE (Same resolution as Highest-volume identities beside it), then folded per action: the
+    // does, in every window, and "+ N more" keeps the count. Counted by action and ACTOR_KEYS, resolved on the
+    // grouped rows (the same identities as Highest-volume identities beside it), then folded per action: the
     // busiest identity is the MAX of "<count, zero-padded by adding 1e12><identity>", whose first 13
     // characters are the count. The label runs on the grouped rows, before the SORT/LIMIT that table()
     // lowers; the name breaks ties, which otherwise swapped two equal rows between refreshes. Measured on
     // the 7-day replica: 111–158ms against 101–113ms for the count it replaces.
     table(0, 30, 22, 10, 'Noisiest transport actions',
-      `FROM ${IDX} | ${TIME} | WHERE elasticsearch.audit.action IS NOT NULL | ${ACTOR_RESOLVE} ` +
-      '| STATS n = COUNT(*) BY elasticsearch.audit.action, actor ' +
+      `FROM ${IDX} | ${TIME} | WHERE elasticsearch.audit.action IS NOT NULL | STATS n = COUNT(*) BY elasticsearch.audit.action, ${ACTOR_KEYS} ` +
+      `| ${ACTOR_RESOLVE} | STATS n = SUM(n) BY elasticsearch.audit.action, actor ` +
       '| STATS events = SUM(n), actors = COUNT(*), top = MAX(CONCAT(TO_STRING(1000000000000 + n), actor)) BY elasticsearch.audit.action ' +
-      `| EVAL top_identity = SUBSTRING(top, 14) | EVAL top_identity = CONCAT(${cloudKeyLabel('top_identity')}, CASE(actors > 1, CONCAT(" + ", TO_STRING(actors - 1), " more"), "")) ` +
+      `| EVAL top_identity = SUBSTRING(top, 14) | EVAL top_identity = CONCAT(${identityLabel('top_identity')}, CASE(actors > 1, CONCAT(" + ", TO_STRING(actors - 1), " more"), "")) ` +
       '| KEEP elasticsearch.audit.action, top_identity, events | SORT events DESC, elasticsearch.audit.action | LIMIT 8',
       // Busiest identity at 210px holds "_4KEO… · Cloud API key + 19 more" and Events at 80px a seven-digit
       // count, so the action keeps the rest: at 22 columns and even widths, 1440px left
       // "cluster:admin/xpack/security/api_key/get" 4px short of the identity beside it.
       ['elasticsearch.audit.action', { column: 'top_identity', label: 'Busiest identity', width: 210 }], [{ column: 'events', width: 80 }],
       'The highest-volume Elasticsearch transport actions, unfiltered, with the identity behind most of each and how many others called it. Much of it is dashboards querying this stream, often the key running this suite.'),
-    // Kind is refined after the STATS (KIND_REFINE, then the key cases), where it costs nothing: ACTOR's
-    // two-way CASE called every key — the Cloud API key and each named key — "service", the same word as
-    // a service account, on a dashboard titled "… & API Keys" (round-5 review). A row is a named key when
-    // all its events came through one (via_key == events: ACTOR_RESOLVE takes the key name only when the
-    // event has no email), and a person's row is "human + key" when some of it did — the creator-stamping
-    // caveat of the note, shown where it applies instead of a Via named key column that, on a project
-    // whose keys were all made by the Cloud API key, could only ever read 0 or 100% (round-5 review).
+    // Counted by ACTOR_KEYS and resolved on the grouped rows (1.0.5.1). Kind is refined after the STATS
+    // (KIND_REFINE, then the key cases), where it costs nothing: ACTOR's two-way CASE called every key — the
+    // Cloud API key and each named key — "service", the same word as a service account, on a dashboard titled
+    // "… & API Keys" (round-5 review). A Cloud API key and an unnamed key say so in their identity; a row is a
+    // named key when all its events came through one (via_key == events). "human + key" (a person's row
+    // carrying a key's traffic) is gone: no API key event carries an email, so it never applied.
     // No Created by column: at 1h, with no named key in the window, it was a 140px header over nothing on
     // every row (round-5 review). Who made a key is Named API keys' column, beside the stream; a key's row
     // here has the same count as there.
@@ -208,11 +208,10 @@ export function build() {
     // At h=13 (12 rows) the last row ended 2px above it and read as a sliver of a thirteenth (round-5
     // review), and at 1h, when a handful of identities make the whole stream, 12 rows left 60% blank.
     table(22, 30, 26, 10, 'Highest-volume identities',
-      `FROM ${IDX} | ${TIME} | ${ACTOR} | STATS events = COUNT(*), via_key = COUNT(api_key.name), ` +
-      `acts = VALUES(event.action) BY actor, actor_kind | ${KIND_REFINE} ` +
+      `FROM ${IDX} | ${TIME} | STATS events = COUNT(*), via_key = COUNT(api_key.name), acts = VALUES(event.action) BY ${ACTOR_KEYS} ` +
+      `| ${ACTOR} | STATS events = SUM(events), via_key = SUM(via_key), acts = VALUES(acts) BY actor, actor_kind | ${KIND_REFINE} ` +
       '| EVAL actions = MV_COUNT(acts), acts = MV_CONCAT(MV_SORT(acts), ",") ' +
-      `| EVAL actor_kind = CASE(${isCloudKeyId('actor')}, "API key", actor_kind == "service" AND via_key == events, "API key", ` +
-      'actor_kind == "human" AND via_key > 0, "human + key", ' +
+      `| EVAL actor_kind = CASE(ENDS_WITH(actor, "${CLOUD_KEY_SUFFIX}") OR STARTS_WITH(actor, "${UNNAMED_KEY_PREFIX}"), "API key", actor_kind == "service" AND via_key == events, "API key", ` +
       'actor_kind == "service" AND acts IN ("authentication_failed", "realm_authentication_failed", "authentication_failed,realm_authentication_failed"), "failed sign-in", actor_kind) ' +
       '| KEEP actor, actor_kind, events, actions | SORT events DESC, actor | LIMIT 8',
       // Kind at 120px holds "unauthenticated" (it was cut at 92).
@@ -220,7 +219,7 @@ export function build() {
       // "<unauthenticated-cloud-access-token>" ran into Kind (round-5 skeptic); Noisiest's longest
       // action and "_4KEO… · Cloud API key + 19 more" still fit at 22.
       ['actor', { column: 'actor_kind', width: 120 }], ['events', { column: 'actions', width: 72 }],
-      'Unfiltered volume leaderboard: where machine traffic shows up. Kind “API key” is a named or Cloud API key; “human + key” is a person whose key’s events carry their email; “failed sign-in” is a user name that never signed in.'),
+      'Unfiltered volume leaderboard: where machine traffic shows up. Kind “API key” is a named, unnamed or Cloud API key; “failed sign-in” is a user name that never signed in.'),
   ];
   return dash(rawId('06-platform-volume'), '[Audit] 📊 Platform Volume & API Keys',
     'The unfiltered firehose, quarantined so the forensic dashboards stay readable.', P, { intro: INTRO });

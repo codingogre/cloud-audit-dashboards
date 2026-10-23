@@ -45,8 +45,8 @@ export const WHO = filterable('user.email');
 export const legendPanel = (x, y, w, h) => introMd(x, y, w, h, 'How to read this suite', [
   `**Routine traffic is left out** unless a panel title says *all traffic*. That covers health checks, the background requests behind each search and page load, API key lookups, bulk sign-in records, and these dashboards' own activity${
     isDeployed('06-platform-volume') ? '. **📊 Platform Volume** shows everything' : ''}.`,
-  "**Each identity is named** by its email address, or the API key's name when there is no email, or a numeric user ID as a last resort.",
-  '**Cloud API keys have no name** in the audit log, so they appear by the start of their ID, such as `_4KEO… · Cloud API key`.',
+  "**Each identity is named as in the Identity dropdown:** a person's email, an API key's name, or else the account name the request ran as.",
+  '**Cloud API keys have no name** in the audit log, so tables show the start of their ID, such as `_4KEO… · Cloud API key`. A key Kibana did not name reads *Unnamed key of* its owner.',
   "**Locations use the real client address,** not Elastic's own network hops. *Hover the ⓘ beside a panel title for details.*",
 ]);
 
@@ -58,8 +58,16 @@ export const legendPanel = (x, y, w, h) => introMd(x, y, w, h, 'How to read this
  */
 export const RAW_RECORDS = 'Raw records: [All audit events](@search:00-all-events), [Raw signal feed](@search:10-raw-signal-feed).';
 
-/** The raw identity fields ACTOR_RESOLVE reads, for a STATS that has to resolve the actor afterwards. */
-export const ACTOR_KEYS = 'user.email, api_key.name, user.name';
+/**
+ * The How to read bullet for a page that shows identities (1.0.5.1): names in tables are the Identity dropdown's
+ * values, a Cloud API key shortened (identityLabel, panels.mjs), and an ES|QL variable control's choice is not
+ * carried by the nav links (README, Platform constraints). 00 and 01 say both at more length.
+ */
+export const IDENTITY_HOW_TO =
+  'Identities read as in the Identity dropdown, a Cloud API key shortened to “_4KEO… · Cloud API key”. The dropdowns apply to this page only; the links above do not carry them.';
+
+/** The raw identity fields ACTOR_RESOLVE reads, for a STATS that has to resolve the actor afterwards (panels.mjs). */
+export { ACTOR_KEYS } from '../panels.mjs';
 
 /**
  * CLICK-THROUGH TO ACTOR 360 FROM AN IDENTITY TABLE (1.0.5). Identity (`actor`) is the ACTOR_RESOLVE
@@ -83,8 +91,11 @@ export const ACTOR_KEYS = 'user.email, api_key.name, user.name';
  * `<unauthenticated-cloud-access-token>` (36 characters, ~241px), so PIN_PRINCIPAL is 250px wide and keeps
  * 245 at 1440. Where no placeholder can appear — it never signs in, so it changes nothing and reads no index
  * — PIN_PRINCIPAL_SHORT is enough for a 20-character Cloud key id. Only where a row has room for both does
- * a table carry API key as well (PIN_COLS): it is mostly empty, and the API key control pins a named key
- * on any page; without it a named key's row pins the identity that created it (README, Reading the panels).
+ * a table carry API key as well (PIN_COLS): it is mostly empty, and picking a named key in the Identity dropdown
+ * narrows any page to it; without it a named key's row pins the identity that owns it (README, Reading the panels).
+ *
+ * Identity (`actor`) itself is the Identity dropdown's value (ACTOR_RESOLVE, 1.0.5.1), so these columns stay on
+ * the raw fields: the dropdown is how a reader selects the shown identity, a cell click is how they pin a field.
  */
 export const PIN_BY = 'api_key.name, user.name';
 export const PIN_KEY = filterable('api_key.name', { label: 'API key', width: 150, min: 120 });

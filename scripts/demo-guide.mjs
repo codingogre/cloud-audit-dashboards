@@ -233,20 +233,20 @@ export async function run(argv = []) {
       }),
       step('Pick an identity from the control bar', {
         mins: '1 min',
-        act: 'At the top of every dashboard there are three dropdowns — **Project**, **Person (email)** and **Client IP**. When the audit project collects several serverless projects, pick one under **Project** first and the other dropdowns narrow to it. Open **Person (email)**, type the first letters of an address, choose someone. Every panel on the dashboard rescopes to them.',
-        say: 'An analyst should be able to pick a person rather than hunt for them. Email or client IP — every dashboard carries the same set, with Project first for audit projects that collect more than one serverless project.',
+        act: 'At the top of every dashboard there are four dropdowns — **Project**, **Identity type**, **Identity** and **Client IP**. When the audit project collects several serverless projects, pick one under **Project** first. Choose **Person** under **Identity type**, then open **Identity**, type the first letters of an address and choose someone. Every panel on the dashboard rescopes to them.',
+        say: 'An analyst should be able to pick a person or a key rather than hunt for them. Identity lists people by email, API keys by name and Cloud API keys by id, so every credential is one choice away.',
         note: {
-          kind: 'tip', label: 'Why email and not name',
-          body: '`full_name` is null for some identities, so a name dropdown would silently miss people; the email dropdown is the one that never misses. Client IP is searchable because there are usually far too many to scroll.',
+          kind: 'tip', label: 'Why one Identity list',
+          body: '`user.email`, `user.name` and `api_key.name` change meaning with the credential, so no single field names everyone. Identity works out one name per event, the same name every table shows. Client IP is searchable because there are usually far too many to scroll.',
         },
       }),
       step('Carry that identity across the whole suite', {
         mins: '1 min',
-        act: 'With the identity selected, click through the navigation bar — **Identity & Access**, **Kibana Object Forensics**, **Geo & Network**. The filter travels with you and every panel stays scoped. Clicking an email inside any table does the same thing.',
+        act: 'Click the person\'s email in **Busiest human identities** on **Identity & Access** to pin it, then click through the navigation bar — **Kibana Object Forensics**, **Geo & Network**. The pinned filter travels with you and every panel stays scoped.',
         say: 'One selection, and every panel on every dashboard narrows to them — what they authenticated with, what they read, what they changed, where they were. No query writing, no rebuilding a view.',
         note: {
           kind: 'stop', label: 'Clear the pill before you touch a dropdown again',
-          body: 'The selection travels as a filter pill, but the destination dashboard\'s dropdown still reads "Any". Choosing a different person there does not replace the carried filter — it ANDs with it, and every panel drops to zero. Remove the pill first. Same rule before the next section: a pill left up silently scopes every number you show afterwards.',
+          body: 'The Identity dropdowns do not travel: each dashboard opens with them empty, and only the pill carries the selection. Choosing a different person there does not replace the pill — it ANDs with it, and every panel drops to zero. Remove the pill first. Same rule before the next section: a pill left up silently scopes every number you show afterwards.',
         },
       }),
       step('Or drop into the raw events for that identity', {

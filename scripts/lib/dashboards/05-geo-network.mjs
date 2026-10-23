@@ -1,9 +1,9 @@
 /** 05 Geo & Network — see scripts/lib/definitions.mjs for how the suite is assembled. */
 import {
-  IDX, ACTOR_RESOLVE, IP_GEO, TIME, BUCKET, dash, kpi, xy, table, vega, filterable, sized, resetIds, grouped
+  IDX, ACTOR_RESOLVE, ACTOR_KEYS, IP_GEO, TIME, BUCKET, dash, kpi, xy, table, vega, filterable, sized, resetIds, grouped
 } from '../panels.mjs';
 import { rawId } from '../suite.mjs';
-import { RAW_RECORDS } from './shared.mjs';
+import { RAW_RECORDS, IDENTITY_HOW_TO } from './shared.mjs';
 
 /**
  * Why an address that reached the audit stream could not be placed, by address class. One CASE, used
@@ -135,7 +135,7 @@ const INTRO = {
   paragraphs: [
     `See activity by country and city, your busiest client addresses, and anyone seen in more than one country, a sign of a shared or stolen credential. ${RAW_RECORDS}`,
     "Locations come from each client's real address, not Elastic's own network hops. Country is reliable; city is often your internet provider's nearest hub. Private network addresses cannot be placed on a map.",
-    "**How to use it:** choose a Project, Person (email), API key or Client IP in the controls and set the time picker. Click an address or email in a table to filter the whole suite to it.",
+    "**How to use it:** choose a Project, Identity type, Identity or Client IP in the controls and set the time picker. Click an address or email in a table to filter the whole suite to it.",
   ],
   howTo: [
     'Every address is the real client, forwarded by Elastic Cloud’s proxy; the proxy’s own address is never used for location.',
@@ -143,6 +143,7 @@ const INTRO = {
     'Platform-internal (100.64/10) is Kibana calling Elasticsearch for a user, not a failed lookup; private and no-IP events cannot be placed.',
     'Location lookup applies only to events after it was switched on, so an address’s older events count in All events, not Placed events.',
     'Impossible travel lists people only; machines are multi-region by design.',
+    IDENTITY_HOW_TO,
   ],
 };
 
@@ -188,7 +189,7 @@ export function build() {
     // block, and at 5-10x the cities its 25 rows overprinted their labels. A table keeps the exact
     // count beside each place and stops at the rows that fit.
     table(24, 5, 24, 8, 'Top client locations',
-      `FROM ${IDX} | ${TIME} | WHERE client.geo.country_iso_code IS NOT NULL | ${ACTOR_RESOLVE} | STATS events = COUNT(*), actors = COUNT_DISTINCT(actor), ips = COUNT_DISTINCT(client.ip) BY city = client.geo.city_name, country = client.geo.country_name | EVAL location = CONCAT(COALESCE(city, "city unknown"), ", ", country) | SORT events DESC | LIMIT 6`,
+      `FROM ${IDX} | ${TIME} | WHERE client.geo.country_iso_code IS NOT NULL | STATS n = COUNT(*) BY city = client.geo.city_name, country = client.geo.country_name, client.ip, ${ACTOR_KEYS} | ${ACTOR_RESOLVE} | STATS events = SUM(n), actors = COUNT_DISTINCT(actor), ips = COUNT_DISTINCT(client.ip) BY city, country | EVAL location = CONCAT(COALESCE(city, "city unknown"), ", ", country) | SORT events DESC | LIMIT 6`,
       ['location'], [{ column: 'events', label: 'Placed events', width: PLACED_W }, 'actors', { column: 'ips', label: 'Client IPs' }],
       'The busiest client locations in range, counting only events that could be placed (the ones the map shades). Country is reliable; city is often the internet provider’s nearest hub rather than where the person sits.'),
     table(24, 13, 24, 9, 'Geo resolution of audited events', GEO_RESOLUTION,
@@ -215,7 +216,7 @@ export function build() {
     // same place read 658,852 events there and 659,243 here, 391 apart with nothing on the panel to say why.
     // No "First seen": it was the first event IN RANGE, a discovery time that was not one.
     table(24, 22, 24, 8, 'Busiest client IPs',
-      `FROM ${IDX} | ${TIME} | WHERE client.ip IS NOT NULL | ${ACTOR_RESOLVE} | STATS events = COUNT(*), actors = COUNT_DISTINCT(actor), ${IP_GEO} BY client.ip | ${LOCATION} | SORT events DESC | LIMIT 6`,
+      `FROM ${IDX} | ${TIME} | WHERE client.ip IS NOT NULL | STATS n = COUNT(*), ${IP_GEO} BY client.ip, ${ACTOR_KEYS} | ${ACTOR_RESOLVE} | STATS events = SUM(n), actors = COUNT_DISTINCT(actor), country = MAX(country), city = MAX(city), placed = SUM(placed) BY client.ip | ${LOCATION} | SORT events DESC | LIMIT 6`,
       [filterable('client.ip'), 'location'], [{ column: 'events', label: 'All events' }, { column: 'placed', label: 'Placed events', width: PLACED_W }, 'actors'],
       'Real client addresses, busiest first, with where each resolved. An address shared by many identities is usually a NAT gateway or CI runner. “Platform-internal” is Elastic’s own network hop, not a client. Click an IP to scope the suite.'),
     // By name, not ISO code, so the legend reads "United States". Countries under 5% of PLACED traffic
