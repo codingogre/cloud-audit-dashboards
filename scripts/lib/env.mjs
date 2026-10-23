@@ -65,6 +65,16 @@ export const nsId = (id) => {
 };
 
 /**
+ * The identity dropdowns' ES|QL variables (panels.mjs, IDENTITY), as Kibana sends them: "" when nothing is
+ * selected. Every script that runs a panel query outside Kibana (--lint, --perf, the prior-period parity check)
+ * passes these beside ?_tstart/?_tend, or TIME's guards fail on an unbound variable. AUDIT_IDENTITY and
+ * AUDIT_IDENTITY_KIND run the same queries with a selection, e.g.
+ * `AUDIT_IDENTITY_KIND=Person AUDIT_IDENTITY=someone@example.com ./audit --lint`.
+ */
+export const identityParams = ({ identity = process.env.AUDIT_IDENTITY ?? '', kind = process.env.AUDIT_IDENTITY_KIND ?? '' } = {}) =>
+  [{ identity }, { identity_kind: kind }];
+
+/**
  * VEGA AND DISCOVER IDS (1.0.5.1). The files in vega/ and searches/ are numbered (`01-actor-risk-treemap.json`)
  * so the repo lists them in order, and FRAGMENT_USES / DSL_SPECS (layout.mjs) are keyed on those names. The
  * saved-object id drops the number: `cloud-audit-vega-actor-risk-treemap`, `cloud-audit-search-all-events`.

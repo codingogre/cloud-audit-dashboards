@@ -1,37 +1,15 @@
 /**
- * The dashboard control bar — four dropdowns that scope the whole suite: Project, Person (email), API key,
- * Client IP.
+ * The dashboard control bar: Project, Identity type, Identity, Client IP (CONTROLS below), and the data view
+ * the classic controls aggregate against.
  *
- * Why this lives outside the dashboard definitions: `PUT /api/dashboards/{id}` is
- * Zod-strict and silently drops `controlGroupInput`, so the control bar cannot travel
- * with the rest of the definition. It is applied by the same _export -> mutate -> _import
- * post-pass that repoints Vega panels, and it is re-applied on every `--dashboards` run
- * because each run's PUT passes wipe it first. That is the design, not a leak.
- *
- * Shape verified empirically against Kibana 9.6.0 serverless — a throwaway dashboard was
- * imported with a hand-built control group and exported back. Two things the export
- * settled, both of which the REST schema documentation does not:
- *   - control state is WRAPPED in `explicitInput`, not flat in the panel entry;
- *   - the data view arrives by REFERENCE, named `controlGroup_<uuid>:optionsListDataView`,
- *     and `dataViewId` inside explicitInput must match that reference's id.
- *
- * Field choices are driven by what the audit stream actually carries:
- *   project.name    the emitting serverless project — see CONTROLS below
- *   user.email      the identity control: the reliable key, never null for a human
- *   api_key.name    a named Elasticsearch API key (1.0.5). A Cloud API key has no name, so it is not
- *                   listed; it is pinned from the Principal id click columns instead. An options list on a
- *                   field not mapped yet (no API key used on the project) simply offers nothing.
- *                   A runtime "identity" field (the actor COALESCE) was tried and rejected: its pill is DSL
- *                   on a field the index does not have, so every ES|QL panel and DSL Vega spec went empty.
- *   client.ip                  high-cardinality — too many to eyeball, which is the point of
- *                              a searchable dropdown rather than a table
- * `user.name` is deliberately NOT offered: it is a numeric id (e.g. 1234567890), not
- * a name. See esql/fragments.md. `user.full_name` is not offered either (removed in
- * 1.0.2): it was NULL for some identities, so a "Person (name)" dropdown silently missed people
- * that the email dropdown always finds, and two person controls invited a contradictory pair.
+ * Fields NOT offered, and why: `user.name` alone (a numeric id, a key id or a key's owner, depending on the
+ * credential — Identity covers it); `user.full_name` (removed in 1.0.2, NULL for some identities); a runtime
+ * "identity" field on the data view (tried in 1.0.5: its pill is DSL on a field the index does not have, so
+ * every ES|QL panel went empty — the ES|QL variable controls are what replaced it).
  */
 import { cfg, nsId } from './env.mjs';
 import { stableUuid } from './ids.mjs';
+import { IDENTITY_KEYS, IDENTITY_KIND, IDENTITY, nullSafe } from './panels.mjs';
 
 /** The data view the controls aggregate against. Real saved object, not the ad-hoc one
  *  the Discover sessions carry inline — a control resolves its field list by reference.
@@ -54,78 +32,73 @@ export const dataViewObject = () => ({
 });
 
 /**
- * Order is deliberate. Project leads because an audit project usually collects the audit
- * streams of SEVERAL serverless projects, and the chaining below is HIERARCHICAL: picking a
- * project narrows every dropdown after it to the people and addresses seen in that project.
- * Then email, the identity control, because it is what actually resolves a person; then the API
- * key, the other identity a person can choose by name; IP last because it answers a different question ("who was at this address") rather than "what did
- * this person do".
+ * THE CONTROL BAR (1.0.5.1): Project · Identity type · Identity · Client IP.
  *
- * project.* names the project that EMITTED the event, not the audit project that
- * stores it, and it is populated on every Elasticsearch and Kibana event (verified 2026-10-14,
- * 100% of both sources). The name, not the id, because the id is a 32-hex string nobody
- * recognises; Elastic Cloud does not enforce unique project names, so an org that reuses a
- * name across regions gets those projects merged under one option.
+ * Project and Client IP are classic options lists on raw fields: a choice becomes a filter pill, which every
+ * panel honours — Lens, both kinds of Vega, Discover — and which the nav links carry to the next dashboard.
  *
- * Actor 360's cohort rank (vega/12) follows this control and no other. Kibana applies the control
- * bar to a DSL dataset as all-or-nothing, so the spec works out the projects in scope itself; see
- * TWO_DATASET_SPECS in layout.mjs.
+ * Identity type and Identity replace Person (email) and API key. Those two read one raw field each, and the
+ * fields change meaning with the credential (panels.mjs, IDENTITY), so a Cloud API key was in neither list and
+ * user.name was sometimes a person, sometimes a key id, sometimes a key's owner. They are ES|QL variable
+ * controls instead: each lists the values an ES|QL query works out (IDENTITY_KIND, IDENTITY), and a choice
+ * sets ?identity_kind / ?identity, which TIME's IDENTITY_WHERE reads in every ES|QL panel. Single-select
+ * (the user's choice): it keeps a selected panel at ~20ms over 30 days; multi-select has no fast path.
+ *
+ * What a variable control cannot do, all measured on 9.6 (.sessions research, esql-controls-probe):
+ *   - a panel that is not ES|QL ignores it: DSL Vega specs (vega/14 Audit data held, by design) and Discover
+ *     sessions (1.0.5.1 converted every dashboard Discover panel to a Lens table for this reason);
+ *   - its selection is not in the URL and the nav links do not carry it: each dashboard opens at "Any";
+ *   - a classic control (Project) does not narrow its option list;
+ *   - Identity chains on Identity type through its query (?identity_kind), but a stale Identity is not cleared
+ *     when the type changes: the dropdown shows a warning and the panels read 0 until it is cleared.
+ *
+ * Project leads, because one audit project usually collects the streams of several serverless projects. project.*
+ * names the project that EMITTED the event, populated on every Elasticsearch and Kibana event (verified
+ * 2026-10-14); the name, not the 32-hex id. Actor 360's cohort rank (vega/12) follows the Project control and
+ * no other; see TWO_DATASET_SPECS in layout.mjs. Client IP is last: it answers "who was at this address".
+ *
+ * Every control goes out in the PUT payload's `pinned_panels` (the 9.6 Dashboards API accepts both kinds there;
+ * verified by PUT, GET and an _export/_import round trip), so nothing is patched in after the deploy.
  */
 // width 'small' with grow: four 'medium' controls wrapped Client IP onto a second row at a 1440px viewport
 // (rendered, 1.0.5); 'small' is a minimum, and grow shares the row out evenly at any width.
+const OPTIONS_TIME = 'WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart';
+const optionsQuery = (tail) => nullSafe(
+  `FROM ${cfg.dataStream} | ${OPTIONS_TIME} | STATS n = COUNT(*) BY ${IDENTITY_KEYS} | ${tail}`);
 export const CONTROLS = [
-  { field: 'project.name',   title: 'Project',        width: 'small', search: 'prefix' },
-  { field: 'user.email',     title: 'Person (email)', width: 'small', search: 'prefix' },
-  // After Person, so choosing a person narrows it to keys whose events carry that email (usually none:
-  // most keys' events carry no email), and choosing a key leaves the people list alone.
-  { field: 'api_key.name',   title: 'API key',        width: 'small', search: 'prefix' },
+  { field: 'project.name', title: 'Project', width: 'small', search: 'prefix' },
+  { variable: 'identity_kind', title: 'Identity type', width: 'small',
+    query: () => optionsQuery(`EVAL ${IDENTITY_KIND} | STATS n = SUM(n) BY identity_kind | SORT n DESC | KEEP identity_kind`) },
+  // Chained on Identity type through ?identity_kind; "" (nothing chosen) lists every identity.
+  { variable: 'identity', title: 'Identity', width: 'small',
+    query: () => optionsQuery(`EVAL ${IDENTITY_KIND}, ${IDENTITY} | WHERE ?identity_kind == "" OR identity_kind == ?identity_kind ` +
+      '| STATS n = SUM(n) BY identity | SORT n DESC | KEEP identity') },
   // 'wildcard', not 'prefix': prefix search on an `ip` field only matches whole octets, so
   // typing "100.64" returns nothing while "100.64.0.10" works. Wildcard matches substrings.
-  { field: 'client.ip',                 title: 'Client IP',      width: 'small', search: 'wildcard' },
+  { field: 'client.ip', title: 'Client IP', width: 'small', search: 'wildcard' },
 ];
 
-/** Deterministic per field, so redeploys do not churn control ids (and therefore do not
- *  orphan a selection the analyst has already made). Keyed on the field, not the position, so
- *  removing a control (full_name, 1.0.2) left the others' ids and selections untouched. */
-const controlId = (field) => stableUuid(`cloud-audit-control:${field}`);
+/** Deterministic per field or variable, so redeploys do not churn control ids. */
+const controlId = (c) => stableUuid(`cloud-audit-control:${c.field || `esql:${c.variable}`}`);
 
-/**
- * Build the control group and the references it needs.
- * Returns null-safe values ready to splice onto an exported dashboard saved object.
- */
-export function controlGroup() {
-  const panels = {};
-  const references = [];
-  CONTROLS.forEach((c, order) => {
-    const id = controlId(c.field);
-    const kind = c.kind || 'optionsList';
-    panels[id] = {
-      type: `${kind}Control`, order, grow: true, width: c.width,
-      explicitInput: {
-        id, fieldName: c.field, title: c.title,
-        dataViewId: DATA_VIEW_ID,
-        searchTechnique: c.search,
-        selectedOptions: [], exclude: false, existsSelected: false,
-        singleSelect: false,
+/** The control bar as the Dashboards API's `pinned_panels`, in order. */
+export function pinnedPanels() {
+  return CONTROLS.map((c) => (c.field
+    ? {
+      id: controlId(c), type: 'options_list_control', width: c.width, grow: true,
+      config: {
+        title: c.title, data_view_id: DATA_VIEW_ID, field_name: c.field, search_technique: c.search,
+        selected_options: [], single_select: false, exclude: false, exists_selected: false,
+        use_global_filters: true, ignore_validations: false, sort: { by: '_count', direction: 'desc' },
       },
-    };
-    references.push({
-      name: `controlGroup_${id}:${kind}DataView`,
-      type: 'index-pattern', id: DATA_VIEW_ID,
-    });
-  });
-  return {
-    controlGroupInput: {
-      chainingSystem: 'HIERARCHICAL',
-      labelPosition: 'oneLine',
-      showApplySelections: false,
-      ignoreParentSettingsJSON: JSON.stringify({
-        ignoreFilters: false, ignoreQuery: false, ignoreTimerange: false, ignoreValidations: false,
-      }),
-      panelsJSON: JSON.stringify(panels),
-    },
-    references,
-  };
+    }
+    : {
+      id: controlId(c), type: 'esql_control', width: c.width, grow: true,
+      config: {
+        title: c.title, control_type: 'VALUES_FROM_QUERY', variable_name: c.variable, variable_type: 'values',
+        esql_query: c.query(), selected_options: [], single_select: true,
+      },
+    }));
 }
 
 /**

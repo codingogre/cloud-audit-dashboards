@@ -23,7 +23,7 @@ test('parseWindows accepts m/h/d lists and rejects anything else', () => {
 
 test('windowParams is the ?_tstart/?_tend shape Kibana sends, ending at now', () => {
   const now = Date.parse('2026-10-14T12:00:00Z');
-  assert.deepEqual(windowParams(3600e3, now), [{ _tstart: '2026-10-14T11:00:00.000Z' }, { _tend: '2026-10-14T12:00:00.000Z' }]);
+  assert.deepEqual(windowParams(3600e3, now), [{ _tstart: '2026-10-14T11:00:00.000Z' }, { _tend: '2026-10-14T12:00:00.000Z' }, { identity: '' }, { identity_kind: '' }]);
 });
 
 test('the replica is the live dataset with namespace perf', () => {

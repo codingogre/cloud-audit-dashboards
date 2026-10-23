@@ -103,6 +103,80 @@ export const ACTOR =
   `${ACTOR_RESOLVE}, actor_kind = CASE(user.email IS NOT NULL, "human", "service")`;
 
 /**
+ * IDENTITY (1.0.5.1): one answer per event to "which identity was this", behind the Identity type and Identity
+ * dropdowns (ES|QL variable controls ?identity_kind and ?identity, controls.mjs).
+ *
+ * The raw fields change meaning with the credential, so no one of them names every identity:
+ *   user.email      only for a person signed in through Elastic Cloud SSO; no API key ever carries one
+ *   api_key.name    a named Elasticsearch API key, and only on Elasticsearch events
+ *   user.name       the account the request RAN AS: a person's numeric Cloud user id, a Cloud API key's
+ *                   20-character id (realm _cloud_api_key; nothing else names it), a service account
+ *                   (elastic/kibana), an attempted name on a failed sign-in, or — for an Elasticsearch API
+ *                   key — the key's OWNER. On a Kibana event made with an Elasticsearch key (user.domain
+ *                   _es_api_key) Kibana records only that a key was used, so user.name there is the owner
+ *                   and the key itself is unknown ("Unnamed key of <owner>").
+ *
+ * IDENTITY_KINDS lists each kind with its test, as plain boolean expressions on raw fields. IDENTITY_KIND and
+ * IDENTITY are the same rules as CASEs for DISPLAY: multi-branch, so they run on grouped rows (count first
+ * by IDENTITY_KEYS, QUERY SHAPE rule 2), never per event. IDENTITY_WHERE is the FILTER, per event, and is
+ * written with no CASE and no COALESCE so Elasticsearch can answer most of it from the index:
+ *
+ *   PRE    a cheap superset any selected identity must pass (term tests the index answers)  20ms at 30 days
+ *   KIND   ?identity_kind's test                                                             for a person
+ *   EXACT  ?identity against the display rule, branch by branch                              (720ms with COALESCE)
+ *
+ * An empty dropdown sends "" and every guard folds to true before the query runs (270ms → 270ms unselected).
+ * Measured over 30 days on the live stream; selecting the Cloud API key, 98% of all events, costs ~850ms.
+ * TIME carries IDENTITY_WHERE, so every ES|QL panel that bounds its window with TIME follows the dropdowns.
+ */
+export const CLOUD_KEY_SUFFIX = ' · Cloud API key';
+export const UNNAMED_KEY_PREFIX = 'Unnamed key of ';
+export const UNATTRIBUTED = '(unattributed)';
+const KEY_DOMAINS = '"_cloud_api_key","_es_api_key","_service_account"';
+const SIGNIN_FAILED_ACTIONS = '"authentication_failed","anonymous_access_denied"';
+const NO_EMAIL = 'user.email IS NULL';
+const NO_KEY_NAME = 'api_key.name IS NULL';
+const OTHER_DOMAIN = `(user.domain IS NULL OR NOT user.domain IN (${KEY_DOMAINS}))`;
+const FAILED_SIGNIN = `event.action IN (${SIGNIN_FAILED_ACTIONS})`;
+const NOT_FAILED_SIGNIN = `(event.action IS NULL OR NOT event.action IN (${SIGNIN_FAILED_ACTIONS}))`;
+const UNNAMED = `${NO_EMAIL} AND ${NO_KEY_NAME}`;
+export const IDENTITY_KINDS = [
+  ['Person', 'user.email IS NOT NULL'],
+  ['Elasticsearch API key', `${NO_EMAIL} AND api_key.name IS NOT NULL`],
+  ['Elasticsearch API key (name not recorded)', `${UNNAMED} AND user.domain == "_es_api_key"`],
+  ['Cloud API key', `${UNNAMED} AND user.domain == "_cloud_api_key"`],
+  ['Service account', `${UNNAMED} AND user.domain == "_service_account"`],
+  ['Failed sign-in', `${UNNAMED} AND ${OTHER_DOMAIN} AND ${FAILED_SIGNIN}`],
+  ['Unattributed', `${UNNAMED} AND ${OTHER_DOMAIN} AND ${NOT_FAILED_SIGNIN} AND user.name IS NULL`],
+  ['Other', `${UNNAMED} AND ${OTHER_DOMAIN} AND ${NOT_FAILED_SIGNIN} AND user.name IS NOT NULL`],
+];
+/** The raw fields IDENTITY_KIND and IDENTITY read: group by these first, then derive. */
+export const IDENTITY_KEYS = `user.email, api_key.name, user.domain, user.name, failed_signin = ${FAILED_SIGNIN}`;
+export const IDENTITY_KIND =
+  'identity_kind = CASE(user.email IS NOT NULL, "Person", api_key.name IS NOT NULL, "Elasticsearch API key", ' +
+  'user.domain == "_es_api_key", "Elasticsearch API key (name not recorded)", user.domain == "_cloud_api_key", "Cloud API key", ' +
+  'user.domain == "_service_account", "Service account", failed_signin, "Failed sign-in", user.name IS NULL, "Unattributed", "Other")';
+export const IDENTITY =
+  'identity = CASE(user.email IS NOT NULL, user.email, api_key.name IS NOT NULL, api_key.name, ' +
+  `user.domain == "_cloud_api_key", CONCAT(user.name, "${CLOUD_KEY_SUFFIX}"), ` +
+  `user.domain == "_es_api_key", CONCAT("${UNNAMED_KEY_PREFIX}", user.name), ` +
+  `user.name IS NOT NULL, user.name, "${UNATTRIBUTED}")`;
+const IDENTITY_PRE =
+  '(?identity == "" OR user.email == ?identity OR api_key.name == ?identity OR user.name == ?identity ' +
+  `OR user.name == REPLACE(REPLACE(?identity, "${CLOUD_KEY_SUFFIX}$", ""), "^${UNNAMED_KEY_PREFIX}", "") ` +
+  `OR (?identity == "${UNATTRIBUTED}" AND user.name IS NULL))`;
+const IDENTITY_KIND_TEST =
+  `(?identity_kind == "" OR ${IDENTITY_KINDS.map(([k, t]) => `(?identity_kind == "${k}" AND ${t})`).join(' OR ')})`;
+const IDENTITY_EXACT =
+  '(?identity == "" OR user.email == ?identity ' +
+  `OR (${NO_EMAIL} AND api_key.name == ?identity) ` +
+  `OR (${UNNAMED} AND user.domain == "_cloud_api_key" AND user.name == REPLACE(?identity, "${CLOUD_KEY_SUFFIX}$", "")) ` +
+  `OR (${UNNAMED} AND user.domain == "_es_api_key" AND user.name == REPLACE(?identity, "^${UNNAMED_KEY_PREFIX}", "")) ` +
+  `OR (${UNNAMED} AND (user.domain IS NULL OR NOT user.domain IN ("_cloud_api_key","_es_api_key")) AND user.name == ?identity) ` +
+  `OR (?identity == "${UNATTRIBUTED}" AND ${UNNAMED} AND user.name IS NULL))`;
+export const IDENTITY_WHERE = `${IDENTITY_PRE} AND ${IDENTITY_KIND_TEST} AND ${IDENTITY_EXACT}`;
+
+/**
  * Where an identity's traffic comes from, by the email on the event. Title case because these are
  * display values — a pie's slices and legend print them as they are — and they sit beside the
  * realm and credential-type labels, which are title case too. ORG reads only user.email,
@@ -762,7 +836,9 @@ export const BAND =
 export const IP_GEO =
   'country = MAX(client.geo.country_name), city = MAX(client.geo.city_name), placed = COUNT(client.geo.country_iso_code)';
 
-export const TIME   = 'WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart';
+/** The picker window AND the identity dropdowns (IDENTITY above). TIME_ONLY is the bare window. */
+export const TIME_ONLY = 'WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart';
+export const TIME   = `${TIME_ONLY} AND ${IDENTITY_WHERE}`;
 export const BUCKET = 'BUCKET(@timestamp, 75, ?_tstart, ?_tend)';
 export const KIB    = 'WHERE service.name == "serverless-kibana"';
 /** Elasticsearch's source name; `elasticsearch-serverless` before the 2026 schema change. */

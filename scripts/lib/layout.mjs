@@ -22,7 +22,7 @@ import {
   NAV_H, NOISE, BAND, BAND_KEYS, RISK, RISK_KEYS, RISK_RESTORE, VERB, ACTOR_RESOLVE, OBJ, OBJ_ID, OBJ_TYPE, CHANGE_PRED, CRED, OBJ_PRESENT,
   CRED_TYPE_LABEL, INDEX_FAMILY, CONCRETE, SYS_INDEX, ACTOR_LABEL, MAGNITUDE_RAMP, SEVERITY_RAMP, fitRows, tableLimit,
   KIBANA_INTERNALS, BOUNDED, BARE_COUNT, grouped, FAILED_OR_DENIED, PREV_TILES, prevRef, COVERAGE_REF, flatPanels,
-  HOW_TO_LABEL,
+  HOW_TO_LABEL, TIME,
 } from './panels.mjs';
 
 export const GRID_W = 48;
@@ -37,19 +37,21 @@ export const GRID_W = 48;
  * This is not hypothetical: RISK had drifted in two Vega specs and VERB in a third by the time
  * this check was written.
  */
+// TIME: every ES|QL Vega spec bounds its window with TIME, which carries the identity dropdowns' filter
+// (IDENTITY_WHERE, panels.mjs), so a spec that kept the bare window would silently ignore the dropdowns.
 // ACTOR_LABEL: every static file that DISPLAYS an identity shows an opaque Cloud API key id in the one
 // shared form ("_4KEO… · Cloud API key"); Lens tables get it from table().
 const FRAGMENT_USES = {
-  'vega/01-actor-risk-treemap.json': { NOISE, RISK, RISK_KEYS, RISK_RESTORE, ACTOR_LABEL },
-  'vega/03-object-verb-heatmap.json': { VERB, OBJ_ID, OBJ_TYPE },
-  'vega/02-auth-matrix.json': { ACTOR_RESOLVE, CRED_TYPE_LABEL, ACTOR_LABEL },
-  'vega/04-actor-index-matrix.json': { ACTOR_RESOLVE, CONCRETE, INDEX_FAMILY, ACTOR_LABEL },
-  'vega/05-rare-event-scatter.json': { RISK, RISK_KEYS, RISK_RESTORE },
-  'vega/06-geo-origin.json': { ACTOR_RESOLVE },
-  'vega/07-noise-ratio-stream.json': { BAND_KEYS, BAND },
-  // Groups on the real user.email (never the actor COALESCE), so there is no fragment to pin.
-  'vega/10-actor-geography.json': {},
-  'vega/11-actor-object-flow.json': { OBJ_PRESENT, CRED, VERB, OBJ_TYPE },
+  'vega/01-actor-risk-treemap.json': { TIME, NOISE, RISK, RISK_KEYS, RISK_RESTORE, ACTOR_LABEL },
+  'vega/03-object-verb-heatmap.json': { TIME, VERB, OBJ_ID, OBJ_TYPE },
+  'vega/02-auth-matrix.json': { TIME, ACTOR_RESOLVE, CRED_TYPE_LABEL, ACTOR_LABEL },
+  'vega/04-actor-index-matrix.json': { TIME, ACTOR_RESOLVE, CONCRETE, INDEX_FAMILY, ACTOR_LABEL },
+  'vega/05-rare-event-scatter.json': { TIME, RISK, RISK_KEYS, RISK_RESTORE },
+  'vega/06-geo-origin.json': { TIME, ACTOR_RESOLVE },
+  'vega/07-noise-ratio-stream.json': { TIME, BAND_KEYS, BAND },
+  // Groups on the real user.email (never the actor COALESCE); TIME pins the identity dropdowns' filter.
+  'vega/10-actor-geography.json': { TIME },
+  'vega/11-actor-object-flow.json': { TIME, OBJ_PRESENT, CRED, VERB, OBJ_TYPE },
   // 00 is the unfiltered full data set: no noise gate by design, only the shared identity.
   'searches/00-all-events.json': { ACTOR_RESOLVE, ACTOR_LABEL },
   'searches/01-all-mutations.json': { CHANGE_PRED, ACTOR_RESOLVE, VERB, OBJ, ACTOR_LABEL },

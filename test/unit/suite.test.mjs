@@ -166,23 +166,31 @@ test('--with is folded into AUDIT_WITH, adds to .env, and an unknown name is ref
   assert.deepEqual(SUITE.filter((d) => d.optional).map((d) => d.name), ['06-platform-volume']);
 });
 
-test('control bar (1.0.5): Project, Person (email), API key, Client IP; no full_name; ids keyed on the field, chaining hierarchical', async () => {
-  const { CONTROLS, controlGroup } = await import('../../scripts/lib/controls.mjs');
+test('control bar (1.0.5.1): Project, Identity type, Identity, Client IP; identity is ES|QL, single-select, chained', async () => {
+  const { CONTROLS, pinnedPanels } = await import('../../scripts/lib/controls.mjs');
   const { stableUuid } = await import('../../scripts/lib/ids.mjs');
-  assert.deepEqual(CONTROLS.map((c) => c.title), ['Project', 'Person (email)', 'API key', 'Client IP']);
-  assert.deepEqual(CONTROLS.map((c) => c.field), ['project.name', 'user.email', 'api_key.name', 'client.ip']);
-  assert.ok(!CONTROLS.some((c) => c.field === 'user.full_name'));
-  const g = controlGroup();
-  assert.equal(g.controlGroupInput.chainingSystem, 'HIERARCHICAL');
-  const panels = JSON.parse(g.controlGroupInput.panelsJSON);
-  // Ids are keyed on the field name. 1.0.4 renamed the fields to bare ECS names, so the ids changed with them.
-  for (const [i, c] of CONTROLS.entries()) {
-    const id = stableUuid(`cloud-audit-control:${c.field}`);
-    assert.equal(panels[id].explicitInput.fieldName, c.field);
-    assert.equal(panels[id].order, i);
+  const { payload } = await import('../../scripts/dashboards.mjs');
+  assert.deepEqual(CONTROLS.map((c) => c.title), ['Project', 'Identity type', 'Identity', 'Client IP']);
+  const pp = pinnedPanels();
+  assert.deepEqual(pp.map((p) => p.type), ['options_list_control', 'esql_control', 'esql_control', 'options_list_control']);
+  assert.deepEqual(pp.filter((p) => p.config.field_name).map((p) => p.config.field_name), ['project.name', 'client.ip']);
+  // Classic control ids stay keyed on the field, so Project and Client IP keep their 1.0.5 ids.
+  assert.equal(pp[0].id, stableUuid('cloud-audit-control:project.name'));
+  assert.equal(pp[3].id, stableUuid('cloud-audit-control:client.ip'));
+  const [kind, who] = [pp[1].config, pp[2].config];
+  assert.deepEqual([kind.variable_name, who.variable_name], ['identity_kind', 'identity']);
+  for (const c of [kind, who]) {
+    assert.equal(c.single_select, true, 'single-select: multi-select has no fast path');
+    assert.equal(c.variable_type, 'values');
+    assert.equal(c.control_type, 'VALUES_FROM_QUERY');
+    assert.match(c.esql_query, /^SET unmapped_fields="nullify"; FROM /, 'names api_key.*, so it carries the SET');
+    assert.match(c.esql_query, /STATS n = COUNT\(\*\) BY user\.email, api_key\.name, user\.domain, user\.name/, 'counts first');
+    assert.ok(!/\?identity\b(?!_kind)/.test(c.esql_query), 'an options query never reads the variable it sets');
   }
-  assert.equal(Object.keys(panels).length, CONTROLS.length);
-  assert.equal(g.references.length, CONTROLS.length);
+  assert.ok(!kind.esql_query.includes('?identity_kind'));
+  assert.match(who.esql_query, /\?identity_kind == "" OR identity_kind == \?identity_kind/, 'Identity chains on Identity type');
+  // Every dashboard sends the bar in the PUT; nothing is patched in afterwards.
+  for (const [name, def] of Object.entries(buildAll())) assert.deepEqual(payload(def).pinned_panels, pp, name);
 });
 
 test('a dashboard drilldown carries the reference Kibana navigates by, so "Open in …" never lands on #/create', async () => {

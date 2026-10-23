@@ -8,7 +8,7 @@
  */
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { ROOT, withStream } from './lib/env.mjs';
+import { ROOT, withStream, identityParams } from './lib/env.mjs';
 import { es } from './lib/http.mjs';
 import { success, fail, detail, warn } from './lib/log.mjs';
 import { buildAll } from './lib/definitions.mjs';
@@ -26,7 +26,7 @@ const SLOW_MS = 5e3;
 
 export const PARAMS = () => {
   const end = new Date(), start = new Date(Date.now() - 3600e3);
-  return [{ _tstart: start.toISOString() }, { _tend: end.toISOString() }];
+  return [{ _tstart: start.toISOString() }, { _tend: end.toISOString() }, ...identityParams()];
 };
 
 const TIME_BOUND = 'WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart';
@@ -111,7 +111,8 @@ export function stripContext(node, win = lintWindow()) {
 export async function prevParity({ budgetMs = BUDGET_MS } = {}) {
   const end = Math.floor((Date.now() - 300e3) / 1000) * 1000;
   const win = { min: end - (PREV_LOOKBACK_DAYS - 1) * 864e5, max: end };
-  const params = [{ _tstart: new Date(win.min).toISOString() }, { _tend: new Date(win.max).toISOString() }];
+  // Unset identity on purpose: the DSL side has no identity filter, so parity is over every event.
+  const params = [{ _tstart: new Date(win.min).toISOString() }, { _tend: new Date(win.max).toISOString() }, ...identityParams({ identity: '', kind: '' })];
   const out = [];
   for (const key of Object.keys(PREV_TILES)) {
     const spec = JSON.parse(withStream(JSON.stringify(prevSpec(key))));

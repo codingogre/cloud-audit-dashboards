@@ -11,12 +11,12 @@
  *      are legacy `visualization` saved objects, so those panels render "Visualization type
  *      not found." until the reference is rewritten to the classic by-reference form.
  *
- *   2. The control bar. `PUT /api/dashboards/{id}` is Zod-strict and silently drops
- *      `controlGroupInput` — it does not error, it just returns a dashboard without it.
+ *   2. Intro text size, drilldowns and the section check (below).
  *
- * Both are repaired the same way, in ONE _export -> mutate -> _import round trip per
- * dashboard. Note the ordering constraint: the PUT passes above wipe both every time, so
- * this post-pass is not an install step, it is part of every deploy.
+ * The control bar used to be patched in here too, as `controlGroupInput`, which the API dropped. Since 1.0.5.1
+ * it rides the PUT as `pinned_panels` (controls.mjs), which the 9.6 API accepts and the round trip keeps.
+ * This post-pass is one _export -> mutate -> _import per dashboard, on every deploy: the PUT passes reset
+ * what it patches.
  */
 import { writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
@@ -25,7 +25,7 @@ import { dashId, strays, SUITE } from './lib/suite.mjs';
 import { kb } from './lib/http.mjs';
 import { success, detail, info } from './lib/log.mjs';
 import { buildAll } from './lib/definitions.mjs';
-import { controlGroup, dataViewObject, isControlRef, CONTROLS, RETIRED_DATA_VIEW_IDS } from './lib/controls.mjs';
+import { pinnedPanels, dataViewObject, isControlRef, CONTROLS, RETIRED_DATA_VIEW_IDS } from './lib/controls.mjs';
 import { panelDrilldown, hasFilterableColumn, ACTOR_360, drilldownRefs, isDrilldownRef } from './lib/drilldowns.mjs';
 import { checkLayout } from './lib/layout.mjs';
 import { smallMarkdown, writeTileSpecs, flatPanels } from './lib/panels.mjs';
@@ -45,7 +45,7 @@ const strip = ({ drill, narrow1440, lint, headed, small, ...p }) => p;
 const apiEntry = (p) => (p.section
   ? { id: p.id, title: p.title, collapsed: p.collapsed, grid: { y: p.grid.y }, panels: p.panels.map(strip) }
   : strip(p));
-export const payload = (def) => ({ ...def, panels: def.panels.map(apiEntry) });
+export const payload = (def) => ({ ...def, panels: def.panels.map(apiEntry), pinned_panels: pinnedPanels() });
 
 /** Write the generated definitions to disk so they are diffable in review. */
 export function emit() {
@@ -96,14 +96,6 @@ export function checkSections(id, obj, panels, sections) {
 }
 
 async function applyImportOnlyState(all) {
-  const { controlGroupInput, references: controlRefs } = controlGroup();
-
-  // Imported defensively rather than relying on `--objects` having run: a dashboard whose
-  // controlGroup reference points at a missing data view imports clean and then renders an
-  // empty control bar, which is worse than failing.
-  await kb.importObjects([dataViewObject()]);
-  detail(`data view ${dataViewObject().id} ensured`);
-
   let vegaTotal = 0;
   let drillTotal = 0;
   for (const [name, def] of Object.entries(all)) {
@@ -125,8 +117,8 @@ async function applyImportOnlyState(all) {
     const [obj] = await kb.exportObjects([{ type: 'dashboard', id }]);
     const panels = JSON.parse(obj.attributes.panelsJSON);
     checkSections(id, obj, panels, sections);
-    // Drop any control references from a previous deploy before re-adding, or each run
-    // appends a duplicate set and the import eventually rejects the object.
+    // Drop the control-group references a pre-1.0.5.1 deploy patched in (controlGroup_<id>:optionsListDataView).
+    // The pinned_panels controls' own references (<id>:optionsListDataView) come from the PUT and stay.
     let refs = (obj.references || []).filter((r) => !isControlRef(r.name) && !isDrilldownRef(r.name));
     let changed = 0;
     for (const p of panels) {
@@ -166,8 +158,8 @@ async function applyImportOnlyState(all) {
       drilled++;
     }
     obj.attributes.panelsJSON = JSON.stringify(panels);
-    obj.attributes.controlGroupInput = controlGroupInput;
-    obj.references = [...refs, ...controlRefs];
+    delete obj.attributes.controlGroupInput;
+    obj.references = refs;
     await kb.importObjects([obj]);
     // Read it back: an import that dropped or re-ordered the `sections` attribute would leave the inner
     // panels orphaned on a sectionId nothing defines, and that renders, silently, as a different layout.
@@ -217,6 +209,10 @@ async function removeStrays() {
 
 export async function run() {
   const all = emit();
+  // The classic controls name the data view by id, so it must exist before the first PUT. Imported here
+  // rather than relying on `--objects` having run: a control on a missing data view renders an empty bar.
+  await kb.importObjects([dataViewObject()]);
+  detail(`data view ${dataViewObject().id} ensured`);
   detail(`generated ${Object.keys(all).length} dashboard definitions`);
 
   for (const pass of [1, 2]) {
