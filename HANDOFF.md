@@ -3,7 +3,16 @@
 `CLAUDE.md`-style durable context lives in `README.md` and `esql/fragments.md` and wins on
 conflict. This file is "where we are right now" and should be assumed stale.
 
-## Release 1.0.5 — in progress
+## Release 1.0.5 — security-practitioner review fixes, 2026-10-23
+
+Deployed to the Default space on 2026-10-23; the rc105 test copy was removed. Came out of the
+security-practitioner review (136 use cases, 32 design holes): the fixes below are the eight the human
+picked. Deferred: a starter alert pack (1.0.6 candidate) and an identity redesign — normalized
+"who acted" dropdowns. An ES|QL-variable-control probe showed a runtime identity can drive dropdowns
+(`pinned_panels` with `esql_control`, empty-selection guards, `COALESCE` for null identities), but
+Discover sessions and DSL Vega don't read ES|QL variables, and filtering on a computed identity is slow
+at 30 days unless pre-filtered on raw fields. Probe notes: `build/esqlctl-probe-1/` (local only).
+
 
 - **The suite's own install no longer scores.** `SUITE_INSTALL` (a `cloud-audit-*` / `elastic_cloud-audit-*`
   object id with no `kibana.session.id`) is a new `RISK_KEYS` boolean, and `RISK` scores it 0 right after the
