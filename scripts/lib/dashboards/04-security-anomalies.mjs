@@ -5,7 +5,7 @@ import {
 } from '../panels.mjs';
 import { rawId } from '../suite.mjs';
 import {
-  ACTOR_KEYS, riskScored, PIN_BY, PIN_COLS, PIN_KEY, PIN_PRINCIPAL, PIN_PRINCIPAL_SHORT, RAW_RECORDS
+  ACTOR_KEYS, riskScored, PIN_BY, PIN_COLS, PIN_KEY, PIN_PRINCIPAL, PIN_PRINCIPAL_SHORT, RAW_RECORDS, IDENTITY_HOW_TO
 } from './shared.mjs';
 
 /**
@@ -20,8 +20,8 @@ const SCOPE_COLORS = { tenant: PALETTE[1], platform: PALETTE[0], unauthenticated
  * opened looks new. Flag it instead of hiding it: an identity first seen in the opening twelfth of
  * the range (5 minutes of an hour, 14 hours of a week) was most likely already active before it,
  * and reads "no". Derived after the STATS, over at most a screenful of rows, so it costs nothing.
- * Measured from the range, not from the first event in it: the data's own start would move with a
- * Person pill, and a pinned identity would then always read "no".
+ * Measured from the range, not from the first event in it: the data's own start would move with an
+ * Identity choice or a pill, and a selected identity would then always read "no".
  */
 const NEW_IN_RANGE =
   'EVAL new_in_range = CASE(TO_LONG(first_seen) - TO_LONG(TO_DATETIME(?_tstart)) > ' +
@@ -125,7 +125,7 @@ const INTRO = {
   paragraphs: [
     `Each sensitive action earns a risk weight, from 10 for a workflow run up to 50 for a security setting change, while routine work scores zero. ${RAW_RECORDS}`,
     "Panels rank identities by that risk, show newly seen identities, and list every security configuration change. Elastic's own routine API key clean-up is counted separately, so it never hides real changes.",
-    "**How to use it:** choose a Project, Person (email), API key or Client IP in the controls and set the time picker. Hover the ⓘ beside a panel title to see how it is scored.",
+    "**How to use it:** choose a Project, Identity type, Identity or Client IP in the controls and set the time picker. Hover the ⓘ beside a panel title to see how it is scored.",
   ],
   howTo: [
     'Weights: security config change 50, key invalidation 45, failure 40, anonymous denial 35, destructive change 30, other Kibana change 25, workflow run 10.',
@@ -133,6 +133,7 @@ const INTRO = {
     'Kibana’s own API-key clean-up and this suite’s automated install score 0; the line above a tile’s number counts them.',
     'Scope separates your identities, Elastic platform automation and unauthenticated requests; an identity without an email is not necessarily external.',
     'Click an API key or Principal id to filter the page or open Actor 360; a Cloud API key’s id also covers the API keys it created.',
+    IDENTITY_HOW_TO,
   ],
 };
 
@@ -161,6 +162,8 @@ export function build() {
       '| KEEP `Scoring events`, install_note', 'Scoring events',
       'Events that carried any risk weight: what Mean severity averages over. This suite’s own automated install scores 0 and is left out; the line above the number counts it.',
       { secondary: 'install_note' }),
+    // ACTOR_RESOLVE per event here, on the few hundred events PRIVILEGED leaves (22ms at 30 days, the same as the
+    // old COALESCE): LAST(target, @timestamp) does not re-aggregate over a count-first STATS.
     // One row per identity and action, not per payload: grouped by the raw payload, every API key id
     // made its own one-event row (10 of 12 rows at 24h read "invalidate_apikeys · 1") and the JSON was
     // hard-clipped mid-glyph. The payload stays whole in the event feed at the foot of the page; here
@@ -191,7 +194,7 @@ export function build() {
     // The LIMIT stays last so table() can lower it to the rows the panel shows (it only matches a
     // trailing LIMIT); the EVALs between it and the SORT are per-row and do not stop the top-N.
     table(0, 25, 48, TH, 'Identities by first appearance in range',
-      `FROM ${IDX} | ${TIME} | ${NOISE} | STATS first_seen = MIN(@timestamp), last_seen = MAX(@timestamp), events = COUNT(*), ips = COUNT_DISTINCT(client.ip) BY user.email, ${PIN_BY} | ${ACTOR_RESOLVE} | SORT first_seen DESC, actor | ${SCOPE} | ${NEW_IN_RANGE} | LIMIT ${fitRows(TH)}`,
+      `FROM ${IDX} | ${TIME} | ${NOISE} | STATS first_seen = MIN(@timestamp), last_seen = MAX(@timestamp), events = COUNT(*), ips = COUNT_DISTINCT(client.ip) BY ${ACTOR_KEYS} | ${ACTOR_RESOLVE} | SORT first_seen DESC, actor | ${SCOPE} | ${NEW_IN_RANGE} | LIMIT ${fitRows(TH)}`,
       [WHO_COL, PIN_PRINCIPAL, sized('new_in_range', 70, { label: 'New' })], ['first_seen', 'last_seen', 'events', { column: 'ips', label: 'Client IPs' }, SCOPE_LAST],
       'Identities by their first signal event in the range, latest first. New reads “yes” unless they were already active as the range opened. A “yes” near the top is worth a question; widen the range to tell new from returning.'),
     // Full width because Identity is free text: at half width a 36-character identity
@@ -217,8 +220,10 @@ export function build() {
     // count of how many there were; LAST and COUNT_DISTINCT run on the failure subset only.
     // The platform hop is tagged "(internal)" as 05 does, on the grouped rows (one condition, after the STATS);
     // the newest anonymous denial came through it, so untagged it read as the prober's address.
+    // ACTOR_RESOLVE per event on the failures only (10ms at 30 days): LAST and COUNT_DISTINCT(client.ip) do not
+    // re-aggregate over a count-first STATS.
     // Principal id only of the two pin columns (1.0.5): with API key as well, Latest IP, Client IPs and Scope
-    // no longer fit a 1440px viewport. A named key's failures pin the identity that created it.
+    // no longer fit a 1440px viewport. A named key's failures pin the identity that owns it.
     // The same holds for first appearance and Why: only the leaderboard has room for both.
     table(0, 64, 48, TH, 'Top failures and denials by identity and action',
       `FROM ${IDX} | ${TIME} | ${FAILED_OR_DENIED} | ${ACTOR_RESOLVE} | STATS events = COUNT(*), ips = COUNT_DISTINCT(client.ip), ip = LAST(client.ip, @timestamp), last_seen = MAX(@timestamp) BY actor, user.name, action = event.action | SORT events DESC, actor, action | ${SCOPE} | EVAL ip = COALESCE(CASE(CIDR_MATCH(ip, "100.64.0.0/10"), CONCAT(TO_STRING(ip), " (internal)"), TO_STRING(ip)), "none recorded") | LIMIT ${fitRows(TH)}`,

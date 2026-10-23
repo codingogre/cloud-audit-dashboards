@@ -237,7 +237,7 @@ test('identity tables (1.0.5): a raw Principal id / API key click column on each
         'Risk leaderboard': ['api_key.name', 'user.name'], 'Why these identities scored': ['user.name'],
         'Top failures and denials': ['user.name'],
       },
-      '07-actor-360': { 'Who this is': ['user.email', 'user.name'] },
+      '07-actor-360': { 'Who this is': ['user.name'] },
     };
     for (const [name, tables] of Object.entries(want)) {
       for (const [title, cols] of Object.entries(tables)) {
@@ -258,4 +258,40 @@ test('identity tables (1.0.5): a raw Principal id / API key click column on each
     assert.equal(discoverUrl('00-all-events'), '/app/discover#/view/cloud-audit-search-all-events');
     assert.throws(() => discoverUrl('99-nope'), /no searches\/99-nope\.json/);
   });
+});
+
+test('1.0.5.1: the identity a panel shows is resolved on grouped rows (by ACTOR_KEYS) or on a row feed\'s returned rows, never per event of a wide scan', async () => {
+  const { ACTOR_RESOLVE, ACTOR_LABEL, IDENTITY_WHERE } = await import('../../scripts/lib/panels.mjs');
+  const { readFileSync, readdirSync } = await import('node:fs');
+  // Filtered to a few hundred events before resolving, and measured (22ms and 10ms at 30 days): panels.mjs.
+  const PER_EVENT_OK = ['🚨 Config changes', 'Top failures and denials'];
+  const check = (where, q) => {
+    const at = q.indexOf(ACTOR_RESOLVE);
+    if (at < 0) return;
+    const stages = q.slice(0, at).split('|').map((s) => s.trim());
+    const stats = stages.filter((s) => /^(FORK \()?STATS\b/.test(s)).pop();
+    if (stats) assert.match(stats, /\bBY\b.*\buser\.domain\b/, `${where}: resolves after a STATS that does not group on user.domain`);
+    else assert.ok(stages.some((s) => /^LIMIT\b/.test(s)) || PER_EVENT_OK.some((t) => where.includes(t)), `${where}: resolves the identity per event`);
+  };
+  withEnv({ AUDIT_WITH: 'platform-volume', AUDIT_ID_NS: undefined }, () => {
+    let n = 0;
+    for (const [name, d] of Object.entries(buildAll())) {
+      for (const p of d.panels.flatMap((x) => (x.section ? x.panels : [x]))) {
+        const q = p.config?.data_source?.query;
+        if (q?.includes(ACTOR_RESOLVE)) { n++; check(`${name}: ${p.config.title}`, q); }
+        // Every Lens ES|QL panel follows the Identity dropdowns (07's whole-minute window ignored them until 1.0.5.1).
+        if (q) assert.ok(q.includes(IDENTITY_WHERE), `${name}: ${p.config.title} ignores Identity type / Identity`);
+        // Every table that shows the identity shortens a key id the one shared way.
+        if (q && p.config.rows?.some((r) => r.column === 'actor')) assert.ok(q.endsWith(ACTOR_LABEL), `${name}: ${p.config.title}`);
+      }
+    }
+    assert.ok(n >= 20, `${n} panels resolve an identity`);
+  });
+  for (const dir of ['vega', 'searches']) {
+    for (const f of readdirSync(dir).filter((x) => x.endsWith('.json'))) {
+      const doc = JSON.parse(readFileSync(`${dir}/${f}`, 'utf8'));
+      const walk = (o) => { if (o && typeof o === 'object') for (const [k, v] of Object.entries(o)) { if ((k === 'query' || k === 'esql') && typeof v === 'string') check(`${dir}/${f}`, v); else walk(v); } };
+      walk(doc);
+    }
+  }
 });

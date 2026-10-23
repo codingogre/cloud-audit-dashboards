@@ -19,7 +19,7 @@ import { join } from 'node:path';
 import { ROOT, cfg, objFile } from './env.mjs';
 import { CONTROLS } from './controls.mjs';
 import {
-  NAV_H, NOISE, BAND, BAND_KEYS, RISK, RISK_KEYS, RISK_RESTORE, VERB, ACTOR_RESOLVE, OBJ, OBJ_ID, OBJ_TYPE, CHANGE_PRED, CRED, OBJ_PRESENT,
+  NAV_H, NOISE, BAND, BAND_KEYS, RISK, RISK_KEYS, RISK_RESTORE, VERB, ACTOR_RESOLVE, ACTOR_KEYS, OBJ, OBJ_ID, OBJ_TYPE, CHANGE_PRED, CRED, OBJ_PRESENT,
   CRED_TYPE_LABEL, INDEX_FAMILY, CONCRETE, SYS_INDEX, ACTOR_LABEL, MAGNITUDE_RAMP, SEVERITY_RAMP, fitRows, tableLimit,
   KIBANA_INTERNALS, BOUNDED, BARE_COUNT, grouped, FAILED_OR_DENIED, PREV_TILES, prevRef, COVERAGE_REF, flatPanels,
   HOW_TO_LABEL, TIME,
@@ -39,15 +39,17 @@ export const GRID_W = 48;
  */
 // TIME: every ES|QL Vega spec bounds its window with TIME, which carries the identity dropdowns' filter
 // (IDENTITY_WHERE, panels.mjs), so a spec that kept the bare window would silently ignore the dropdowns.
-// ACTOR_LABEL: every static file that DISPLAYS an identity shows an opaque Cloud API key id in the one
-// shared form ("_4KEO… · Cloud API key"); Lens tables get it from table().
+// ACTOR_RESOLVE: every static file that names an identity names it as the Identity dropdown does (1.0.5.1).
+// ACTOR_KEYS: where it resolves after a STATS, the STATS groups on the fields it reads (user.domain included).
+// ACTOR_LABEL: every static file that DISPLAYS an identity shortens a Cloud API key the one shared way
+// ("_4KEO… · Cloud API key", "Unnamed key of _4KEO…"); Lens tables get it from table().
 const FRAGMENT_USES = {
-  'vega/01-actor-risk-treemap.json': { TIME, NOISE, RISK, RISK_KEYS, RISK_RESTORE, ACTOR_LABEL },
+  'vega/01-actor-risk-treemap.json': { TIME, NOISE, RISK, RISK_KEYS, RISK_RESTORE, ACTOR_RESOLVE, ACTOR_LABEL },
   'vega/03-object-verb-heatmap.json': { TIME, VERB, OBJ_ID, OBJ_TYPE },
-  'vega/02-auth-matrix.json': { TIME, ACTOR_RESOLVE, CRED_TYPE_LABEL, ACTOR_LABEL },
-  'vega/04-actor-index-matrix.json': { TIME, ACTOR_RESOLVE, CONCRETE, INDEX_FAMILY, ACTOR_LABEL },
-  'vega/05-rare-event-scatter.json': { TIME, RISK, RISK_KEYS, RISK_RESTORE },
-  'vega/06-geo-origin.json': { TIME, ACTOR_RESOLVE },
+  'vega/02-auth-matrix.json': { TIME, ACTOR_KEYS, ACTOR_RESOLVE, CRED_TYPE_LABEL, ACTOR_LABEL },
+  'vega/04-actor-index-matrix.json': { TIME, ACTOR_KEYS, ACTOR_RESOLVE, CONCRETE, INDEX_FAMILY, ACTOR_LABEL },
+  'vega/05-rare-event-scatter.json': { TIME, RISK, RISK_KEYS, RISK_RESTORE, ACTOR_KEYS, ACTOR_RESOLVE },
+  'vega/06-geo-origin.json': { TIME, ACTOR_KEYS, ACTOR_RESOLVE },
   'vega/07-noise-ratio-stream.json': { TIME, BAND_KEYS, BAND },
   // Groups on the real user.email (never the actor COALESCE); TIME pins the identity dropdowns' filter.
   'vega/10-actor-geography.json': { TIME },
@@ -64,8 +66,8 @@ const FRAGMENT_USES = {
   // where the Elasticsearch action field does not exist — and `WHERE null` drops the row, so both
   // sessions were silently returning ZERO Kibana audit, measured live against an hour that held
   // plenty. The fragment is null-guarded; pinning these two to it is what stops that regressing again.
-  'searches/06-actor-first-seen.json': { ACTOR_RESOLVE, NOISE, ACTOR_LABEL },
-  'searches/08-cross-space-activity.json': { ACTOR_RESOLVE, ACTOR_LABEL },
+  'searches/06-actor-first-seen.json': { ACTOR_KEYS, ACTOR_RESOLVE, NOISE, ACTOR_LABEL },
+  'searches/08-cross-space-activity.json': { ACTOR_KEYS, ACTOR_RESOLVE, ACTOR_LABEL },
   'searches/09-session-reconstruction.json': { ACTOR_RESOLVE, ACTOR_LABEL },
   'searches/10-raw-signal-feed.json': { ACTOR_RESOLVE, NOISE, ACTOR_LABEL },
 };

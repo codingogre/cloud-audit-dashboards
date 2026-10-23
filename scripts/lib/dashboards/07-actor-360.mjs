@@ -1,13 +1,13 @@
 /** 07 Actor 360 — see scripts/lib/definitions.mjs for how the suite is assembled. */
 import {
-  IDX, TIME, INDEX_FAMILY, IP_GEO, indexFamily, dash, kpi, table, vega, search, section, row, stack, resetIds, sized, filterable, grouped,
+  IDX, TIME, IDENTITY_WHERE, ACTOR_KEYS, ACTOR_RESOLVE, INDEX_FAMILY, IP_GEO, indexFamily, dash, kpi, table, vega, search, section, row, stack, resetIds, sized, filterable, grouped,
   SYS_INDEX, fitRows
 } from '../panels.mjs';
 import { rawId } from '../suite.mjs';
-import { riskScored, CHANGED, CHANGED_KEYS, CHANGED_DERIVE, specDescription, RAW_RECORDS } from './shared.mjs';
+import { riskScored, CHANGED, CHANGED_KEYS, CHANGED_DERIVE, specDescription, RAW_RECORDS, IDENTITY_HOW_TO } from './shared.mjs';
 
 /**
- * One identity's whole footprint on one page — pick a person in the control bar and every panel
+ * One identity's whole footprint on one page — pick someone in Identity in the control bar and every panel
  * becomes their story. With nobody selected it is the whole estate, which is a useful "who is here"
  * view in its own right.
  *
@@ -19,9 +19,8 @@ import { riskScored, CHANGED, CHANGED_KEYS, CHANGED_DERIVE, specDescription, RAW
  *   ② What they did     follows the time picker
  *   ③ Evidence          a 24-hour session timeline over the raw records
  *
- * No panel here groups by the actor COALESCE: that is the shape that goes slow unfiltered, and on a
- * page already about one identity the resolution ladder buys nothing. Identity panels group on the
- * real user.email instead, which is also the only thing a filter pill can match.
+ * Who this is shows the identity as the Identity dropdown names it (ACTOR_RESOLVE, counted first by ACTOR_KEYS)
+ * beside the raw Principal id it ran as, which is what a filter pill can match.
  */
 
 const vegaPanel = (ref, title) => (x, y, w, h) => vega(x, y, w, h, ref, title, specDescription(ref));
@@ -111,14 +110,15 @@ const INTRO = {
   heading: 'Everything one person did, on one page',
   paragraphs: [
     `Use it to check whether their activity is normal, see what they changed and read, and gather evidence for a review or investigation. ${RAW_RECORDS}`,
-    '**How to use it:** pick someone in the Person (email) control, or click an email in a table; with nobody selected, the page covers everyone. ① *Is this normal?* always looks at the last 7 days in UTC, ② *What they did* follows the time picker, and ③ *Evidence* ends in the raw records. Table times are in your time zone.',
+    '**How to use it:** pick someone in the Identity control, or click a Principal id in a table; with nobody selected, the page covers everyone. ① *Is this normal?* always looks at the last 7 days in UTC, ② *What they did* follows the time picker, and ③ *Evidence* ends in the raw records. Table times are in your time zone.',
   ],
   howTo: [
-    'A person’s own API keys carry their email, so their counts can include machine traffic; a Cloud API key belongs to no person.',
+    'Pick an Identity type first to shorten the Identity list. A person’s API keys are identities of their own, so their traffic never counts under the person.',
     'The ① panels read a fixed 7 days with no noise gate, so they will not match Signal events or the time picker.',
     'Baseline: the band is their usual range for each hour; with under three days of history no band is drawn.',
     'The Risk tile and Every scoring action count whole minutes only, so they can stop up to a minute short of the panels around them.',
     'Session timeline: click a bar to pin a session (Elasticsearch panels then read empty); API-only identities have no sessions.',
+    IDENTITY_HOW_TO,
   ],
 };
 
@@ -164,21 +164,26 @@ const INTRO = {
  * silently cut those up-to-59 seconds back off. So the real window began at each panel's own _tstart,
  * the start edge was not whole minutes at all, and the two panels could still differ by whatever landed
  * in the second between their starts. Rounded up, the start is inside the filter and the same for both.
+ *
+ * It carries IDENTITY_WHERE as TIME does (1.0.5.1): without it the Risk tile and its receipts ignored the
+ * Identity dropdowns and read the whole estate's risk beside an Events tile narrowed to one identity.
  */
-const WHOLE_MINUTES = 'WHERE @timestamp < DATE_TRUNC(1 minute, TO_DATETIME(?_tend)) AND @timestamp >= DATE_TRUNC(1 minute, TO_DATETIME(?_tstart)) + 1 minute';
+const WHOLE_MINUTES = 'WHERE @timestamp < DATE_TRUNC(1 minute, TO_DATETIME(?_tend)) AND @timestamp >= DATE_TRUNC(1 minute, TO_DATETIME(?_tstart)) + 1 minute' +
+  ` AND ${IDENTITY_WHERE}`;
 
 export function build() {
   resetIds();
   const P = stack([
     row(7, [
-      // By email AND principal id (1.0.5), so the table is not empty under an API key or Cloud key pin: a Cloud
-      // API key has no email, and its full 20-character id is its user.name. Both are raw group keys, so both
-      // cells pin. % of Events and Own API keys gave their width to Principal id: at 16 columns a 1440px
-      // viewport holds an email, a 20-character id and one count, no more.
-      [16, (x, y, w, h) => table(x, y, w, h, 'Who this is — by email and principal id',
-        `FROM ${IDX} | ${TIME} | STATS events = COUNT(*) BY user.email, user.name | WHERE user.email IS NOT NULL OR NOT STARTS_WITH(user.name, "<") | SORT events DESC, user.email, user.name | LIMIT 10`,
-        [filterable('user.email'), filterable('user.name', { label: 'Principal id', width: 165, min: 160 })], ['events'],
-        'The identities behind the selection, busiest first: a person’s email and the Principal id of every signed-in principal. Click either to pin it across the suite. Requests with no identity count in the Events tile but have no row.')],
+      // Identity as the Identity dropdown names it (1.0.5.1) and the principal it ran as. Until 1.0.5.1 this was
+      // email and principal id, and an unnamed key's Kibana events (user.domain _es_api_key) read as its owner,
+      // the Cloud API key. Identity is computed, so the pin is Principal id, a group key of the last STATS: for
+      // a person their numeric Cloud id, for a Cloud API key its full id. At 16 columns a 1440px viewport holds
+      // an identity, a 20-character id and one count, no more.
+      [16, (x, y, w, h) => table(x, y, w, h, 'Who this is — by identity and principal id',
+        `FROM ${IDX} | ${TIME} | STATS events = COUNT(*) BY ${ACTOR_KEYS} | WHERE user.email IS NOT NULL OR NOT STARTS_WITH(user.name, "<") | ${ACTOR_RESOLVE} | STATS events = SUM(events) BY actor, user.name | SORT events DESC, actor, user.name | LIMIT 10`,
+        ['actor', filterable('user.name', { label: 'Principal id', width: 165, min: 160 })], ['events'],
+        'The identities behind the selection, busiest first, named as in the Identity dropdown, with the Principal id each ran as. Click a Principal id to pin it across the suite. Unattributed requests count in Events but have no row.')],
       [8, (x, y, w, h) => kpi(x, y, w, h,
         `FROM ${IDX} | ${TIME} | STATS Events = COUNT(*), actions = COUNT_DISTINCT(event.action, 100), last_ts = MAX(@timestamp) | EVAL mins = DATE_DIFF("minutes", last_ts, NOW()) | EVAL detail = CASE(Events == 0, "no activity", CONCAT(${grouped('actions')}, CASE(actions == 1, " action", " actions"), " · ", CASE(mins < 1, "just now", mins < 60, CONCAT(${grouped('mins')}, "m ago"), CONCAT(TO_STRING(mins / 60), "h ago")))) | KEEP Events, detail`,
         'Events', 'Every audited event for the selection, how many distinct actions that was, and how recently they were last seen. Routine traffic included, so it counts connection housekeeping.',
@@ -291,5 +296,5 @@ export function build() {
       'The raw Kibana events behind the session timeline, newest first. Click a timeline bar or filter on a session id to read one session. Capped at the newest 1,000; an hour with only an idle Kibana tab is empty.', { empty: 'quiet' })]]),
   ]);
   return dash(rawId('07-actor-360'), '[Audit] 👤 Actor 360',
-    'One identity’s complete footprint — pick a person in the control bar and every panel becomes their story.', P, { intro: INTRO });
+    'One identity’s complete footprint — pick someone in Identity in the control bar and every panel becomes their story.', P, { intro: INTRO });
 }

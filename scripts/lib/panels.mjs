@@ -50,8 +50,8 @@
  *      The CASE still costs per GROUPED row, so group on what it reads and nothing wider: RISK_KEYS
  *      groups a near-unique payload as a presence boolean. A multi-valued key (event.type on
  *      Elasticsearch events) is grouped as MV_CONCAT and restored with SPLIT, or a document would
- *      be counted once per value. A computed group key (the actor COALESCE) is cheap enough —
- *      183–195ms against 51–53ms for the raw email over 7 days — but only a raw field takes a pill.
+ *      be counted once per value. The identity a panel shows (ACTOR_RESOLVE, a five-condition CASE since
+ *      1.0.5.1) is this shape too: group on ACTOR_KEYS, resolve, re-aggregate. Only a raw field takes a pill.
  *   3. A row feed sorts straight after its filter. A Discover session that classifies rows (VERB,
  *      OBJ_TYPE) puts `SORT @timestamp DESC` (and any LIMIT) before the EVALs, so they run on the
  *      rows returned rather than on every row matched: searches/04 went 10.6s → 0.18s over 7 days.
@@ -83,24 +83,6 @@ export const IDX = cfg.dataStream;
  */
 export const NULL_SAFE = 'SET unmapped_fields="nullify";';
 export const nullSafe = (q) => (/(?<![\w.])api_key\./.test(q) && !q.trimStart().startsWith('SET ') ? `${NULL_SAFE} ${q}` : q);
-
-/**
- * Identity resolution, split from actor_kind because the Discover sessions need the first half and
- * not the second. Keeping it as its own constant is what lets the drift check assert that every
- * static ES|QL file resolves identity the same way — this is the fallback chain the whole suite
- * rests on (user.name is a numeric id, so it is the last resort, not the first).
- */
-export const ACTOR_RESOLVE =
-  'EVAL actor = COALESCE(user.email, api_key.name, user.name, "<anonymous>")';
-
-/**
- * `actor_kind` here is the cheap first cut — "human" when the event carries an email, "service"
- * otherwise — because ACTOR runs per event and a CASE with two or more conditions must not (QUERY
- * SHAPE rule 1). That cut calls `<anonymous>` and Elastic's own service accounts "service" too; a
- * panel that SHOWS the kind groups by it and then applies KIND_REFINE to the grouped rows.
- */
-export const ACTOR =
-  `${ACTOR_RESOLVE}, actor_kind = CASE(user.email IS NOT NULL, "human", "service")`;
 
 /**
  * IDENTITY (1.0.5.1): one answer per event to "which identity was this", behind the Identity type and Identity
@@ -163,11 +145,12 @@ export const IDENTITY_KIND =
   'identity_kind = CASE(user.email IS NOT NULL, "Person", api_key.name IS NOT NULL, "Elasticsearch API key", ' +
   'user.domain == "_es_api_key", "Elasticsearch API key (name not recorded)", user.domain == "_cloud_api_key", "Cloud API key", ' +
   'user.domain == "_service_account", "Service account", failed_signin, "Failed sign-in", user.name IS NULL, "Unattributed", "Other")';
-export const IDENTITY =
-  'identity = CASE(user.email IS NOT NULL, user.email, api_key.name IS NOT NULL, api_key.name, ' +
+const IDENTITY_EXPR =
+  'CASE(user.email IS NOT NULL, user.email, api_key.name IS NOT NULL, api_key.name, ' +
   `user.domain == "_cloud_api_key", CONCAT(user.name, "${CLOUD_KEY_SUFFIX}"), ` +
   `user.domain == "_es_api_key", CONCAT("${UNNAMED_KEY_PREFIX}", user.name), ` +
   `user.name IS NOT NULL, user.name, "${UNATTRIBUTED}")`;
+export const IDENTITY = `identity = ${IDENTITY_EXPR}`;
 const IDENTITY_PRE =
   `(${unset('identity')} OR user.email == ?identity OR api_key.name == ?identity OR user.name == ?identity ` +
   `OR user.name == REPLACE(REPLACE(?identity, "${CLOUD_KEY_SUFFIX}$", ""), "^${UNNAMED_KEY_PREFIX}", "") ` +
@@ -182,6 +165,44 @@ const IDENTITY_EXACT =
   `OR (${UNNAMED} AND (user.domain IS NULL OR NOT user.domain IN ("_cloud_api_key","_es_api_key")) AND user.name == ?identity) ` +
   `OR (?identity == "${UNATTRIBUTED}" AND ${UNNAMED} AND user.name IS NULL))`;
 export const IDENTITY_WHERE = `${IDENTITY_PRE} AND ${IDENTITY_KIND_TEST} AND ${IDENTITY_EXACT}`;
+
+/**
+ * THE IDENTITY A PANEL SHOWS (1.0.5.1) is the Identity dropdown's own value, so a name read in a table can be
+ * found in the dropdown and picking it narrows the page to that row. ACTOR_RESOLVE is IDENTITY's rule assigned
+ * to `actor`, the column every identity table and Vega spec has always shown:
+ *
+ *   a person              their email
+ *   Elasticsearch key     its name (api_key.name, Elasticsearch events only)
+ *   Cloud API key         "<20-character id> · Cloud API key"
+ *   key, name unknown     "Unnamed key of <owner>": a Kibana event made with an Elasticsearch key (user.domain
+ *                         _es_api_key). Kibana records only the key's OWNER in user.name. Until 1.0.5.1 these
+ *                         rows were shown as the owner itself, so a Cloud key's keys read as the Cloud key.
+ *   anything else         user.name (a service account, a platform account, a name tried at sign-in, a
+ *                         placeholder such as <unauthenticated-cloud-access-token>), else "(unattributed)"
+ *
+ * Until 1.0.5.1 it was COALESCE(user.email, api_key.name, user.name, "<anonymous>"): cheap per event, but it
+ * named the owner of an unnamed key and printed a value the dropdown does not list. The CASE has five
+ * conditions, so it NEVER runs per event (QUERY SHAPE rule 1): group by ACTOR_KEYS first, resolve, then
+ * re-aggregate (SUM the counts, MAX the timestamps, COUNT_DISTINCT(actor) on the grouped rows). Measured on the
+ * live stream over 30 days (3.1M events), per event against count-first: 05 Top client locations 223 → 140ms,
+ * Busiest client IPs 532 → 416ms, vega/06 213 → 156ms (the old COALESCE: 113, 301, 98ms). The perf replica is
+ * ~10x the live volume. A row feed applies it after its SORT and LIMIT (rule 3), on the rows it returns; a
+ * panel that filters to a few hundred events first (04 Config changes, Top failures) may resolve per event
+ * (22ms and 10ms at 30 days).
+ *
+ * ACTOR_KEYS is what it reads. user.domain is in it because the two key forms are told apart by the realm; a
+ * query that groups on the pre-1.0.5.1 keys and then resolves fails loudly ("Unknown column [user.domain]").
+ */
+export const ACTOR_KEYS = 'user.email, api_key.name, user.domain, user.name';
+export const ACTOR_RESOLVE = `EVAL actor = ${IDENTITY_EXPR}`;
+
+/**
+ * `actor_kind`: the cheap first cut, "human" when the row carries an email and "service" otherwise. A panel
+ * that SHOWS the kind refines it on the grouped rows with KIND_REFINE. Like ACTOR_RESOLVE, it runs on rows
+ * grouped by ACTOR_KEYS.
+ */
+export const ACTOR =
+  `${ACTOR_RESOLVE}, actor_kind = CASE(user.email IS NOT NULL, "human", "service")`;
 
 /**
  * Where an identity's traffic comes from, by the email on the event. Title case because these are
@@ -468,9 +489,13 @@ export const RISK_INDEX_EVAL  =
  */
 export const PLATFORM_ACTORS =
   '"elastic.maintenance","autoscaling","elasticsearch-controller","elastic/fleet-server","elastic/kibana"';
-/** Anything the cluster could not attribute to a principal. Not platform — nobody owns these. */
+/**
+ * Anything the cluster could not attribute to a principal. Not platform — nobody owns these. "(unattributed)"
+ * is ACTOR_RESOLVE's value for an event with no user.name (1.0.5.1; it was "<anonymous>", kept here so the
+ * static specs that still test user.name against this list keep their meaning).
+ */
 export const UNAUTH_ACTORS =
-  '"<anonymous>","<unauthenticated-cloud-access-token>","<unauthenticated-saml-user>","<unauthenticated-cloud-api-key>"';
+  `"${UNATTRIBUTED}","<anonymous>","<unauthenticated-cloud-access-token>","<unauthenticated-saml-user>","<unauthenticated-cloud-api-key>"`;
 export const SCOPE =
   `EVAL actor_scope = CASE(actor IN (${PLATFORM_ACTORS}), "platform", ` +
   `actor IN (${UNAUTH_ACTORS}), "unauthenticated", "tenant")`;
@@ -558,28 +583,26 @@ export const privilegedKpi = (col) =>
   `| EVAL housekeeping_note = CASE(cleanups == 0, "no cleanups in range", CONCAT("excl. ", ${grouped('cleanups')}, " cleanups"))`;
 
 /**
- * CLOUD API KEYS, AS AN IDENTITY. ACTOR_RESOLVE ends at user.name, and for an
- * organization-level Elastic Cloud API key that is the key's 20-character id — the stream records no
- * name and no owner for it. Shown bare it reads as a broken lookup, and on this project such a key (the
- * one this repo's own tooling deploys, lints and renders with) is the busiest identity on every page.
- * Until the key can be named, it is shown in ONE form everywhere an identity is shown:
+ * CLOUD API KEYS, AS AN IDENTITY. The stream records no name and no owner for an organization-level Elastic
+ * Cloud API key: its only identifier is the 20-character id in user.name, and on this project such a key (the
+ * one this repo's own tooling deploys, lints and renders with) is the busiest identity on every page. The
+ * Identity dropdown lists it in full, "<id> · Cloud API key" (ACTOR_RESOLVE); a table SHOWS it shortened:
  *
- *   _4KEO… · Cloud API key
+ *   _4KEO… · Cloud API key          a Cloud API key
+ *   Unnamed key of _4KEO…           an Elasticsearch key that Cloud API key owns, used through Kibana
  *
- * the first five characters of the id (enough to tell two keys apart by eye; the full id is in the
- * tooltip of the sessions and in API key inventory), then the tag. `isCloudKeyId(col)` is the test: a
- * 20-character value of the base64url alphabet that is not all digits (a numeric Cloud user id is
- * shorter, and service accounts, `<anonymous>` and key names never match). It is a value test rather
- * than a realm test because the same key arrives with user.domain `_cloud_api_key` on Elasticsearch
- * events and sometimes `_es_api_key` on Kibana's (live, 24h: 261,172 and 6,521 events), and a realm
- * test split one key into two rows.
+ * the first five characters of the id (enough to tell two keys apart by eye, and enough to find it by typing
+ * in the Identity dropdown; the full id is in the Principal id column and in API key inventory). Every How to
+ * read block that shows identities says so.
  *
- *   ACTOR_LABEL                       EVAL actor = <label> — the last step before display, AFTER the
- *                                     last STATS BY actor (two keys sharing a prefix would merge if it
- *                                     ran first). table() appends it to every table that shows `actor`.
- *   cloudKeyLabel(col, otherwise)     the expression, for any other column: a key-name column that is
- *                                     null for a Cloud key reads `cloudKeyLabel('user.name',
- *                                     'api_key.name')` instead of "-" or "(no name)".
+ *   ACTOR_LABEL / identityLabel(col)  shortens a DISPLAYED identity (ACTOR_RESOLVE's value): two REPLACEs on a
+ *                                     regex, no CASE. The last step before display, AFTER the last STATS BY
+ *                                     actor (two keys sharing a prefix would merge if it ran first); table()
+ *                                     appends ACTOR_LABEL to every table that shows `actor`.
+ *   cloudKeyLabel(col, otherwise)     the same short form from a RAW user.name (a key's owner, a creator).
+ *                                     `isCloudKeyId(col)` is a value test: a 20-character value of the
+ *                                     base64url alphabet that is not all digits (a numeric Cloud user id is
+ *                                     shorter; service accounts and key names never match).
  *
  * Per row, on the few rows a panel displays, so it costs nothing measurable.
  */
@@ -588,7 +611,11 @@ export const isCloudKeyId = (col) =>
   `(LENGTH(${col}) == 20 AND ${col} RLIKE "[-_A-Za-z0-9]{20}" AND NOT ${col} RLIKE "[0-9]{20}")`;
 export const cloudKeyLabel = (col, otherwise = col) =>
   `CASE(${isCloudKeyId(col)}, CONCAT(LEFT(${col}, 5), "${CLOUD_KEY_TAG}"), ${otherwise})`;
-export const ACTOR_LABEL = `EVAL actor = ${cloudKeyLabel('actor')}`;
+const KEY_ID_RE = '([-_A-Za-z0-9]{5})[-_A-Za-z0-9]{15}';
+export const identityLabel = (col) =>
+  `REPLACE(REPLACE(${col}, "^${KEY_ID_RE}${CLOUD_KEY_SUFFIX}$", "$1${CLOUD_KEY_TAG}"), ` +
+  `"^${UNNAMED_KEY_PREFIX}${KEY_ID_RE}$", "${UNNAMED_KEY_PREFIX}$1…")`;
+export const ACTOR_LABEL = `EVAL actor = ${identityLabel('actor')}`;
 
 /**
  * Pushed ahead of the ACTOR/RISK EVALs so scoring runs over the few events that can score

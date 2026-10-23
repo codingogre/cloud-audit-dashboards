@@ -279,10 +279,53 @@ test('a LIMITed table states its cut as a bound, and a scrollable one says scrol
   Object.assign(p.config, { title: saved.title }); p.config.data_source.query = saved.q;
 });
 
+/** The identity shapes the live stream records (1.0.5.1, .sessions identity-facts): raw fields as a STATS groups them. */
+const CLOUD = '_4KEOqEBFWdu4E65tC03';
+const IDENTITY_FIXTURES = [
+  [{ 'user.email': 'a@example.com', 'user.domain': 'cloud-saml-kibana', 'user.name': '3512997522' }, 'a@example.com', 'a@example.com', 'Person'],
+  [{ 'api_key.name': 'ci-deploy', 'user.domain': '_cloud_api_key', 'user.name': CLOUD }, 'ci-deploy', 'ci-deploy', 'Elasticsearch API key'],
+  [{ 'user.domain': '_cloud_api_key', 'user.name': CLOUD }, `${CLOUD} · Cloud API key`, '_4KEO… · Cloud API key', 'Cloud API key'],
+  // Shape H: a Kibana event made with an Elasticsearch key. user.name is the key's OWNER, not the key.
+  [{ 'user.domain': '_es_api_key', 'user.name': CLOUD }, `Unnamed key of ${CLOUD}`, 'Unnamed key of _4KEO…', 'Elasticsearch API key (name not recorded)'],
+  [{ 'user.domain': '_service_account', 'user.name': 'elastic/kibana' }, 'elastic/kibana', 'elastic/kibana', 'Service account'],
+  [{ 'user.name': 'admin', 'event.action': 'authentication_failed' }, 'admin', 'admin', 'Failed sign-in'],
+  [{ 'user.name': '<unauthenticated-cloud-access-token>' }, '<unauthenticated-cloud-access-token>', '<unauthenticated-cloud-access-token>', 'Other'],
+  [{ 'event.action': 'connection_granted' }, '(unattributed)', '(unattributed)', 'Unattributed'],
+];
+
+test('1.0.5.1: a table names an identity as the Identity dropdown lists it, and picking that value selects its events', async () => {
+  const { ACTOR_RESOLVE, ACTOR_LABEL, IDENTITY, IDENTITY_WHERE, ACTOR_KEYS, identityLabel } = await import('../../scripts/lib/panels.mjs');
+  const { compile, evalBody } = await import('./esql-expr.mjs');
+  // One rule: the display column and the dropdown's options are the same expression.
+  assert.equal(evalBody(ACTOR_RESOLVE), IDENTITY.replace(/^identity = /, ''));
+  for (const f of ['user.email', 'api_key.name', 'user.domain', 'user.name']) assert.ok(ACTOR_KEYS.split(', ').includes(f), f);
+  const resolve = compile(evalBody(ACTOR_RESOLVE)), label = compile(evalBody(ACTOR_LABEL));
+  const lit = (s) => JSON.stringify(s);
+  const where = (identity, kind = '') => compile(IDENTITY_WHERE.replaceAll('?identity_kind', lit(kind)).replaceAll('?identity', lit(identity)));
+  for (const [doc, full, shown, kind] of IDENTITY_FIXTURES) {
+    const actor = resolve(doc);
+    assert.equal(actor, full, JSON.stringify(doc));
+    assert.equal(label({ actor }), shown, `${full} is shown as ${shown}`);
+    assert.equal(where(actor)(doc), true, `picking "${full}" in Identity selects its event`);
+    assert.equal(where(actor, kind)(doc), true, `and under Identity type ${kind}`);
+    assert.equal(where('')(doc), true, 'nothing picked selects everything');
+    for (const [other, otherFull] of IDENTITY_FIXTURES) {
+      if (otherFull !== full) assert.notEqual(where(otherFull)(doc), true, `"${otherFull}" does not select ${full}'s event`);
+    }
+  }
+  // The shape-H fix: the Cloud API key no longer claims the events of the keys it owns.
+  assert.notEqual(where(`${CLOUD} · Cloud API key`)({ 'user.domain': '_es_api_key', 'user.name': CLOUD }), true);
+  // Only a 20-character key id is shortened; a person's numeric id and any other name are left alone.
+  assert.equal(compile(identityLabel('x'))({ x: 'Unnamed key of 3512997522' }), 'Unnamed key of 3512997522');
+});
+
 test('an opaque Cloud API key id has one display form, and table() applies it', async () => {
   const { ACTOR_LABEL, CLOUD_KEY_TAG, cloudKeyLabel } = await import('../../scripts/lib/panels.mjs');
   assert.equal(CLOUD_KEY_TAG, '… · Cloud API key');
-  assert.match(ACTOR_LABEL, /^EVAL actor = CASE\(/);
+  // Two REPLACEs, no CASE: the identity's short form (the test above evaluates it). A raw key id (a key's
+  // owner, a creator) takes cloudKeyLabel() and reads the same.
+  assert.match(ACTOR_LABEL, /^EVAL actor = REPLACE\(REPLACE\(actor, /);
+  assert.ok(ACTOR_LABEL.includes(CLOUD_KEY_TAG) && cloudKeyLabel('user.name').includes(CLOUD_KEY_TAG));
   assert.match(cloudKeyLabel('user.name', 'api_key.name'), /, api_key\.name\)$/);
   const q = table(0, 0, 24, 12, 't', 'FROM x | STATS events = COUNT(*) BY actor | SORT events DESC | LIMIT 30', ['actor'], ['events'], 'd').config.data_source.query;
   assert.ok(q.endsWith(`| LIMIT 10 | ${ACTOR_LABEL}`), 'after the clamp, on the displayed rows only');
