@@ -14,10 +14,12 @@ import { riskScored, CHANGED, CHANGED_KEYS, CHANGED_DERIVE, specDescription, RAW
  * The page is organised around TIME BINDING (see panels.mjs), because it mixes both kinds and a
  * reader has to know which window each panel shows:
  *
- *   ① Is this normal?   fixed 7 days — DSL Vega, which keeps the control-bar filters but ignores
- *                        the picker, so a baseline and a weekly rhythm are possible whatever the picker reads
+ *   ① Is this normal?   fixed 7 days — ES|QL Vega on a panel range (VEGA_WINDOWS), which keeps the control
+ *                        bar and the identity dropdowns but ignores the picker, so a baseline and a weekly
+ *                        rhythm are possible whatever the picker reads. Kibana badges each panel "Last 7 days",
+ *                        so the titles do not repeat it (at 1440px the repeat cut "Where they rank — last 7 d")
  *   ② What they did     follows the time picker
- *   ③ Evidence          a 24-hour session timeline over the raw records
+ *   ③ Evidence          a 24-hour session timeline (badged "Last 24 hours") over the raw records
  *
  * No panel here groups by the actor COALESCE: that is the shape that goes slow unfiltered, and on a
  * page already about one identity the resolution ladder buys nothing. Identity panels group on the
@@ -225,9 +227,9 @@ export function build() {
 
     row(2, [[48, (x, y, w, h) => section(x, y, w, h, '① Is this normal?', 'fixed 7-day window in UTC (ignores the time picker)')]]),
     row(14, [
-      [20, vegaPanel('08-actor-baseline-band', 'Is this normal for them? — hourly, last 7 days (UTC)')],
-      [12, vegaPanel('12-actor-cohort', 'Where they rank — last 7 days')],
-      [16, vegaPanel('09-activity-punchcard', 'Working rhythm — last 7 days (UTC)')],
+      [20, vegaPanel('08-actor-baseline-band', 'Is this normal for them? — hourly (UTC)')],
+      [12, vegaPanel('12-actor-cohort', 'Where they rank')],
+      [16, vegaPanel('09-activity-punchcard', 'Working rhythm — by hour (UTC)')],
     ]),
 
     row(2, [[48, (x, y, w, h) => section(x, y, w, h, '② What they did', 'follows the time picker · times in your time zone')]]),
@@ -286,7 +288,7 @@ export function build() {
     ]),
 
     row(2, [[48, (x, y, w, h) => section(x, y, w, h, '③ Evidence', 'session timeline is fixed at 24 hours · the records follow the time picker · your time zone')]]),
-    row(7, [[48, vegaPanel('13-session-gantt', 'Kibana browser sessions · fixed last 24 hours, your time zone')]]),
+    row(7, [[48, vegaPanel('13-session-gantt', 'Kibana browser sessions · your time zone')]]),
     row(12, [[48, (x, y, w, h) => search(x, y, w, h, '09-session-reconstruction', 'Session records · newest 1,000 at most',
       'The raw Kibana events behind the session timeline, newest first. Click a timeline bar or filter on a session id to read one session. Capped at the newest 1,000; an hour with only an idle Kibana tab is empty.', { empty: 'quiet' })]]),
   ]);

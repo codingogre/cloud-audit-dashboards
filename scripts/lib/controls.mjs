@@ -54,8 +54,8 @@ export const dataViewObject = () => ({
  *
  * Project leads, because one audit project usually collects the streams of several serverless projects. project.*
  * names the project that EMITTED the event, populated on every Elasticsearch and Kibana event (verified
- * 2026-10-14); the name, not the 32-hex id. Actor 360's cohort rank (vega/12) follows the Project control and
- * no other; see TWO_DATASET_SPECS in layout.mjs. Client IP is last: it answers "who was at this address".
+ * 2026-10-14); the name, not the 32-hex id. Actor 360's cohort rank (vega/12) ranks the selection against an
+ * estate that follows the Project control and no other control or dropdown; see TWO_DATASET_SPECS in layout.mjs. Client IP is last: it answers "who was at this address".
  *
  * Every control goes out in the PUT payload's `pinned_panels` (the 9.6 Dashboards API accepts both kinds there;
  * verified by PUT, GET and an _export/_import round trip), so nothing is patched in after the deploy.
