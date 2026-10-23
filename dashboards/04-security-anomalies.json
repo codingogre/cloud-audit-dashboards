@@ -327,19 +327,19 @@
           {
             "label": "Identity",
             "column": "actor",
-            "width": 210
+            "width": 195
           },
           {
             "label": "API key",
             "column": "api_key.name",
             "click_filter": true,
-            "width": 135
+            "width": 125
           },
           {
             "label": "Principal id",
             "column": "user.name",
             "click_filter": true,
-            "width": 162
+            "width": 165
           },
           {
             "label": "Scope",
@@ -349,7 +349,7 @@
           {
             "label": "Action",
             "column": "action",
-            "width": 168
+            "width": 160
           },
           {
             "label": "Latest target",
@@ -360,11 +360,11 @@
           {
             "label": "Targets",
             "column": "targets",
-            "width": 81
+            "width": 80
           },
           {
             "label": "Events",
-            "width": 81,
+            "width": 90,
             "column": "events"
           },
           {

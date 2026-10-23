@@ -165,10 +165,14 @@ export function build() {
     // made its own one-event row (10 of 12 rows at 24h read "invalidate_apikeys · 1") and the JSON was
     // hard-clipped mid-glyph. The payload stays whole in the event feed at the foot of the page; here
     // it is reduced to what it names. Full width so that name is never the column that clips.
+    // The 1.0.5 API key and Principal id columns took that width back: at 1440, Latest target cut
+    // "(none named in the payload)" mid-word. Identity, Action and Targets were sized above their values
+    // (update_user_profile_data is ~145px) and API key is mostly "-" here, so they give it up and Latest
+    // target keeps 175px at 1440.
     table(0, 5, 48, 7, `🚨 Config changes · up to ${fitRows(7)} identity–action pairs, latest first`,
       `FROM ${IDX} | ${TIME} | ${PRIVILEGED} | ${TARGET} | ${ACTOR_RESOLVE} | STATS events = COUNT(*), targets = COUNT_DISTINCT(SPLIT(target, ",")), latest = LAST(target, @timestamp), last_change = MAX(@timestamp) BY actor, ${PIN_BY}, action = event.action | SORT last_change DESC | ${SCOPE} | ${TARGET_SHOW} | LIMIT ${fitRows(7)}`,
-      [sized('actor', 220, { min: 200 }), PIN_KEY, PIN_PRINCIPAL_SHORT, 'actor_scope', sized('action', 190, { min: 145 }), { column: 'latest', label: 'Latest target' }],
-      [sized('targets', 90, { label: 'Targets' }), 'events', 'last_change'],
+      [sized('actor', 195, { min: 190 }), { ...PIN_KEY, width: 125 }, PIN_PRINCIPAL_SHORT, 'actor_scope', sized('action', 160, { min: 150 }), { column: 'latest', label: 'Latest target' }],
+      [sized('targets', 80, { label: 'Targets' }), 'events', 'last_change'],
       'Security configuration changes (API keys, roles, user profiles) by identity and action, most recent first, with the latest target and how many targets. Many invalidations over many keys is rotation; over one key, a loop.',
       { empty: 'good' }),
     vega(0, 12, 24, 13, '05-rare-event-scatter', 'Highest-severity actions, by how rare',

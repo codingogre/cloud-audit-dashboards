@@ -71,6 +71,11 @@ test('table() budgets fixed widths for a 1440px viewport, and flags a table it c
       assert.ok(!flex || (gridPx(p.grid.w) - fixed) / flex >= 120, `${name} "${p.config.title}" leaves its text columns under 120px at 1440`);
     }
   }
+  // 04 Config changes (1.0.5 review): the API key and Principal id columns left Latest target 153px at 1440,
+  // which cut "(none named in the payload)" (~165px rendered) mid-word.
+  const config = buildAll()['04-security-anomalies'].panels.find((p) => p.config?.title?.startsWith('🚨 Config changes'));
+  const used = [...config.config.rows, ...config.config.metrics].filter((c) => c.width).reduce((a, c) => a + c.width, 0);
+  assert.ok(gridPx(config.grid.w) - used >= 170, `04 Config changes leaves Latest target ${gridPx(config.grid.w) - used}px at 1440`);
 });
 
 test('a table\'s tooltip is its own words (the opaque-key note lives in the How to read blocks); blankNull() blanks after the STATS', () => {
