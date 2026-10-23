@@ -19,7 +19,14 @@ const strip = (u) => u.replace(/\/+$/, '');
  * The committed Vega/Discover JSON spells this name out, and withStream() rewrites it at load time.
  */
 export const DEFAULT_STREAM = 'logs-elastic_cloud.serverless_audit.otel-default';
-export const withStream = (text) => text.replaceAll(DEFAULT_STREAM, cfg.dataStream);
+/**
+ * THE EVENTS VIEW (1.0.5.1): an ES|QL view over the audit stream that renames @timestamp (panels.mjs, PRIOR-PERIOD
+ * TILES, for why). --objects creates it, --clean dashboards deletes it. Its name is namespaced like every other
+ * object the suite deploys (cfg.view: `cloud-audit-<ns>-events-view` under AUDIT_ID_NS), and the committed specs
+ * spell the default name, which withStream() rewrites at load time beside the stream.
+ */
+export const DEFAULT_VIEW = 'cloud-audit-events-view';
+export const withStream = (text) => text.replaceAll(DEFAULT_STREAM, cfg.dataStream).replaceAll(DEFAULT_VIEW, cfg.view);
 
 export function parseStream(name) {
   const m = /^logs-(.+)-([^-]+)$/.exec(name);
@@ -48,6 +55,8 @@ export const cfg = {
    * `cloud-audit-*` / `elastic_cloud-audit-*`.
    */
   get ns() { return process.env.AUDIT_ID_NS ? `cloud-audit-${process.env.AUDIT_ID_NS}` : 'cloud-audit'; },
+  /** The events view's name in this namespace (DEFAULT_VIEW unset). */
+  get view() { return DEFAULT_VIEW.replace(/^cloud-audit/, this.ns); },
   ROOT,
 };
 

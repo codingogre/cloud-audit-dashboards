@@ -166,7 +166,7 @@ const INTRO = {
 export function build() {
   resetIds();
   const P = [
-    // Three DSL Vega tiles with a previous-period line (PREV_TILES in panels.mjs, held to their ES|QL by --lint).
+    // Three ES|QL Vega tiles on the events view with a previous-period line (PREV_TILES in panels.mjs, held to TIME by --lint).
     prevKpi(0, 0, 8, 5, 'es-events', 'All Elasticsearch audit events in range.'),
     kpi(8, 0, 8, 5, `FROM ${IDX} | ${TIME} | WHERE elasticsearch.audit.indices IS NOT NULL AND ${COPIES} | STATS BY elasticsearch.audit.indices | ${CONCRETE} | EVAL family = ${INDEX_FAMILY} | ${fold('family')} | STATS \`Index families\` = COUNT_DISTINCT(family)`,
       'Index families', 'Distinct index families named in requests. A data stream and its backing indices, or a run of dated indices, count as one family; system and hidden indices count once per area. Wildcard patterns are not counted.'),

@@ -19,6 +19,8 @@ import { success, fail, detail, info, warn } from './lib/log.mjs';
 import { buildAll } from './lib/definitions.mjs';
 import { CONTROLS } from './lib/controls.mjs';
 import { TIME_TO, DEFAULT_FROM } from './lib/panels.mjs';
+import { requireView } from './lib/view.mjs';
+import { watch, judge, tilesOn } from './lib/canary.mjs';
 
 /**
  * Kibana emits exactly six console errors on every FULL page load of any dashboard.
@@ -149,6 +151,9 @@ export async function run(argv = []) {
   const ids = Object.keys(all).filter((n) => !only.length || only.some((o) => n.includes(o)))
     .map(dashId);
   const defs = Object.fromEntries(Object.entries(all).map(([n, d]) => [dashId(n), d.panels.filter((p) => p.section)]));
+  // The prior-period tiles on each page (lib/canary.mjs), and the view they read, without which they show an error.
+  const prevOn = Object.fromEntries(Object.entries(all).map(([n, d]) => [dashId(n), tilesOn(d)]));
+  await requireView();
   if (!ids.length) throw new Error(`AUDIT_VERIFY_ONLY "${process.env.AUDIT_VERIFY_ONLY}" matches no dashboard`);
   const browser = await chromium.launch({ args: ['--no-sandbox', '--disable-dev-shm-usage'] });
   const ctx = await browser.newContext({ viewport: { width, height: 1400 }, colorScheme: theme });
@@ -173,6 +178,7 @@ export async function run(argv = []) {
       errs.push({ text: m.text().slice(0, 300), url: loc.url || '' });
     });
     page.on('pageerror', (e) => errs.push({ text: `uncaught: ${String(e).slice(0, 300)}`, url: '' }));
+    const canary = watch(page);
     try {
       await page.goto(`${cfg.kbs}/app/dashboards#/view/${id}?_g=(time:(from:${range},to:${TIME_TO}))`,
         { waitUntil: 'domcontentloaded', timeout: 90000 });
@@ -208,6 +214,10 @@ export async function run(argv = []) {
         await page.screenshot({ path: fileOpen, fullPage: true });
         stats.openPx = grown.shot;
       }
+      // THE PRIOR-PERIOD CANARY (lib/canary.mjs): the tiles' requests carry no time filter and their prior counts are true.
+      const prior = await judge(canary, prevOn[id] || []);
+      stats.priorTiles = prior.tiles;
+      stats.priorProblems = prior.problems;
       // Keep the text, not just a count: an unexplained number nobody can act on is how the
       // "6 vs 1" oddity sat unexamined for a while.
       const unexpected = errs.filter((e) => !isPlatformNoise(e));
@@ -219,6 +229,8 @@ export async function run(argv = []) {
         + ` controls=${stats.controls}/${CONTROLS.length} sections=${stats.sectionsCollapsed}/${expectedSections}`
         + `${stats.sectionsCollapsed ? ` opened=${stats.sectionsOpened}` : ''} textSpare=${stats.textSparePx}px px=${shot}`
         + `${stats.textOverflow.length ? ` TEXT-OVERFLOW=${stats.textOverflow.length}` : ''}`
+        + `${prior.tiles.length ? ` prior=${prior.tiles.length - prior.problems.length}/${prior.tiles.length}` : ''}`
+        + `${prior.problems.length ? ` PRIOR-PERIOD=${prior.problems.length}` : ''}`
         + `${unexpected.length ? ` UNEXPECTED-ERRORS=${unexpected.length}` : ''}${truncated ? ' TRUNCATED' : ''}`;
       report[report.length - 1].capturedPx = shot;
       report[report.length - 1].measuredPx = measured;
@@ -229,12 +241,13 @@ export async function run(argv = []) {
       // A capture that never grew past the viewport means the scroller selector stopped
       // matching — that is exactly how this script was silently blind before, so fail loud.
       if (stats.brokenPanels || stats.vegaErrors.length || stats.rawStyleLeak || stats.controls !== CONTROLS.length
-          || truncated || unexpected.length || stats.textOverflow.length
+          || truncated || unexpected.length || stats.textOverflow.length || prior.problems.length
           || stats.sectionsCollapsed !== expectedSections || (stats.sectionsCollapsed && stats.sectionsOpened !== stats.sectionsCollapsed)) {
         bad++; fail(line);
         for (const e of stats.vegaErrors.slice(0, 5)) detail(`    vega: ${e}`);
         for (const e of unexpected.slice(0, 5)) detail(`    ${e.text}${e.url ? ` <- ${e.url}` : ''}`);
         for (const e of stats.textOverflow.slice(0, 5)) detail(`    text overflows its panel: ${e}`);
+        for (const e of prior.problems.slice(0, 6)) detail(`    ${e}`);
       } else detail(line);
     } catch (e) {
       bad++; fail(`${id} ${String(e).slice(0, 160)}`);

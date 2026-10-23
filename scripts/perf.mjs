@@ -207,6 +207,8 @@ async function esqlRows(query, budgetMs = 60e3) {
   return r.body.values.map((v) => Object.fromEntries(cols.map((c, i) => [c, v[i]])));
 }
 
+/** The events view over the replica, beside the live one (lib/view.mjs): `<view>-perf`. */
+export const perfView = () => `${cfg.view}-perf`;
 const streamExists = async (name) => (await es.raw(`/_data_stream/${name}`)).status === 200;
 
 async function perDay(stream) {
@@ -388,10 +390,16 @@ async function cmdRun(args) {
   process.env.AUDIT_STREAM = perf;
   const lib = await import('./esql.mjs');
   const { buildAll } = await import('./lib/definitions.mjs');
-  const esqlItems = lib.gatherQueries();
+  // The prior-period tiles read the events view, which is over the live stream, so they are timed on a view of the
+  // same definition over the replica (perfView). Not on the view's text written in: measured live in 1.0.5.1, a
+  // query through the view took 0.2–0.37s over 7–30 days where the same text inlined took 0.04s.
+  const view = perfView();
+  const pv = await es.raw(`/_query/view/${view}`, { method: 'PUT', body: { query: (await import('./lib/panels.mjs')).EVENTS_VIEW_QUERY(perf) } });
+  if (!pv.ok) throw new Error(`could not create ${view} over ${perf} (${pv.status}: ${reasonOf(pv).slice(0, 160)})`);
+  const esqlItems = lib.gatherQueries().map((x) => ({ ...x, q: x.q.replaceAll(cfg.view, view) }));
   const dslItems = lib.gatherDsl();
   // If anything still names the live stream the replica is not what is being measured; refuse.
-  const stray = [...esqlItems.map((x) => x.q), ...dslItems.map((x) => x.index)].filter((t) => t.includes(live) || !t.includes(perf));
+  const stray = [...esqlItems.map((x) => x.q), ...dslItems.map((x) => x.index)].filter((t) => t.includes(live) || (!t.includes(perf) && !t.includes(view)));
   if (stray.length) throw new Error(`${stray.length} queries do not target ${perf} (e.g. ${stray[0].slice(0, 120)}) — refusing to time them`);
 
   let groups = groupByDashboard(buildAll(), esqlItems, dslItems);
@@ -466,6 +474,7 @@ async function cmdRun(args) {
   const file = join(out, 'report.json');
   writeFileSync(file, JSON.stringify({ at: new Date().toISOString(), stream: perf, docs: st.docs, span: [st.lo, st.hi],
     budgetMs, anchor: new Date(anchor).toISOString(), anchorMode, windows: windows.map((w) => w.label), residentAtStart: resident, summary: rows, sequential: seq, concurrent: conc }, null, 2));
+  await es.raw(`/_query/view/${view}`, { method: 'DELETE' });
   const bad = seq.filter((s) => !s.ok).length;
   (bad ? warn : success)(`${seq.length} timings, ${bad} over budget or failed — report ${file.replace(`${ROOT}/`, '')}`);
 }
@@ -477,6 +486,9 @@ async function cmdRun(args) {
 async function cmdClean() {
   const live = cfg.dataStream;
   const dest = assertPerfTarget(perfStreamFor(live), live);
+  // A run that failed part-way leaves its view behind; it holds no data, only the definition.
+  const v = await es.raw(`/_query/view/${perfView()}`, { method: 'DELETE' });
+  if (v.ok) info(`deleted ES|QL view ${perfView()}`);
   // DELETE /_data_stream takes patterns; the guard above has already refused anything but one exact name.
   const r = await es.raw(`/_data_stream/${dest}`, { method: 'DELETE' });
   if (r.status === 404) { info(`${dest} does not exist; nothing deleted`); return; }

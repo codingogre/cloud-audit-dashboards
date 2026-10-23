@@ -8,12 +8,12 @@
  */
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { ROOT, withStream, identityParams } from './lib/env.mjs';
-import { es } from './lib/http.mjs';
+import { ROOT, cfg, withStream, identityParams } from './lib/env.mjs';
+import { es, kb } from './lib/http.mjs';
 import { success, fail, detail, warn } from './lib/log.mjs';
 import { buildAll } from './lib/definitions.mjs';
 import { checkLayout } from './lib/layout.mjs';
-import { PREV_TILES, PREV_LOOKBACK_DAYS, prevSpec, prevEsql } from './lib/panels.mjs';
+import { PREV_TILES, prevQuery, prevStreamQuery, prevEsql, VIEW_TIME } from './lib/panels.mjs';
 
 /**
  * Every query runs through es.esqlRun(), which cancels it on overrun — a plain /_query keeps
@@ -44,7 +44,8 @@ const TIME_BOUND = 'WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart';
  * more conditions evaluated per row (QUERY SHAPE in panels.mjs).
  */
 export function bounded(q) {
-  if (/\?_tstart|\?_tend|@timestamp\s*[<>]/.test(q)) return q;
+  // A query on the events view (the prior-period tiles) bounds its own window, on VIEW_TIME: it has no @timestamp.
+  if (/\?_tstart|\?_tend|@timestamp\s*[<>]/.test(q) || new RegExp(`\\b${VIEW_TIME}\\s*[<>]`).test(q)) return q;
   const i = q.indexOf('|');
   return i === -1 ? `${q} | ${TIME_BOUND}` : `${q.slice(0, i)}| ${TIME_BOUND} ${q.slice(i)}`;
 }
@@ -83,7 +84,8 @@ const CONTEXT_CLAUSES = new Set(['%dashboard_context-must_clause%', '%dashboard_
   '%dashboard_context-filter_clause%']);
 /**
  * `{"%timefilter%": "min" | "max"}` is the picker's start or end in ms, which Kibana substitutes anywhere
- * in a DSL body (the previous-period tiles, PREV_TILES in panels.mjs). Unreplaced, Elasticsearch rejects
+ * in a DSL body (no spec uses it since the previous-period tiles moved to ES|QL in 1.0.5.1; kept so one that
+ * does is linted rather than rejected). Unreplaced, Elasticsearch rejects
  * the body, so the lint binds it to `win` — by default the dashboards' own range, the last 24 hours ending
  * a minute ago. Kibana's `shift`/`unit` options are not used by any spec, so they are refused here.
  */
@@ -101,30 +103,66 @@ export function stripContext(node, win = lintWindow()) {
 }
 
 /**
- * PARITY (1.0.5). A previous-period tile is a DSL spec standing in for a Lens ES|QL count, so the two
- * forms PREV_TILES holds for it must count the same events. Both run over one fixed window — the 14
- * days ending five minutes ago, on whole seconds, so nothing in it is still arriving — and any
- * difference, even one event, fails the lint. Fourteen days rather than the dashboards' one, because
- * a quiet filter (access denials) is often 0 for days, and 0 = 0 proves nothing; fourteen is the most
- * that fits inside the tiles' 15-day lookback (PREV_LOOKBACK_DAYS), which would otherwise cut the DSL side.
+ * PARITY (1.0.5; ES|QL tiles since 1.0.5.1). A prior-period tile reads the events view and bounds its own window
+ * (panels.mjs, PREVIOUS-PERIOD TILES), so nothing else proves it counts what the Lens tiles beside it would. Each
+ * tile's current and prior numbers must equal prevEsql(key), the plain TIME-bounded count on the stream, over the
+ * current window and over the prior one, to the event: over the 7 days ending five minutes ago (whole seconds, so
+ * nothing in it is still arriving; a quiet filter is often 0 for a day, and 0 = 0 proves little) and the 24 hours
+ * a dashboard opens on. 7 + 7 days keeps the prior window inside the 15-day lookback, which would otherwise cut it.
+ * It runs with the dropdowns empty, and again with AUDIT_IDENTITY / AUDIT_IDENTITY_KIND when either is set, so
+ * both counts are proven to follow a selection. The stream dataset's first event is checked against the stream's.
  */
+export const parityWindows = (now = Date.now()) => {
+  const end = Math.floor((now - 300e3) / 1000) * 1000;
+  return [['7d', 7 * 864e5], ['24h', 864e5]].map(([label, len]) => ({ label, s: end - len, e: end }));
+};
+const iso = (ms) => new Date(ms).toISOString();
+const paramsFor = (s, e, who) => [{ _tstart: iso(s) }, { _tend: iso(e) }, ...who];
 export async function prevParity({ budgetMs = BUDGET_MS } = {}) {
-  const end = Math.floor((Date.now() - 300e3) / 1000) * 1000;
-  const win = { min: end - (PREV_LOOKBACK_DAYS - 1) * 864e5, max: end };
-  // Unset identity on purpose: the DSL side has no identity filter, so parity is over every event.
-  const params = [{ _tstart: new Date(win.min).toISOString() }, { _tend: new Date(win.max).toISOString() }, ...identityParams({ identity: '', kind: '' })];
+  const env = identityParams();
+  const selections = [{ label: 'nothing selected', who: identityParams({ identity: '', kind: '' }) }];
+  if (env.some((p) => Object.values(p)[0] !== '')) selections.push({ label: `identity ${JSON.stringify(env.map((p) => Object.values(p)[0]))}`, who: env });
+  const one = (r) => (r.ok ? r.body.values?.[0] : undefined);
+  const why = (r) => (r.ok ? '' : JSON.stringify(r.body).slice(0, 160));
   const out = [];
-  for (const key of Object.keys(PREV_TILES)) {
-    const spec = JSON.parse(withStream(JSON.stringify(prevSpec(key))));
-    const { index, body } = spec.data[0].url;
-    const [q, d] = await Promise.all([
-      es.esqlRun(prevEsql(key), params, { budgetMs }),
-      es.searchRun(index, stripContext(body, win), { budgetMs }),
-    ]);
-    const esql = q.ok ? q.body.values?.[0]?.[0] : undefined;
-    const dsl = d.ok ? d.body.aggregations?.split?.buckets?.cur?.doc_count : undefined;
-    out.push({ key, esql, dsl, ok: esql !== undefined && esql === dsl, ms: Math.max(q.ms || 0, d.ms || 0),
-      error: !q.ok ? `ES|QL: ${JSON.stringify(q.body).slice(0, 160)}` : !d.ok ? `DSL: ${JSON.stringify(d.body).slice(0, 160)}` : undefined });
+  for (const { label: sel, who } of selections) {
+    for (const w of parityWindows()) {
+      for (const key of Object.keys(PREV_TILES)) {
+        const [tile, cur, prev] = await Promise.all([
+          es.esqlRun(withStream(prevQuery(key)), paramsFor(w.s, w.e, who), { budgetMs }),
+          es.esqlRun(prevEsql(key), paramsFor(w.s, w.e, who), { budgetMs }),
+          es.esqlRun(prevEsql(key), paramsFor(2 * w.s - w.e, w.s, who), { budgetMs }),
+        ]);
+        const t = one(tile), want = [one(cur)?.[0], one(prev)?.[0]];
+        const got = t ? [t[0], t[1]] : [undefined, undefined];
+        out.push({ key: `${key} ${w.label} ${sel}`, got, want, ok: want.every((v) => v !== undefined) && got[0] === want[0] && got[1] === want[1],
+          ms: Math.max(tile.ms || 0, cur.ms || 0, prev.ms || 0), error: why(tile) || why(cur) || why(prev) || undefined });
+      }
+    }
+  }
+  // The "no full prior" gate: the stream dataset's first event must be the stream's own, read with @timestamp.
+  const [g, d] = await Promise.all([
+    es.esqlRun(withStream(prevStreamQuery()), undefined, { budgetMs }),
+    es.esqlRun(`FROM ${cfg.dataStream} | WHERE @timestamp >= NOW() - ${prevStreamQuery().match(/NOW\(\) - (\d+ days)/)[1]} | STATS t0 = MIN(@timestamp) | EVAL t0 = TO_LONG(t0)`, undefined, { budgetMs }),
+  ]);
+  const gv = one(g)?.[0], dv = one(d)?.[0];
+  out.push({ key: 'stream first event', got: [gv], want: [dv], ok: gv !== undefined && gv === dv, ms: Math.max(g.ms || 0, d.ms || 0), error: why(g) || why(d) || undefined });
+  return out;
+}
+
+/**
+ * The escape route's live guard (panels.mjs, PREVIOUS-PERIOD TILES). Kibana decides which column of an ES|QL
+ * panel to filter to the picker by asking /internal/esql/get_timefield, so ask it about every query that reads
+ * the events view: any answer other than "none" means the hidden filter is back and the prior counts read 0.
+ * The rest of the lint never talks to Kibana; this is the one call that has to.
+ */
+export async function escapeCheck() {
+  const qs = [...new Set(gatherQueries().map((x) => x.q).filter((q) => new RegExp(`FROM\\s+${cfg.view}\\b`).test(q)))];
+  const out = [];
+  for (const query of qs) {
+    const r = await kb.raw('/internal/esql/get_timefield', { method: 'POST', body: { query },
+      headers: { 'x-elastic-internal-origin': 'kibana', 'elastic-api-version': '1' } });
+    out.push({ query, ok: r.ok && !r.body?.timeField, status: r.status, timeField: r.body?.timeField });
   }
   return out;
 }
@@ -201,14 +239,22 @@ export async function run() {
     fail(`${src}[dsl ${i}] ${String(reason).replace(/\n/g, ' ').slice(0, 220)}`);
   }
 
-  for (const r of await prevParity()) {
+  const parity = await prevParity();
+  for (const r of parity) {
     timings.push({ src: `parity ${r.key}`, ms: r.ms });
-    if (r.ok) { detail(`parity ${r.key}: ${r.esql} = ${r.dsl}`); continue; }
+    if (r.ok) { detail(`parity ${r.key}: ${r.got.join(' / ')}`); continue; }
     bad++;
-    fail(`parity ${r.key}: ES|QL counts ${r.esql}, the DSL tile ${r.dsl}${r.error ? ` (${r.error})` : ''} — PREV_TILES in scripts/lib/panels.mjs holds both forms; make them select the same events`);
+    fail(`parity ${r.key}: the tile reads ${JSON.stringify(r.got)}, TIME on the stream ${JSON.stringify(r.want)}${r.error ? ` (${r.error})` : ''} — prevQuery() in scripts/lib/panels.mjs must count what TIME counts`);
   }
+  const escape = await escapeCheck();
+  for (const r of escape) {
+    if (r.ok) continue;
+    bad++;
+    fail(`escape: Kibana would filter ${r.timeField ? `"${r.timeField}"` : `(get_timefield ${r.status})`} to the picker on a query that reads the events view, so its prior count reads 0: ${r.query.slice(0, 120)}`);
+  }
+  if (escape.length) detail(`escape: Kibana attaches no time filter to the ${escape.length} queries on ${cfg.view}`);
 
-  const total = items.length + dsl.length + Object.keys(PREV_TILES).length;
+  const total = items.length + dsl.length + parity.length + escape.length;
   const slow = timings.filter((t) => t.ms >= SLOW_MS).sort((a, b) => b.ms - a.ms);
   slow.slice(0, 10).forEach((t) => warn(`slow: ${(t.ms / 1000).toFixed(1)}s  ${t.src}`));
   if (bad) throw new Error(`${bad}/${total} queries failed — fix before deploying`);

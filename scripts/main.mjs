@@ -26,7 +26,8 @@ const HELP = `Usage: ./audit <command>
 
   Kibana as code
     --lint             Execute every ES|QL query in the repo; fails the build on any error
-    --objects          Deploy the data view, 13 Vega visualizations and 11 Discover sessions
+    --objects          Deploy the data view, 20 Vega visualizations, 11 Discover sessions and the
+                       ES|QL view the prior-period tiles read (cloud-audit-events-view)
     --dashboards       Generate dashboards/*.json and deploy every dashboard. Removes a suite
                        dashboard left from an earlier deploy that is not in this run's set
     --verify           Render every dashboard in Chromium and inspect for broken panels
@@ -63,7 +64,8 @@ const HELP = `Usage: ./audit <command>
 
   Lifecycle
     --deploy           Full pipeline: ingest -> lint -> objects -> dashboards (Default space)
-    --clean <target>   Tear down: 'dashboards', 'ingest', or 'all'. No target deletes nothing.
+    --clean <target>   Tear down: 'dashboards' (with the ES|QL view), 'ingest', or 'all'. No target
+                       deletes nothing.
     --help             This message
 `;
 

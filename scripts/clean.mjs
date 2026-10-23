@@ -1,7 +1,7 @@
 /**
  * Tears down what this repo created. Destructive, so the target must be named explicitly.
  *
- *   --clean dashboards   every dashboard + its data view, Vega and Discover sessions
+ *   --clean dashboards   every dashboard + its data view, Vega and Discover sessions, and the ES|QL view
  *   --clean ingest       the audit-scoped pipeline and templates (mappings are left alone;
  *                        removing a field mapping requires a reindex)
  *   --clean all          both (the suite lives in the Default space, which is never deleted)
@@ -11,6 +11,7 @@ import { kb, es } from './lib/http.mjs';
 import { success, info, warn, detail } from './lib/log.mjs';
 import { SUITE, RETIRED_IDS } from './lib/suite.mjs';
 import { DATA_VIEW_ID, RETIRED_DATA_VIEW_IDS } from './lib/controls.mjs';
+import { deleteView } from './lib/view.mjs';
 
 async function cleanDashboards() {
   // Every suite dashboard, opted in or not, and every id an earlier release used: --clean removes what
@@ -38,7 +39,9 @@ async function cleanDashboards() {
     if (status >= 300 && status !== 404) failed.push(`${o.type} ${o.id} (${status})`);
   }
   if (failed.length) throw new Error(`could not delete: ${failed.join(', ')}`);
-  success(`removed up to ${ids.length} dashboards and ${objs.length} saved objects`);
+  // After the visualizations that read it, so no deployed tile is left pointing at a missing view.
+  detail(`ES|QL view ${cfg.view}: ${await deleteView()}`);
+  success(`removed up to ${ids.length} dashboards, ${objs.length} saved objects and the ES|QL view ${cfg.view}`);
 }
 
 /**
