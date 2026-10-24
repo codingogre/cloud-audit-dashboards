@@ -12,7 +12,7 @@
  *          with production. The noise gate's SUITE_SELF and SUITE_INSTALL_URL (panels.mjs) count
  *          `elastic_cloud-audit-*` as the suite's own traffic, and `cloud-audit-*` (the Vega and Discover
  *          objects, the data view and the retired dashboard ids) too. Only dashboard ids carry `elastic_`.
- *   order  this array's order is the navigation strip's order, left to right. Actor 360 is second: it is
+ *   order  this array's order is the navigation strip's order, left to right. Identity 360 is second: it is
  *          where an analyst goes from anything noticed on Command Center.
  *
  * `optional` names an opt-in: the dashboard is built, linked and deployed only when that name is in
@@ -23,7 +23,7 @@ import { nsId } from './env.mjs';
 
 export const SUITE = [
   { name: '00-command-center',     id: 'elastic_cloud-audit-dashboard',          label: '\u{1F39B}️  Command Center' },
-  { name: '07-actor-360',          id: 'elastic_cloud-audit-actor-360',          label: '\u{1F464}  Actor 360' },
+  { name: '07-actor-360',          id: 'elastic_cloud-audit-actor-360',          label: '\u{1F464}  Identity 360' },
   { name: '01-identity-access',    id: 'elastic_cloud-audit-identity-access',    label: '\u{1F510}  Identity & Access' },
   { name: '02-kibana-objects',     id: 'elastic_cloud-audit-kibana-objects',     label: '\u{1F5C2}️  Kibana Object Forensics' },
   { name: '03-data-access',        id: 'elastic_cloud-audit-data-access',        label: '\u{1F50E}  Elasticsearch Data Access' },

@@ -1,4 +1,4 @@
-/** 07 Actor 360 — see scripts/lib/definitions.mjs for how the suite is assembled. */
+/** 07 Identity 360 — see scripts/lib/definitions.mjs for how the suite is assembled. */
 import {
   IDX, TIME, CONTROLS_WHERE, ACTOR_KEYS, ACTOR_RESOLVE, INDEX_FAMILY, IP_GEO, indexFamily, dash, kpi, table, vega, section, row, stack, resetIds,
   sized, filterable, grouped, SYS_INDEX, fitRows
@@ -300,6 +300,6 @@ export function build() {
     row(12, [[48, (x, y, w, h) => sessionRecords(x, y, w, h, 'Session records',
       'The raw Kibana events behind the session timeline, newest first. Click a timeline bar, or a Session cell, to read one session. An hour with only an idle Kibana tab is empty.', { empty: 'quiet' })]]),
   ]);
-  return dash(rawId('07-actor-360'), '[Audit] 👤 Actor 360',
+  return dash(rawId('07-actor-360'), '[Audit] 👤 Identity 360',
     'One identity’s complete footprint — pick someone in Identity in the control bar and every panel becomes their story.', P, { intro: INTRO });
 }

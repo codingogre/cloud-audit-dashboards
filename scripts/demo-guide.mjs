@@ -28,7 +28,7 @@ import {
 /**
  * The window the guide is driven at.
  *
- * 1h is the readable view of "right now", the unfiltered actor-grouping panels are fastest there,
+ * 1h is the readable view of "right now", the unfiltered identity-grouping panels are fastest there,
  * and the forensic panels still carry content. This used to be justified as a hard limit — "24h
  * exceeds 110s" — but those readings were taken back to back, and a synchronous query outlives
  * the client that gave up on it, so they were not independent. See HANDOFF.md.
@@ -214,7 +214,7 @@ export async function run(argv = []) {
     ],
   });
 
-  // ── Use case 3 — why is this actor risky, and what did they do ─────────────────────
+  // ── Use case 3 — why is this identity risky, and what did they do ─────────────────────
   const riskTable = riskTop.filter((r) => r[2]).slice(0, 6)
     .map((r) => [`\`${mask(r[2], redact)}\``, `\`${r[3]}\``, fmt(r[1]), fmt(r[0])]);
   const uc3 = useCase({
@@ -294,7 +294,7 @@ export async function run(argv = []) {
   // ── Landmines / Q&A / teardown ─────────────────────────────────────────────────────
   const landmines = rows(['If this happens', 'Do this'], [
     ['A panel sits on a loading spinner.',
-     `Widening the picker makes the unfiltered actor-grouping panels slower, and a query already sent can keep running after you narrow it back. Return to **${WINDOW_LABEL}** and let the page settle rather than refreshing — each refresh adds work. To show history without widening, open **Actor 360**: its first band always reads the last seven days.`],
+     `Widening the picker makes the unfiltered identity-grouping panels slower, and a query already sent can keep running after you narrow it back. Return to **${WINDOW_LABEL}** and let the page settle rather than refreshing — each refresh adds work. To show history without widening, open **Identity 360**: its first band always reads the last seven days.`],
     ['Someone asks what the noise gate is hiding.',
      PV
        ? 'Open **Platform Volume**. It applies no gate and splits the stream into its four bands — infra health, query internals, authentication and signal — so every excluded event is still counted there. The gate only narrows the forensic views; do not claim more than the bands show.'
@@ -379,7 +379,7 @@ ${toc}
 <h2 id="preflight">Pre-flight &mdash; thirty minutes before, not five</h2>
 <p class="proves"><strong>Why this matters:</strong> the only two ways this walkthrough goes wrong are a cold panel spinning while you talk, and a leftover filter pill quietly scoping every number you show.</p>
 ${preflight}
-${callout('warn', 'Drive at ' + WINDOW_LABEL, `${WINDOW_LABEL} is the readable view of right now: the actor-grouping panels are fastest there and it still carries mutations, denials and config changes. Do not widen the picker to reach history — **Actor 360**'s first band always shows the last seven days whatever the picker says, and with a person selected it is a baseline, a rank among the busiest identities and a weekly rhythm.${PV ? ' For raw volume over a longer window, use **Platform Volume**, whose panels are counts rather than groupings.' : ''}`)}
+${callout('warn', 'Drive at ' + WINDOW_LABEL, `${WINDOW_LABEL} is the readable view of right now: the identity-grouping panels are fastest there and it still carries mutations, denials and config changes. Do not widen the picker to reach history — **Identity 360**'s first band always shows the last seven days whatever the picker says, and with a person selected it is a baseline, a rank among the busiest identities and a weekly rhythm.${PV ? ' For raw volume over a longer window, use **Platform Volume**, whose panels are counts rather than groupings.' : ''}`)}
 
 ${body}
 

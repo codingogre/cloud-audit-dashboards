@@ -271,7 +271,7 @@ Every term is guarded, so `NOT HOUSEKEEPING` never drops a row. A key Kibana *cr
 count. `privilegedKpi(col)` is the KPI form: `COUNT(*) WHERE NOT housekeeping` plus a `housekeeping_note`
 for the secondary line (7 days: 157ms against 134ms for the bare count). `RISK` scores the same
 housekeeping **0** (round 6, the human's decision; see *Risk scoring*), so the treemap, the leaderboard,
-*Why these identities scored*, the scatter and Actor 360's Risk agree with these tiles. A deliberate
+*Why these identities scored*, the scatter and Identity 360's Risk agree with these tiles. A deliberate
 invalidation by a person, a named key or a Cloud API key still scores 45.
 
 ## Source split
@@ -578,7 +578,7 @@ Measured on the 2.6M-event perf replica (`./audit --perf`), alternating runs on 
 | Rule | Measurement |
 | --- | --- |
 | **A `CASE` with two or more conditions never runs per document.** It costs ~4µs per row it is evaluated on, whether or not it feeds a group-by; nesting it as one-condition `CASE`s does not help. Each condition alone, a one-condition `CASE`, `COALESCE`, boolean expressions, `GROK` and the whole noise gate are cheap. `RISK`, `BAND`, `VERB`, `OBJ_TYPE`, `ORG` and `SCOPE` are all this shape. | 7 days: `CASE(client.ip IS NULL, …, client.geo.country_iso_code IS NOT NULL, …, …)` 11.2s; either condition alone 90ms |
-| **Count first by the raw fields a fragment reads, derive afterwards.** `STATS n = COUNT(*) BY` the raw keyword fields, apply the fragment unchanged to the grouped rows, then `STATS SUM(n) BY` what it derived (`MIN`/`MAX` a carried timestamp, `COUNT_DISTINCT` a carried key). The fragments still appear verbatim, so the drift check still pins them, and the output is identical. | the `CASE` above: 11.2s → 0.14s. Command Center treemap 31s → 0.8s, band charts 13s → 0.3s, object/verb heatmap 8.9s → 0.4s (7 days); Actor 360 flow 2,839ms → 145ms (24h) |
+| **Count first by the raw fields a fragment reads, derive afterwards.** `STATS n = COUNT(*) BY` the raw keyword fields, apply the fragment unchanged to the grouped rows, then `STATS SUM(n) BY` what it derived (`MIN`/`MAX` a carried timestamp, `COUNT_DISTINCT` a carried key). The fragments still appear verbatim, so the drift check still pins them, and the output is identical. | the `CASE` above: 11.2s → 0.14s. Command Center treemap 31s → 0.8s, band charts 13s → 0.3s, object/verb heatmap 8.9s → 0.4s (7 days); Identity 360 flow 2,839ms → 145ms (24h) |
 | **Keep the grouped rows few.** The `CASE` still costs per grouped row, so group on what it reads and nothing wider. `RISK_KEYS` groups `security_config_change` — a near-unique JSON payload — as a presence boolean, because `RISK` only asks `IS NOT NULL`. | hourly risk chart, 7 days: 18,001 grouped rows 1.7s, 2,936 rows 0.27s |
 | **A multi-valued key is grouped joined.** `event.type` is multi-valued on Elasticsearch events; `STATS BY` it would count a document once per value. Group `et = MV_CONCAT(event.type, ",")` and restore it with `EVAL event.type = SPLIT(et, ",")`, which keeps `IN`/`==` returning null on those rows exactly as on the raw field. | identical rows on every risk panel, 24h and 7d |
 | **A row feed sorts straight after its filter.** A record feed (a Lens table, RECORD FEEDS in `panels.mjs`) or a Discover session that classifies rows puts `SORT @timestamp DESC` (and any `LIMIT`) before the `EVAL`s, so they run on the rows returned. | `searches/04` 10.6s → 0.18s, `searches/01` 3.2s → 0.3s (7 days) |

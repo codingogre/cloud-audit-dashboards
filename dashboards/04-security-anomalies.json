@@ -36,7 +36,7 @@
           {
             "type": "dashboardLink",
             "destination": "elastic_cloud-audit-actor-360",
-            "label": "👤  Actor 360",
+            "label": "👤  Identity 360",
             "options": {
               "use_filters": true,
               "use_time_range": true,
@@ -127,7 +127,7 @@
             "h": 7
           },
           "config": {
-            "content": "- Weights: security config change 50, key invalidation 45, failure 40, anonymous denial 35, destructive change 30, other Kibana change 25, workflow run 10.\n- Risk total is weight × events, not an event count. A failed action scores on its own row, marked (failed).\n- Kibana’s own API-key clean-up and this suite’s automated install score 0; the line above a tile’s number counts them.\n- Scope separates your identities, Elastic platform automation and unauthenticated requests; an identity without an email is not necessarily external.\n- Click an API key or Principal id to filter the page or open Actor 360; a Cloud API key’s id also covers the API keys it created.\n- Identities read as in the Identity dropdown, a Cloud API key shortened to “_4KEO… · Cloud API key”. The dropdowns apply to this page only; the links above do not carry them.\n"
+            "content": "- Weights: security config change 50, key invalidation 45, failure 40, anonymous denial 35, destructive change 30, other Kibana change 25, workflow run 10.\n- Risk total is weight × events, not an event count. A failed action scores on its own row, marked (failed).\n- Kibana’s own API-key clean-up and this suite’s automated install score 0; the line above a tile’s number counts them.\n- Scope separates your identities, Elastic platform automation and unauthenticated requests; an identity without an email is not necessarily external.\n- Click an API key or Principal id to filter the page or open Identity 360; a Cloud API key’s id also covers the API keys it created.\n- Identities read as in the Identity dropdown, a Cloud API key shortened to “_4KEO… · Cloud API key”. The dropdowns apply to this page only; the links above do not carry them.\n"
           }
         }
       ]

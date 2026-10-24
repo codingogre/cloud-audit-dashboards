@@ -36,7 +36,7 @@
           {
             "type": "dashboardLink",
             "destination": "elastic_cloud-audit-actor-360",
-            "label": "👤  Actor 360",
+            "label": "👤  Identity 360",
             "options": {
               "use_filters": true,
               "use_time_range": true,

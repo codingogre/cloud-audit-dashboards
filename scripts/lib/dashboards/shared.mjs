@@ -72,7 +72,7 @@ export { ACTOR_KEYS } from '../panels.mjs';
 /**
  * CLICK-THROUGH TO ACTOR 360 FROM AN IDENTITY TABLE (1.0.5). Identity (`actor`) is the ACTOR_RESOLVE
  * COALESCE, computed in the query, so Lens builds no filter from it (checkClickFilters, layout.mjs) and a
- * table showing only Identity offered neither a pin nor the Actor 360 drilldown. These tables now also
+ * table showing only Identity offered neither a pin nor the Identity 360 drilldown. These tables now also
  * group on the raw fields behind it and show them as two narrow click-to-filter columns:
  *
  *   API key        api_key.name — a named Elasticsearch API key
@@ -80,7 +80,7 @@ export { ACTOR_KEYS } from '../panels.mjs';
  *                  service account, a person's numeric id
  *
  * Both are STATS BY group keys, never assigned, so the click reaches Lens as the real field and every such
- * table drills into Actor 360 (hasFilterableColumn, drilldowns.mjs). `actor` is a function of (email, key
+ * table drills into Identity 360 (hasFilterableColumn, drilldowns.mjs). `actor` is a function of (email, key
  * name, user name), so the extra keys split a row only where one identity carries two principals.
  *
  * A Principal id pin is the principal, not the credential: on a Cloud API key it also matches the events of

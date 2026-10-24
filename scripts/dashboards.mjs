@@ -110,7 +110,7 @@ async function applyImportOnlyState(all) {
     const vegaPanels = Object.fromEntries(
       flat.filter((p) => p.type === 'vis' && p.config?.ref_id).map((p) => [p.id, p.config.ref_id]));
     // Drilldowns fire on FILTER_TRIGGER, so they belong only on panels that already carry a
-    // click-to-filter column. Everywhere else drills IN to Actor 360; Actor 360's panels drill OUT
+    // click-to-filter column. Everywhere else drills IN to Identity 360; Identity 360's panels drill OUT
     // only where a panel names its destination — drilling from it to itself would be a no-op.
     const drillPanels = new Map(flat.filter(hasFilterableColumn)
       .map((p) => [p.id, id === ACTOR_360 ? p.drill : ACTOR_360]).filter(([, dest]) => dest));

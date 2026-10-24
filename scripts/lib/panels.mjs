@@ -22,7 +22,7 @@
  *                                      explicit @timestamp range and the %dashboard_context-*%
  *                                      placeholders keeps the control-bar filters AND its own window
  *
- * A fixed window on a now-24h dashboard (Actor 360's 7-day baseline, the 24-hour session timeline) is the
+ * A fixed window on a now-24h dashboard (Identity 360's 7-day baseline, the 24-hour session timeline) is the
  * middle row with a VEGA_WINDOWS entry (1.0.5.1): an ES|QL spec bounded by TIME, so it also follows the
  * dropdowns, which no DSL spec can read. The last row is left for what a panel range cannot say:
  * a previous period (PREV_TILES, an ES|QL spec on the events view) and the stream's first event (vega/14, DSL). Read from the 9.6 source
@@ -190,7 +190,7 @@ export const IDENTITY_WHERE = `${IDENTITY_PRE} AND ${IDENTITY_KIND_TEST} AND ${I
  *                    TO_IP("Any") still folds, and every panel would carry a "treating result as null" warning.
  *
  * CONTROLS_WHERE is all four, in the control bar's order. TIME carries it, and so do the panels that bound their
- * own window (the prior-period tiles, Actor 360's whole-minute tiles).
+ * own window (the prior-period tiles, Identity 360's whole-minute tiles).
  */
 export const PROJECT_WHERE = `(${unset('project')} OR project.name == ?project)`;
 export const CLIENT_IP_WHERE = `(${unset('client_ip')} OR client.ip == TO_IP(CASE(${unset('client_ip')}, null, ?client_ip)))`;
@@ -558,7 +558,7 @@ export const KIND_REFINE =
  * ops, 04 Config changes and its table) and say what it leaves out; privilegedKpi() puts the excluded
  * count in the tile's secondary line, so the housekeeping is never silently gone. RISK scores the same
  * housekeeping 0 (its first branch reads the `housekeeping` key RISK_KEYS groups), so the risk panels —
- * treemap, leaderboard, Why these identities scored, the scatter, Actor 360's Risk — agree with these tiles.
+ * treemap, leaderboard, Why these identities scored, the scatter, Identity 360's Risk — agree with these tiles.
  */
 export const HOUSEKEEPING =
   '(event.action IS NOT NULL AND event.action == "invalidate_apikeys" ' +
@@ -1397,7 +1397,7 @@ export const narrowOverflow = (p) => p.config?.type === 'data_table' && p.narrow
  *
  * NEVER on a click-to-filter column. Lens treats any column the query assigns (EVAL, even back onto
  * the same field name) as "created at query time": the cell is still a link, but clicking it opens
- * "You can't apply a filter or drill down from this value", so the pin and the Actor 360 drilldown
+ * "You can't apply a filter or drill down from this value", so the pin and the Identity 360 drilldown
  * are lost (rendered, then reverted). A null in a filter column therefore stays an underlined "-";
  * there is no Lens setting that hides it. Where those dashes dominate a column, drop the column.
  */
@@ -1410,7 +1410,7 @@ export const blankNull = (...cols) => `EVAL ${cols.map((c) => `${c} = COALESCE($
  * hover tooltip. A query cannot supply a placeholder row either: ES|QL has no UNION, a STATS with no
  * BY is the only shape that always returns a row, and turning a grouped table into one (EVAL key =
  * CASE(match, raw), STATS BY key, INLINE STATS to know whether anything matched) makes every row
- * column "created at query time", which costs the click-to-filter pill and the Actor 360 drilldown,
+ * column "created at query time", which costs the click-to-filter pill and the Identity 360 drilldown,
  * and scans the whole window.
  *
  * So the meaning of an empty panel goes in its TITLE, the one text a reader sees with the panel — and
@@ -1548,7 +1548,7 @@ export const regionMap = (x, y, w, h, title, q, regionCol, metricCol, desc) => (
 });
 
 /**
- * FIXED-WINDOW VEGA (1.0.5.1). A Vega chart that must ignore the time picker (Actor 360's "Is this normal?"
+ * FIXED-WINDOW VEGA (1.0.5.1). A Vega chart that must ignore the time picker (Identity 360's "Is this normal?"
  * row over 7 days, the 24-hour session timeline) is an ES|QL spec bounded by TIME, so it follows the four
  * dropdowns, on a panel with its own time range. Kibana sends that range as ?_tstart/?_tend and as the hidden
  * range filter, and badges the panel with it ("Last 7 days"; a viewer can click the badge to change it).

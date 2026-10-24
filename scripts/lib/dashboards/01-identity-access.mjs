@@ -257,7 +257,7 @@ export function build() {
     // distinct ids and is the one Kind "Cloud" row (one id: its own). The label runs on grouped rows,
     // never per event.
     // 1.0.5: both key columns are the raw group keys, so both are click-to-filter and the table drills into
-    // Actor 360. Until then API key was assigned in ES|QL (COALESCE with the short Cloud key form), which Lens
+    // Identity 360. Until then API key was assigned in ES|QL (COALESCE with the short Cloud key form), which Lens
     // refuses to filter on. Now a Cloud key's row reads "-" under API key and its FULL id under "Key ID
     // (Cloud) / creator" — the one place outside API key inventory that shows it whole — and an
     // Elasticsearch key's row shows its creator's principal there. The Kind column gave its width to that

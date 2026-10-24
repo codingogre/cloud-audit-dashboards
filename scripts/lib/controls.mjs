@@ -59,7 +59,7 @@ export const dataViewObject = () => ({
  *
  * Project leads, because one audit project usually collects the streams of several serverless projects. project.*
  * names the project that EMITTED the event, populated on every Elasticsearch and Kibana event (verified
- * 2026-10-14); the name, not the 32-hex id. Actor 360's cohort rank (vega/12) ranks the selection against an
+ * 2026-10-14); the name, not the 32-hex id. Identity 360's cohort rank (vega/12) ranks the selection against an
  * estate that follows the Project dropdown and no other (TWO_DATASET_SPECS in layout.mjs). Client IP is last: it
  * answers "who was at this address". Its list is the busiest addresses in range, as text; the dropdown searches it.
  *

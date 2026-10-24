@@ -13,10 +13,21 @@ fragments so the drift check covers them, and name identities the way the Identi
 dashboard binds. Open questions for the human (connectors, thresholds, enabled or disabled, first-seen baseline) and the
 starting material are in the session handoff under `.sessions/` (local).
 
+## Release 1.0.5.3 — one word for who did it: "identity", 2026-10-24
+
+Deployed to production. The suite said "identity" almost everywhere (the dropdowns, every table column, ~15 titles)
+and "actor" in four visible places; those now say identity too, the user's choice. "Actor" reads as a person, or as a
+threat actor, and half of what the dropdown lists are keys and platform accounts.
+
+- **Actor 360 is titled Identity 360** (nav label, dashboard title, "Open in Identity 360" drilldowns, copy).
+  Its id stays `elastic_cloud-audit-actor-360` and its source file `07-actor-360.mjs`: public ids never change unasked.
+- Command Center: *Identity footprint* (was Actor footprint), *Distinct identities*, *Human identities*; the
+  Session timeline's pill reads `identity: <email>`; Kibana Objects' description says "identity".
+- The computed ES|QL column stays named `actor` (internal; tables label it Identity), as do the Vega object ids.
+
 ## Release 1.0.5.2 — four ES|QL dropdowns, Lens-coloured Vega tiles, 2026-10-23
 
-Committed to main, **not deployed to production** (rendered on a private `AUDIT_ID_NS=r1052` copy, since removed).
-Deploy with `./audit --deploy`.
+Deployed to production 2026-10-24 (rendered on a private `AUDIT_ID_NS=r1052` copy first, since removed).
 
 - **Project and Client IP are ES|QL variable controls** (`?project`, `?client_ip`), single-select, opening on "Any",
   like Identity type and Identity. `TIME` = `TIME_ONLY AND CONTROLS_WHERE` (`PROJECT_WHERE AND IDENTITY_WHERE AND

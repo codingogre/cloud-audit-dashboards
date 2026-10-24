@@ -82,7 +82,7 @@ const INTRO = {
     'Risk is weight × events, from 10 for a workflow run to 50 for a security change, so it runs far above event counts.',
     'Identities read as in the Identity dropdown; a Cloud API key is shortened to the start of its id, “_4KEO… · Cloud API key”.',
     'The links above carry the time range and filter pills to the next page, but no dropdown choice: pick again there.',
-    'Click a Principal id to filter the page or open Actor 360; a Cloud API key’s id also covers the API keys it created.',
+    'Click a Principal id to filter the page or open Identity 360; a Cloud API key’s id also covers the API keys it created.',
     'In the Live signal feed, a Client IP in 100.64/10 or a private range is Kibana or the platform acting for someone, not where they are.',
     'The last time bucket is partial, and panels side by side can differ by an event or two at the edges of the range.',
   ],
@@ -102,9 +102,9 @@ export function build() {
     // Gated, and resolved the same way as Busiest identities below, so the tile counts exactly the
     // identities that table ranks (an ungated count included people whose only traffic was the noise
     // gate's: 4 here over a 3-row table). Counted first by the raw identity fields, resolved after.
-    kpi(15, 0, 7, 5, `FROM ${IDX} | ${TIME} | ${NOISE} | STATS n = COUNT(*) BY ${ACTOR_KEYS} | ${ACTOR_RESOLVE} | STATS \`Distinct actors\` = COUNT_DISTINCT(actor)`, 'Distinct actors',
+    kpi(15, 0, 7, 5, `FROM ${IDX} | ${TIME} | ${NOISE} | STATS n = COUNT(*) BY ${ACTOR_KEYS} | ${ACTOR_RESOLVE} | STATS \`Distinct identities\` = COUNT_DISTINCT(actor)`, 'Distinct identities',
       `Identities with signal traffic, named as in Busiest identities. Someone whose only events are routine (browsing dashboards, health checks) is not counted here${pv ? '; Platform Volume counts all traffic' : ''}.`),
-    kpi(22, 0, 7, 5, `FROM ${IDX} | ${TIME} | ${NOISE} | WHERE user.email IS NOT NULL | STATS \`Human actors\` = COUNT_DISTINCT(user.email)`, 'Human actors',
+    kpi(22, 0, 7, 5, `FROM ${IDX} | ${TIME} | ${NOISE} | WHERE user.email IS NOT NULL | STATS \`Human identities\` = COUNT_DISTINCT(user.email)`, 'Human identities',
       'Distinct people with signal traffic, counted by email address. API key traffic has carried no email in this audit log, so it is not counted here, even for a key a person created.'),
     // Widths follow the titles at a 1440px viewport, where a metric tile clips its secondary line and
     // wraps its title: the two "· all traffic" tiles need 9 columns, and Privileged ops' title 10. The
@@ -133,7 +133,7 @@ export function build() {
       'How far back this project\'s audit stream goes: its first stored event and the days since. It ignores the time picker and the controls. The retention line is the data stream\'s setting, read when the dashboards were installed.'),
     // Two rows taller than the rest of the page: at 13 the treemap's floor-sized tiles were too short
     // for a two-line name once the legend took its row under the plot.
-    vega(0, 21, 24, 15, '01-actor-risk-treemap', 'Actor footprint · area by √events, color by risk total',
+    vega(0, 21, 24, 15, '01-actor-risk-treemap', 'Identity footprint · area by √events, color by risk total',
       'The busiest identities as tiles, grouped by kind: Elasticsearch API key, person, Cloud API key, platform, user without email, unattributed. Bigger means more activity, but read the printed count, not the area. Stronger color means more risk.'),
     /**
      * Lens, not the Vega band stream (vega/07, which 06 keeps): stacked on a linear axis, Signal — the band
@@ -154,7 +154,7 @@ export function build() {
       `FROM ${IDX} | ${TIME} | ${NOISE} | STATS events = COUNT(*) BY action = event.action, source = service.name | ${SOURCE_LABEL} | SORT events DESC | LIMIT ${fitRows(TABLE_H)}`,
       ['action', sized('source', 100, { min: 100 })], [sized('events', COUNT_W, { min: COUNT_W })], 'Top audited actions after the noise gate, with the service that emitted them.'),
     /**
-     * Groups on the computed `actor` like the Distinct actors tile, so the two count identities the
+     * Groups on the computed `actor` like the Distinct identities tile, so the two count identities the
      * same way: counted first by ACTOR_KEYS, resolved on the grouped rows (1.0.5.1; it resolved per event).
      *
      * No Email column. It was the click-to-pin column, but Identity already IS the email wherever there
@@ -166,7 +166,7 @@ export function build() {
      * Identity dropdown's own value, so a row can be found there.
      *
      * Principal id (1.0.5, PIN_PRINCIPAL in shared.mjs) is the click-through: raw user.name, a group key, so a
-     * click pins the principal and offers Open in Actor 360. Only that one of the two pin columns fits 22
+     * click pins the principal and offers Open in Identity 360. Only that one of the two pin columns fits 22
      * columns at 1440px, and only in place of Last seen and Actions: Identity and Principal id each keep the
      * ~245px the 36-character placeholder `<unauthenticated-cloud-access-token>` needs (both cut it at
      * 165px, rendered). A named key's row pins its owner; picking the key in the Identity dropdown narrows to it.
@@ -174,7 +174,7 @@ export function build() {
     table(13, 36, 22, TABLE_H, 'Busiest identities',
       `FROM ${IDX} | ${TIME} | ${NOISE} | STATS events = COUNT(*) BY ${ACTOR_KEYS} | ${ACTOR_RESOLVE} | STATS events = SUM(events) BY actor, user.name | SORT events DESC | LIMIT ${fitRows(TABLE_H)}`,
       ['actor', PIN_PRINCIPAL], [sized('events', COUNT_W, { min: COUNT_W })],
-      'The identities with the most signal traffic, named as in the Identity dropdown, so any row can be picked there. Click a Principal id to filter the page or open Actor 360.'),
+      'The identities with the most signal traffic, named as in the Identity dropdown, so any row can be picked there. Click a Principal id to filter the page or open Identity 360.'),
     // A bar rather than the donut it replaces: the donut's thin slices carried no label and it had no
     // legend, so the small categories could not be named. Grouping on the multi-valued field counts
     // an event once per category, as MV_EXPAND did, without materialising a row per value.
@@ -196,5 +196,5 @@ export function build() {
       { scroll: true }),
   ];
   return dash(rawId('00-command-center'), '[Audit] 🎛️ Command Center',
-    'Entry point for Cloud Audit Dashboards. KPIs, volume, actor risk and the live signal feed.', P, { intro: INTRO });
+    'Entry point for Cloud Audit Dashboards. KPIs, volume, identity risk and the live signal feed.', P, { intro: INTRO });
 }

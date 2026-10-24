@@ -50,7 +50,7 @@
       "on": [
         {
           "events": "@ribbon:click[event.shiftKey]",
-          "update": "datum.actor === 'no email recorded' ? null : kibanaAddFilter({match_phrase: {'user.email': datum.actor}}, 'logs-elastic_cloud.serverless_audit.otel-default', 'actor: ' + datum.actor)"
+          "update": "datum.actor === 'no email recorded' ? null : kibanaAddFilter({match_phrase: {'user.email': datum.actor}}, 'logs-elastic_cloud.serverless_audit.otel-default', 'identity: ' + datum.actor)"
         }
       ]
     },

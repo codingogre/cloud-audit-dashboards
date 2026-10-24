@@ -1,5 +1,5 @@
 /**
- * Panel drilldowns — into Actor 360 from everywhere else, and out of Actor 360 to the topic dashboards.
+ * Panel drilldowns — into Identity 360 from everywhere else, and out of Identity 360 to the topic dashboards.
  *
  * Like the control bar, this is state `PUT /api/dashboards/{id}` silently drops, so it rides the
  * same _export -> mutate -> _import post-pass in scripts/dashboards.mjs.
@@ -32,10 +32,10 @@ export const hasFilterableColumn = (panel) =>
  * The drilldown to splice onto one panel's embeddableConfig.
  * `useCurrentFilters` is what carries the clicked value through to the destination.
  *
- * Every dashboard's identity panels drill IN to Actor 360. Actor 360's own panels drill OUT, to the
+ * Every dashboard's identity panels drill IN to Identity 360. Identity 360's own panels drill OUT, to the
  * dashboard that owns the dimension clicked — an action to Security & Anomalies, an address to Geo &
- * Network — because Actor 360 is where something is noticed and the topic dashboards are where it is
- * investigated. The Actor 360 seed carries no destination suffix, so adding outbound drilldowns did
+ * Network — because Identity 360 is where something is noticed and the topic dashboards are where it is
+ * investigated. The Identity 360 seed carries no destination suffix, so adding outbound drilldowns did
  * not change the ids of the inbound ones.
  */
 /** A drilldown reference name ends in this; the post-pass drops stale ones before re-adding. */

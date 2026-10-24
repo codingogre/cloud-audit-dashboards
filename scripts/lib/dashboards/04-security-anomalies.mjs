@@ -91,7 +91,7 @@ const FAILED_MARK =
  * No Email column on this page's identity tables. On every render (1h and 24h) it held only dashes:
  * the identities that score are API keys, service accounts and unauthenticated principals, and
  * Identity already IS the email for a person. The README rule for a click-to-filter column of dashes
- * applies (drop it). The click-to-pin and the Actor 360 drilldown come from the API key and Principal id
+ * applies (drop it). The click-to-pin and the Identity 360 drilldown come from the API key and Principal id
  * columns instead (PIN_COLS, shared.mjs, 1.0.5), which are filled for exactly those identities.
  */
 
@@ -147,7 +147,7 @@ const INTRO = {
     'Risk total is weight × events, not an event count. A failed action scores on its own row, marked (failed).',
     'Kibana’s own API-key clean-up and this suite’s automated install score 0; the line above a tile’s number counts them.',
     'Scope separates your identities, Elastic platform automation and unauthenticated requests; an identity without an email is not necessarily external.',
-    'Click an API key or Principal id to filter the page or open Actor 360; a Cloud API key’s id also covers the API keys it created.',
+    'Click an API key or Principal id to filter the page or open Identity 360; a Cloud API key’s id also covers the API keys it created.',
     IDENTITY_HOW_TO,
   ],
 };

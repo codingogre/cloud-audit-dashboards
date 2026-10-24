@@ -166,7 +166,7 @@ export function build() {
         'space', 'result'], ['events', 'last_change'],
       'Kibana state changes, with who, which object and which space. Repeats of the same change share a row; Events counts them. “attempted” is how Kibana logs most changes; “failure” means the change was denied.',
       // Thirty is the bound the title states ("30 at most"), so the LIMIT stays above the 13 rows the panel shows.
-      // Wrapped since 1.0.5: Principal id (raw user.name, the click-through to Actor 360) took 165px, and at a
+      // Wrapped since 1.0.5: Principal id (raw user.name, the click-through to Identity 360) took 165px, and at a
       // 1440px viewport Object would otherwise be hard-cut at ~150px; at 1920 rows stay on one line.
       { wrap: true }),
     vega(0, 19, 24, 13, '03-object-verb-heatmap', 'Object type × operation',
@@ -249,7 +249,7 @@ export function build() {
       ['@timestamp'],
       'Kibana reads and changes of named objects, record by record, newest first. Routine page loads and this suite’s own activity are left out. Click a Space to pin it.',
       { scroll: true }),
-    // The session timeline from Actor 360 (vega/13, one spec, so the two pages cannot disagree), directly
+    // The session timeline from Identity 360 (vega/13, one spec, so the two pages cannot disagree), directly
     // above the records it indexes: a click on a bar pins that session and zooms the picker to it, which
     // narrows Session reconstruction beneath. On its own fixed 24 hours (VEGA_WINDOWS) on a page where every
     // other panel follows the picker: Kibana badges the panel "Last 24 hours", so the title does not repeat it.
@@ -259,5 +259,5 @@ export function build() {
       { empty: 'empty when no browser session opened or changed anything' }),
   ];
   return dash(rawId('02-kibana-objects'), '[Audit] 🗂️ Kibana Object Forensics',
-    'Every Kibana saved-object read and change, by type, name, space and actor.', P, { intro: INTRO });
+    'Every Kibana saved-object read and change, by type, name, space and identity.', P, { intro: INTRO });
 }

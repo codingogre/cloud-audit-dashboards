@@ -1,6 +1,6 @@
 {
   "title": "[Audit] 🗂️ Kibana Object Forensics",
-  "description": "Every Kibana saved-object read and change, by type, name, space and actor.",
+  "description": "Every Kibana saved-object read and change, by type, name, space and identity.",
   "time_range": {
     "from": "now-24h",
     "to": "now-1m"
@@ -36,7 +36,7 @@
           {
             "type": "dashboardLink",
             "destination": "elastic_cloud-audit-actor-360",
-            "label": "👤  Actor 360",
+            "label": "👤  Identity 360",
             "options": {
               "use_filters": true,
               "use_time_range": true,

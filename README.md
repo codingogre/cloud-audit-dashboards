@@ -70,7 +70,7 @@ ending a minute ago (`now-24h` → `now-1m`, `DEFAULT_FROM` and `TIME_TO`),
 auto-refresh off, and a hover tooltip on every panel saying what it shows and how to read it (40 words at most;
 a collapsed *How to read this page* section under the intro carries the page-wide caveats, and *Reading the panels*
 below the detail).
-The bar lists the deployed dashboards in one order on every page: Command Center, Actor 360,
+The bar lists the deployed dashboards in one order on every page: Command Center, Identity 360,
 Identity & Access, Kibana Object Forensics, Elasticsearch Data Access, Security & Anomalies, Geo &
 Network, and Platform Volume last when it is deployed. The numbers below are source file names
 (`scripts/lib/dashboards/NN-*.mjs`, `dashboards/NN-*.json`), not the bar's order and not part of any id.
@@ -79,12 +79,12 @@ Network, and Platform Volume last when it is deployed. The numbers below are sou
 | --- | --- | --- |
 | 00 | 🎛️ **Command Center** (`elastic_cloud-audit-dashboard`) | Entry point. Six KPIs (Total and Failed events compare with the prior period), volume by source, how far back the audit data goes, actor-risk treemap, signal-vs-noise stream, live signal feed. |
 | 01 | 🔐 **Identity & Access** | Who authenticated, with which credential type, from where, and what failed. API key inventory with ownership. |
-| 02 | 🗂️ **Kibana Object Forensics** | Every Kibana read and state change by type, name, space and actor. Changes are surfaced first, full width — they are rare and always worth reading individually. Ends with Actor 360's 24-hour session timeline over Session reconstruction: a click on a session bar narrows the records to that session. |
+| 02 | 🗂️ **Kibana Object Forensics** | Every Kibana read and state change by type, name, space and identity. Changes are surfaced first, full width — they are rare and always worth reading individually. Ends with Identity 360's 24-hour session timeline over Session reconstruction: a click on a session bar narrows the records to that session. |
 | 03 | 🔎 **Elasticsearch Data Access** | What data was read, by whom, through which transport action, including dot-prefixed system indices. |
 | 04 | 🚨 **Security & Anomalies** | Mean severity (0–50) and a risk leaderboard, security config changes, rare/privileged operations, newly seen identities. |
 | 05 | 🌍 **Geo & Network** | Real client geography, choropleth, impossible-travel detection, and proof that `source.ip` is the wrong field. |
 | 06 | 📊 **Platform Volume** · *opt-in* | The unfiltered firehose, quarantined so the rest stay readable. Not deployed unless asked for: see *Optional dashboards* under Commands. |
-| 07 | 👤 **Actor 360** | One identity's whole footprint — pick someone in the Identity control. **① Is this normal?** reads a fixed 7 days whatever the picker says: activity against their own hourly baseline, their rank among the week's 40 busiest identities, their weekly rhythm. **② What they did** follows the picker: a credential → space → object → operation flow, changes, reads, a map with travel lines, the risk receipts. **③ Evidence**: a 24-hour session timeline whose bars filter the dashboard to that session and zoom it there, over the raw records. |
+| 07 | 👤 **Identity 360** (named Actor 360 until 1.0.5.3; the id is still `elastic_cloud-audit-actor-360`) | One identity's whole footprint — pick someone in the Identity control. **① Is this normal?** reads a fixed 7 days whatever the picker says: activity against their own hourly baseline, their rank among the week's 40 busiest identities, their weekly rhythm. **② What they did** follows the picker: a credential → space → object → operation flow, changes, reads, a map with travel lines, the risk receipts. **③ Evidence**: a 24-hour session timeline whose bars filter the dashboard to that session and zoom it there, over the raw records. |
 
 ### The risk model
 
@@ -149,17 +149,17 @@ round-trip would destroy every Vega panel, which the API itself warns about via
 repoints Vega — see `applyImportOnlyState()` in `scripts/dashboards.mjs`. Because the PUT passes wipe that
 state on every deploy, the post-pass is part of every `--dashboards` run, not an install step.
 
-**Drilldowns run both ways.** Every identity panel elsewhere offers *Open in Actor 360*. Actor 360's
+**Drilldowns run both ways.** Every identity panel elsewhere offers *Open in Identity 360*. Identity 360's
 own panels drill **out**, to the dashboard that owns the dimension clicked — an action to Security &
-Anomalies, an address to Geo & Network, an index to Elasticsearch Data Access — because Actor 360 is
+Anomalies, an address to Geo & Network, an index to Elasticsearch Data Access — because Identity 360 is
 where something is noticed and the topic dashboards are where it is investigated. A panel names its
 destination with `drill`, which is kept on the in-memory definition and stripped from the API payload. A
 click-to-filter column must reach Lens as the raw field (a group key, or kept as it is): Kibana builds no
 filter from a column the query assigns, even under a real field name, so the cell still looks like a link
 but a click opens nothing, drilldown included. `layout.mjs` fails such a column (`checkClickFilters`).
 
-**Vega panels filter too.** On Actor 360, clicking a credential or a space in the flow, or
-shift-clicking a session, pins it across the suite. Clicking a session (on Actor 360 and on Kibana
+**Vega panels filter too.** On Identity 360, clicking a credential or a space in the flow, or
+shift-clicking a session, pins it across the suite. Clicking a session (on Identity 360 and on Kibana
 Object Forensics) pins a `session: …` pill on `kibana.session.id` AND sets the time range to
 the session plus a minute either side, because the records under the timeline follow the picker while
 the timeline is fixed at 24 hours. The zoom is sent 0.7s and 1.4s after the click, from a Vega timer:
@@ -177,7 +177,7 @@ whose choice became a filter pill, so one bar held two kinds of control that ans
 
 | Control | Reads | Why |
 |---|---|---|
-| Project | `?project`, against `project.name` (`PROJECT_WHERE`) | The serverless project that **emitted** the event. An audit project usually collects the audit streams of several projects; this narrows the whole dashboard to one of them. It does not shorten the other dropdowns' lists (none chains on it, so no choice can leave another stranded). Populated on every Elasticsearch and Kibana event. Names are not unique in Elastic Cloud, so projects that share a name share an option. **Actor 360's cohort rank follows Project and nothing else:** it ranks against everyone active in the projects the selection is active in, so an identity or Client IP selection highlights that identity instead of shrinking the cohort to one. Exact across all projects or within one; across several (not all) it sums events and takes each distinct count's per-project maximum, and its title says *approximate*. |
+| Project | `?project`, against `project.name` (`PROJECT_WHERE`) | The serverless project that **emitted** the event. An audit project usually collects the audit streams of several projects; this narrows the whole dashboard to one of them. It does not shorten the other dropdowns' lists (none chains on it, so no choice can leave another stranded). Populated on every Elasticsearch and Kibana event. Names are not unique in Elastic Cloud, so projects that share a name share an option. **Identity 360's cohort rank follows Project and nothing else:** it ranks against everyone active in the projects the selection is active in, so an identity or Client IP selection highlights that identity instead of shrinking the cohort to one. Exact across all projects or within one; across several (not all) it sums events and takes each distinct count's per-project maximum, and its title says *approximate*. |
 | Identity type | `?identity_kind`, worked out per event (`IDENTITY_KIND`) | What kind of credential made the request: Person, Elasticsearch API key, Elasticsearch API key (name not recorded), Cloud API key, Service account, Failed sign-in, Unattributed or Other. Eight values at most, so the list is always complete; picking one first shortens the Identity list. |
 | Identity | `?identity`, worked out per event (`IDENTITY`), chained on Identity type | One person, key or account, named exactly as every table names it (below). It replaced Person (email) and API key in 1.0.5.1: they read one raw field each, so a Cloud API key was in neither list and `user.name` meant a different thing on different rows. Single choice keeps a selected panel at ~20ms over 30 days; a multi-select has no fast path (~0.25s). Its query aggregates every event in range and lists the busiest identities in it, up to 10,000, rather than an option list's sample. |
 | Client IP | `?client_ip`, against `client.ip` (`CLIENT_IP_WHERE`) | Can hold more distinct addresses than anyone could eyeball; type in the dropdown to search the list. A control's value is text, so the list is `TO_STRING(client.ip)` and the filter turns the choice back with `TO_IP`, which keeps it a term test on the ip field: ~35ms over 30 days, against ~340ms for comparing text per event. The `TO_IP` is handed a null when nothing is chosen, because `TO_IP("Any")` would put a warning on every panel. |
@@ -243,14 +243,14 @@ The older click-to-filter path still exists and needs neither:
   `filter` parameter;
 - the nav bar's `dashboardLink`s carry `use_filters: true`.
 
-**Identity tables click through to Actor 360** (1.0.5). An identity table shows *Identity*, the computed
+**Identity tables click through to Identity 360** (1.0.5). An identity table shows *Identity*, the computed
 `actor`, which cannot be clicked. Beside it, the tables on 00, 02, 03 and 04 carry the raw fields behind it as
 STATS BY group keys and show them as narrow click-to-filter columns (`PIN_BY`, `PIN_KEY`, `PIN_PRINCIPAL` in
 `scripts/lib/dashboards/shared.mjs`): **Principal id** (`user.name`: a Cloud API key's full id, a service
 account, a person's numeric id) everywhere, and **API key** (`api_key.name`) where a row has room for both
 (04's *Risk leaderboard* and *Config changes*, 03's system-index table). A click pins the field and offers
-*Open in Actor 360*; verified in Playwright on a private deploy (04 leaderboard and 01 Busiest API keys →
-Actor 360 with `user.name: <id>` pinned, every panel narrowed). Two things to know (the first is in the How to read
+*Open in Identity 360*; verified in Playwright on a private deploy (04 leaderboard and 01 Busiest API keys →
+Identity 360 with `user.name: <id>` pinned, every panel narrowed). Two things to know (the first is in the How to read
 blocks of 00, 03 and 04):
 - A Principal id pin is the principal, not the credential. On a Cloud API key it also matches every
   Elasticsearch API key that key created, because Elasticsearch stamps the creator in `user.name`; a named
@@ -337,7 +337,7 @@ still counts in *Signal events*. The two *Kibana saved-object* panels on 02 and 
 - 1.0.5.1 changed what some rows read: Kibana actions made with an Elasticsearch key moved from the owning Cloud API
   key's row to `Unnamed key of _4KEO…` (6,521 events and 35,160 of the treemap's risk total over the 30 days to 2026-10-23), the
   identity with no principal reads `(unattributed)` rather than `<anonymous>`, Command Center's *Busiest
-  identities* lost the never-seen `email · via key` form, and Actor 360's *Who this is* shows Identity and
+  identities* lost the never-seen `email · via key` form, and Identity 360's *Who this is* shows Identity and
   Principal id rather than Email and Principal id, so a named key is its own row rather than part of its owner's.
 - 01 *Identities*: the line above the number counts API key names among identities with no email (a Cloud API key
   by its id); the rest are unnamed keys, service accounts and built-in users, user names tried in a failed sign-in,
@@ -434,7 +434,7 @@ Probed against Kibana 9.6 serverless. Several are undocumented and cost real tim
 | Metric items accept no per-item `color` | Styling lives at config root |
 | `dashboardLink` targets must already exist | Dashboards deploy in two passes |
 | Reporting API rejects `pngV2` / `printablePdfV2` | Verification drives Chromium directly |
-| **Every Lens ES\|QL request carries a hidden `@timestamp` range filter for exactly the picker's window**, whether or not the query uses `?_tstart`/`?_tend` (captured in the browser: `"filter":{"bool":{"filter":[{"range":{"@timestamp":{"gte":…,"lte":…}}}]}}` beside the params, on a query that never compares `@timestamp` with `?_tstart`). Kibana adds it for the layer's time field — the column first compared with the params, else `@timestamp` at run time; another column only moves it | No Lens panel can read outside the range: a previous-period count comes back 0, and a lower bound below `?_tstart` is silently cut there (it was on Actor 360's whole-minute window until 1.0.5). The prior-period tiles read the events view instead (next rows), and *Audit data held* is a DSL Vega spec (`coverageSpec()` in `panels.mjs`) |
+| **Every Lens ES\|QL request carries a hidden `@timestamp` range filter for exactly the picker's window**, whether or not the query uses `?_tstart`/`?_tend` (captured in the browser: `"filter":{"bool":{"filter":[{"range":{"@timestamp":{"gte":…,"lte":…}}}]}}` beside the params, on a query that never compares `@timestamp` with `?_tstart`). Kibana adds it for the layer's time field — the column first compared with the params, else `@timestamp` at run time; another column only moves it | No Lens panel can read outside the range: a previous-period count comes back 0, and a lower bound below `?_tstart` is silently cut there (it was on Identity 360's whole-minute window until 1.0.5). The prior-period tiles read the events view instead (next rows), and *Audit data held* is a DSL Vega spec (`coverageSpec()` in `panels.mjs`) |
 | A DSL Vega body can read the picker without being bound to it: `{"%timefilter%": "min"}` / `"max"` anywhere in `body.query` or `body.aggs` becomes the window's start or end in ms (a script's `params` included) | Used by the prior-period tiles until 1.0.5.1; no spec uses it now. `--lint` still binds the placeholders to a fixed window, so one that does is linted rather than rejected |
 | An ES\|QL Vega spec **always** follows its panel's time range — omitting `%timefield%` does not opt out — and that is the picker's unless the panel has its own | A panel that needs its own window (a 7-day baseline on a 24h dashboard) is an ES\|QL spec bounded by `TIME` on a `vis` panel with `config.time_range` (`VEGA_WINDOWS` in `panels.mjs`; vega/08, 09, 12, 13): `?_tstart`/`?_tend` and the hidden range filter are then that window, and the dropdowns still apply. Kibana badges the panel with the window (*Last 7 days*); a viewer can click it to change the range. The re-point keeps it (stored as `embeddableConfig.time_range`). A rounded range badges long (*Last 167 hours rounded to the hour*), so the hourly charts take `now-7d` and keep their 168 hours in the query. `--lint` and `--perf` run these specs over that window. A **DSL** spec (`url.index` + `url.body`, explicit `@timestamp` range, `%dashboard_context-*%` placeholders) is left for what neither a panel range nor the events view can express: the stream's first event (vega/14). The prior period is an ES\|QL spec on `cloud-audit-events-view` (next rows) |
 | A Vega ES\|QL dataset gets the dashboard's filters (pills, KQL) only with `"%context%": true`, and then all of them; ES\|QL control variables reach every dataset, `%context%` or not | Every ES\|QL spec sets it, except the estate half of 07's cohort (vega/12), which must not be narrowed by the selection: it reads the Project dropdown directly (`TIME_ONLY AND PROJECT_WHERE`), is grouped by project, and the spec keeps the projects the selection's dataset reports, so a project pill narrows it too (`TWO_DATASET_SPECS` in `layout.mjs`), and the six prior-period tiles' `stream` dataset, which finds the stream's first event and is unfiltered by design |
@@ -575,8 +575,8 @@ legend and the How to read blocks, not in each tooltip: `table()` appends the la
   `… | TIME | <filter> | SORT @timestamp DESC | LIMIT n | <per-row EVALs> | KEEP …` (QUERY SHAPE rule 3), its time
   is the metric column at the right end (the API rejects a table with no metric), and `{ scroll: true }` keeps the
   bound the title states (*"· newest 1,000 at most"*, 200 on the Live signal feed). Raw fields shown as they are
-  (Action, Client IP, Space, Session, Transport action, Index) are click-to-filter, so those feeds drill into Actor
-  360 (Actor 360's own *Session records* only pins); a computed column never is. A hard-cut cell (a long message, a
+  (Action, Client IP, Space, Session, Transport action, Index) are click-to-filter, so those feeds drill into Identity
+  360 (Identity 360's own *Session records* only pins); a computed column never is. A hard-cut cell (a long message, a
   change payload) opens whole from the expand icon its cell shows on hover. The Session column is 150px of a
   44-character id: enough to tell sessions apart, and a click pins the whole id.
 
@@ -871,7 +871,7 @@ Measured 2026-10-14 with `./audit --perf run --windows 1h,24h,7d` on a 2,625,300
 
 | Window | Slowest query | Median query | Slowest dashboard load (all its queries at once) |
 | --- | --- | --- | --- |
-| 1h | 146ms | 33ms | 223ms (Actor 360) |
+| 1h | 146ms | 33ms | 223ms (Identity 360) |
 | 24h | 208ms | 43ms | 516ms (Platform Volume) |
 | 7d | 642ms (Signal vs noise, vega/07) | 76ms | 3.2s (Platform Volume) |
 
@@ -951,7 +951,7 @@ scripts/
     suite.mjs               Dashboard ids, nav order, the opt-in set (--with / AUDIT_WITH)
     dashboards/             One module per dashboard, plus shared.mjs
     layout.mjs              Offline structural checks (grid, fragment drift, Vega rules)
-    drilldowns.mjs          Panel drilldowns, into and out of Actor 360
+    drilldowns.mjs          Panel drilldowns, into and out of Identity 360
     controls.mjs            Control bar (PUT pinned_panels) + its data view
     view.mjs                The ES|QL events view the prior-period tiles read: create, require, delete
     canary.mjs              --verify's prior-period canary (no time filter, true prior counts)

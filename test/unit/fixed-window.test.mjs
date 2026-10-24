@@ -23,7 +23,7 @@ const esqlUrls = (node, out = []) => {
   return out;
 };
 
-test('the four fixed windows: 7 days for Actor 360\'s baseline row, 24 hours for the session timeline', () => {
+test('the four fixed windows: 7 days for Identity 360\'s baseline row, 24 hours for the session timeline', () => {
   assert.deepEqual(Object.keys(VEGA_WINDOWS).sort(), ['08-actor-baseline-band', '09-activity-punchcard', '12-actor-cohort', '13-session-gantt']);
   assert.equal(windowMs(VEGA_WINDOWS['08-actor-baseline-band']), 7 * 864e5);
   assert.equal(windowMs(VEGA_WINDOWS['13-session-gantt']), 864e5);
@@ -45,7 +45,7 @@ test('vega() puts the window on the panel, and only for a VEGA_WINDOWS spec', ()
   assert.equal(vega(0, 0, 16, 14, '07-noise-ratio-stream', 't', 'd').config.time_range, undefined);
 });
 
-test('every panel showing a fixed-window spec carries its window, on Actor 360 and Kibana Objects', () => {
+test('every panel showing a fixed-window spec carries its window, on Identity 360 and Kibana Objects', () => {
   const seen = {};
   for (const [name, d] of Object.entries(buildAll())) {
     for (const p of flatPanels(d.panels)) {

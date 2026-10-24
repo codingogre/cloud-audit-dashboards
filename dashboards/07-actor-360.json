@@ -1,5 +1,5 @@
 {
-  "title": "[Audit] 👤 Actor 360",
+  "title": "[Audit] 👤 Identity 360",
   "description": "One identity’s complete footprint — pick someone in Identity in the control bar and every panel becomes their story.",
   "time_range": {
     "from": "now-24h",
@@ -36,7 +36,7 @@
           {
             "type": "dashboardLink",
             "destination": "elastic_cloud-audit-actor-360",
-            "label": "👤  Actor 360",
+            "label": "👤  Identity 360",
             "options": {
               "use_filters": true,
               "use_time_range": true,

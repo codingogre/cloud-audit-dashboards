@@ -24,7 +24,7 @@ const NUMBERED = ['cloud-audit-00-command-center', 'cloud-audit-01-identity-acce
   'cloud-audit-03-data-access', 'cloud-audit-04-security-anomalies', 'cloud-audit-05-geo-network',
   'cloud-audit-06-platform-volume', 'cloud-audit-07-actor-360'];
 
-const DEFAULT_NAV = ['Command Center', 'Actor 360', 'Identity & Access', 'Kibana Object Forensics',
+const DEFAULT_NAV = ['Command Center', 'Identity 360', 'Identity & Access', 'Kibana Object Forensics',
   'Elasticsearch Data Access', 'Security & Anomalies', 'Geo & Network'];
 const navOf = (def) => def.panels[0].config.links;
 const plain = (label) => label.replace(/^\S+\s+/, '');
@@ -33,7 +33,7 @@ const markdown = (all) => Object.values(all).flatMap((d) => d.panels.filter((p) 
 const drillTargets = (all) => Object.keys(all).flatMap((name) => all[name].panels.filter(hasFilterableColumn)
   .map((p) => (dashId(name) === ACTOR_360 ? p.drill : ACTOR_360)).filter(Boolean));
 
-test('default set: seven dashboards, Command Center at elastic_cloud-audit-dashboard, Actor 360 second, no Platform Volume anywhere', () => {
+test('default set: seven dashboards, Command Center at elastic_cloud-audit-dashboard, Identity 360 second, no Platform Volume anywhere', () => {
   withEnv({ AUDIT_WITH: undefined, AUDIT_ID_NS: undefined }, () => {
     const all = buildAll();
     assert.deepEqual(Object.keys(all), ['00-command-center', '01-identity-access', '02-kibana-objects', '03-data-access',
@@ -251,7 +251,7 @@ test('data view (1.0.4): public id elastic_cloud-audit-logs, namespaced like the
   });
 });
 
-test('identity tables (1.0.5): a raw Principal id / API key click column on each, so each drills into Actor 360', async () => {
+test('identity tables (1.0.5): a raw Principal id / API key click column on each, so each drills into Identity 360', async () => {
   const { checkClickFilters } = await import('../../scripts/lib/layout.mjs');
   const { discoverUrl } = await import('../../scripts/lib/panels.mjs');
   withEnv({ AUDIT_WITH: undefined, AUDIT_ID_NS: undefined }, () => {
@@ -284,7 +284,7 @@ test('identity tables (1.0.5): a raw Principal id / API key click column on each
     }
     // The folded table cannot carry them (its last row would need the raw keys nulled).
     assert.ok(!hasFilterableColumn(find('03-data-access', 'Denied requests by identity')));
-    // Actor 360's Who this is leaves the placeholders out, so its 165px Principal id never cuts one.
+    // Identity 360's Who this is leaves the placeholders out, so its 165px Principal id never cuts one.
     assert.match(find('07-actor-360', 'Who this is').config.data_source.query, /NOT STARTS_WITH\(user\.name, "<"\)/);
     assert.equal(discoverUrl('00-all-events'), '/app/discover#/view/cloud-audit-search-all-events');
     assert.throws(() => discoverUrl('99-nope'), /no searches\/99-nope\.json/);
