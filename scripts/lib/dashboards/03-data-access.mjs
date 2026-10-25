@@ -215,7 +215,7 @@ export function build() {
       'The busiest index families across all traffic, with how many identities touched each and the busiest one. Over a quiet range this is often just the audit stream, read by the identity these dashboards run as.'),
     table(0, 35, 48, 14, 'Top transport actions',
       `FROM ${IDX} | ${TIME} | WHERE elasticsearch.audit.action IS NOT NULL | STATS n = COUNT(*), seen = MAX(@timestamp) BY ${ACTOR_KEYS}, elasticsearch.audit.action, request = elasticsearch.audit.request.name | WHERE NOT ${FANOUT} AND NOT ${ASYNC_INNER} | ${ACTOR_RESOLVE}, request = CASE(request IS NULL OR request == "", "—", request) | STATS events = SUM(n), actors = COUNT_DISTINCT(actor), last_seen = MAX(seen) BY elasticsearch.audit.action, request | SORT events DESC | LIMIT ${fitRows(14)}`,
-      [sized('elasticsearch.audit.action', 420), 'request'], ['actors', 'events', 'last_seen'],
+      [filterable('elasticsearch.audit.action', { width: 420 }), 'request'], ['actors', 'events', 'last_seen'],
       'The busiest Elasticsearch actions with their request type and how many identities sent each, all traffic, including these dashboards’ own reads. Each request counts once. The Distinct actions tile counts every action, listed or not.'),
     // One row per identity: per (identity, action, index) one persona's run filled the panel and the
     // visible rows summed to 749 of the tile's 853 (round 3). The newest denial's action and index are

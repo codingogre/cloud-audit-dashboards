@@ -259,14 +259,14 @@ test('identity tables (1.0.5): a raw Principal id / API key click column on each
     const find = (name, title) => all[name].panels.find((p) => p.config?.title?.startsWith(title));
     const clicks = (p) => p.config.rows.filter((r) => r.click_filter).map((r) => r.column);
     const want = {
-      '00-command-center': { 'Busiest identities': ['user.name'] },
+      '00-command-center': { 'Busiest identities': ['user.name'], 'Most frequent actions': ['event.action'] },
       // 1.0.5.4: Space, Action and Client IP became raw group keys where a table showed them, so they click too.
       '01-identity-access': { 'Busiest API keys by name': ['api_key.name', 'user.name'], 'Top failed or denied access': ['event.action', 'client.ip'] },
-      '02-kibana-objects': { '⚠️ Mutations': ['user.name', 'kibana.space.id'] },
-      '03-data-access': { '⚠️ Who touched system and hidden indices': ['api_key.name', 'user.name'] },
+      '02-kibana-objects': { '⚠️ Mutations': ['user.name', 'kibana.space.id'], 'Object types': ['kibana.saved_object.type'], 'Busiest objects': ['kibana.saved_object.type'] },
+      '03-data-access': { '⚠️ Who touched system and hidden indices': ['api_key.name', 'user.name'], 'Top transport actions': ['elasticsearch.audit.action'] },
       '04-security-anomalies': {
         '🚨 Config changes': ['user.name', 'event.action'], 'Identities by first appearance': ['user.name'],
-        'Risk leaderboard': ['api_key.name', 'user.name'], 'Why these identities scored': ['user.name'],
+        'Risk leaderboard': ['api_key.name', 'user.name'], 'Why these identities scored': ['user.name', 'event.action'],
         'Top failures and denials': ['user.name', 'event.action'],
       },
       '07-actor-360': { 'Who this is': ['user.name'] },

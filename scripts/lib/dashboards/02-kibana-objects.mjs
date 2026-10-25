@@ -193,10 +193,10 @@ export function build() {
       // skeptic render) — and a renamed object into one row per title. Two objects that share a title
       // (the same dashboard installed in two spaces) then read alike, so a title two objects of one type share carries the id.
       // INLINE STATS runs on the grouped rows, never per event.
-      `FROM ${IDX} | ${TIME} | WHERE kibana.saved_object.id IS NOT NULL | ${NOT_INTERNAL} | STATS n = COUNT(*), title = MAX(kibana.saved_object.name) BY id = kibana.saved_object.id, type = kibana.saved_object.type, ${ACTOR_KEYS} | ${ACTOR_RESOLVE} | STATS events = SUM(n), actors = COUNT_DISTINCT(actor), title = MAX(title) BY id, type | EVAL name = COALESCE(title, id) | INLINE STATS same = COUNT(*) BY name, type | EVAL name = CASE(same > 1, CONCAT(name, " · ", id), name) | ${objLabel('name', 'type')} | DROP title, id, same | SORT events DESC | LIMIT 10`,
+      `FROM ${IDX} | ${TIME} | WHERE kibana.saved_object.id IS NOT NULL | ${NOT_INTERNAL} | STATS n = COUNT(*), title = MAX(kibana.saved_object.name) BY id = kibana.saved_object.id, kibana.saved_object.type, ${ACTOR_KEYS} | ${ACTOR_RESOLVE} | STATS events = SUM(n), actors = COUNT_DISTINCT(actor), title = MAX(title) BY id, kibana.saved_object.type | EVAL name = COALESCE(title, id) | INLINE STATS same = COUNT(*) BY name, kibana.saved_object.type | EVAL name = CASE(same > 1, CONCAT(name, " · ", id), name) | ${objLabel('name', 'kibana.saved_object.type')} | DROP title, id, same | SORT events DESC | LIMIT 10`,
       // Object type 155, not 100: "ingest_manager_settings" broke at its underscore into two lines that read
       // as two values (round-5 review). At a 1440px viewport Object still gets ~230px and wraps.
-      [{ column: 'name', label: 'Object' }, sized('type', 155, { label: 'Object type' })], ['events', 'actors'],
+      [{ column: 'name', label: 'Object' }, filterable('kibana.saved_object.type', { label: 'Object type', width: 155 })], ['events', 'actors'],
       'The Kibana objects with the most reads and changes, and how many identities touched each. Routine page loads and this suite’s own activity are left out; the tiles above count everything.',
       // Wrapped, like the high-value table beside it: at a 1440px viewport Name gets ~230px, and Lens
       // hard-cut "[Audit] Raw signal feed (noise gate applied)" into the Object type column (round-4
@@ -228,8 +228,8 @@ export function build() {
     // sets) rather than the appended "· top 9 at most", which lost its "9" past the title line at a 1440px
     // viewport; "Object types" is the tile's own name.
     table(0, 56, 24, 11, 'Object types · noise included · up to 9',
-      `FROM ${IDX} | ${TIME} | WHERE kibana.saved_object.type IS NOT NULL | STATS events = COUNT(*), objects = COUNT_DISTINCT(kibana.saved_object.id) BY type = kibana.saved_object.type | SORT events DESC | LIMIT 9`,
-      [sized('type', 150, { label: 'Object type' })], ['events', sized('objects', 90, { label: 'Objects' })],
+      `FROM ${IDX} | ${TIME} | WHERE kibana.saved_object.type IS NOT NULL | STATS events = COUNT(*), objects = COUNT_DISTINCT(kibana.saved_object.id) BY kibana.saved_object.type | SORT events DESC | LIMIT 9`,
+      [filterable('kibana.saved_object.type', { label: 'Object type', width: 150 })], ['events', sized('objects', 90, { label: 'Objects' })],
       'Saved-object types with the most events, reads and changes, over all Kibana traffic (routine included, unlike the two tables above). Objects counts distinct objects touched. “space” ranks high because every page load reads the active space.'),
     bar(24, 56, 24, 11, 'Busiest spaces by id · all traffic · up to 10',
       `FROM ${IDX} | ${TIME} | WHERE kibana.space.id IS NOT NULL | STATS events = COUNT(*) BY space = kibana.space.id | SORT events DESC | LIMIT 10`,

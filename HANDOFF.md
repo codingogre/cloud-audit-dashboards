@@ -13,6 +13,13 @@ fragments so the drift check covers them, and name identities the way the Identi
 dashboard binds. Open questions for the human (connectors, thresholds, enabled or disabled, first-seen baseline) and the
 starting material are in the session handoff under `.sessions/` (local).
 
+## Release 1.0.5.5 — more click-to-filter columns, 2026-10-25
+
+- Raw, clickable: Action (00 Most frequent actions), Transport action (03 Top transport actions), Object type (02 Object
+  types, Busiest objects). 04 Why these identities scored: Outcome column instead of the " (failed)" suffix; Action raw.
+- Not done: 07 What they changed's Space (CASCADE_FOLD rebuilds it from a packed string); Outcome/Result on the feeds
+  (raw would read "unknown" where the suite says "attempted").
+
 ## Release 1.0.5.4 — Identity type on every identity table, filter columns instead of free text, 2026-10-24
 
 - **Identity type badge** beside Identity on all 22 identity tables (`table()` inserts it; `KIND_GROUPED` /

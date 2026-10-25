@@ -77,17 +77,14 @@ const MUTATION_FEED = `FROM ${IDX} | ${TIME} | WHERE ${CHANGE_PRED} OR ${CHG} IS
  */
 
 /**
- * A failed action gets its own row and a visible mark wherever an action is scored: the scatter's
- * "saved_object_create (failed)" and the Why table's. The Why table grouped failures and successes of a
+ * A failed action gets its own row wherever an action is scored. The Why table grouped failures and successes of a
  * pair apart (by weight) but printed both under the bare action name, so "_4KEO… · Cloud API key ·
- * saved_object_create · 8,104" sat beside Top failures' "… saved_object_create · 25" with nothing to say
- * one was the other's successes (round-5 review). It now groups on the outcome itself, so a failed
- * security config change (which RISK weighs 50, not 40) is split out too, and marks the failed rows the
- * way vega/05 does — not when the name already says it (access_denied, authentication_failed). A
- * one-condition CASE over the grouped rows.
+ * saved_object_create · 8,104" sat beside Top failures' "… saved_object_create · 25" with nothing to say one was
+ * the other's successes (round-5 review). Until 1.0.5.4 it appended " (failed)" to the action, as the scatter
+ * (vega/05) still does on its labels; since 1.0.5.5 the table groups on event.outcome and shows it as its own
+ * Outcome column (success, failure, attempted), so Action stays the raw field and filters on click. Over 30 days
+ * no scoring action carries both success and unknown, so grouping on the outcome adds no rows.
  */
-const FAILED_MARK =
-  'EVAL action = CASE(failed AND NOT (action LIKE "*fail*" OR action LIKE "*denied*"), CONCAT(action, " (failed)"), action) | DROP failed';
 // Kibana's own API-key clean-up is named once, in this page's How to read block, not in every tooltip.
 /**
  * No Email column on this page's identity tables. On every render (1h and 24h) it held only dashes:
@@ -234,9 +231,9 @@ export function build() {
       ['risk_total', sized('scoring_events', 120), { column: 'mean_severity', width: 120, format: { type: 'number', decimals: 1 } }, 'privileged', SCOPE_LAST],
       'Identities ranked by total risk, so sustained behavior outranks one high-severity event. Scope sets Elastic’s own platform automation (such as elastic.maintenance) apart from your users. Privileged counts security configuration changes.'),
     table(0, 51, 48, TH, 'Why these identities scored — top risky actions, with their weight',
-      `FROM ${IDX} | ${TIME} | ${riskScored({ by: IDENTITY_KEYS, aggs: 'last_ts = MAX(@timestamp)' })} | ${ACTOR_RESOLVE} | ${KIND_GROUPED} | ${SCOPE} | STATS events = SUM(n), risk_total = SUM(risk * n), last_seen = MAX(last_ts) BY actor, identity_kind, actor_scope, ${PIN_BY}, action = event.action, weight = risk, failed = event.outcome == "failure" | ${FAILED_MARK} | SORT risk_total DESC, actor, action | LIMIT ${fitRows(TH)}`,
+      `FROM ${IDX} | ${TIME} | ${riskScored({ by: IDENTITY_KEYS, aggs: 'last_ts = MAX(@timestamp)' })} | ${ACTOR_RESOLVE} | ${KIND_GROUPED} | ${SCOPE} | STATS events = SUM(n), risk_total = SUM(risk * n), last_seen = MAX(last_ts) BY actor, identity_kind, actor_scope, ${PIN_BY}, event.action, weight = risk, event.outcome | EVAL result = CASE(event.outcome == "unknown", "attempted", event.outcome) | SORT risk_total DESC, actor, event.action | LIMIT ${fitRows(TH)}`,
       // weight is a group key, but listed as a metric so it right-aligns with the numbers it multiplies.
-      [WHO_FIXED, PIN_PRINCIPAL_SHORT, { column: 'action', label: 'Action' }], ['weight', 'events', 'risk_total', 'last_seen'],
+      [WHO_FIXED, PIN_PRINCIPAL_SHORT, filterable('event.action', { label: 'Action' }), sized('result', 92, { label: 'Outcome' })], ['weight', 'events', 'risk_total', 'last_seen'],
       'The receipts behind the risk leaderboard: the identity and action pairs that added the most risk, with weight, count and last time. Risk total is weight × events. A rare action may be missing; see Highest-severity actions.'),
     // Full width: identity and the action name are variable-length text, and at half width the
     // action — the column the panel exists for — was the one cut. One row per identity and action:

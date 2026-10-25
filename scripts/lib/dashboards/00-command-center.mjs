@@ -147,8 +147,8 @@ export function build() {
       'events', 'Every bucket split into Signal, what the noise gate keeps, and Noise, the routine traffic it removes. Log scale: each gridline is ten times the one below, so read the gap between the bars as a ratio.',
       { kind: 'bar', xcol: 'ts', breakdown: 'side', colors: { Signal: '#54B399', Noise: '#98A2B3' }, yScale: 'log' }))),
     table(0, 36, 12, TABLE_H, 'Most frequent actions',
-      `FROM ${IDX} | ${TIME} | ${NOISE} | STATS events = COUNT(*) BY action = event.action, source = service.name | ${SOURCE_LABEL} | SORT events DESC | LIMIT ${fitRows(TABLE_H)}`,
-      ['action', sized('source', 100, { min: 100 })], [sized('events', COUNT_W, { min: COUNT_W })], 'Top audited actions after the noise gate, with the service that emitted them.'),
+      `FROM ${IDX} | ${TIME} | ${NOISE} | STATS events = COUNT(*) BY event.action, source = service.name | ${SOURCE_LABEL} | SORT events DESC | LIMIT ${fitRows(TABLE_H)}`,
+      [filterable('event.action', { label: 'Action' }), sized('source', 100, { min: 100 })], [sized('events', COUNT_W, { min: COUNT_W })], 'Top audited actions after the noise gate, with the service that emitted them. Click an action to filter the page by it.'),
     /**
      * Groups on the computed `actor` like the Distinct identities tile, so the two count identities the
      * same way: counted first by ACTOR_KEYS, resolved on the grouped rows (1.0.5.1; it resolved per event).

@@ -494,6 +494,7 @@
           {
             "label": "Transport action",
             "column": "elasticsearch.audit.action",
+            "click_filter": true,
             "width": 420
           },
           {

@@ -593,6 +593,11 @@ legend and the How to read blocks, not in each tooltip: `table()` appends the la
   says something no column does, an Elasticsearch security change, stays whole in 04's *Config-change event
   feed*. *Scope* now shows on the Risk leaderboard only, and 01's *Result* column went (Identity type marks the
   failed sign-ins; Action names the rest).
+- *More click columns (1.0.5.5).* Action on 00 *Most frequent actions*, Transport action on 03 *Top transport
+  actions*, and Object type on 02 *Object types* and *Busiest objects* are now the raw fields (they were STATS BY
+  aliases). 04 *Why these identities scored* shows the outcome in its own Outcome column (success, failure,
+  attempted) instead of appending " (failed)" to the action, so Action is raw and clicks too. 07 *What they changed*
+  keeps a computed Space: its rows are packed into a string to fold a deleted space with its contents, then unpacked.
 
 **Tooltips — two tiers, 40 words.** A panel's description is its ⓘ tooltip, and a reader hovers it to learn
 what the panel shows and the one thing needed to read it — not every caveat behind it. So it is **40 words at
