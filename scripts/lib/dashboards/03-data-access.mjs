@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { ROOT } from '../env.mjs';
 import {
   IDX, ACTOR_RESOLVE, ACTOR_KEYS, TIME, BUCKET, ESS, INDEX_FAMILY, CONCRETE, SYS_INDEX, identityLabel, dash, kpi, prevKpi, xy, table, vega, sized,
-  fitRows, resetIds, cloudKeyLabel, filterable
+  fitRows, resetIds, cloudKeyLabel, filterable, IDENTITY_KEYS, KIND_GROUPED, KIND_EVENT
 } from '../panels.mjs';
 import { rawId } from '../suite.mjs';
 import { PIN_BY, PIN_KEY, PIN_PRINCIPAL_SHORT, RAW_RECORDS, IDENTITY_HOW_TO } from './shared.mjs';
@@ -131,8 +131,8 @@ const BUSIEST_KEY = 'CONCAT(TO_STRING(n + 1000000000000), actor)';
 const foldRest = (rows) =>
   `EVAL sk = CONCAT(TO_STRING(last_seen), "|", actor) | ` +
   `INLINE STATS ids = COUNT(*), recent = VALUES(sk) | EVAL cut = MV_MIN(MV_SLICE(MV_SORT(recent, "DESC"), 0, ${rows - 2})) | ` +
-  `EVAL actor = CASE(ids > ${rows} AND sk < cut, "~rest", actor) | ` +
-  'STATS events = SUM(events), last_seen = MAX(last_seen), latest = MAX(latest), actions = VALUES(actions), indices = VALUES(indices), folded = COUNT(*) BY actor | ' +
+  `EVAL actor = CASE(ids > ${rows} AND sk < cut, "~rest", actor), identity_kind = CASE(actor == "~rest", null, identity_kind) | ` +
+  'STATS events = SUM(events), last_seen = MAX(last_seen), latest = MAX(latest), actions = VALUES(actions), indices = VALUES(indices), folded = COUNT(*) BY actor, identity_kind | ' +
   'EVAL actor = CASE(actor == "~rest", CONCAT(TO_STRING(folded), " other identities"), actor)';
 
 /** The tooltip for a Vega panel is its spec's own description — one source, so they cannot disagree. */
@@ -225,7 +225,7 @@ export function build() {
     // No API key / Principal id click columns here (PIN_COLS, shared.mjs): the folded row would need its raw
     // keys nulled, and a column the query assigns cannot be clicked. The fold wins; the table below has them.
     table(0, 49, 48, 12, 'Denied requests by identity',
-      `FROM ${IDX} | ${TIME} | WHERE event.action == "access_denied" OR event.action == "anonymous_access_denied" | STATS events = COUNT(*), seen = MAX(@timestamp) BY ${ACTOR_KEYS}, elasticsearch.audit.action, elasticsearch.audit.indices | ${ACTOR_RESOLVE}, k = CONCAT(TO_STRING(seen), "|", COALESCE(elasticsearch.audit.action, "—"), "|", COALESCE(elasticsearch.audit.indices, "—")) | STATS events = SUM(events), last_seen = MAX(seen), latest = MAX(k), actions = VALUES(elasticsearch.audit.action), indices = VALUES(elasticsearch.audit.indices) BY actor | ${foldRest(fitRows(12))} | EVAL latest_action = MV_SLICE(SPLIT(latest, "|"), 1), latest_index = MV_SLICE(SPLIT(latest, "|"), 2), actions = COALESCE(MV_COUNT(actions), 0), indices = COALESCE(MV_COUNT(indices), 0) | KEEP actor, latest_action, latest_index, actions, indices, events, last_seen | SORT last_seen DESC | LIMIT ${fitRows(12)}`,
+      `FROM ${IDX} | ${TIME} | WHERE event.action == "access_denied" OR event.action == "anonymous_access_denied" | STATS events = COUNT(*), seen = MAX(@timestamp) BY ${IDENTITY_KEYS}, elasticsearch.audit.action, elasticsearch.audit.indices | ${ACTOR_RESOLVE}, k = CONCAT(TO_STRING(seen), "|", COALESCE(elasticsearch.audit.action, "—"), "|", COALESCE(elasticsearch.audit.indices, "—")) | ${KIND_GROUPED} | STATS events = SUM(events), last_seen = MAX(seen), latest = MAX(k), actions = VALUES(elasticsearch.audit.action), indices = VALUES(elasticsearch.audit.indices) BY actor, identity_kind | ${foldRest(fitRows(12))} | EVAL latest_action = MV_SLICE(SPLIT(latest, "|"), 1), latest_index = MV_SLICE(SPLIT(latest, "|"), 2), actions = COALESCE(MV_COUNT(actions), 0), indices = COALESCE(MV_COUNT(indices), 0) | KEEP actor, identity_kind, latest_action, latest_index, actions, indices, events, last_seen | SORT last_seen DESC | LIMIT ${fitRows(12)}`,
       ['actor', { column: 'latest_action', label: 'Latest denied action' }, { column: 'latest_index', label: 'On index' }], [{ column: 'actions', label: 'Actions' }, 'indices', { column: 'events', label: 'Denials' }, 'last_seen'],
       'Who was refused, newest first: each identity’s latest denied action and index, how many actions and indices, and its denials. A last row “N other identities” holds the rest; index “—” is a cluster-level request.',
       { empty: 'good' }),
@@ -234,15 +234,15 @@ export function build() {
     // identity out of view, so the newest-first sort hid the one-off reads it exists to surface.
     // FAMILY runs on the grouped rows (identity × index × action), never per event.
     table(0, 61, 48, 10, '⚠️ Who touched system and hidden indices',
-      `FROM ${IDX} | ${TIME} | WHERE elasticsearch.audit.indices IS NOT NULL | MV_EXPAND elasticsearch.audit.indices | ${SYS_INDEX} | STATS n = COUNT(*), seen = MAX(@timestamp) BY ${ACTOR_KEYS}, elasticsearch.audit.indices, elasticsearch.audit.action | ${ACTOR_RESOLVE}, area = ${SYS_AREA} | ${FAMILY} | STATS events = SUM(n), indices = COUNT_DISTINCT(elasticsearch.audit.indices), groups = VALUES(area), kinds = VALUES(family), last_seen = MAX(seen) BY actor, ${PIN_BY} | EVAL groups = MV_CONCAT(MV_SORT(groups), ", "), kinds = MV_CONCAT(MV_SORT(kinds), ", ") | KEEP actor, api_key.name, user.name, groups, kinds, indices, events, last_seen | SORT last_seen DESC | LIMIT 25`,
-      ['actor', PIN_KEY, PIN_PRINCIPAL_SHORT, { column: 'groups', label: 'Index groups' }, sized('kinds', 240, { label: 'Kind of access' })], ['indices', 'events', 'last_seen'],
+      `FROM ${IDX} | ${TIME} | WHERE elasticsearch.audit.indices IS NOT NULL | MV_EXPAND elasticsearch.audit.indices | ${SYS_INDEX} | STATS n = COUNT(*), seen = MAX(@timestamp) BY ${IDENTITY_KEYS}, elasticsearch.audit.indices, elasticsearch.audit.action | ${ACTOR_RESOLVE}, area = ${SYS_AREA} | ${KIND_GROUPED} | ${FAMILY} | STATS events = SUM(n), indices = COUNT_DISTINCT(elasticsearch.audit.indices), groups = VALUES(area), kinds = VALUES(family), last_seen = MAX(seen) BY actor, identity_kind, ${PIN_BY} | EVAL groups = MV_CONCAT(MV_SORT(groups), ", "), kinds = MV_CONCAT(MV_SORT(kinds), ", ") | KEEP actor, identity_kind, api_key.name, user.name, groups, kinds, indices, events, last_seen | SORT last_seen DESC | LIMIT 25`,
+      [sized('actor', 215, { min: 205 }), PIN_KEY, PIN_PRINCIPAL_SHORT, { column: 'groups', label: 'Index groups' }, sized('kinds', 190, { label: 'Kind of access' })], ['indices', 'events', 'last_seen'],
       'Who touched system and hidden indices (Kibana internals, security, alerting, SLO data), with the index groups, kinds of action and request count. Expected from Kibana and platform automation; from anyone else, a write is worth a look.',
       { empty: 'quiet', wrap: true }),
     // The raw requests, as a Lens table since 1.0.5.1 (RECORD FEEDS, panels.mjs), so the identity dropdowns narrow
     // it: searches/05's logic, sorted and cut straight after the filter (QUERY SHAPE rule 3). Transport action,
     // Index and Client IP are the raw fields, so a click pins them.
     table(0, 71, 48, 12, 'Raw system index requests',
-      `FROM ${IDX} | ${TIME} | WHERE elasticsearch.audit.indices IS NOT NULL | MV_EXPAND elasticsearch.audit.indices | ${SYS_INDEX} | SORT @timestamp DESC | LIMIT 1000 | ${ACTOR_RESOLVE} | KEEP @timestamp, actor, elasticsearch.audit.action, elasticsearch.audit.indices, client.ip`,
+      `FROM ${IDX} | ${TIME} | WHERE elasticsearch.audit.indices IS NOT NULL | MV_EXPAND elasticsearch.audit.indices | ${SYS_INDEX} | SORT @timestamp DESC | LIMIT 1000 | ${ACTOR_RESOLVE} | ${KIND_EVENT} | KEEP @timestamp, actor, identity_kind, elasticsearch.audit.action, elasticsearch.audit.indices, client.ip`,
       [sized('actor', 245, { min: 200 }), filterable('elasticsearch.audit.action', { width: 300, min: 240 }), filterable('elasticsearch.audit.indices'), filterable('client.ip')], ['@timestamp'],
       'The raw requests behind the system index table above, one row per index named, newest first: one request naming ten indices is ten rows. Click an action, index or address to pin it.',
       { scroll: true, empty: 'quiet' }),

@@ -46,7 +46,8 @@ test('table() labels without touching the filtered field, and sizes by role', ()
 
 test('a table whose every column is fixed lets its widest row column flex', () => {
   const t = table(0, 0, 48, 12, 't', 'FROM x', [sized('actor', 200), sized('name', 400), 'verb'], ['events'], 'd');
-  assert.equal(t.config.rows[1].width, undefined);
+  assert.equal(t.config.rows[1].column, 'identity_kind', 'Identity type rides beside Identity (1.0.5.4)');
+  assert.equal(t.config.rows[2].width, undefined);
   assert.equal(t.config.rows[0].width, 200);
 });
 
@@ -307,7 +308,7 @@ const IDENTITY_FIXTURES = [
   [{ 'api_key.name': 'ci-deploy', 'user.domain': '_cloud_api_key', 'user.name': CLOUD }, 'ci-deploy', 'ci-deploy', 'Elasticsearch API key'],
   [{ 'user.domain': '_cloud_api_key', 'user.name': CLOUD }, `${CLOUD} · Cloud API key`, '_4KEO… · Cloud API key', 'Cloud API key'],
   // Shape H: a Kibana event made with an Elasticsearch key. user.name is the key's OWNER, not the key.
-  [{ 'user.domain': '_es_api_key', 'user.name': CLOUD }, `Unnamed key of ${CLOUD}`, 'Unnamed key of _4KEO…', 'Elasticsearch API key (name not recorded)'],
+  [{ 'user.domain': '_es_api_key', 'user.name': CLOUD }, `Unnamed key of ${CLOUD}`, 'Unnamed key of _4KEO…', 'Unnamed API key'],
   [{ 'user.domain': '_service_account', 'user.name': 'elastic/kibana' }, 'elastic/kibana', 'elastic/kibana', 'Service account'],
   [{ 'user.name': 'admin', 'event.action': 'authentication_failed' }, 'admin', 'admin', 'Failed sign-in'],
   [{ 'user.name': '<unauthenticated-cloud-access-token>' }, '<unauthenticated-cloud-access-token>', '<unauthenticated-cloud-access-token>', 'Other'],
@@ -621,4 +622,24 @@ test('the post-pass refuses a saved object whose sections do not match the defin
   assert.throws(() => checkSections('d', obj([{ ...stored[0], collapsed: false }]), panels, [sec]), /collapsed=false/);
   assert.throws(() => checkSections('d', obj(stored), [panels[0], { ...panels[1], gridData: { y: 0 } }], [sec]), /holds \[\], defined \[md-19\]/);
   assert.throws(() => checkSections('d', obj(stored), [...panels, { panelIndex: 'x', gridData: { sectionId: 'sec-99' } }], [sec]), /holds|sec-99/);
+});
+
+test('Identity type (1.0.5.4): a badge beside Identity on every table, one colour per dropdown value', async () => {
+  const { IDENTITY_KINDS, IDENTITY_KIND_COLORS, flatPanels } = await import('../../scripts/lib/panels.mjs');
+  assert.deepEqual(Object.keys(IDENTITY_KIND_COLORS).sort(), IDENTITY_KINDS.map(([k]) => k).sort(), 'every type the dropdown lists has a colour');
+  let tables = 0;
+  for (const [name, def] of Object.entries(buildAll())) {
+    for (const p of flatPanels(def.panels).filter((x) => x.config?.type === 'data_table')) {
+      const cols = p.config.rows.map((r) => r.column);
+      const at = cols.indexOf('actor');
+      if (at < 0) continue;
+      tables++;
+      const kind = p.config.rows[at + 1];
+      assert.equal(kind?.column, 'identity_kind', `${name}: ${p.config.title} shows Identity type right after Identity`);
+      assert.equal(kind.apply_color_to, 'badge');
+      assert.deepEqual(kind.color.mapping.map((m) => m.values[0]).sort(), Object.keys(IDENTITY_KIND_COLORS).sort());
+      assert.match(p.config.data_source.query, /identity_kind = CASE\(/, `${name}: ${p.config.title} works the type out`);
+    }
+  }
+  assert.ok(tables >= 22, `${tables} identity tables`);
 });

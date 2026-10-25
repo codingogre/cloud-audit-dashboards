@@ -27,7 +27,7 @@ of the **Identity type** and **Identity** dropdowns (ES|QL variable controls `?i
 | --- | --- | --- |
 | Person | `user.email` | the email |
 | Elasticsearch API key | `api_key.name` | the name |
-| Elasticsearch API key (name not recorded) | `Unnamed key of <user.name>` | `Unnamed key of _4KEO…` when the owner is a Cloud API key |
+| Unnamed API key | `Unnamed key of <user.name>` | `Unnamed key of _4KEO…` when the owner is a Cloud API key |
 | Cloud API key | `<user.name> · Cloud API key` | `_4KEO… · Cloud API key` |
 | Service account | `user.name` | the account |
 | Failed sign-in | `user.name`, or `(unattributed)` when no name was sent (mostly `anonymous_access_denied`) | the name tried |

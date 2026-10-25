@@ -15,7 +15,7 @@ import { success, fail, detail, warn } from './lib/log.mjs';
 import { buildAll } from './lib/definitions.mjs';
 import { checkLayout } from './lib/layout.mjs';
 import { requireView } from './lib/view.mjs';
-import { PREV_TILES, PREV_LOOKBACK_DAYS, prevSpec, prevEsql, fixedWindow, windowMs, prevQuery, prevStreamQuery, VIEW_TIME, ANY } from './lib/panels.mjs';
+import { PREV_TILES, PREV_LOOKBACK_DAYS, prevSpec, prevEsql, fixedWindow, windowMs, prevQuery, prevStreamQuery, VIEW_TIME, ANY, flatPanels } from './lib/panels.mjs';
 
 /**
  * Every query runs through es.esqlRun(), which cancels it on overrun — a plain /_query keeps
@@ -226,7 +226,11 @@ export function gatherQueries() {
   const items = [];
   for (const [name, d] of Object.entries(buildAll())) {
     const qs = []; collect(d.panels, qs);
-    qs.forEach((q, i) => items.push({ src: `dashboards/${name}`, i, q }));
+    // A table's columns must all come back from its query: Lens draws a column the result lacks as an error, and
+    // nothing before a render would see it (1.0.5.4 added Identity type to 22 tables' queries by hand).
+    const cols = new Map(flatPanels(d.panels).filter((p) => p.config?.type === 'data_table')
+      .map((p) => [p.config.data_source.query, [...p.config.rows, ...p.config.metrics].map((c) => c.column)]));
+    qs.forEach((q, i) => items.push({ src: `dashboards/${name}`, i, q, cols: cols.get(q) }));
   }
   for (const dir of ['vega', 'searches']) {
     const p = join(ROOT, dir);
@@ -262,7 +266,7 @@ export async function run() {
   const items = gatherQueries();
   const timings = [];
   let bad = 0;
-  for (const { src, i, q: raw, control } of items) {
+  for (const { src, i, q: raw, control, cols } of items) {
     const q = bounded(raw);
     const res = await es.esqlRun(q, PARAMS(src), { budgetMs: BUDGET_MS });
     timings.push({ src: `${src}[${i}]`, ms: res.ms });
@@ -270,6 +274,12 @@ export async function run() {
     if (res.ok && control && res.body.values?.[0]?.[0] !== ANY) {
       bad++;
       fail(`${src} lists ${JSON.stringify(res.body.values?.[0]?.[0])} first, not "${ANY}" — a viewer could not clear it`);
+      continue;
+    }
+    const missing = res.ok && cols ? cols.filter((c) => !res.body.columns?.some((x) => x.name === c)) : [];
+    if (missing.length) {
+      bad++;
+      fail(`${src}[${i}] shows ${missing.join(', ')}, which its query does not return`);
       continue;
     }
     if (res.ok) continue;

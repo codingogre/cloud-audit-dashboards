@@ -13,6 +13,21 @@ fragments so the drift check covers them, and name identities the way the Identi
 dashboard binds. Open questions for the human (connectors, thresholds, enabled or disabled, first-seen baseline) and the
 starting material are in the session handoff under `.sessions/` (local).
 
+## Release 1.0.5.4 — Identity type on every identity table, filter columns instead of free text, 2026-10-24
+
+- **Identity type badge** beside Identity on all 22 identity tables (`table()` inserts it; `KIND_GROUPED` /
+  `KIND_EVENT` in panels.mjs; `IDENTITY_KIND_COLORS`). Grouped tables count `BY IDENTITY_KEYS` (ACTOR_KEYS plus
+  `failed_signin`) so the type is exact; an identity seen as two types is two rows.
+- **"Elasticsearch API key (name not recorded)" is now "Unnamed API key"**, in the dropdown too: at ~280px the badge
+  could not fit any table, and the identity itself already reads "Unnamed key of <owner>".
+- **Detail (00 Live signal feed) and Message (02 saved-object activity, 02/07 session records, 04 Mutation feed)
+  removed.** Session records' Object now says "<type>: <title or id>", or the request path. Replaced by raw click
+  columns; see README *Identity type and click columns*. 01 lost Result (two tables); 04 Config changes lost API key
+  and Scope; 04 First appearance, Why and Top failures lost Scope (the Risk leaderboard keeps it).
+- **Layout:** 00's middle row is 12/25/11; 07's top row is 20 + four 7-wide tiles; 02's Latest high-value object
+  access is full width, with Busiest objects beside Cross-space activity below it (everything after moved down 12).
+- **`--lint` now fails a table whose query does not return a column it shows** (`gatherQueries`, `cols`).
+
 ## Release 1.0.5.3 — one word for who did it: "identity", 2026-10-24
 
 Deployed to production. The suite said "identity" almost everywhere (the dropdowns, every table column, ~15 titles)

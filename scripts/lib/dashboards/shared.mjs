@@ -1,7 +1,7 @@
 /** Constants shared by more than one dashboard module. */
 import {
   IDX, TIME, KIB, ACTOR_RESOLVE, RISK, VERB, introMd, RISK_PREFILTER, RISK_KEYS, RISK_RESTORE, CHANGE, OBJ_GROK, OBJ_NAME, OBJ_TYPE, OUTCOME,
-  filterable, table, sized
+  filterable, table, sized, KIND_EVENT
 } from '../panels.mjs';
 import { isDeployed } from '../suite.mjs';
 import { readFileSync } from 'node:fs';
@@ -45,7 +45,7 @@ export const WHO = filterable('user.email');
 export const legendPanel = (x, y, w, h) => introMd(x, y, w, h, 'How to read this suite', [
   `**Routine traffic is left out** unless a panel title says *all traffic*. That covers health checks, the background requests behind each search and page load, API key lookups, bulk sign-in records, and these dashboards' own activity${
     isDeployed('06-platform-volume') ? '. **📊 Platform Volume** shows everything' : ''}.`,
-  "**Each identity is named as in the Identity dropdown:** an email, an API key's name, or the account name.",
+  "**Each identity is named as in the Identity dropdown,** with its type beside it as a coloured badge; red is a failed sign-in.",
   '**Cloud API keys have no name**, so tables show the start of their ID, such as `_4KEO… · Cloud API key`. An Elasticsearch key used through Kibana reads *Unnamed key of* its owner.',
   "**Locations use the real client address,** not Elastic's own network hops. *Hover the ⓘ beside a panel title for details.*",
 ]);
@@ -64,7 +64,7 @@ export const RAW_RECORDS = 'Raw records: [All audit events](@search:00-all-event
  * carried by the nav links (README, Platform constraints). 00 and 01 say both at more length.
  */
 export const IDENTITY_HOW_TO =
-  'Identities read as in the Identity dropdown, a Cloud API key shortened to “_4KEO… · Cloud API key”. The dropdowns apply to this page only; the links above do not carry them.';
+  'Identities read as in the Identity dropdown, a Cloud API key shortened to “_4KEO… · Cloud API key”, with the Identity type badge beside each. The dropdowns apply to this page only; the links above do not carry them.';
 
 /** The raw identity fields ACTOR_RESOLVE reads, for a STATS that has to resolve the actor afterwards (panels.mjs). */
 export { ACTOR_KEYS } from '../panels.mjs';
@@ -153,14 +153,20 @@ export const CHANGED_DERIVE = `${VERB} | ${OBJ_TYPE}`;
  * lookups, page and UI requests), so a tab left open adds no rows. A click on a Session cell pins
  * kibana.session.id, as a click on a timeline bar does; Space pins the space. Sorted and cut straight after the
  * filter (QUERY SHAPE rule 3), so VERB runs on the 1,000 rows kept.
+ *
+ * Object names what the row touched (1.0.5.4): "<type>: <title>", the id where Kibana recorded no title (a find
+ * never carries one), and for a web request its path. Together with Operation that is everything Kibana's own
+ * message said ("User has accessed dashboard [id=…]"), so the Message column went, for Identity type.
  */
 const SESSION_TAB_NOISE = 'event.action IN ("saved_object_open_point_in_time", "saved_object_close_point_in_time", "space_get", "space_find") ' +
   'OR (event.action == "http_request" AND (NOT body.text LIKE "*/api/*" OR body.text LIKE "*/api/ui_counters/*" OR body.text LIKE "*/api/content_management/*"))';
 export const SESSION_RECORDS = `FROM ${IDX} | ${TIME} | ${KIB} | WHERE kibana.session.id IS NOT NULL | WHERE event.action IS NULL OR NOT (${SESSION_TAB_NOISE}) ` +
-  `| SORT @timestamp DESC | LIMIT 1000 | ${ACTOR_RESOLVE} | ${VERB} ` +
-  '| EVAL op = CASE(verb != "other", verb, COALESCE(REPLACE(event.action, "_", " "), "other")), object = COALESCE(kibana.saved_object.name, " ") ' +
-  '| KEEP @timestamp, actor, kibana.session.id, op, object, kibana.space.id, body.text';
+  `| SORT @timestamp DESC | LIMIT 1000 | ${ACTOR_RESOLVE} | ${KIND_EVENT} | ${VERB} ` +
+  '| EVAL op = CASE(verb != "other", verb, COALESCE(REPLACE(event.action, "_", " "), "other")), ' +
+  'object = CASE(kibana.saved_object.type IS NOT NULL, CONCAT(kibana.saved_object.type, ": ", COALESCE(kibana.saved_object.name, kibana.saved_object.id, "(no id)")), ' +
+  'url.original IS NOT NULL, REPLACE(url.original, "^https?://[^/]+", ""), " ") ' +
+  '| KEEP @timestamp, actor, identity_kind, kibana.session.id, op, object, kibana.space.id';
 export const sessionRecords = (x, y, w, h, title, desc, opts = {}) => table(x, y, w, h, title, SESSION_RECORDS,
-  [sized('actor', 245, { min: 200 }), filterable('kibana.session.id', { width: 330, min: 300 }), { column: 'op', label: 'Operation', width: 100 }, sized('object', 180, { label: 'Object', min: 140 }),
-    filterable('kibana.space.id'), 'body.text'],
+  [sized('actor', 245, { min: 200 }), filterable('kibana.session.id', { width: 230, min: 220 }), { column: 'op', label: 'Operation', width: 100 },
+    { column: 'object', label: 'Object' }, filterable('kibana.space.id')],
   ['@timestamp'], desc, { scroll: true, ...opts });

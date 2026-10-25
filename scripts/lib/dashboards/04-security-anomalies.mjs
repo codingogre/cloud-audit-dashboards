@@ -2,7 +2,7 @@
 import {
   IDX, ACTOR_RESOLVE, RISK_INDEX_STATS, RISK_INDEX_EVAL, NOISE, TIME, BUCKET, SCOPE, PALETTE, PRIVILEGED,
   privilegedKpi, FAILED_OR_DENIED, RISK_PREFILTER, RISK_KEYS, RISK_RESTORE, RISK, grouped, dash, kpi, xy, table, vega, sized, fitRows, resetIds,
-  filterable, CHANGE_PRED, HOUSEKEEPING, OBJ
+  filterable, CHANGE_PRED, HOUSEKEEPING, OBJ, IDENTITY_KEYS, KIND_GROUPED, KIND_EVENT
 } from '../panels.mjs';
 import { rawId } from '../suite.mjs';
 import {
@@ -54,14 +54,16 @@ const TARGET_SHOW =
  * change, less Kibana's key clean-up, newest first. Sorted and cut straight after the filter (QUERY SHAPE rule
  * 3), so OBJ's GROKs and CASE and the payload GROKs run on the 1,000 rows kept. An Elasticsearch change names
  * its target from the payload (a key's name, the invalidated ids, a role) and takes its type from the action.
+ * No Message column since 1.0.5.4: Kibana's message repeated Action, Object type and Object in a sentence, and
+ * an Elasticsearch change's payload is whole in the Config-change event feed below.
  */
 const MUTATION_FEED = `FROM ${IDX} | ${TIME} | WHERE ${CHANGE_PRED} OR ${CHG} IS NOT NULL | WHERE NOT ${HOUSEKEEPING} | SORT @timestamp DESC | LIMIT 1000 ` +
-  `| ${ACTOR_RESOLVE} | ${OBJ} ` +
+  `| ${ACTOR_RESOLVE} | ${KIND_EVENT} | ${OBJ} ` +
   `| GROK ${CHG} """"name":"%{DATA:t_name}"""" | GROK ${CHG} """"ids":\\[%{DATA:t_ids}\\]""" | GROK ${CHG} """"id":"%{DATA:t_id}"""" | GROK ${CHG} """"uid":"%{DATA:t_uid}"""" ` +
   '| EVAL target = COALESCE(t_name, REPLACE(REPLACE(t_ids, "\\"", ""), ",", ", "), t_id, t_uid) ' +
-  `| EVAL obj_name = COALESCE(obj_name, target, CASE(${CHG} IS NOT NULL, "(none named in the payload)")), message = COALESCE(body.text, ${CHG}) ` +
+  `| EVAL obj_name = COALESCE(obj_name, target, CASE(${CHG} IS NOT NULL, "(none named in the payload)")) ` +
   '| EVAL obj_type = CASE(service.name == "serverless-kibana", obj_type, event.action LIKE "*apikey*", "api-key", event.action LIKE "*_role", "role", event.action LIKE "*user_profile*", "user-profile", obj_type) ' +
-  '| KEEP @timestamp, actor, event.action, obj_type, obj_name, kibana.space.id, message';
+  '| KEEP @timestamp, actor, identity_kind, event.action, obj_type, obj_name, kibana.space.id';
 
 /**
  * PRIVILEGED, on every panel here that counts security config changes (the two tiles, the table, the
@@ -106,15 +108,21 @@ const FAILED_MARK =
  * identity, and the slack is the space after Scope's short word, at the row's end.
  */
 const IDENTITY_W = 300;
-const ACTION_W = 290;
 /**
  * 1.0.5: the API key and Principal id click columns (PIN_COLS) take ~315px of these rows, so table() shrinks
  * the fixed columns at a 1440px viewport (fitWidths) — and Lens widths are absolute, so 1920 gets the same.
- * Identity keeps 245px there (`<unauthenticated-cloud-access-token>`, 36 characters, needs ~241px) and an
- * action name 185px (`realm_authentication_failed`, `saved_object_create (failed)`).
+ * Identity keeps 245px there (`<unauthenticated-cloud-access-token>`, 36 characters, needs ~241px).
  */
 const WHO_COL = sized('actor', IDENTITY_W, { min: 245 });
-const WHAT_COL = sized('action', ACTION_W, { min: 185 });
+/**
+ * 1.0.5.4: with Identity type beside it, a table whose every column was fixed let Identity flex (table()), and
+ * Identity was left ~145px at 1440: `<unauthenticated-cloud-access-token>` was cut. So on Why and Top failures
+ * Identity is fixed at the 245px it needs and Action flexes; Principal id is the 165px form there, since the one
+ * value it would cut is the placeholder Identity shows whole beside it.
+ */
+const WHO_FIXED = sized('actor', 245, { min: 245 });
+// Scope (tenant, platform, unauthenticated) shows on the Risk leaderboard only since 1.0.5.4: on the other identity
+// tables Identity type took its width, and the type and the name already say whose an identity is.
 const SCOPE_LAST = { column: 'actor_scope', width: undefined, alignment: 'left' };
 
 /**
@@ -186,10 +194,11 @@ export function build() {
     // The 1.0.5 API key and Principal id columns took that width back: at 1440, Latest target cut
     // "(none named in the payload)" mid-word. Identity, Action and Targets were sized above their values
     // (update_user_profile_data is ~145px) and API key is mostly "-" here, so they give it up and Latest
-    // target keeps 175px at 1440.
+    // target keeps 175px at 1440. 1.0.5.4: Identity type took API key's and Scope's places (API key was mostly
+    // "-"; the type and the name say whether the change was the platform's), and Latest target keeps its width.
     table(0, 5, 48, 7, `🚨 Config changes · up to ${fitRows(7)} identity–action pairs, latest first`,
-      `FROM ${IDX} | ${TIME} | ${PRIVILEGED} | ${TARGET} | ${ACTOR_RESOLVE} | STATS events = COUNT(*), targets = COUNT_DISTINCT(SPLIT(target, ",")), latest = LAST(target, @timestamp), last_change = MAX(@timestamp) BY actor, ${PIN_BY}, action = event.action | SORT last_change DESC | ${SCOPE} | ${TARGET_SHOW} | LIMIT ${fitRows(7)}`,
-      [sized('actor', 195, { min: 190 }), { ...PIN_KEY, width: 125 }, PIN_PRINCIPAL_SHORT, 'actor_scope', sized('action', 160, { min: 150 }), { column: 'latest', label: 'Latest target' }],
+      `FROM ${IDX} | ${TIME} | ${PRIVILEGED} | ${TARGET} | ${ACTOR_RESOLVE} | ${KIND_EVENT} | STATS events = COUNT(*), targets = COUNT_DISTINCT(SPLIT(target, ",")), latest = LAST(target, @timestamp), last_change = MAX(@timestamp) BY actor, identity_kind, ${PIN_BY}, event.action | SORT last_change DESC | ${SCOPE} | ${TARGET_SHOW} | LIMIT ${fitRows(7)}`,
+      [sized('actor', 195, { min: 190 }), PIN_PRINCIPAL_SHORT, filterable('event.action', { label: 'Action', width: 160, min: 150 }), { column: 'latest', label: 'Latest target' }],
       [sized('targets', 80, { label: 'Targets' }), 'events', 'last_change'],
       'Security configuration changes (API keys, roles, user profiles) by identity and action, most recent first, with the latest target and how many targets. Many invalidations over many keys is rotation; over one key, a loop.',
       { empty: 'good' }),
@@ -203,29 +212,31 @@ export function build() {
       `FROM ${IDX} | ${TIME} | ${riskScored({ by: `${BUCKET}, ${ACTOR_KEYS}` })} | ${ACTOR_RESOLVE} | ${SCOPE} | STATS \`Summed severity\` = SUM(risk * n) BY \`${BUCKET}\`, actor_scope | SORT actor_scope`,
       'Summed severity', 'Risk weight summed per interval, routine activity excluded, split by tenant identities, Elastic platform automation or unauthenticated requests. Spikes are clusters of privileged, failed or denied activity. A blank stretch means nothing scored then.',
       { breakdown: 'actor_scope', colors: SCOPE_COLORS, yTitle: 'Summed severity' }),
+    // Regrouped by identity and type after the resolve (1.0.5.4), so an identity whose events split across the
+    // failed-sign-in key is still one row; Client IPs ride as VALUES so the count stays exact across the regroup.
     // first_seen is window-censored (see NEW_IN_RANGE). Grouped on actor alone and scoped AFTER
     // the STATS — scope is a function of actor. Full width: at half width its six columns left
     // Identity under 120px at a 1440px viewport (a --lint advisory), and the width buys Last seen.
     // The LIMIT stays last so table() can lower it to the rows the panel shows (it only matches a
     // trailing LIMIT); the EVALs between it and the SORT are per-row and do not stop the top-N.
     table(0, 25, 48, TH, 'Identities by first appearance in range',
-      `FROM ${IDX} | ${TIME} | ${NOISE} | STATS first_seen = MIN(@timestamp), last_seen = MAX(@timestamp), events = COUNT(*), ips = COUNT_DISTINCT(client.ip) BY ${ACTOR_KEYS} | ${ACTOR_RESOLVE} | SORT first_seen DESC, actor | ${SCOPE} | ${NEW_IN_RANGE} | LIMIT ${fitRows(TH)}`,
-      [WHO_COL, PIN_PRINCIPAL, sized('new_in_range', 70, { label: 'New' })], ['first_seen', 'last_seen', 'events', { column: 'ips', label: 'Client IPs' }, SCOPE_LAST],
+      `FROM ${IDX} | ${TIME} | ${NOISE} | STATS first_seen = MIN(@timestamp), last_seen = MAX(@timestamp), events = COUNT(*), ipv = VALUES(client.ip) BY ${IDENTITY_KEYS} | ${ACTOR_RESOLVE} | ${KIND_GROUPED} | STATS first_seen = MIN(first_seen), last_seen = MAX(last_seen), events = SUM(events), ipv = VALUES(ipv) BY actor, identity_kind, user.name | EVAL ips = COALESCE(MV_COUNT(ipv), 0) | DROP ipv | SORT first_seen DESC, actor | ${SCOPE} | ${NEW_IN_RANGE} | LIMIT ${fitRows(TH)}`,
+      [WHO_COL, PIN_PRINCIPAL, sized('new_in_range', 70, { label: 'New' })], ['first_seen', 'last_seen', 'events', { column: 'ips', label: 'Client IPs' }],
       'Identities by their first signal event in the range, latest first. New reads “yes” unless they were already active as the range opened. A “yes” near the top is worth a question; widen the range to tell new from returning.'),
     // Full width because Identity is free text: at half width a 36-character identity
     // (<unauthenticated-cloud-access-token>, a long persona name) was cut. One decimal on
     // the mean throughout, since "40" beside "26.4" reads as two kinds of number.
     table(0, 38, 48, TH, 'Risk leaderboard — top identities by total severity',
-      `FROM ${IDX} | ${TIME} | ${riskScored({ by: ACTOR_KEYS })} | ${ACTOR_RESOLVE} | ${SCOPE} | STATS ${RISK_INDEX_STATS}, privileged = SUM(CASE(scc, n, 0)) BY actor, actor_scope, ${PIN_BY} | ${RISK_INDEX_EVAL} | SORT risk_total DESC, actor | LIMIT ${fitRows(TH)}`,
+      `FROM ${IDX} | ${TIME} | ${riskScored({ by: IDENTITY_KEYS })} | ${ACTOR_RESOLVE} | ${KIND_GROUPED} | ${SCOPE} | STATS ${RISK_INDEX_STATS}, privileged = SUM(CASE(scc, n, 0)) BY actor, identity_kind, actor_scope, ${PIN_BY} | ${RISK_INDEX_EVAL} | SORT risk_total DESC, actor | LIMIT ${fitRows(TH)}`,
       [WHO_COL, ...PIN_COLS],
       // Two-word headers get the width to stay on one line: wrapped, "Scoring events" and "Mean severity"
       // made the header row 16px taller, and the twelfth row of an h=13 table was cut through its glyphs.
       ['risk_total', sized('scoring_events', 120), { column: 'mean_severity', width: 120, format: { type: 'number', decimals: 1 } }, 'privileged', SCOPE_LAST],
       'Identities ranked by total risk, so sustained behavior outranks one high-severity event. Scope sets Elastic’s own platform automation (such as elastic.maintenance) apart from your users. Privileged counts security configuration changes.'),
     table(0, 51, 48, TH, 'Why these identities scored — top risky actions, with their weight',
-      `FROM ${IDX} | ${TIME} | ${riskScored({ by: ACTOR_KEYS, aggs: 'last_ts = MAX(@timestamp)' })} | ${ACTOR_RESOLVE} | ${SCOPE} | STATS events = SUM(n), risk_total = SUM(risk * n), last_seen = MAX(last_ts) BY actor, actor_scope, ${PIN_BY}, action = event.action, weight = risk, failed = event.outcome == "failure" | ${FAILED_MARK} | SORT risk_total DESC, actor, action | LIMIT ${fitRows(TH)}`,
+      `FROM ${IDX} | ${TIME} | ${riskScored({ by: IDENTITY_KEYS, aggs: 'last_ts = MAX(@timestamp)' })} | ${ACTOR_RESOLVE} | ${KIND_GROUPED} | ${SCOPE} | STATS events = SUM(n), risk_total = SUM(risk * n), last_seen = MAX(last_ts) BY actor, identity_kind, actor_scope, ${PIN_BY}, action = event.action, weight = risk, failed = event.outcome == "failure" | ${FAILED_MARK} | SORT risk_total DESC, actor, action | LIMIT ${fitRows(TH)}`,
       // weight is a group key, but listed as a metric so it right-aligns with the numbers it multiplies.
-      [WHO_COL, PIN_PRINCIPAL, WHAT_COL], ['weight', 'events', 'risk_total', 'last_seen', SCOPE_LAST],
+      [WHO_FIXED, PIN_PRINCIPAL_SHORT, { column: 'action', label: 'Action' }], ['weight', 'events', 'risk_total', 'last_seen'],
       'The receipts behind the risk leaderboard: the identity and action pairs that added the most risk, with weight, count and last time. Risk total is weight × events. A rare action may be missing; see Highest-severity actions.'),
     // Full width: identity and the action name are variable-length text, and at half width the
     // action — the column the panel exists for — was the one cut. One row per identity and action:
@@ -241,21 +252,21 @@ export function build() {
     // no longer fit a 1440px viewport. A named key's failures pin the identity that owns it.
     // The same holds for first appearance and Why: only the leaderboard has room for both.
     table(0, 64, 48, TH, 'Top failures and denials by identity and action',
-      `FROM ${IDX} | ${TIME} | ${FAILED_OR_DENIED} | ${ACTOR_RESOLVE} | STATS events = COUNT(*), ips = COUNT_DISTINCT(client.ip), ip = LAST(client.ip, @timestamp), last_seen = MAX(@timestamp) BY actor, user.name, action = event.action | SORT events DESC, actor, action | ${SCOPE} | EVAL ip = COALESCE(CASE(CIDR_MATCH(ip, "100.64.0.0/10"), CONCAT(TO_STRING(ip), " (internal)"), TO_STRING(ip)), "none recorded") | LIMIT ${fitRows(TH)}`,
-      [WHO_COL, PIN_PRINCIPAL, WHAT_COL, { column: 'ip', label: 'Latest IP', width: 200, min: 170 }], [{ column: 'ips', label: 'Client IPs' }, 'events', 'last_seen', SCOPE_LAST],
+      `FROM ${IDX} | ${TIME} | ${FAILED_OR_DENIED} | ${ACTOR_RESOLVE} | ${KIND_EVENT} | STATS events = COUNT(*), ips = COUNT_DISTINCT(client.ip), ip = LAST(client.ip, @timestamp), last_seen = MAX(@timestamp) BY actor, identity_kind, user.name, event.action | SORT events DESC, actor, event.action | ${SCOPE} | EVAL ip = COALESCE(CASE(CIDR_MATCH(ip, "100.64.0.0/10"), CONCAT(TO_STRING(ip), " (internal)"), TO_STRING(ip)), "none recorded") | LIMIT ${fitRows(TH)}`,
+      [WHO_FIXED, PIN_PRINCIPAL_SHORT, filterable('event.action', { label: 'Action' }), { column: 'ip', label: 'Latest IP', width: 180, min: 175 }], [{ column: 'ips', label: 'Client IPs' }, 'events', 'last_seen'],
       'Failed and denied operations by identity and action, most frequent first, with the latest client IP and how many addresses were used. Many addresses behind one identity suggests a spray; “(internal)” is the platform’s own hop.', { empty: 'good' }),
     // The two record feeds, Lens tables since 1.0.5.1 (RECORD FEEDS, panels.mjs), so the identity dropdowns narrow
     // them; the logic of searches/03 and searches/01. One-line rows at h=25 show 26 rows and scroll to the 1,000
     // the title states. The Config-change feed sits LAST: it is mostly empty over a quiet range (a change or two
     // once the clean-up is left out), and a sparse table at the foot of the page reads as the end of it, not a gap.
     table(0, 102, 48, 25, 'Config-change event feed',
-      `FROM ${IDX} | ${TIME} | ${PRIVILEGED} | SORT @timestamp DESC | LIMIT 1000 | ${ACTOR_RESOLVE} | KEEP @timestamp, actor, event.action, ${CHG}`,
-      [sized('actor', 230, { min: 200 }), filterable('event.action', { label: 'Action', width: 190, min: 175 }), CHG], ['@timestamp'],
-      'Every security configuration change, one event per row, newest first, with the raw change record; hover a cut record to expand it. The Config changes tile has the total. Click an Action to pin it.',
+      `FROM ${IDX} | ${TIME} | ${PRIVILEGED} | SORT @timestamp DESC | LIMIT 1000 | ${ACTOR_RESOLVE} | ${KIND_EVENT} | KEEP @timestamp, actor, identity_kind, user.name, event.action, ${CHG}`,
+      [sized('actor', 230, { min: 200 }), PIN_PRINCIPAL_SHORT, filterable('event.action', { label: 'Action', width: 190, min: 175 }), CHG], ['@timestamp'],
+      'Every security configuration change, newest first, with the raw change record; hover a cut record to expand it. The Config changes tile has the total. Click a Principal id or Action to pin it.',
       { scroll: true, empty: 'good' }),
     table(0, 77, 48, 25, 'Mutation feed', MUTATION_FEED,
       [sized('actor', 245, { min: 200 }), filterable('event.action', { label: 'Action', width: 190, min: 175 }), sized('obj_type', 120, { label: 'Object type' }), { column: 'obj_name', label: 'Object' },
-        filterable('kibana.space.id'), { column: 'message', label: 'Message' }],
+        filterable('kibana.space.id')],
       ['@timestamp'],
       'Every create, update and delete in Kibana and in Elasticsearch security configuration, newest first, with what each change named. Kibana’s routine API-key clean-up is left out. Click an Action or Space to pin it.',
       { scroll: true }),

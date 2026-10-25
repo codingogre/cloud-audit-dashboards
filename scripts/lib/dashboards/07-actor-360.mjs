@@ -1,7 +1,7 @@
 /** 07 Identity 360 — see scripts/lib/definitions.mjs for how the suite is assembled. */
 import {
   IDX, TIME, CONTROLS_WHERE, ACTOR_KEYS, ACTOR_RESOLVE, INDEX_FAMILY, IP_GEO, indexFamily, dash, kpi, table, vega, section, row, stack, resetIds,
-  sized, filterable, grouped, SYS_INDEX, fitRows
+  sized, filterable, grouped, SYS_INDEX, fitRows, IDENTITY_KEYS, KIND_GROUPED
 } from '../panels.mjs';
 import { rawId } from '../suite.mjs';
 import {
@@ -184,16 +184,17 @@ export function build() {
       // email and principal id, and an unnamed key's Kibana events (user.domain _es_api_key) read as its owner,
       // the Cloud API key. Identity is computed, so the pin is Principal id, a group key of the last STATS: for
       // a person their numeric Cloud id, for a Cloud API key its full id. At 16 columns a 1440px viewport holds
-      // an identity, a 20-character id and one count, no more.
-      [16, (x, y, w, h) => table(x, y, w, h, 'Who this is — by identity and principal id',
-        `FROM ${IDX} | ${TIME} | STATS events = COUNT(*) BY ${ACTOR_KEYS} | WHERE user.email IS NOT NULL OR NOT STARTS_WITH(user.name, "<") | ${ACTOR_RESOLVE} | STATS events = SUM(events) BY actor, user.name | SORT events DESC, actor, user.name | LIMIT 10`,
+      // an identity, a 20-character id and one count, no more; 20 since 1.0.5.4, for the Identity type badge (the
+      // four tiles went from 8 to 7 columns, as Command Center's are).
+      [20, (x, y, w, h) => table(x, y, w, h, 'Who this is — by identity and principal id',
+        `FROM ${IDX} | ${TIME} | STATS events = COUNT(*) BY ${IDENTITY_KEYS} | WHERE user.email IS NOT NULL OR NOT STARTS_WITH(user.name, "<") | ${ACTOR_RESOLVE} | ${KIND_GROUPED} | STATS events = SUM(events) BY actor, identity_kind, user.name | SORT events DESC, actor, user.name | LIMIT 10`,
         ['actor', filterable('user.name', { label: 'Principal id', width: 165, min: 160 })], ['events'],
         'The identities behind the selection, busiest first, named as in the Identity dropdown, with the Principal id each ran as. Click a Principal id to pin it across the suite. Unattributed requests count in Events but have no row.')],
-      [8, (x, y, w, h) => kpi(x, y, w, h,
+      [7, (x, y, w, h) => kpi(x, y, w, h,
         `FROM ${IDX} | ${TIME} | STATS Events = COUNT(*), actions = COUNT_DISTINCT(event.action, 100), last_ts = MAX(@timestamp) | EVAL mins = DATE_DIFF("minutes", last_ts, NOW()) | EVAL detail = CASE(Events == 0, "no activity", CONCAT(${grouped('actions')}, CASE(actions == 1, " action", " actions"), " · ", CASE(mins < 1, "just now", mins < 60, CONCAT(${grouped('mins')}, "m ago"), CONCAT(TO_STRING(mins / 60), "h ago")))) | KEEP Events, detail`,
         'Events', 'Every audited event for the selection, how many distinct actions that was, and how recently they were last seen. Routine traffic included, so it counts connection housekeeping.',
         { secondary: 'detail' })],
-      [8, (x, y, w, h) => kpi(x, y, w, h,
+      [7, (x, y, w, h) => kpi(x, y, w, h,
         `FROM ${IDX} | ${WHOLE_MINUTES} | ${riskScored()} | STATS sev = SUM(risk * n) BY event.action, risk | STATS Risk = SUM(sev), worst = MAX(risk), kinds = COUNT(*) | EVAL detail = CASE(worst IS NULL, "nothing scored", CONCAT(${grouped('kinds')}, CASE(kinds == 1, " action · worst ", " actions · worst "), ${grouped('worst')})), Risk = COALESCE(Risk, 0) | KEEP Risk, detail`,
         'Risk', 'Total risk for the selection (weight × events for everything that scored), how many scoring actions, and the highest weight; 50 is a security configuration change. Routine activity scores zero. Every scoring action below lists the receipts.',
         { secondary: 'detail' })],
@@ -205,11 +206,11 @@ export function build() {
       // the tile read "from 5 indices" beside a table whose Indices column summed to 2, the other three
       // being audit-stream backing generations named only by shard copies. Boolean on a raw keyword.
       // Measured against the raw COUNT_DISTINCT it replaced: 55ms vs 50ms at 1h, 57ms vs 52ms at 24h.
-      [8, (x, y, w, h) => kpi(x, y, w, h,
+      [7, (x, y, w, h) => kpi(x, y, w, h,
         `FROM ${IDX} | ${TIME} | WHERE ${NOT_FANOUT} | STATS idx = VALUES(elasticsearch.audit.indices) | MV_EXPAND idx | EVAL name = CASE(${isPattern('idx')}, null, idx) | EVAL family = ${indexFamily('name')} | STATS \`Index families\` = COUNT_DISTINCT(family), names = COUNT_DISTINCT(name) | EVAL detail = CASE(names == 0, "no index named", CONCAT("from ", ${grouped('names')}, CASE(names == 1, " index", " indices"))) | KEEP \`Index families\`, detail`,
         'Index families', 'How widely this selection reaches into Elasticsearch: index families named in their requests, and how many distinct indices those families hold. Dated and backing indices fold into one family, so thirty days of a daily index is one.',
         { secondary: 'detail' })],
-      [8, (x, y, w, h) => kpi(x, y, w, h,
+      [7, (x, y, w, h) => kpi(x, y, w, h,
         `FROM ${IDX} | ${TIME} | WHERE client.ip IS NOT NULL | STATS events = COUNT(*), ${IP_GEO} BY client.ip | STATS \`Client IPs\` = COUNT(*), countries = COUNT_DISTINCT(country), unplaced = SUM(CASE(placed == 0, 1, 0)) | EVAL detail = CASE(\`Client IPs\` == 0, "no client address", CONCAT(${grouped('countries')}, CASE(countries == 1, " country · ", " countries · "), ${grouped('unplaced')}, " unplaced")) | KEEP \`Client IPs\`, detail`,
         'Client IPs', 'Distinct real client addresses for this selection, how many countries they resolve to, and how many cannot be placed (always so for a private address). Many addresses for one named person is the shared-credential signal.',
         { secondary: 'detail' })],

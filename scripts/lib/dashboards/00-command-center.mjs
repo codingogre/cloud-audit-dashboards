@@ -1,7 +1,7 @@
 /** 00 Command Center — see scripts/lib/definitions.mjs for how the suite is assembled. */
 import {
   IDX, ACTOR_RESOLVE, NOISE, BAND, BAND_KEYS, TIME, BUCKET, SOURCE_LABEL, SOURCE_COLORS, dash, kpi, xy, bar, table, sized, vega, resetIds,
-  privilegedKpi, prevKpi, grouped, fitRows, COVERAGE_REF, COVERAGE_TITLE, ACTOR, filterable, HOUSEKEEPING
+  privilegedKpi, prevKpi, grouped, fitRows, COVERAGE_REF, COVERAGE_TITLE, ACTOR, filterable, HOUSEKEEPING, KIND_EVENT, KIND_GROUPED, IDENTITY_KEYS
 } from '../panels.mjs';
 import {
   legendPanel, ACTOR_KEYS, PIN_PRINCIPAL, RAW_RECORDS
@@ -52,22 +52,18 @@ const COUNT_W = 72;
 
 /**
  * Live signal feed: searches/10-raw-signal-feed.json's logic, bounded by TIME so the identity dropdowns narrow it
- * (RECORD FEEDS, panels.mjs). Sorted and cut straight after the filter (QUERY SHAPE rule 3); the GROK and the
- * CASEs that word each row run on the 200 rows kept. Detail is Kibana's own message, else the transport action,
- * else the security change in words ("API key ci-deploy + 3 more"). client.ip is kept raw, with no "internal" tag
- * (searches/10 adds one), so the column filters on click; the How to read block says what a 100.64/10 or private
- * address means.
+ * (RECORD FEEDS, panels.mjs). Sorted and cut straight after the filter (QUERY SHAPE rule 3); the CASEs that word
+ * each row run on the 200 rows kept. Every column a reader might want to narrow by is a raw field, so it filters on
+ * click: Action, Transport action, Client IP. There is no Detail column since 1.0.5.4: it was Kibana's message (the
+ * action, object type and id in a sentence), else the transport action, else the security change; all but the
+ * change payload are columns or a click away, and the payloads have their own feed on Security & Anomalies.
+ * client.ip is kept raw, with no "internal" tag (searches/10 adds one); the How to read block says what a
+ * 100.64/10 or private address means.
  */
-const LIVE_FEED = `FROM ${IDX} | ${TIME} | ${NOISE} | WHERE NOT ${HOUSEKEEPING} | SORT @timestamp DESC | LIMIT 200 | ${ACTOR_RESOLVE} ` +
-  String.raw`| GROK elasticsearch.audit.security_config_change """^\{"(?<scc_obj>[a-z_]+)":\{(?:.*?"name":"(?<scc_name>[^"]+))?(?:.*?"ids?":\[?"(?<scc_id>[^"]+))?""" ` +
+const LIVE_FEED = `FROM ${IDX} | ${TIME} | ${NOISE} | WHERE NOT ${HOUSEKEEPING} | SORT @timestamp DESC | LIMIT 200 | ${ACTOR_RESOLVE} | ${KIND_EVENT} ` +
   '| EVAL result = CASE(event.outcome == "unknown", "attempted", event.outcome), ' +
-  'source = CASE(service.name == "serverless-elasticsearch", "Elasticsearch", service.name == "serverless-kibana", "Kibana", service.name), ' +
-  String.raw`more = (LENGTH(elasticsearch.audit.security_config_change) - LENGTH(REPLACE(elasticsearch.audit.security_config_change, "\",\"", ""))) / 3, ` +
-  'detail = COALESCE(body.text, elasticsearch.audit.action, CONCAT(CASE(scc_obj IN ("apikey", "apikeys"), "API key", scc_obj), " ", COALESCE(scc_name, scc_id), ' +
-  'CASE(scc_obj == "apikeys" AND more > 0, CONCAT(" + ", TO_STRING(more), " more"), "")), ' +
-  String.raw`REPLACE(elasticsearch.audit.security_config_change, "[{}\"]", "")) ` +
-  // client.ip raw, not tagged "internal": a raw field is what makes the column click-to-filter.
-  '| KEEP @timestamp, actor, source, event.action, result, client.ip, detail';
+  'source = CASE(service.name == "serverless-elasticsearch", "Elasticsearch", service.name == "serverless-kibana", "Kibana", service.name) ' +
+  '| KEEP @timestamp, actor, identity_kind, source, event.action, elasticsearch.audit.action, result, client.ip';
 
 /** The intro (draft 1 of the 1.0.3 customer copy; INTRO TEXT in panels.mjs). */
 const INTRO = {
@@ -80,9 +76,9 @@ const INTRO = {
   ],
   howTo: [
     'Risk is weight × events, from 10 for a workflow run to 50 for a security change, so it runs far above event counts.',
-    'Identities read as in the Identity dropdown; a Cloud API key is shortened to the start of its id, “_4KEO… · Cloud API key”.',
+    'Identities read as in the Identity dropdown; a Cloud API key is shortened to the start of its id, “_4KEO… · Cloud API key”. The badge beside each is its Identity type.',
     'The links above carry the time range and filter pills to the next page, but no dropdown choice: pick again there.',
-    'Click a Principal id to filter the page or open Identity 360; a Cloud API key’s id also covers the API keys it created.',
+    'Click an underlined value (an action, an address, a Principal id) to filter the page; a Principal id also opens Identity 360, and a Cloud API key’s id covers the keys it created.',
     'In the Live signal feed, a Client IP in 100.64/10 or a private range is Kibana or the platform acting for someone, not where they are.',
     'The last time bucket is partial, and panels side by side can differ by an event or two at the edges of the range.',
   ],
@@ -150,7 +146,7 @@ export function build() {
       `FROM ${IDX} | ${TIME} | STATS n = COUNT(*) BY ts = ${BUCKET}, ${BAND_KEYS} | ${BAND} | EVAL side = CASE(band == "signal", "Signal", "Noise") | STATS events = SUM(n) BY ts, side | EVAL ord = CASE(side == "Signal", 0, 1) | SORT ord, ts`,
       'events', 'Every bucket split into Signal, what the noise gate keeps, and Noise, the routine traffic it removes. Log scale: each gridline is ten times the one below, so read the gap between the bars as a ratio.',
       { kind: 'bar', xcol: 'ts', breakdown: 'side', colors: { Signal: '#54B399', Noise: '#98A2B3' }, yScale: 'log' }))),
-    table(0, 36, 13, TABLE_H, 'Most frequent actions',
+    table(0, 36, 12, TABLE_H, 'Most frequent actions',
       `FROM ${IDX} | ${TIME} | ${NOISE} | STATS events = COUNT(*) BY action = event.action, source = service.name | ${SOURCE_LABEL} | SORT events DESC | LIMIT ${fitRows(TABLE_H)}`,
       ['action', sized('source', 100, { min: 100 })], [sized('events', COUNT_W, { min: COUNT_W })], 'Top audited actions after the noise gate, with the service that emitted them.'),
     /**
@@ -166,13 +162,14 @@ export function build() {
      * Identity dropdown's own value, so a row can be found there.
      *
      * Principal id (1.0.5, PIN_PRINCIPAL in shared.mjs) is the click-through: raw user.name, a group key, so a
-     * click pins the principal and offers Open in Identity 360. Only that one of the two pin columns fits 22
-     * columns at 1440px, and only in place of Last seen and Actions: Identity and Principal id each keep the
-     * ~245px the 36-character placeholder `<unauthenticated-cloud-access-token>` needs (both cut it at
-     * 165px, rendered). A named key's row pins its owner; picking the key in the Identity dropdown narrows to it.
+     * click pins the principal and offers Open in Identity 360. Only that one of the two pin columns fits,
+     * and only in place of Last seen and Actions: Principal id keeps the ~245px the 36-character placeholder
+     * `<unauthenticated-cloud-access-token>` needs (cut at 165px, rendered). 25 columns since 1.0.5.4, for the
+     * Identity type badge: the two panels beside it gave one column each. A named key's row pins its owner;
+     * picking the key in the Identity dropdown narrows to it.
      */
-    table(13, 36, 22, TABLE_H, 'Busiest identities',
-      `FROM ${IDX} | ${TIME} | ${NOISE} | STATS events = COUNT(*) BY ${ACTOR_KEYS} | ${ACTOR_RESOLVE} | STATS events = SUM(events) BY actor, user.name | SORT events DESC | LIMIT ${fitRows(TABLE_H)}`,
+    table(12, 36, 25, TABLE_H, 'Busiest identities',
+      `FROM ${IDX} | ${TIME} | ${NOISE} | STATS events = COUNT(*) BY ${IDENTITY_KEYS} | ${ACTOR_RESOLVE} | ${KIND_GROUPED} | STATS events = SUM(events) BY actor, identity_kind, user.name | SORT events DESC | LIMIT ${fitRows(TABLE_H)}`,
       ['actor', PIN_PRINCIPAL], [sized('events', COUNT_W, { min: COUNT_W })],
       'The identities with the most signal traffic, named as in the Identity dropdown, so any row can be picked there. Click a Principal id to filter the page or open Identity 360.'),
     // A bar rather than the donut it replaces: the donut's thin slices carried no label and it had no
@@ -181,7 +178,7 @@ export function build() {
     // Every label carries its count, as 01's log bars do, and the axis is compact: in full digits Lens
     // dropped the 100,000 tick at 24h, and a count printed inside only the bars wide enough for it left
     // the reader two places to look. grouped() runs on the eight rows left after the LIMIT.
-    compactValues(bar(35, 36, 13, TABLE_H, `Event categories${ALL}`,
+    compactValues(bar(37, 36, 11, TABLE_H, `Event categories${ALL}`,
       `FROM ${IDX} | ${TIME} | STATS events = COUNT(*) BY category = event.category | EVAL category = COALESCE(category, "none recorded") | SORT events DESC | LIMIT 8 | EVAL category = CONCAT(category, " · ", ${grouped('events')}) | KEEP category, events`,
       'category', 'events', 'Event categories across all traffic, routine included. Log scale: read each bar’s count, not its length. An event can belong to two categories, so the bars sum to more than the total; “none recorded” means no category.',
       { yScale: 'log' })),
@@ -189,8 +186,8 @@ export function build() {
     // events as the Raw signal feed session the intro links to: NOISE, then Kibana's key clean-up (HOUSEKEEPING)
     // left out. 25 rows show 26 lines (fitRows), and the 200 the title states scroll.
     table(0, 49, 48, 25, 'Live signal feed · Kibana key clean-up left out', LIVE_FEED,
-      [sized('actor', 245, { min: 200 }), sized('source', 100, { min: 100 }), filterable('event.action', { label: 'Action', width: 230, min: 200 }),
-        { column: 'result', label: 'Outcome' }, filterable('client.ip', { label: 'Client IP', width: 150, min: 130 }), { column: 'detail', label: 'Detail' }],
+      [sized('actor', 245, { min: 200 }), sized('source', 100, { min: 100 }), filterable('event.action', { label: 'Action', width: 175, min: 165 }),
+        filterable('elasticsearch.audit.action'), sized('result', 90, { label: 'Outcome' }), filterable('client.ip', { label: 'Client IP', width: 125, min: 118 })],
       ['@timestamp'],
       'The newest signal events, routine traffic and Kibana’s own key clean-up left out. Long runs of near-identical rows from one identity are automation: pick it in the Identity dropdown to read it alone.',
       { scroll: true }),

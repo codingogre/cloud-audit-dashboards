@@ -141,7 +141,7 @@ const UNNAMED = `${NO_EMAIL} AND ${NO_KEY_NAME}`;
 export const IDENTITY_KINDS = [
   ['Person', 'user.email IS NOT NULL'],
   ['Elasticsearch API key', `${NO_EMAIL} AND api_key.name IS NOT NULL`],
-  ['Elasticsearch API key (name not recorded)', `${UNNAMED} AND user.domain == "_es_api_key"`],
+  ['Unnamed API key', `${UNNAMED} AND user.domain == "_es_api_key"`],
   ['Cloud API key', `${UNNAMED} AND user.domain == "_cloud_api_key"`],
   ['Service account', `${UNNAMED} AND user.domain == "_service_account"`],
   ['Failed sign-in', `${UNNAMED} AND ${OTHER_DOMAIN} AND ${FAILED_SIGNIN}`],
@@ -149,11 +149,26 @@ export const IDENTITY_KINDS = [
   ['Other', `${UNNAMED} AND ${OTHER_DOMAIN} AND ${NOT_FAILED_SIGNIN} AND user.name IS NOT NULL`],
 ];
 /** The raw fields IDENTITY_KIND and IDENTITY read: group by these first, then derive. */
-export const IDENTITY_KEYS = `user.email, api_key.name, user.domain, user.name, failed_signin = ${FAILED_SIGNIN}`;
-export const IDENTITY_KIND =
+// COALESCE: an event with no action would otherwise be a null group beside the false one, and split an identity in two.
+export const IDENTITY_KEYS = `user.email, api_key.name, user.domain, user.name, failed_signin = COALESCE(${FAILED_SIGNIN}, false)`;
+const kindCase = (failed) =>
   'identity_kind = CASE(user.email IS NOT NULL, "Person", api_key.name IS NOT NULL, "Elasticsearch API key", ' +
-  'user.domain == "_es_api_key", "Elasticsearch API key (name not recorded)", user.domain == "_cloud_api_key", "Cloud API key", ' +
-  'user.domain == "_service_account", "Service account", failed_signin, "Failed sign-in", user.name IS NULL, "Unattributed", "Other")';
+  'user.domain == "_es_api_key", "Unnamed API key", user.domain == "_cloud_api_key", "Cloud API key", ' +
+  `user.domain == "_service_account", "Service account", ${failed}, "Failed sign-in", user.name IS NULL, "Unattributed", "Other")`;
+export const IDENTITY_KIND = kindCase('failed_signin');
+/**
+ * IDENTITY TYPE IN TABLES (1.0.5.4): every table that shows an Identity shows its Identity type beside it, as a
+ * coloured badge (KIND_COLUMN, below), worded exactly as the Identity type dropdown lists it.
+ *
+ * The type cannot be read back from the Identity text ("elastic" is an account, and also a name tried at a failed
+ * sign-in), so a query works it out where it resolves the identity, from the same raw fields:
+ *   grouped   count first BY IDENTITY_KEYS (ACTOR_KEYS plus failed_signin), then `| ${ACTOR_RESOLVE} | ${KIND_GROUPED}`,
+ *             and carry identity_kind into every later STATS BY actor. An identity seen as two types (that
+ *             "elastic") is two rows, one per type, as the two dropdowns would select it.
+ *   per event a row feed, after its SORT and LIMIT: `| ${ACTOR_RESOLVE} | ${KIND_EVENT}`, which reads event.action.
+ */
+export const KIND_GROUPED = `EVAL ${IDENTITY_KIND}`;
+export const KIND_EVENT = `EVAL ${kindCase(FAILED_SIGNIN)}`;
 const IDENTITY_EXPR =
   'CASE(user.email IS NOT NULL, user.email, api_key.name IS NOT NULL, api_key.name, ' +
   `user.domain == "_cloud_api_key", CONCAT(user.name, "${CLOUD_KEY_SUFFIX}"), ` +
@@ -1068,6 +1083,17 @@ export const SOURCE_LABEL =
 export const SOURCE_COLORS = { Elasticsearch: PALETTE[3], Kibana: PALETTE[2] };
 
 /**
+ * One colour per Identity type, the same on every table (KIND_COLUMN). Red is kept for the one type worth noticing,
+ * a failed sign-in; Unattributed and Other are grey; the two Elasticsearch key types share teal, as both are keys
+ * an Elasticsearch user made. A unit test keeps this in step with IDENTITY_KINDS.
+ */
+export const IDENTITY_KIND_COLORS = {
+  Person: '#6092C0', 'Cloud API key': '#9170B8', 'Elasticsearch API key': '#16C5C0',
+  'Unnamed API key': '#16C5C0', 'Service account': '#54B399', 'Failed sign-in': '#E7664C',
+  Unattributed: '#98A2B3', Other: '#98A2B3',
+};
+
+/**
  * Legend placement, verified against the 9.6 Dashboards API (`config.legend`) and rendered:
  *
  *   bottom  one row under the plot (`layout: list`). Costs ~25px of height and none of the width,
@@ -1180,7 +1206,9 @@ const C = (label, width) => (width ? { label, width, min: FLOOR.get(width) } : {
 
 export const COLUMNS = {
   // who
-  actor: C('Identity'), actor_kind: C('Kind', W.ENUM), actor_scope: C('Scope', W.SCOPE), actor_org: C('Origin', W.ENUM),
+  actor: C('Identity'),
+  identity_kind: { label: 'Identity type', width: 160, min: 155, apply_color_to: 'badge', color: colorMapping(IDENTITY_KIND_COLORS) },
+  actor_kind: C('Kind', W.ENUM), actor_scope: C('Scope', W.SCOPE), actor_org: C('Origin', W.ENUM),
   'user.email': C('Email'), 'user.name': C('User'), user: C('User'), owner: C('Owner'),
   api_key: C('API key'), 'api_key.name': C('API key'), key_id: C('Key ID'), 'api_key.id': C('Key ID'),
   credential: C('Credential', W.ENUM),
@@ -1327,9 +1355,10 @@ const DENSITY_WRAP = { mode: 'compact', height: { value: { type: 'auto' } } };
  */
 const column = (c) => {
   const spec = typeof c === 'string' ? { column: c } : c;
-  const { label: lbl, width, min } = COLUMNS[spec.column] || {};
+  const { label: lbl, width, min, ...style } = COLUMNS[spec.column] || {};
   // A role's floor goes with the role's width; a call site that sets its own width gets the default floor.
-  return { label: lbl || humanise(spec.column), ...(width ? { width, min } : {}), ...spec, ...(spec.width ? { min: spec.min } : {}) };
+  // `style` is a role's colouring (Identity type's badge).
+  return { label: lbl || humanise(spec.column), ...style, ...(width ? { width, min } : {}), ...spec, ...(spec.width ? { min: spec.min } : {}) };
 };
 
 /**
@@ -1461,7 +1490,11 @@ export const table = (x, y, w, h, title, q, rows, metrics, desc, { scroll = fals
     // bound ("top 10 at most") sits over a panel that had room for 12 (06 Busiest named API keys).
     query = q.replace(/\|\s*LIMIT\s+(\d+)\s*$/i, () => `| LIMIT ${fitRows(h)}`);
   }
-  const r = rows.map(column);
+  // Identity type rides beside Identity on every table (1.0.5.4; IDENTITY TYPE IN TABLES above).
+  const ids = rows.findIndex((c) => (c.column || c) === 'actor');
+  const withKind = ids >= 0 && !rows.some((c) => (c.column || c) === 'identity_kind')
+    ? [...rows.slice(0, ids + 1), 'identity_kind', ...rows.slice(ids + 1)] : rows;
+  const r = withKind.map(column);
   const m = metrics.map(column);
   // Every column fixed leaves the rest of a wide panel as an empty band on the right (rendered: a
   // 260px band on a full-width table). So when nothing flexes, the widest row column does — it is

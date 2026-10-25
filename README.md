@@ -178,7 +178,7 @@ whose choice became a filter pill, so one bar held two kinds of control that ans
 | Control | Reads | Why |
 |---|---|---|
 | Project | `?project`, against `project.name` (`PROJECT_WHERE`) | The serverless project that **emitted** the event. An audit project usually collects the audit streams of several projects; this narrows the whole dashboard to one of them. It does not shorten the other dropdowns' lists (none chains on it, so no choice can leave another stranded). Populated on every Elasticsearch and Kibana event. Names are not unique in Elastic Cloud, so projects that share a name share an option. **Identity 360's cohort rank follows Project and nothing else:** it ranks against everyone active in the projects the selection is active in, so an identity or Client IP selection highlights that identity instead of shrinking the cohort to one. Exact across all projects or within one; across several (not all) it sums events and takes each distinct count's per-project maximum, and its title says *approximate*. |
-| Identity type | `?identity_kind`, worked out per event (`IDENTITY_KIND`) | What kind of credential made the request: Person, Elasticsearch API key, Elasticsearch API key (name not recorded), Cloud API key, Service account, Failed sign-in, Unattributed or Other. Eight values at most, so the list is always complete; picking one first shortens the Identity list. |
+| Identity type | `?identity_kind`, worked out per event (`IDENTITY_KIND`) | What kind of credential made the request: Person, Elasticsearch API key, Unnamed API key, Cloud API key, Service account, Failed sign-in, Unattributed or Other. Eight values at most, so the list is always complete; picking one first shortens the Identity list. |
 | Identity | `?identity`, worked out per event (`IDENTITY`), chained on Identity type | One person, key or account, named exactly as every table names it (below). It replaced Person (email) and API key in 1.0.5.1: they read one raw field each, so a Cloud API key was in neither list and `user.name` meant a different thing on different rows. Single choice keeps a selected panel at ~20ms over 30 days; a multi-select has no fast path (~0.25s). Its query aggregates every event in range and lists the busiest identities in it, up to 10,000, rather than an option list's sample. |
 | Client IP | `?client_ip`, against `client.ip` (`CLIENT_IP_WHERE`) | Can hold more distinct addresses than anyone could eyeball; type in the dropdown to search the list. A control's value is text, so the list is `TO_STRING(client.ip)` and the filter turns the choice back with `TO_IP`, which keeps it a term test on the ip field: ~35ms over 30 days, against ~340ms for comparing text per event. The `TO_IP` is handed a null when nothing is chosen, because `TO_IP("Any")` would put a warning on every panel. |
 
@@ -203,7 +203,7 @@ one, and every table and chart names an identity the same way (`IDENTITY` and `A
 |---|---|---|
 | Person | the email | the same |
 | Elasticsearch API key | the key's name | the same |
-| Elasticsearch API key (name not recorded) | `Unnamed key of <owner>`: a Kibana event made with the key | `Unnamed key of _4KEO…` when the owner is a Cloud API key |
+| Unnamed API key | `Unnamed key of <owner>`: a Kibana event made with the key | `Unnamed key of _4KEO…` when the owner is a Cloud API key |
 | Cloud API key | `<20-character id> · Cloud API key` | `_4KEO… · Cloud API key`: the first five characters, enough to find it by typing in Identity |
 | Service account, Other | the account name, `user.name` | the same |
 | Failed sign-in | `user.name`, the name tried, or `(unattributed)` when no name was sent (mostly `anonymous_access_denied`) | the same |
@@ -579,6 +579,20 @@ legend and the How to read blocks, not in each tooltip: `table()` appends the la
   360 (Identity 360's own *Session records* only pins); a computed column never is. A hard-cut cell (a long message, a
   change payload) opens whole from the expand icon its cell shows on hover. The Session column is 150px of a
   44-character id: enough to tell sessions apart, and a click pins the whole id.
+- *Identity type and click columns (1.0.5.4).* Every table that shows *Identity* shows *Identity type* right after
+  it, as a coloured badge worded exactly as the Identity type dropdown lists it (22 tables; `table()` adds the
+  column, `IDENTITY_KIND_COLORS` in `panels.mjs` colours it the same everywhere: red for a failed sign-in, grey for
+  Unattributed and Other). The type cannot be read back from the name (`elastic` is an account and also a name
+  tried at a failed sign-in), so each query works it out where it resolves the identity: grouped tables count
+  first `BY IDENTITY_KEYS` and add `KIND_GROUPED`, feeds add `KIND_EVENT` after their LIMIT; an identity seen as
+  two types is two rows. `--lint` fails a table whose query does not return a column it shows. The free-text
+  *Detail* and *Message* columns went: Kibana's message restated Action, object type and id, and their place
+  went to raw columns that filter on click (Transport action on the Live signal feed, Action on Kibana
+  saved-object activity, Action and Client IP on 01 *Top failed or denied access*, Space on 02 *Mutations*,
+  Action on 04 *Config changes* and *Top failures*, Principal id on the Config-change feed). The one payload that
+  says something no column does, an Elasticsearch security change, stays whole in 04's *Config-change event
+  feed*. *Scope* now shows on the Risk leaderboard only, and 01's *Result* column went (Identity type marks the
+  failed sign-ins; Action names the rest).
 
 **Tooltips — two tiers, 40 words.** A panel's description is its ⓘ tooltip, and a reader hovers it to learn
 what the panel shows and the one thing needed to read it — not every caveat behind it. So it is **40 words at

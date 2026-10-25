@@ -1,7 +1,7 @@
 /** 01 Identity & Access — see scripts/lib/definitions.mjs for how the suite is assembled. */
 import {
   IDX, ACTOR_RESOLVE, ACTOR_KEYS, ORG, CRED_TYPE_LABEL, CRED_TYPE_COLORS, TIME, dash, kpi, xy, table, sized, vega, resetIds, bar, filterable,
-  grouped, FAILED_OR_DENIED, SIGNIN_FAILED, NOISE, cloudKeyLabel
+  grouped, FAILED_OR_DENIED, SIGNIN_FAILED, NOISE, cloudKeyLabel, IDENTITY_KEYS, KIND_GROUPED, KIND_EVENT
 } from '../panels.mjs';
 import { rawId } from '../suite.mjs';
 import { WHO, RAW_RECORDS, PIN_PRINCIPAL_SHORT } from './shared.mjs';
@@ -103,13 +103,14 @@ const compactLog = (p) => {
  * panels.mjs); each is the logic of the Discover session of the same name.
  *
  * FAILED_FEED (searches/02): every failure FAILED_OR_DENIED counts, newest first, sorted and cut before the CASEs
- * that word each row (QUERY SHAPE rule 3). Action and Client IP are the raw fields, so a click pins them.
+ * that word each row (QUERY SHAPE rule 3). Action and Client IP are the raw fields, so a click pins them. No Result
+ * column since 1.0.5.4: Identity type marks the failed sign-ins and Action names every other failure.
  */
-const FAILED_FEED = `FROM ${IDX} | ${TIME} | ${FAILED_OR_DENIED} | SORT @timestamp DESC | LIMIT 1000 | ${ACTOR_RESOLVE} ` +
+const FAILED_FEED = `FROM ${IDX} | ${TIME} | ${FAILED_OR_DENIED} | SORT @timestamp DESC | LIMIT 1000 | ${ACTOR_RESOLVE} | ${KIND_EVENT} ` +
   `| EVAL ${CRED_TYPE_LABEL}, result = CASE(event.action IN (${SIGNIN_FAILED}), "failed sign-in", event.action == "access_denied", "denied", "failed") ` +
   '| EVAL auth = COALESCE(auth, CASE(result == "failed sign-in", "not authenticated", user.domain IN ("_es_api_key", "_cloud_api_key"), "API key", user.domain == "cloud-saml-kibana", "SAML SSO", user.domain)), ' +
   'country = COALESCE(client.geo.country_iso_code, CASE(client.ip IS NULL, "no IP", CIDR_MATCH(client.ip, "100.64.0.0/10", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8"), "internal", "not located")) ' +
-  '| KEEP @timestamp, actor, event.action, result, auth, country, client.ip';
+  '| KEEP @timestamp, actor, identity_kind, event.action, auth, country, client.ip';
 /**
  * KEY_INVENTORY (searches/07): one row per key, busiest first, cut before the labels are worded. A Cloud API key
  * has no name and no recorded owner, so its row reads the shared short form and "Cloud organization".
@@ -131,17 +132,17 @@ const KEY_INVENTORY = `FROM ${IDX} | ${TIME} | ${KEYED} | STATS events = COUNT(*
 // 935ms over 30 days.
 const FIRST_SEEN = `FROM ${IDX} | ${TIME} ` +
   '| FORK (STATS first_seen = MIN(@timestamp), last_seen = MAX(@timestamp), events = COUNT(*), ipv = VALUES(client.ip), ' +
-  `cv = VALUES(client.geo.country_iso_code), ip_lo = MIN(client.ip), ip_hi = MAX(client.ip), av = VALUES(event.action) BY ${ACTOR_KEYS}) ` +
-  `(${NOISE} | STATS signal = COUNT(*) BY ${ACTOR_KEYS}) ` +
-  `| ${ACTOR_RESOLVE} ` +
+  `cv = VALUES(client.geo.country_iso_code), ip_lo = MIN(client.ip), ip_hi = MAX(client.ip), av = VALUES(event.action) BY ${IDENTITY_KEYS}) ` +
+  `(${NOISE} | STATS signal = COUNT(*) BY ${IDENTITY_KEYS}) ` +
+  `| ${ACTOR_RESOLVE} | ${KIND_GROUPED} ` +
   '| STATS first_seen = MIN(first_seen), last_seen = MAX(last_seen), events = SUM(events), signal = SUM(signal), ipv = VALUES(ipv), cv = VALUES(cv), ' +
-  'ip_lo = MIN(ip_lo), ip_hi = MAX(ip_hi), av = VALUES(av) BY actor ' +
+  'ip_lo = MIN(ip_lo), ip_hi = MAX(ip_hi), av = VALUES(av) BY actor, identity_kind ' +
   '| EVAL ips = COALESCE(MV_COUNT(ipv), 0), countries = COALESCE(MV_COUNT(cv), 0), actions = COALESCE(MV_COUNT(av), 0) ' +
   '| SORT first_seen DESC | LIMIT 1000 ' +
   '| EVAL signal = COALESCE(signal, 0), countries = CASE(countries == 1, "1 country", countries > 1, CONCAT(TO_STRING(countries), " countries"), ips == 0, "no IP", ' +
   ['100.64.0.0/10', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '127.0.0.0/8'].map((c) => `(CIDR_MATCH(ip_lo, "${c}") AND CIDR_MATCH(ip_hi, "${c}"))`).join(' OR ') +
   ', "internal", "not located") ' +
-  '| KEEP actor, countries, first_seen, last_seen, events, signal, ips, actions';
+  '| KEEP actor, identity_kind, countries, first_seen, last_seen, events, signal, ips, actions';
 
 /** The intro (draft 3 of the 1.0.3 customer copy; INTRO TEXT in panels.mjs). */
 const INTRO = {
@@ -278,26 +279,23 @@ export function build() {
       `FROM ${IDX} | ${TIME} | WHERE user.email IS NOT NULL | STATS events = COUNT(*) BY user.email | SORT events DESC | LIMIT 10`,
       [WHO], ['events'],
       'The people the Humans tile counts, busiest first, over all traffic. Identity first and last seen has the rest, with first and last seen times and IP counts. Click an email to pin that person across the suite.'),
-    // Grouped on the raw identity fields and resolved afterwards (QUERY SHAPE rule 2): the COALESCE then
-    // runs once per group instead of once per failed event. An action that is neither a failed sign-in
-    // nor access_denied is here only because its outcome was failure, and without saying so a
-    // saved_object_update row read as a normal operation — so a Result column names the kind, with the
-    // same words as the Failed sign-ins session. It is a separate column, not a suffix on Action: Lens
-    // refuses click-to-filter on a column assigned in ES|QL, and Action is a STATS BY alias that keeps it.
-    // Ties are broken by recency and then by name: on events alone, rows with equal counts (admin and
-    // elastic at 30 each) swapped places between two renders of the same range. A failure with no client
-    // address (anonymous_access_denied) reads "no IP", the page's words for it, not a bare "-"; the
-    // column is display-only (no click filter), so it can be assigned in ES|QL.
+    // Grouped on the raw identity fields and resolved afterwards (QUERY SHAPE rule 2): the CASE then runs once per
+    // group instead of once per failed event. Action and Client IP are the raw fields, so both filter on click
+    // (1.0.5.4; until then they were STATS aliases, display only, and a Result column named the kind of failure).
+    // Every row here is a failure, Identity type says which were sign-ins, and the action names the rest, so
+    // Result went to make room for Identity type. A failure with no client address (anonymous_access_denied)
+    // reads "-": a filter column cannot be assigned in ES|QL. Ties are broken by recency and then by name: on
+    // events alone, rows with equal counts (admin and elastic at 30 each) swapped places between two renders.
     table(12, 29, 36, 12, 'Top failed or denied access',
-      `FROM ${IDX} | ${TIME} | ${FAILED_OR_DENIED} | STATS events = COUNT(*), last_seen = MAX(@timestamp) BY ${ACTOR_KEYS}, action = event.action, ip = client.ip | ${ACTOR_RESOLVE} | STATS events = SUM(events), last_seen = MAX(last_seen) BY actor, action, ip | EVAL result = CASE(action IN (${SIGNIN_FAILED}), "failed sign-in", action == "access_denied", "denied", "failed"), ip = COALESCE(TO_STRING(ip), "no IP") | SORT events DESC, last_seen DESC, actor, action, ip | LIMIT 10`,
-      ['actor', sized('action', 175), 'result', 'ip'], ['events', 'last_seen'],
-      'Failed sign-ins and refused requests by identity, action and source IP, most frequent first. Result names the kind: failed sign-in, denied (refused an action) or failed (any other failure).',
+      `FROM ${IDX} | ${TIME} | ${FAILED_OR_DENIED} | STATS events = COUNT(*), last_seen = MAX(@timestamp) BY ${IDENTITY_KEYS}, event.action, client.ip | ${ACTOR_RESOLVE} | ${KIND_GROUPED} | STATS events = SUM(events), last_seen = MAX(last_seen) BY actor, identity_kind, event.action, client.ip | SORT events DESC, last_seen DESC, actor, event.action, client.ip | LIMIT 10`,
+      ['actor', filterable('event.action', { label: 'Action', width: 175 }), filterable('client.ip')], ['events', 'last_seen'],
+      'Failed sign-ins and refused requests by identity, action and client IP, most frequent first. Click an action or an address to filter the page by it.',
       { empty: 'good' }),
     // The three record lists run full width: they are the evidence, so every column has to be readable. Lens
     // tables since 1.0.5.1 (RECORD FEEDS, panels.mjs), so the identity dropdowns narrow them too; each keeps the
     // logic of the Discover session of the same name (searches/02, 07, 06) and scrolls to that session's bound.
     table(0, 41, 48, 12, 'Failed sign-ins and denied access', FAILED_FEED,
-      ['actor', filterable('event.action', { label: 'Action', width: 220, min: 200 }), 'result', { column: 'auth', label: 'Credential', width: 150, min: 130 },
+      ['actor', filterable('event.action', { label: 'Action', width: 220, min: 200 }), { column: 'auth', label: 'Credential', width: 150, min: 130 },
         'country', filterable('client.ip')],
       ['@timestamp'],
       'Failed sign-ins and refused requests, record by record, newest first; the Failed or denied tile has the total. Credential reads “not authenticated” when no credential worked; Country “internal” is Kibana or the platform acting for someone.',
