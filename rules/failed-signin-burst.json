@@ -1,0 +1,58 @@
+{
+  "kind": "alert",
+  "metadata": {
+    "name": "[Audit] Failed sign-in burst",
+    "description": "Ten or more failed sign-ins in 15 minutes from one client IP or for one name, or five or more different names tried from one client IP. Elastic's own platform accounts and unnamed attempts count toward the address but not toward a name. Open Identity & Access, pick the alert's address in Client IP or its name in Identity, and read Top failed or denied access.",
+    "tags": [
+      "cloud-audit",
+      "UC-002"
+    ],
+    "routing_tags": [
+      "cloud-audit"
+    ]
+  },
+  "time_field": "@timestamp",
+  "schedule": {
+    "every": "5m",
+    "lookback": "15m"
+  },
+  "query": {
+    "base": "SET unmapped_fields=\"nullify\"; FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE event.action IN (\"authentication_failed\",\"anonymous_access_denied\") | STATS n = COUNT(*), first_ts = MIN(@timestamp), last_ts = MAX(@timestamp) BY user.email, api_key.name, user.domain, user.name, failed_signin = COALESCE(event.action IN (\"authentication_failed\",\"anonymous_access_denied\"), false), addr = COALESCE(client.ip, source.ip) | EVAL actor = CASE(user.email IS NOT NULL, user.email, api_key.name IS NOT NULL, api_key.name, user.domain == \"_cloud_api_key\", CONCAT(user.name, \" · Cloud API key\"), user.domain == \"_es_api_key\", CONCAT(\"Unnamed key of \", user.name), user.name IS NOT NULL, user.name, \"(unattributed)\") | EVAL identity_kind = CASE(user.email IS NOT NULL, \"Person\", api_key.name IS NOT NULL, \"Elasticsearch API key\", user.domain == \"_es_api_key\", \"Unnamed API key\", user.domain == \"_cloud_api_key\", \"Cloud API key\", user.domain == \"_service_account\", \"Service account\", failed_signin, \"Failed sign-in\", user.name IS NULL, \"Unattributed\", \"Other\") | EVAL hop = CIDR_MATCH(addr, \"100.64.0.0/10\"), burst_by = [\"Client IP\", \"Identity\"] | MV_EXPAND burst_by | EVAL burst_key = CASE(burst_by == \"Client IP\", TO_STRING(addr), actor IN (\"elastic.maintenance\",\"autoscaling\",\"elasticsearch-controller\",\"elastic/fleet-server\",\"elastic/kibana\") OR actor IN (\"(unattributed)\",\"<anonymous>\",\"<unauthenticated-cloud-access-token>\",\"<unauthenticated-saml-user>\",\"<unauthenticated-cloud-api-key>\"), null, actor) | WHERE burst_key IS NOT NULL | STATS failures = SUM(n), names_tried = COUNT_DISTINCT(actor) WHERE NOT actor IN (\"(unattributed)\",\"<anonymous>\",\"<unauthenticated-cloud-access-token>\",\"<unauthenticated-saml-user>\",\"<unauthenticated-cloud-api-key>\"), hop_failures = SUM(n) WHERE hop, identities = VALUES(actor), identity_types = VALUES(identity_kind), client_ips = VALUES(addr), first_ts = MIN(first_ts), last_ts = MAX(last_ts) BY burst_by, burst_key | EVAL platform_hop = COALESCE(hop_failures, 0) > 0, severity = CASE(names_tried >= 5 OR failures >= 100, \"high\", \"medium\") | KEEP severity, burst_by, burst_key, failures, names_tried, identities, identity_types, client_ips, platform_hop, first_ts, last_ts",
+    "breach": {
+      "segment": "WHERE failures >= 10 OR names_tried >= 5"
+    }
+  },
+  "recovery": {
+    "strategy": "no_breach"
+  },
+  "no_data": {
+    "strategy": "ignore"
+  },
+  "state_transition": {
+    "pending": {
+      "count": 0
+    }
+  },
+  "grouping": {
+    "fields": [
+      "burst_by",
+      "burst_key"
+    ]
+  },
+  "artifacts": [
+    {
+      "id": "dashboard",
+      "type": "dashboard",
+      "data": {
+        "dashboard_id": "elastic_cloud-audit-identity-access"
+      }
+    },
+    {
+      "id": "runbook",
+      "type": "runbook",
+      "data": {
+        "content": "**What it means.** Someone failed to sign in many times in 15 minutes. If the alert is by Client IP, one address failed again and again; five or more names tried from it points to password spraying. If it is by Identity, one name was tried again and again, from any number of addresses.\n\n**Triage**\n1. Read the alert: the address or name, the number of failures, the names tried and the time span.\n2. Open **[Audit] 🔐 Identity & Access**, set the time to cover the alert, and pick the address in **Client IP** (or the name in **Identity**, with Identity type set to Failed sign-in). If the Client IP list does not offer the address, it is Elastic's own network hop: set Identity type to Failed sign-in instead.\n3. Read **Top failed or denied access** for which names failed from where, then **Failed sign-ins and denied access** for the records one by one.\n4. Open **[Audit] 🌍 Geo & Network**, pick the address in **Client IP** again (each page opens with Any), and read **Busiest client IPs** to see where the address is and how many identities use it.\n5. Check whether anyone signed in successfully from that address or as that name around the same time. The \"Successful sign-in after failed sign-ins\" rule checks this for you. To check by hand, go back to Identity & Access with the address in **Client IP** and read **Identity first and last seen**: an identity other than a failed sign-in that was active there after the burst is the case to escalate.\n\n**What is normal.** A person retrying an expired session or a mistyped key gives a few failures, not ten. A script or CI job with a revoked key can fail in bursts; the name tells you which one. An address in 100.64.0.0/10 is Elastic's own network hop, which carries many people's traffic, so look at the names tried rather than the address."
+      }
+    }
+  ]
+}

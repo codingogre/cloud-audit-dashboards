@@ -2,9 +2,13 @@
  * Tears down what this repo created. Destructive, so the target must be named explicitly.
  *
  *   --clean dashboards   every dashboard + its data view, Vega and Discover sessions, and the ES|QL view
+ *   --clean rules        the alert rules (lib/rules.mjs), by exact id
  *   --clean ingest       the audit-scoped pipeline and templates (mappings are left alone;
  *                        removing a field mapping requires a reindex)
- *   --clean all          both (the suite lives in the Default space, which is never deleted)
+ *   --clean all          all three (the suite lives in the Default space, which is never deleted)
+ *
+ * The rules are their own target, not part of `dashboards`: a customer who has enabled and routed them may
+ * rebuild the dashboards without losing their alerting set-up.
  */
 import { cfg, nsId, objId, objFiles, RETIRED_OBJECTS } from './lib/env.mjs';
 import { kb, es } from './lib/http.mjs';
@@ -91,7 +95,10 @@ async function cleanIngest() {
 
 export async function run(argv = []) {
   const target = argv[0];
-  if (!target) { info('Nothing deleted. Pass a target: dashboards | ingest | all'); return; }
+  if (!target) { info('Nothing deleted. Pass a target: dashboards | rules | ingest | all'); return; }
+  if (!['dashboards', 'rules', 'ingest', 'all'].includes(target)) throw new Error(`unknown --clean target "${target}" (dashboards | rules | ingest | all)`);
+  // Rules first: they link to the dashboards.
+  if (target === 'rules' || target === 'all') await (await import('./rules.mjs')).clean();
   if (target === 'dashboards' || target === 'all') await cleanDashboards();
   if (target === 'ingest' || target === 'all') await cleanIngest();
 }

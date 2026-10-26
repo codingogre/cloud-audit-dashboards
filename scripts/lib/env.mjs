@@ -50,7 +50,7 @@ export function parseStream(name) {
  * covers the retired numbered dashboard ids (cloud-audit-00-command-center).
  */
 export const RESERVED_NS = ['vega', 'search', 'events', 'logs', 'dashboard', 'adhoc', 'control', 'dv',
-  'actor', 'identity', 'kibana', 'data', 'security', 'geo', 'platform'];
+  'actor', 'identity', 'kibana', 'data', 'security', 'geo', 'platform', 'rule'];
 export function checkNamespace(n) {
   if (!/^[a-z][a-z0-9]*$/.test(n)) throw new Error(`AUDIT_ID_NS "${n}" must be lowercase letters and digits, starting with a letter`);
   if (RESERVED_NS.includes(n)) throw new Error(`AUDIT_ID_NS "${n}" is the first word of a production id (cloud-audit-${n}-…), so a private deploy could touch production: pick another name`);

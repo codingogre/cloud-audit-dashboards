@@ -2,7 +2,7 @@
 import {
   IDX, ACTOR_RESOLVE, RISK_INDEX_STATS, RISK_INDEX_EVAL, NOISE, TIME, BUCKET, SCOPE, PALETTE, PRIVILEGED,
   privilegedKpi, FAILED_OR_DENIED, RISK_PREFILTER, RISK_KEYS, RISK_RESTORE, RISK, grouped, dash, kpi, xy, table, vega, sized, fitRows, resetIds,
-  filterable, CHANGE_PRED, HOUSEKEEPING, OBJ, IDENTITY_KEYS, KIND_GROUPED, KIND_EVENT
+  filterable, CHANGE_PRED, HOUSEKEEPING, OBJ, IDENTITY_KEYS, KIND_GROUPED, KIND_EVENT, CHG, TARGET
 } from '../panels.mjs';
 import { rawId } from '../suite.mjs';
 import {
@@ -28,19 +28,7 @@ const NEW_IN_RANGE =
   'EVAL new_in_range = CASE(TO_LONG(first_seen) - TO_LONG(TO_DATETIME(?_tstart)) > ' +
   '(TO_LONG(TO_DATETIME(?_tend)) - TO_LONG(TO_DATETIME(?_tstart))) / 12, "yes", "no")';
 
-/**
- * What a security_config_change payload names, as a short string: the API key's name on a create,
- * the key ids on an invalidation (comma-separated, so SPLIT() counts them one by one), the key id on
- * a change, the role name, or the user profile uid. Four GROKs over the JSON string, first match
- * wins — `"name":"` cannot match `"names":[`, and on a create the key name precedes the nested
- * `"source":{"id":…}`. Per event, but only on events that carry a payload (a few thousand a day),
- * and GROK is one of the cheap per-event operations (QUERY SHAPE rule 1).
- */
-const CHG = 'elasticsearch.audit.security_config_change';
-const TARGET =
-  `GROK ${CHG} """"name":"%{DATA:t_name}"""" | GROK ${CHG} """"ids":\\[%{DATA:t_ids}\\]""" | ` +
-  `GROK ${CHG} """"id":"%{DATA:t_id}"""" | GROK ${CHG} """"uid":"%{DATA:t_uid}"""" | ` +
-  'EVAL target = COALESCE(t_name, REPLACE(t_ids, "\\"", ""), t_id, t_uid)';
+/** CHG and TARGET (what a security_config_change payload names) live in panels.mjs, shared with the alert rules. */
 /**
  * The latest target for display, on the grouped rows: spaced after its commas, and cut with a visible
  * ellipsis — Lens hard-clips a cell mid-glyph with no cue, and an invalidation can list dozens of ids.

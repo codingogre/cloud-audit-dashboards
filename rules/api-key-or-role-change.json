@@ -1,0 +1,57 @@
+{
+  "kind": "alert",
+  "metadata": {
+    "name": "[Audit] New API key or role change",
+    "description": "An API key was created, changed or invalidated, or a role, role mapping, user or service token was created, changed or deleted. The keys Kibana creates and cleans up for its own tasks are left out. Open Security & Anomalies and read Config changes; the Config-change event feed has the full change record.",
+    "tags": [
+      "cloud-audit",
+      "UC-032",
+      "UC-049",
+      "UC-050"
+    ],
+    "routing_tags": [
+      "cloud-audit"
+    ]
+  },
+  "time_field": "@timestamp",
+  "schedule": {
+    "every": "5m",
+    "lookback": "15m"
+  },
+  "query": {
+    "base": "SET unmapped_fields=\"nullify\"; FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE elasticsearch.audit.security_config_change IS NOT NULL AND NOT (event.action IS NOT NULL AND event.action == \"invalidate_apikeys\" AND user.name IS NOT NULL AND user.name IN (\"elastic.maintenance\",\"autoscaling\",\"elasticsearch-controller\",\"elastic/fleet-server\",\"elastic/kibana\") AND api_key.name IS NULL) | WHERE event.action IN (\"create_apikey\",\"grant_apikey\",\"change_apikey\",\"change_apikeys\",\"invalidate_apikeys\",\"create_cross_cluster_apikey\",\"change_cross_cluster_apikey\",\"put_role\",\"delete_role\",\"put_role_mapping\",\"delete_role_mapping\",\"put_privileges\",\"delete_privileges\",\"create_service_token\",\"delete_service_token\",\"put_user\",\"delete_user\",\"change_password\",\"change_disable_user\",\"change_enable_user\") AND NOT (event.action IS NOT NULL AND event.action == \"create_apikey\" AND user.name IS NOT NULL AND user.name IN (\"elastic.maintenance\",\"autoscaling\",\"elasticsearch-controller\",\"elastic/fleet-server\",\"elastic/kibana\") AND api_key.name IS NULL AND elasticsearch.audit.security_config_change IS NOT NULL AND elasticsearch.audit.security_config_change LIKE \"\"\"*\"managed\":true*\"\"\") | GROK elasticsearch.audit.security_config_change \"\"\"\"name\":\"%{DATA:t_name}\"\"\"\" | GROK elasticsearch.audit.security_config_change \"\"\"\"ids\":\\[%{DATA:t_ids}\\]\"\"\" | GROK elasticsearch.audit.security_config_change \"\"\"\"id\":\"%{DATA:t_id}\"\"\"\" | GROK elasticsearch.audit.security_config_change \"\"\"\"uid\":\"%{DATA:t_uid}\"\"\"\" | EVAL target = COALESCE(t_name, REPLACE(t_ids, \"\\\"\", \"\"), t_id, t_uid) | EVAL target = SPLIT(target, \",\") | EVAL reason = CASE(event.action == \"delete_role\", \"role deleted\", elasticsearch.audit.security_config_change LIKE \"\"\"*\"run_as\":[\"*\"\"\", \"grants run_as\", elasticsearch.audit.security_config_change RLIKE \"\"\".*\\\"cluster\\\":\\[[^\\]]*\\\"all\\\".*\"\"\", \"grants cluster all\", elasticsearch.audit.security_config_change RLIKE \"\"\".*\\\"privileges\\\":\\[[^\\]]*\\\"all\\\".*\"\"\", \"grants all on indices or apps\", event.action IN (\"create_apikey\",\"change_apikey\",\"change_apikeys\") AND elasticsearch.audit.security_config_change LIKE \"\"\"*\"role_descriptors\":[]*\"\"\", \"key carries all its owner's rights\", event.action == \"invalidate_apikeys\" AND MV_COUNT(target) >= 10, \"10 or more keys invalidated at once\", null) | STATS changes = COUNT(*), flagged = COUNT(*) WHERE reason IS NOT NULL, reasons = VALUES(reason), targets = VALUES(target), first_ts = MIN(@timestamp), last_ts = MAX(@timestamp) BY user.email, api_key.name, user.domain, user.name, failed_signin = COALESCE(event.action IN (\"authentication_failed\",\"anonymous_access_denied\"), false), event.action | EVAL actor = CASE(user.email IS NOT NULL, user.email, api_key.name IS NOT NULL, api_key.name, user.domain == \"_cloud_api_key\", CONCAT(user.name, \" · Cloud API key\"), user.domain == \"_es_api_key\", CONCAT(\"Unnamed key of \", user.name), user.name IS NOT NULL, user.name, \"(unattributed)\") | EVAL identity_kind = CASE(user.email IS NOT NULL, \"Person\", api_key.name IS NOT NULL, \"Elasticsearch API key\", user.domain == \"_es_api_key\", \"Unnamed API key\", user.domain == \"_cloud_api_key\", \"Cloud API key\", user.domain == \"_service_account\", \"Service account\", failed_signin, \"Failed sign-in\", user.name IS NULL, \"Unattributed\", \"Other\") | STATS changes = SUM(changes), flagged = SUM(flagged), reasons = VALUES(reasons), targets = VALUES(targets), first_ts = MIN(first_ts), last_ts = MAX(last_ts) BY actor, identity_kind, event.action | EVAL by_key = identity_kind IN (\"Elasticsearch API key\",\"Unnamed API key\",\"Cloud API key\") | EVAL severity = CASE(flagged > 0 OR by_key, \"high\", \"medium\"), reasons = CASE(NOT by_key, reasons, reasons IS NULL, \"made by an API key\", MV_APPEND(reasons, \"made by an API key\")), target_count = COALESCE(MV_COUNT(targets), 0), targets = MV_SLICE(targets, 0, 9) | KEEP severity, actor, identity_kind, event.action, changes, target_count, targets, reasons, first_ts, last_ts | SORT last_ts DESC"
+  },
+  "recovery": {
+    "strategy": "no_breach"
+  },
+  "no_data": {
+    "strategy": "ignore"
+  },
+  "state_transition": {
+    "pending": {
+      "count": 0
+    }
+  },
+  "grouping": {
+    "fields": [
+      "actor",
+      "event.action"
+    ]
+  },
+  "artifacts": [
+    {
+      "id": "dashboard",
+      "type": "dashboard",
+      "data": {
+        "dashboard_id": "elastic_cloud-audit-security-anomalies"
+      }
+    },
+    {
+      "id": "runbook",
+      "type": "runbook",
+      "data": {
+        "content": "**What it means.** An identity changed who can do what: it created, changed or invalidated an API key, or created, changed or deleted a role, role mapping, user or service token. There is one alert per identity and action. It stays open while that identity keeps making the change and closes about 15 minutes after the last one.\n\n**High** when a role was deleted; a role or key grants run_as, or \"all\" on the cluster, on indices or on a Kibana application; a key was created with all of its owner's rights; 10 or more keys were invalidated at once; or the change was made by an API key rather than a person. The alert's reasons say which. Otherwise the alert is medium.\n\n**Triage**\n1. Read the alert: the identity, its type, the action, how many changes, the targets (key or role names, or the ids of invalidated keys) and the reasons.\n2. Open **[Audit] 🚨 Security & Anomalies**, set the time to cover the alert, and paste the identity into the **Identity** dropdown exactly as the alert shows it.\n3. In **🚨 Config changes**, find the identity and action. Latest target names the key or role.\n4. In **Config-change event feed**, read the full change record: the privileges the role or key grants, its expiry, and which keys were invalidated.\n5. Open **[Audit] 👤 Identity 360** for the identity. **Who this is — by identity and principal id** says what it is and who owns it.\n6. For a new key, open **[Audit] 🔐 Identity & Access** and check **API key inventory**: has the key been used yet, from where, and on which indices?\n7. If nobody expected the change, invalidate the key or restore the role, then rotate the credential that made it.\n\n**What is normal.**\n- Planned rotation: a new key created and an old one invalidated together, by your admin key or your automation.\n- Deployment tooling creating short-lived keys or roles.\n- On Serverless most changes are made by a Cloud API key, so \"made by an API key\" on its own is common. Read the other reasons first.\n\nAlready left out: the keys Kibana creates and cleans up for its own tasks and for Fleet, and the profile updates at each sign-in."
+      }
+    }
+  ]
+}

@@ -1,0 +1,55 @@
+{
+  "kind": "alert",
+  "metadata": {
+    "name": "[Audit] Successful sign-in after failed sign-ins",
+    "description": "Five or more failed sign-ins, then a successful sign-in within 30 minutes, for the same account name or from the same public address. Elastic's internal network addresses never count as the same address. Kibana does not record failed sign-ins, so the failures are always Elasticsearch's, but the successful sign-in can be to Elasticsearch or to Kibana. Start on Identity & Access with the address in Client IP, then check each identity that signed in on Identity 360.",
+    "tags": [
+      "cloud-audit",
+      "UC-003"
+    ],
+    "routing_tags": [
+      "cloud-audit"
+    ]
+  },
+  "time_field": "@timestamp",
+  "schedule": {
+    "every": "5m",
+    "lookback": "30m"
+  },
+  "query": {
+    "base": "SET unmapped_fields=\"nullify\"; FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE event.action IN (\"authentication_failed\",\"anonymous_access_denied\", \"authentication_success\", \"user_login\") | STATS n = COUNT(*), first_ts = MIN(@timestamp), last_ts = MAX(@timestamp), early = TOP(@timestamp, 5, \"asc\") BY user.email, api_key.name, user.domain, user.name, failed_signin = COALESCE(event.action IN (\"authentication_failed\",\"anonymous_access_denied\"), false), client.ip | EVAL match = [\"same account\", \"same address\"] | MV_EXPAND match | EVAL match_value = CASE(match == \"same account\" AND NOT user.name IN (\"elastic.maintenance\",\"autoscaling\",\"elasticsearch-controller\",\"elastic/fleet-server\",\"elastic/kibana\", \"(unattributed)\",\"<anonymous>\",\"<unauthenticated-cloud-access-token>\",\"<unauthenticated-saml-user>\",\"<unauthenticated-cloud-api-key>\"), user.name, match == \"same address\" AND NOT CIDR_MATCH(client.ip, \"100.64.0.0/10\"), TO_STRING(client.ip)) | WHERE match_value IS NOT NULL | INLINE STATS failures = SUM(n) WHERE failed_signin, first_fail = MIN(first_ts) WHERE failed_signin, fails = TOP(early, 5, \"asc\") WHERE failed_signin BY match, match_value | WHERE failures >= 5 AND (failed_signin OR last_ts > MV_MAX(fails)) | EVAL actor = CASE(user.email IS NOT NULL, user.email, api_key.name IS NOT NULL, api_key.name, user.domain == \"_cloud_api_key\", CONCAT(user.name, \" · Cloud API key\"), user.domain == \"_es_api_key\", CONCAT(\"Unnamed key of \", user.name), user.name IS NOT NULL, user.name, \"(unattributed)\") | EVAL identity_kind = CASE(user.email IS NOT NULL, \"Person\", api_key.name IS NOT NULL, \"Elasticsearch API key\", user.domain == \"_es_api_key\", \"Unnamed API key\", user.domain == \"_cloud_api_key\", \"Cloud API key\", user.domain == \"_service_account\", \"Service account\", failed_signin, \"Failed sign-in\", user.name IS NULL, \"Unattributed\", \"Other\") | STATS failures = MAX(failures), first_fail = MAX(first_fail), last_success = MAX(last_ts) WHERE NOT failed_signin, failed_names = VALUES(actor) WHERE failed_signin, failed_from = VALUES(client.ip) WHERE failed_signin, signed_in = VALUES(actor) WHERE NOT failed_signin, signed_in_types = VALUES(identity_kind) WHERE NOT failed_signin, successes = SUM(n) WHERE NOT failed_signin BY match, match_value | WHERE last_success IS NOT NULL | EVAL severity = CASE(match == \"same account\", \"high\", \"medium\") | KEEP severity, match, match_value, failed_from, failed_names, signed_in, signed_in_types, failures, successes, first_fail, last_success"
+  },
+  "recovery": {
+    "strategy": "no_breach"
+  },
+  "no_data": {
+    "strategy": "ignore"
+  },
+  "state_transition": {
+    "pending": {
+      "count": 0
+    }
+  },
+  "grouping": {
+    "fields": [
+      "match",
+      "match_value"
+    ]
+  },
+  "artifacts": [
+    {
+      "id": "dashboard",
+      "type": "dashboard",
+      "data": {
+        "dashboard_id": "elastic_cloud-audit-identity-access"
+      }
+    },
+    {
+      "id": "runbook",
+      "type": "runbook",
+      "data": {
+        "content": "**What it means.** Someone failed to sign in five or more times, and within 30 minutes a sign-in succeeded, either as the same account name or from the same public address. \"Same account\" means a guessed name got in: treat it as urgent. \"Same address\" means the address that was failing also had a successful sign-in. That is often your own office, VPN or shared network, where a script has a wrong password while everyone else signs in normally.\n\n**Triage**\n1. Open **[Audit] 🔐 Identity & Access** with the time range from the alert's first failure to its last success. Set **Client IP** to the address (for a same-account alert, to each address the failures came from).\n2. In **Failed sign-ins and denied access** and **Top failed or denied access**, see which names were tried and how fast. Generic names (admin, elastic, root) or many different names point to guessing; one name failing again and again points to a stale password in a script.\n3. Open **[Audit] 👤 Identity 360** and pick each identity that signed in, in the **Identity** dropdown. Check **Who this is — by identity and principal id**, **Busiest addresses they used** and **Where they connected from**: is this address normal for them?\n4. On the same page, read **⚠️ What they changed — deletes first, then newest** and **What they read, by index family**. Anything after the sign-in that this identity does not usually do is the reason to act.\n5. If the sign-in is not explained, revoke the API key or end the person's sessions, rotate the credential, and block the address.\n\n**What is normal.** Your own offices, VPNs and automation hosts fire the \"same address\" form when a scheduled job keeps a wrong password while people sign in successfully. If the address is yours and the failed names belong to a known script, fix the script. Elastic's internal network addresses never count as the same address."
+      }
+    }
+  ]
+}

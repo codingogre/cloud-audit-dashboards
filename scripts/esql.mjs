@@ -15,7 +15,8 @@ import { success, fail, detail, warn } from './lib/log.mjs';
 import { buildAll } from './lib/definitions.mjs';
 import { checkLayout } from './lib/layout.mjs';
 import { requireView } from './lib/view.mjs';
-import { PREV_TILES, PREV_LOOKBACK_DAYS, prevSpec, prevEsql, fixedWindow, windowMs, prevQuery, prevStreamQuery, VIEW_TIME, ANY, flatPanels } from './lib/panels.mjs';
+import { PREV_TILES, PREV_LOOKBACK_DAYS, prevSpec, prevEsql, fixedWindow, windowMs, prevQuery, prevStreamQuery, VIEW_TIME, ANY, flatPanels, TIME_ONLY } from './lib/panels.mjs';
+import { ruleQueries, durationMs } from './lib/rules.mjs';
 
 /**
  * Every query runs through es.esqlRun(), which cancels it on overrun — a plain /_query keeps
@@ -38,6 +39,19 @@ export const PARAMS = (src) => {
 };
 
 const TIME_BOUND = 'WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart';
+
+/**
+ * What Kibana's alert rule runner sends with a rule's query (lib/rules.mjs): ?_tstart/?_tend for the lookback window
+ * ending now, and nothing else — no dropdown variable, so a rule naming one fails here as it would in Kibana — plus
+ * the same window as a DSL range filter on @timestamp. A rule is never passed through bounded().
+ */
+export function ruleRun(lookback, end = Date.now()) {
+  const start = end - durationMs(lookback);
+  return {
+    params: [{ _tstart: new Date(start).toISOString() }, { _tend: new Date(end).toISOString() }],
+    filter: { bool: { filter: [{ range: { '@timestamp': { gt: new Date(start).toISOString(), lte: new Date(end).toISOString(), format: 'strict_date_optional_time' } } }] } },
+  };
+}
 
 /**
  * Discover sessions carry no time predicate of their own — Kibana applies the time picker — so
@@ -246,7 +260,12 @@ export function gatherQueries() {
   return items;
 }
 
-export async function run() {
+/**
+ * `--lint rules` lints the alert rules alone. They read the data stream, not the events view, so a private copy
+ * (AUDIT_ID_NS) that has no view of its own can still lint them; a plain --lint needs the view, as before.
+ */
+export async function run(argv = []) {
+  const rulesOnly = argv[0] === 'rules';
   /**
    * Geometry and fragment-drift first, before any network work. Both are pure functions over the
    * in-memory definitions, so they cost milliseconds — and failing here means --lint does not burn
@@ -262,13 +281,25 @@ export async function run() {
 
   // The prior-period tiles read the events view: without it every one of their queries would fail with an unknown
   // index, so say what to run instead (--deploy creates it before it lints).
-  await requireView();
-  const items = gatherQueries();
+  if (!rulesOnly) await requireView();
+  // The alert rules (lib/rules.mjs) run as Kibana's rule runner runs them (ruleRun), never through bounded().
+  const items = rulesOnly ? ruleQueries() : [...gatherQueries(), ...ruleQueries()];
   const timings = [];
   let bad = 0;
-  for (const { src, i, q: raw, control, cols } of items) {
-    const q = bounded(raw);
-    const res = await es.esqlRun(q, PARAMS(src), { budgetMs: BUDGET_MS });
+  for (const it of items.filter((x) => x.rule && !x.q.includes(TIME_ONLY))) {
+    bad++;
+    fail(`${it.src} does not bound itself with TIME_ONLY (${TIME_ONLY}) — a rule must, so a back-test can bind any window`);
+  }
+  // A rule runs with Kibana's row cap appended (`\n| LIMIT 1000`), so its timing here is the rule runner's.
+  const runOf = ({ src, q: raw, rule, lookback }, q = rule ? `${raw}\n| LIMIT 1000` : bounded(raw)) => {
+    if (!rule) return es.esqlRun(q, PARAMS(src), { budgetMs: BUDGET_MS });
+    const { params, filter } = ruleRun(lookback);
+    return es.esqlRun(q, params, { budgetMs: BUDGET_MS, filter });
+  };
+  for (const item of items) {
+    const { src, i, q: raw, control, cols, rule } = item;
+    const q = rule ? raw : bounded(raw);
+    const res = await runOf(item);
     timings.push({ src: `${src}[${i}]`, ms: res.ms });
     // A dropdown's list must open on "Any": it is the only way back to no selection (panels.mjs, ANY).
     if (res.ok && control && res.body.values?.[0]?.[0] !== ANY) {
@@ -293,16 +324,23 @@ export async function run() {
   // api_key.name (IDENTITY_WHERE, inside CONTROLS_WHERE) nearly every query carries it. So plan each such query once more without it,
   // cheaply (LIMIT 0): only an api_key.* field — legitimately unmapped on a project that never used a key — may be
   // unknown. Anything else unknown is a typo the SET was hiding.
-  for (const { src, i, q: raw } of items) {
-    const strict = strictQuery(bounded(raw));
+  for (const item of items) {
+    const { src, i, q: raw, rule } = item;
+    const strict = strictQuery(rule ? raw : bounded(raw));
     if (!strict) continue;
-    const res = await es.esqlRun(strict, PARAMS(src), { budgetMs: BUDGET_MS });
+    const res = await runOf(item, strict);
     const typo = strictProblem(res);
     if (!typo) continue;
     bad++;
     fail(`${src}[${i}] ${typo}`);
   }
 
+  if (rulesOnly) {
+    if (bad) throw new Error(`${bad}/${items.length} rule queries failed — fix before deploying`);
+    const worst = timings.reduce((m, t) => (t.ms > m.ms ? t : m), { ms: 0, src: '-' });
+    success(`${items.length} alert rule queries OK — slowest ${(worst.ms / 1000).toFixed(1)}s (${worst.src})`);
+    return;
+  }
   const dsl = gatherDsl();
   for (const { src, i, index, body, property } of dsl) {
     const res = await es.searchRun(index, stripContext(body), { budgetMs: BUDGET_MS });

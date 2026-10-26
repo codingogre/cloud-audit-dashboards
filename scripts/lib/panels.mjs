@@ -578,8 +578,24 @@ export const KIND_REFINE =
 export const HOUSEKEEPING =
   '(event.action IS NOT NULL AND event.action == "invalidate_apikeys" ' +
   `AND user.name IS NOT NULL AND user.name IN (${PLATFORM_ACTORS}) AND api_key.name IS NULL)`;
-export const PRIVILEGED =
-  `WHERE elasticsearch.audit.security_config_change IS NOT NULL AND NOT ${HOUSEKEEPING}`;
+/** PRIVILEGED's bare condition, for a STATS … WHERE or a compound WHERE (the alert rules). */
+export const PRIVILEGED_TEST =
+  `elasticsearch.audit.security_config_change IS NOT NULL AND NOT ${HOUSEKEEPING}`;
+export const PRIVILEGED = `WHERE ${PRIVILEGED_TEST}`;
+
+/**
+ * What a security_config_change payload names, as a short string: the API key's name on a create,
+ * the key ids on an invalidation (comma-separated, so SPLIT() counts them one by one), the key id on
+ * a change, the role name, or the user profile uid. Four GROKs over the JSON string, first match
+ * wins — `"name":"` cannot match `"names":[`, and on a create the key name precedes the nested
+ * `"source":{"id":…}`. Per event, but only on events that carry a payload (a few thousand a day),
+ * and GROK is one of the cheap per-event operations (QUERY SHAPE rule 1).
+ */
+export const CHG = 'elasticsearch.audit.security_config_change';
+export const TARGET =
+  `GROK ${CHG} """"name":"%{DATA:t_name}"""" | GROK ${CHG} """"ids":\\[%{DATA:t_ids}\\]""" | ` +
+  `GROK ${CHG} """"id":"%{DATA:t_id}"""" | GROK ${CHG} """"uid":"%{DATA:t_uid}"""" | ` +
+  'EVAL target = COALESCE(t_name, REPLACE(t_ids, "\\"", ""), t_id, t_uid)';
 
 /**
  * A suite object id, any AUDIT_ID_NS namespace. Null-guarded and left without outer parentheses, so
@@ -912,6 +928,11 @@ export const BAND =
  *
  * Measured on the 7-day replica: the IP footprint 306ms → 394ms; the unresolved breakdown 35ms → 81ms.
  */
+/**
+ * Elastic's internal network hop (100.64.0.0/10): Kibana's server calling Elasticsearch on a user's behalf, and the
+ * platform proxy. Never a client's own address (05 Geo & Network labels it; the sign-in rules leave it out or flag it).
+ */
+export const INTERNAL_NET = 'CIDR_MATCH(client.ip, "100.64.0.0/10")';
 export const IP_GEO =
   'country = MAX(client.geo.country_name), city = MAX(client.geo.city_name), placed = COUNT(client.geo.country_iso_code)';
 

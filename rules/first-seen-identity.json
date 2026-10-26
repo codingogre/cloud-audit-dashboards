@@ -1,0 +1,55 @@
+{
+  "kind": "alert",
+  "metadata": {
+    "name": "[Audit] New identity seen",
+    "description": "A person, API key or account that had no activity in the previous 30 days was just active in this project. Failed sign-ins, sign-outs, Elastic's own platform accounts and the keys Kibana makes to run alert rules are left out. Find it in Identity first and last seen on Identity & Access, then check what it did and where it connected from on Identity 360.",
+    "tags": [
+      "cloud-audit",
+      "UC-070"
+    ],
+    "routing_tags": [
+      "cloud-audit"
+    ]
+  },
+  "time_field": "@timestamp",
+  "schedule": {
+    "every": "15m",
+    "lookback": "30d"
+  },
+  "query": {
+    "base": "SET unmapped_fields=\"nullify\"; FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE (event.action IS NULL OR event.action != \"realm_authentication_failed\") AND (event.action IS NULL OR NOT event.action IN (\"authentication_failed\",\"anonymous_access_denied\",\"user_logout\")) AND (user.domain IS NULL OR user.domain != \"_cloud_api_key\" OR `http.request.header.x-opaque-id` IS NULL OR NOT `http.request.header.x-opaque-id` LIKE \"*;kibana:task%20manager:run%20alerting_v2%3Arule_executor:*\") | STATS first_seen = MIN(@timestamp), last_seen = MAX(@timestamp), events = COUNT(*), ipv = VALUES(client.ip), av = VALUES(event.action) BY user.email, api_key.name, user.domain, user.name, failed_signin = COALESCE(event.action IN (\"authentication_failed\",\"anonymous_access_denied\"), false) | EVAL actor = CASE(user.email IS NOT NULL, user.email, api_key.name IS NOT NULL, api_key.name, user.domain == \"_cloud_api_key\", CONCAT(user.name, \" · Cloud API key\"), user.domain == \"_es_api_key\", CONCAT(\"Unnamed key of \", user.name), user.name IS NOT NULL, user.name, \"(unattributed)\") | EVAL identity_kind = CASE(user.email IS NOT NULL, \"Person\", api_key.name IS NOT NULL, \"Elasticsearch API key\", user.domain == \"_es_api_key\", \"Unnamed API key\", user.domain == \"_cloud_api_key\", \"Cloud API key\", user.domain == \"_service_account\", \"Service account\", failed_signin, \"Failed sign-in\", user.name IS NULL, \"Unattributed\", \"Other\") | STATS first_seen = MIN(first_seen), last_seen = MAX(last_seen), events = SUM(events), ipv = VALUES(ipv), av = VALUES(av) BY actor, identity_kind | WHERE first_seen > TO_DATETIME(?_tend) - 1 hour AND NOT actor IN (\"elastic.maintenance\",\"autoscaling\",\"elasticsearch-controller\",\"elastic/fleet-server\",\"elastic/kibana\",\"(unattributed)\",\"<anonymous>\",\"<unauthenticated-cloud-access-token>\",\"<unauthenticated-saml-user>\",\"<unauthenticated-cloud-api-key>\") | EVAL rare_kind = identity_kind IN (\"Person\",\"Cloud API key\",\"Other\") | EVAL severity = CASE(rare_kind, \"medium\", \"low\"), client_ips = MV_SLICE(ipv, 0, 9), actions = MV_SLICE(av, 0, 9) | KEEP severity, actor, identity_kind, first_seen, last_seen, events, client_ips, actions | SORT first_seen"
+  },
+  "recovery": {
+    "strategy": "no_breach"
+  },
+  "no_data": {
+    "strategy": "ignore"
+  },
+  "state_transition": {
+    "pending": {
+      "count": 0
+    }
+  },
+  "grouping": {
+    "fields": [
+      "actor",
+      "identity_kind"
+    ]
+  },
+  "artifacts": [
+    {
+      "id": "dashboard",
+      "type": "dashboard",
+      "data": {
+        "dashboard_id": "elastic_cloud-audit-identity-access"
+      }
+    },
+    {
+      "id": "runbook",
+      "type": "runbook",
+      "data": {
+        "content": "**What it means.** An identity (a person signed in through Elastic Cloud, an API key, or an account) was active in this project and had done nothing here in the previous 30 days. Each identity alerts once, and the alert closes by itself about an hour later.\n\n**Triage**\n1. Open **[Audit] 🔐 Identity & Access**, set the time to the last 24 hours, and find the identity in **Identity first and last seen**. It lists every identity, newest first, whatever it did.\n2. Open **[Audit] 👤 Identity 360** and set **Identity type** and **Identity** to the values in the alert. The alert names the identity exactly as the Identity list does.\n3. Read **Who this is — by identity and principal id**, then **⚠️ What they changed — deletes first, then newest** and **What they read, by index family**.\n4. Check **Where they connected from** and **Busiest addresses they used** for an address you do not recognise.\n5. For an API key, go back to Identity & Access: **API key inventory** shows its owner. **Config-change event feed** on Security & Anomalies shows who created it.\n6. Ask the owner to confirm. If nobody expected it, revoke the key or remove the person's access in Elastic Cloud.\n\n**What is normal.** A new team member's first sign-in; a key that someone or a deployment tool has just created and used; a person back after more than 30 days away. Elasticsearch API keys, unnamed keys and service accounts alert as low; people, Cloud API keys and other accounts as medium.\n\nLeft out: the Cloud API keys Kibana makes to run alert rules, known by a marker on each of their requests. A new Cloud API key that copies that marker on every request is left out too."
+      }
+    }
+  ]
+}

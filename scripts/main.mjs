@@ -1,12 +1,12 @@
 /**
  * Audit dashboards for Elastic Cloud Serverless. Command dispatch.
  *
- * Pipeline: --ingest -> --lint -> --objects -> --dashboards -> --verify
+ * Pipeline: --ingest -> --lint -> --objects -> --dashboards -> --rules -> --verify
  *           Everything installs into Kibana's Default space.
  *           (or run the lot with --deploy).
  *
  * Order matters: Vega visualizations and Discover sessions must exist before the
- * dashboards that reference them by id.
+ * dashboards that reference them by id, and the dashboards before the alert rules that link to them.
  */
 import { banner, fail, success, info } from './lib/log.mjs';
 import { cfg } from './lib/env.mjs';
@@ -25,11 +25,14 @@ const HELP = `Usage: ./audit <command>
     --ingest-check     Assert enrichment is actually flowing on live data
 
   Kibana as code
-    --lint             Execute every ES|QL query in the repo; fails the build on any error
+    --lint             Execute every ES|QL query in the repo; fails the build on any error.
+                       --lint rules runs the alert rules alone (no events view needed)
     --objects          Deploy the data view, 20 Vega visualizations, 11 Discover sessions and the
                        ES|QL view the prior-period tiles read (logs-cloud-audit-events-view)
     --dashboards       Generate dashboards/*.json and deploy every dashboard. Removes a suite
                        dashboard left from an earlier deploy that is not in this run's set
+    --rules            Generate rules/*.json and deploy the six alert rules (Universal Alerting).
+                       A new rule is created disabled; a redeploy keeps each rule on or off as it is
     --verify           Render every dashboard in Chromium and inspect for broken panels
                        (AUDIT_VERIFY_THEME=light renders light mode; default dark.
                        AUDIT_VERIFY_RANGE=now-1h sets the window; default now-24h, the
@@ -63,9 +66,9 @@ const HELP = `Usage: ./audit <command>
                        --lint agree on the set. Example: ./audit --dashboards --with platform-volume
 
   Lifecycle
-    --deploy           Full pipeline: ingest -> lint -> objects -> dashboards (Default space)
-    --clean <target>   Tear down: 'dashboards' (with the ES|QL view), 'ingest', or 'all'. No target
-                       deletes nothing.
+    --deploy           Full pipeline: ingest -> lint -> objects -> dashboards -> rules (Default space)
+    --clean <target>   Tear down: 'dashboards' (with the ES|QL view), 'rules', 'ingest', or 'all'.
+                       No target deletes nothing.
     --help             This message
 `;
 
@@ -85,6 +88,8 @@ async function doDeploy() {
   await runModule('./esql.mjs');
   await runModule('./objects.mjs');
   await runModule('./dashboards.mjs');
+  // After the dashboards: each rule links to the dashboard that explains it.
+  await runModule('./rules.mjs', 'deploy');
   success('Deploy complete. Run ./audit --verify to render and inspect.');
 }
 
@@ -94,6 +99,7 @@ const table = {
   '--lint': () => runModule('./esql.mjs'),
   '--objects': () => runModule('./objects.mjs'),
   '--dashboards': () => runModule('./dashboards.mjs'),
+  '--rules': () => runModule('./rules.mjs'),
   '--verify': () => runModule('./verify.mjs'),
   '--queries': () => runModule('./queries.mjs'),
   '--demo-guide': () => runModule('./demo-guide.mjs'),

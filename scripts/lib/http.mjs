@@ -58,13 +58,17 @@ export const es = {
    * if this process dies mid-query, the cluster deletes the task when keep_alive lapses instead of
    * holding it for the 5-day default. Options go in the BODY; the query-string form is a 400.
    *
+   * `filter` is an optional Query DSL filter sent beside the query, as Kibana's alert rule runner sends its time
+   * range (lib/rules.mjs); nothing else passes one.
+   *
    * Returns { ok, status, body, ms, cancelled } and never throws on a query error.
    */
-  async esqlRun(query, params, { budgetMs = 30000 } = {}) {
+  async esqlRun(query, params, { budgetMs = 30000, filter } = {}) {
     const t0 = Date.now();
     const keepAlive = `${Math.max(60, Math.ceil(budgetMs / 1000) + 30)}s`;
     const body = { query, wait_for_completion_timeout: '1s', keep_on_completion: false, keep_alive: keepAlive };
     if (params) body.params = params;
+    if (filter) body.filter = filter;
     let res = await request(`${cfg.es}/_query/async`, { method: 'POST', body, raw: true, timeoutMs: 60e3 });
     let polled = false;
     while (res.ok && res.body?.is_running) {

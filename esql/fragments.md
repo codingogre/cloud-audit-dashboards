@@ -623,6 +623,56 @@ BY client.ip | WHERE placed == 0 | <address class>`. Measured, 7 days: the IP fo
 the unresolved breakdown 35ms → 81ms. `MAX` over a keyword is lexicographic; pairing city and country
 through one `CONCAT` measured 484ms and is not worth it.
 
+## Alert rules
+
+The six rules of the alert pack (`scripts/lib/rules.mjs`, README *The alert pack*) are built from these fragments,
+so a rule and a panel that count the same thing use the same text. Two things differ from a panel.
+
+**Time is `TIME_ONLY`, bound by Kibana.** Kibana runs a rule with a range filter on `@timestamp` for its lookback and
+binds `?_tstart` / `?_tend` to the same window, and binds nothing else. So every rule starts:
+
+```esql
+FROM logs-elastic_cloud.serverless_audit.otel-default
+| WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart          -- TIME_ONLY
+```
+
+and writes any narrower window back from the end, never from `NOW()`, so the lint and a back-test can bind any end:
+
+```esql
+| WHERE first_seen > TO_DATETIME(?_tend) - 1 hour
+```
+
+A rule never uses `TIME`, `CONTROLS_WHERE` or `IDENTITY_WHERE`: their dropdown variables are unbound when a rule
+runs, and an unbound variable is a hard error. `--lint` fails a rule without `TIME_ONLY`, and a unit test checks that
+each rule's lookback covers the widest window its text names.
+
+**Fragments the rules reuse.** `IDX`, `TIME_ONLY`, `nullSafe()`; `IDENTITY_KEYS`, `ACTOR_RESOLVE` and `KIND_GROUPED`,
+so an alert names an identity exactly as the Identity dropdown does; `SIGNIN_FAILED` and `REALM_TRACE` (one attempt
+counts once); `PLATFORM_ACTORS` and `UNAUTH_ACTORS`; `PRIVILEGED` / `PRIVILEGED_TEST`, with `HOUSEKEEPING` inside;
+`CHG` and `TARGET` (what a security change names); `INTERNAL_NET`; `ESS` and `KIB` without their `WHERE`, for a
+`STATS … WHERE`.
+
+**What the rules leave out, beside the panels' exclusions.**
+
+- *Kibana-managed keys* (`KIBANA_MANAGED_KEY`, rule 3): a `create_apikey` by a platform account, with no key name,
+  whose payload contains `"managed":true`. These are Kibana Task Manager's own keys (and Fleet's enrolment key), the
+  create-side twin of `HOUSEKEEPING`, guarded the same way so `NOT` never drops a row.
+- *The rule-runner marker* (`RULE_RUNNER`, rule 5): enabling a rule mints a Cloud API key that runs it, and every
+  request it makes carries an `x-opaque-id` containing `alerting_v2%3Arule_executor`. A client chooses its own
+  header, so only Cloud API key events that carry it are dropped:
+
+```esql
+(user.domain IS NULL OR user.domain != "_cloud_api_key" OR `http.request.header.x-opaque-id` IS NULL
+ OR NOT `http.request.header.x-opaque-id` LIKE "*;kibana:task%20manager:run%20alerting_v2%3Arule_executor:*")
+```
+
+The dashboards do not apply either exclusion yet, so the rule-runner keys show there as Cloud API key identities.
+
+**Exports added for the rules (1.0.6).** `CHG` and `TARGET` moved from `04-security-anomalies.mjs` to `panels.mjs`;
+`INTERNAL_NET` (`CIDR_MATCH(client.ip, "100.64.0.0/10")`) moved from `05-geo-network.mjs`; `PRIVILEGED_TEST` is
+`PRIVILEGED`'s bare condition, without its `WHERE`, for a compound `WHERE` or a `STATS … WHERE`
+(`PRIVILEGED` is now `WHERE <PRIVILEGED_TEST>`). The panels that used them read the same text as before.
+
 ## Gotchas
 
 | Gotcha | Handling |

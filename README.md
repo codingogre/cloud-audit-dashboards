@@ -1,15 +1,15 @@
 # Cloud Audit Dashboards
 
 Seven cross-linked Kibana dashboards (eight with the opt-in Platform Volume) over the Elastic Cloud Serverless audit stream
-`logs-elastic_cloud.serverless_audit.otel-default`, built entirely from ES|QL and deployed as code
-by a dependency-free Node CLI.
+`logs-elastic_cloud.serverless_audit.otel-default`, plus a starter pack of six alert rules (1.0.6), all built
+from ES|QL and deployed as code by a dependency-free Node CLI.
 
 Everything here is version-controlled and idempotent: `./audit --deploy` is safe to re-run,
-`PUT /api/dashboards/{id}` upserts against stable ids, and no dashboard is ever edited by hand.
+`PUT /api/dashboards/{id}` upserts against stable ids, and no dashboard or rule is ever edited by hand.
 
 ```bash
 cp .env.example .env      # fill in EC_URL, KB_URL, EC_API_KEY
-./audit --deploy          # ingest -> events view -> lint -> objects -> dashboards, into the Default space
+./audit --deploy          # ingest -> events view -> lint -> objects -> dashboards -> rules, into the Default space
 ./audit --verify          # render every deployed dashboard in Chromium and inspect for broken panels
 ```
 
@@ -28,6 +28,8 @@ files keep their numbers, which only order the repo; `objId()` in `lib/env.mjs` 
 The numbered ids of 1.0.5 and earlier (`cloud-audit-vega-01-…`, `cloud-audit-search-00-…`) are retired: `--dashboards`
 removes them once every panel points at the new id, and `--clean dashboards` removes them too.
 Releases up to 1.0.3 installed into a dedicated `audit` space; 1.0.4 and later install into Default.
+The six alert rules (1.0.6) are `cloud-audit-rule-<slug>`, listed under *The alert pack*. The suite owns those ids;
+nothing outside it links to them, so they are not fixed the way the `elastic_cloud-audit-*` ids are.
 
 ---
 
@@ -415,6 +417,85 @@ chart counts Kibana object events only (Elasticsearch events have no space or ob
 
 ---
 
+## The alert pack
+
+Six ES|QL rules (1.0.6) on Kibana's Universal Alerting (`alerting_v2`, `/api/alerting/v2/rules`, GA on serverless
+9.6), defined in `scripts/lib/rules.mjs`. Each is of kind `alert`: the query is the condition, every row it returns is
+a breach, and the rule's grouping columns make one alert per group. A `severity` column sets each alert's severity,
+and the whole row is kept as the alert's data. Every rule links to the dashboard to start on and carries a runbook:
+what the alert means, how to triage it on the dashboards, and what is normal. In Kibana they are under Alerting →
+Rules, on the **Universal** tab (`<kibana>/app/observability/alerting/rules/universal`).
+
+| Rule | What fires it | Runs every / looks back | Severity | Start on |
+| --- | --- | --- | --- | --- |
+| **Failed sign-in burst** (UC-002) | 10 or more failed sign-ins in 15 minutes from one client IP or for one name, or 5 or more names tried from one client IP. One alert per address or name | 5 min / 15 min | High at 5 or more names or 100 or more failures; otherwise medium | 🔐 Identity & Access |
+| **Successful sign-in after failed sign-ins** (UC-003) | 5 or more failed sign-ins, then a successful sign-in within 30 minutes, for the same account name or from the same public address | 5 min / 30 min | High for the same account, medium for the same address | 🔐 Identity & Access |
+| **New API key or role change** (UC-032, UC-049, UC-050) | An API key created, changed or invalidated, or a role, role mapping, user or service token created, changed or deleted. One alert per identity and action | 5 min / 15 min | High when a role was deleted, a role or key grants `run_as` or "all", a key carries all its owner's rights, 10 or more keys were invalidated at once, or an API key made the change; otherwise medium | 🚨 Security & Anomalies |
+| **Security change at an unusual hour** (UC-129) | An identity changed an API key, role or user at an hour of day (UTC) when it had no activity at all in its last 30 days, not counting the last 24 hours | 15 min / 30 days | High when more than API keys changed; medium for API keys only | 👤 Identity 360 |
+| **New identity seen** (UC-070) | A person, API key or account was active in the last hour and had no activity in the 30 days before | 15 min / 30 days | Medium for a person, Cloud API key or other account; low for an Elasticsearch API key, unnamed key or service account | 🔐 Identity & Access |
+| **Audit events stopped arriving** (UC-125) | Elasticsearch sent no audit events for 30 minutes, or people used Kibana in the last 30 minutes and Kibana recorded none of it | 5 min / 24 hours | High | 🎛️ Command Center |
+
+The rule names in Kibana start with `[Audit]`, as the dashboard titles do. Identities are named exactly as the
+Identity dropdown names them, so an alert's identity can be pasted into the dropdown. An alert opens on the first
+breach (`state_transition.pending.count: 0`) and closes by itself at the first run that no longer finds it
+(`recovery: no_breach`).
+
+**Turning the rules on and routing them.**
+
+- `./audit --rules` deploys the pack and writes the exact payloads to `rules/<slug>.json`, committed for review as
+  `dashboards/*.json` is. `--deploy` runs it last, after the dashboards, because each rule links to one.
+- **A new rule is created disabled.** Turn each one on in the Universal tab when you want its alerts. A redeploy keeps
+  each rule on or off as it is, and writes nothing for a rule that has not changed.
+- **The rules have no actions.** Delivery is the customer's: create an action policy (Kibana → Alerting → Action
+  policies) whose matcher tags include the routing tag `cloud-audit`, and send it to a destination. Destinations are
+  Kibana Workflows, for example one that sends email through a connector. Each rule also carries the tag `cloud-audit`
+  and its use-case ids (`UC-002`, …), for filtering the rule list.
+- Writing rules needs the `manage_alerting-v2-rules` privilege. If Universal Alerting is off on the project (the
+  advanced setting `alerting:v2:enabled`; its routes then answer 503), `--deploy` warns and skips the rules, so the
+  dashboards still deploy; `--rules` on its own fails and names the setting.
+- `--clean rules` deletes the six rules by exact id, and `--clean all` includes them. `--clean dashboards` does not
+  touch them, so the dashboards can be rebuilt without losing an enabled, routed alert set-up.
+
+**Ids.** `cloud-audit-rule-<slug>`: `cloud-audit-rule-failed-signin-burst`, `-signin-after-failures`,
+`-api-key-or-role-change`, `-unusual-hour-security-change`, `-first-seen-identity` and `-audit-events-stopped`. Under
+`AUDIT_ID_NS=<ns>` they are `cloud-audit-<ns>-rule-<slug>`, and the tag and routing tag become `cloud-audit-<ns>`, so
+a policy routing `cloud-audit` never delivers a private copy's alerts. `rule` is a reserved namespace (`RESERVED_NS`).
+A private copy keeps the production rule names, as the dashboards keep their titles; the id and the tags tell them
+apart. Rule ids, like dashboard ids, are unique across spaces.
+
+**Time window.** Kibana runs a rule over its lookback: it sends a range filter on `@timestamp` and binds `?_tstart`
+and `?_tend` to the same window, and nothing else. So every rule bounds itself with `TIME_ONLY` and counts any
+narrower window back from `?_tend`, never from `NOW()`, which lets a back-test bind any end time. A rule never uses
+`TIME`, `CONTROLS_WHERE` or `?identity`: no dropdown variable is bound when a rule runs, and an unbound one is an
+error. `--lint` runs each rule the way Kibana does (those two parameters, the range filter, `| LIMIT 1000` appended)
+and checks that it returns `severity` and its grouping columns. `--lint rules` runs the rules alone; they read the
+data stream, not the events view, so it works on a private copy that has no view of its own.
+
+**Defaults and known limits.**
+
+- *Failed sign-in burst.* 10 failures or 5 names in 15 minutes are starting values: review them against your own
+  traffic. Elastic's own platform accounts and unnamed attempts count toward an address but not toward a name.
+- *Sign-in after failed sign-ins.* The same-account case (high) did not occur on this project's data. Elastic's internal hop (100.64.0.0/10) carries every SSO sign-in, so it never counts
+  as the same address.
+- *Both sign-in rules* see Elasticsearch failures only: Kibana records no failed sign-ins, because SSO failures happen
+  in Elastic Cloud. The successful sign-in can be to either.
+- *New API key or role change.* On serverless most changes are made by Cloud API keys, so "made by an API key" makes
+  most alerts high. The runbook says to read the other reasons first. The keys Kibana creates and cleans up for its
+  own tasks are left out.
+- *Security change at an unusual hour.* An identity needs 7 days of history; younger ones are left out (*New
+  identity seen* covers a first appearance). The comparison is the 30 days before the last 24 hours, by hour of day
+  in UTC, and the rule runs every 15 minutes. UC-129's other half, an admin role assigned to a person, is only in the
+  Elastic Cloud organisation audit log, which this stream does not carry.
+- *New identity seen.* Covers UC-070, not UC-112 (first access to a space). The baseline is 30 days; each identity
+  alerts once, and the alert closes after about an hour. The Cloud API keys that run these rules are left out (see
+  *Platform constraints*).
+- *Audit events stopped arriving.* Elasticsearch is judged by silence (30 minutes). Kibana writes events only when it
+  is used and can be silent for days, so it is judged by use: people reached Elasticsearch through Kibana in the last
+  30 minutes and Kibana recorded nothing. That cannot see a Kibana that is entirely down, because its users' traffic
+  stops with it. The rule watches the whole stream, not each project.
+
+---
+
 ## Platform constraints
 
 Probed against Kibana 9.6 serverless. Several are undocumented and cost real time to discover:
@@ -460,6 +541,14 @@ Probed against Kibana 9.6 serverless. Several are undocumented and cost real tim
 | A **stale chained selection is not cleared**: change Identity type and an Identity of the old type stays chosen | The dropdown warns, and panels read 0 until Identity is set back to "Any" (a single-select ES\|QL control has no Clear button; "Any" is the reset) |
 | Discover in ES\|QL mode ignores the ad-hoc data view's `fieldAttrs.customLabel` | Session headers come from a trailing `RENAME` — see *Presentation conventions* for the filter trade-off |
 | A Discover session panel takes no ES\|QL control variables (`?identity_kind`, `?identity`) | No dashboard embeds one since 1.0.5.1: every record list is a Lens ES\|QL table bounded by `TIME`, so the Identity dropdowns narrow it. The sessions still deploy, for the intros' *Raw records* links and for Discover |
+| An `alerting_v2` rule's query gets a hidden `@timestamp` range filter for its lookback, and `?_tstart` / `?_tend` bound to the same window; **no other variable is bound** | Every rule bounds itself with `TIME_ONLY` and counts inner windows back from `?_tend`; none uses `TIME` or a dropdown variable. `--lint` sends the same parameters and filter (*The alert pack*) |
+| **Enabling an `alerting_v2` rule mints a Cloud API key that runs it** (a new key on every enable, with no `create_apikey` event). Every request it makes carries an `x-opaque-id` containing `alerting_v2:rule_executor` (the rule-runner marker) | Those keys show on the dashboards as Cloud API key identities (known; not yet filtered there). *New identity seen* leaves out Cloud API key events that carry the marker (`RULE_RUNNER` in `lib/rules.mjs`). A client sets its own `x-opaque-id`, so only Cloud API key events are dropped, and a new Cloud API key that sends the marker on every request is not seen; the runbook says so |
+| Kibana Task Manager **creates managed API keys** of its own: `create_apikey` by `elastic/kibana`, with no key name and `"managed":true` in the payload | *New API key or role change* leaves them out (`KIBANA_MANAGED_KEY`), as every privileged-ops panel leaves out Kibana's own key clean-up (`HOUSEKEEPING`) |
+| Kibana records **no failed sign-ins**: SSO failures happen in Elastic Cloud, before Kibana sees the request | The two sign-in rules count Elasticsearch failures only; the successful sign-in can be to either source |
+| Kibana writes audit events **only when it is used**, so it can be silent for days | *Audit events stopped arriving* judges Kibana by people using it (Elasticsearch requests through Kibana in the last 30 minutes, and no Kibana event), never by silence alone |
+| A rule's alert opens only on the **second** breach in a row by default; the first is "pending" | Every rule sets `state_transition.pending.count: 0`, so a breach seen in one run (an unusual-hour change) alerts at once |
+| A v2 rule's **`enabled` must be sent on every PUT**: a replace that leaves it out can leave the rule enabled (a PUT that creates the rule defaults to `true`) | `--rules` always sends it: `false` on create, the stored value on replace |
+| Universal Alerting off (`alerting:v2:enabled`) answers **503** on every `alerting_v2` route; a Kibana without the API answers a bare 404, where a missing rule's 404 carries `RULE_NOT_FOUND` | `--deploy` warns and skips the rules; `--rules` fails and names the setting; `--clean` warns and carries on |
 
 ---
 
@@ -784,10 +873,15 @@ legends over an empty domain, decade axes, solid placeholder cells, a flat line 
                          time budget that cancels overruns; fails the build on any error
                          AUDIT_IDENTITY_KIND=Person AUDIT_IDENTITY=<email> runs it as if
                          Identity type and Identity were chosen; AUDIT_PROJECT and AUDIT_CLIENT_IP
-                         likewise (also --perf; default: nothing chosen)
+                         likewise (also --perf; default: nothing chosen). The alert rules run
+                         too, as Kibana runs them
+./audit --lint rules     Lint the six alert rules alone (no events view needed, so it works on a
+                         private copy)
 ./audit --objects        Deploy the data view, 20 Vega visualizations, 11 Discover sessions and the
                          ES|QL view the prior-period tiles read (logs-cloud-audit-events-view)
 ./audit --dashboards     Generate dashboards/*.json and deploy every dashboard
+./audit --rules          Generate rules/*.json and deploy the six alert rules (Universal Alerting).
+                         A new rule is created disabled; a redeploy keeps each rule on or off as it is
 ./audit --verify         Render every dashboard in Chromium and inspect for broken panels
                          AUDIT_VERIFY_THEME=light renders light mode (default: dark)
                          AUDIT_VERIFY_RANGE=now-1h sets the window (default: now-24h, the
@@ -797,9 +891,11 @@ legends over an empty domain, decade axes, solid placeholder cells, a flat line 
 ./audit --perf <sub>     Time every query at production volume on a replica: seed | run | clean
 ./audit --queries        List ES|QL queries registered on the project, and whether each is still
                          scanning. Check it before trusting any timing
-./audit --deploy         Full pipeline
+./audit --deploy         Full pipeline: ingest -> lint -> objects -> dashboards -> rules. Skips the
+                         rules, with a warning, when Universal Alerting is off
 ./audit --demo-guide     Generate the presenter runbook from live data (--redact to mask identities)
-./audit --clean <target> Tear down: dashboards (and the ES|QL view) | ingest | all
+./audit --clean <target> Tear down: dashboards (and the ES|QL view) | rules | ingest | all.
+                         'dashboards' leaves the rules; 'all' removes them
 ./audit --synth <sub>    Synthetic audit activity — see below
 ./audit <command> --with platform-volume
                          Include the opt-in Platform Volume dashboard (AUDIT_WITH=platform-volume)
@@ -837,7 +933,8 @@ set too, so the committed files are the default seven; a `--with` run (without `
 fixed-window spec's own window (`VEGA_WINDOWS`), never a window its panel cannot show. That includes the
 Elasticsearch DSL behind the one remaining DSL Vega spec (data coverage, vega/14), which it runs
 unfiltered — the expensive case — and whose `format.property` path it checks resolves, because a typo there
-renders an empty panel that nothing downstream can see. Each query runs through `es.esqlRun()` / `es.searchRun()`: async
+renders an empty panel that nothing downstream can see. It runs each alert rule over the rule's own lookback, as
+Kibana's rule runner does (*The alert pack*), and fails a rule that does not bound itself with `TIME_ONLY`. Each query runs through `es.esqlRun()` / `es.searchRun()`: async
 submission with a budget, cancelled on overrun. Never use a synchronous `/_query` here — it outlives
 a client that gives up, and serverless has no way to stop it. `--lint` also prints anything slower
 than 5s, which is how a panel that passes today is noticed before it times out on a busier day.
@@ -966,9 +1063,11 @@ scripts/
   queries.mjs               What is running on the cluster right now
   objects.mjs               Data view + Vega + Discover sessions -> _import (stable ids), ES|QL view
   dashboards.mjs            Generate, deploy (controls ride the PUT as pinned_panels), then the Vega/intro/drilldown post-pass
+  rules.mjs                 The alert pack: deploy (create disabled, keep on/off), skip when unavailable, clean
   verify.mjs clean.mjs
   lib/
     panels.mjs              ES|QL fragments + panel builders
+    rules.mjs               The six alert rules: queries, runbooks, ids, tags, payloads
     definitions.mjs         Assembles the dashboards
     suite.mjs               Dashboard ids, nav order, the opt-in set (--with / AUDIT_WITH)
     dashboards/             One module per dashboard, plus shared.mjs
@@ -980,14 +1079,15 @@ scripts/
     html.mjs                Presenter-guide markup and stylesheet
     env.mjs http.mjs log.mjs
 dashboards/*.json           Generated definitions, committed for review
+rules/*.json                Generated alert rule payloads (the exact PUT bodies), committed for review
 vega/*.json                 20 Vega specs (13 full Vega, 7 Vega-Lite); 14 and 15-prev-* are generated
 searches/*.json             11 ES|QL Discover sessions (00 is every event, unfiltered)
 ingest/*.json               Pipeline, templates, mappings
 esql/fragments.md           Canonical query fragments
 ```
 
-`dashboards/*.json` are generated by `scripts/lib/dashboards/*.mjs` and committed so panel
-changes show up as readable diffs in review.
+`dashboards/*.json` are generated by `scripts/lib/dashboards/*.mjs`, and `rules/*.json` by `scripts/lib/rules.mjs`,
+and committed so panel and rule changes show up as readable diffs in review.
 
 ---
 
@@ -998,5 +1098,8 @@ changes show up as readable diffs in review.
 - An API key with `manage_index_templates`, `manage_ingest_pipelines`, read on the audit data
   stream, `manage_view` (or `create_view` + `delete_view` + `read_view_metadata`) and `read` on
   `logs-cloud-audit-*` for the ES\|QL events view, and Kibana write access to the Default space
+- Alert rules (`--rules`, and the last step of `--deploy`): Universal Alerting turned on (the advanced setting
+  `alerting:v2:enabled`) and the `manage_alerting-v2-rules` privilege on the API key. Without Universal Alerting,
+  `--deploy` skips the rules with a warning
 - Dashboard viewers: `read` on the audit data stream **and** on `logs-cloud-audit-events-view` (a role on `logs-*` covers both)
 - `--verify` only: `npm install playwright && npx playwright install chromium`

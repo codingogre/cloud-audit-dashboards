@@ -160,10 +160,12 @@ test('AUDIT_ID_NS refuses a word a production id starts with, so a private deplo
   const { RESERVED_NS, checkNamespace, objFiles, objId, RETIRED_OBJECTS, DEFAULT_VIEW } = await import('../../scripts/lib/env.mjs');
   const { SUITE, RETIRED_IDS } = await import('../../scripts/lib/suite.mjs');
   const { RETIRED_DATA_VIEW_IDS } = await import('../../scripts/lib/controls.mjs');
+  const { RULES, ruleId, RETIRED_RULE_IDS } = await import('../../scripts/lib/rules.mjs');
   const was = process.env.AUDIT_ID_NS;
   try {
     delete process.env.AUDIT_ID_NS;
     const ids = [...SUITE.map((d) => d.id), ...RETIRED_IDS, ...RETIRED_DATA_VIEW_IDS, 'elastic_cloud-audit-logs', DEFAULT_VIEW,
+      ...RULES.map((r) => ruleId(r.slug)), ...RETIRED_RULE_IDS,
       'cloud-audit-adhoc-dv', ...['vega', 'search'].flatMap((k) => objFiles(k).map((f) => objId(k, f))), ...RETIRED_OBJECTS().map((o) => o.id)];
     for (const id of ids) {
       const first = id.replace(/^(elastic_)?cloud-audit-/, '').split('-')[0];
@@ -467,9 +469,11 @@ test('nullSafe (1.0.4): SET unmapped_fields="nullify" on exactly the queries tha
 
 test('nullSafe (1.0.4): every shipped query that names api_key.* carries the SET, and none other does', async () => {
   const { gatherQueries } = await import('../../scripts/esql.mjs');
-  const items = gatherQueries();
+  const { ruleQueries } = await import('../../scripts/lib/rules.mjs');
   // 108 since 1.0.5.1: the six prior-period tiles (PREV_TILES) are ES|QL again, two datasets each.
-  assert.ok(items.length >= 108, `collector still sees every query (${items.length})`);
+  assert.ok(gatherQueries().length >= 108, `collector still sees every query (${gatherQueries().length})`);
+  // The alert rules (1.0.6) are linted beside them, so they meet the same rule.
+  const items = [...gatherQueries(), ...ruleQueries()];
   const names = (q) => /(?<![\w.])api_key\./.test(q);
   for (const { src, q } of items) {
     assert.equal(q.startsWith('SET unmapped_fields="nullify"; FROM '), names(q), `${src}: SET iff api_key.*`);

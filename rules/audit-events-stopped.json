@@ -1,0 +1,54 @@
+{
+  "kind": "alert",
+  "metadata": {
+    "name": "[Audit] Audit events stopped arriving",
+    "description": "Elasticsearch sent no audit events for 30 minutes, or people used Kibana in the last 30 minutes but Kibana recorded none of it. An idle Kibana never fires this alert. A Kibana that is completely down looks idle, because its users' traffic stops with it. Open Command Center and find the gap in Audit volume by source.",
+    "tags": [
+      "cloud-audit",
+      "UC-125"
+    ],
+    "routing_tags": [
+      "cloud-audit"
+    ]
+  },
+  "time_field": "@timestamp",
+  "schedule": {
+    "every": "5m",
+    "lookback": "24h"
+  },
+  "query": {
+    "base": "FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS es_last = MAX(@timestamp) WHERE service.name == \"serverless-elasticsearch\", kb_last = MAX(@timestamp) WHERE service.name == \"serverless-kibana\", kb_use = COUNT(*) WHERE service.name == \"serverless-elasticsearch\" AND user.domain == \"cloud-saml-kibana\" AND @timestamp > TO_DATETIME(?_tend) - 30 minutes, kb_recent = COUNT(*) WHERE service.name == \"serverless-kibana\" AND @timestamp > TO_DATETIME(?_tend) - 30 minutes | EVAL source = [\"Elasticsearch\", \"Kibana\"] | MV_EXPAND source | EVAL last_event = CASE(source == \"Elasticsearch\", es_last, kb_last), minutes_silent = DATE_DIFF(\"minute\", COALESCE(last_event, TO_DATETIME(?_tstart)), TO_DATETIME(?_tend)), stopped = CASE(source == \"Elasticsearch\", minutes_silent >= 30, kb_use > 0 AND kb_recent == 0), severity = \"high\" | WHERE stopped | KEEP severity, source, last_event, minutes_silent"
+  },
+  "recovery": {
+    "strategy": "no_breach"
+  },
+  "no_data": {
+    "strategy": "ignore"
+  },
+  "state_transition": {
+    "pending": {
+      "count": 0
+    }
+  },
+  "grouping": {
+    "fields": [
+      "source"
+    ]
+  },
+  "artifacts": [
+    {
+      "id": "dashboard",
+      "type": "dashboard",
+      "data": {
+        "dashboard_id": "elastic_cloud-audit-dashboard"
+      }
+    },
+    {
+      "id": "runbook",
+      "type": "runbook",
+      "data": {
+        "content": "**What it means.** Elasticsearch records a steady trickle of audit events even when nobody is working, so half an hour with none means delivery has stopped. For Kibana, it means people used Kibana in the last 30 minutes but Kibana recorded none of it.\n\n**Triage**\n1. Open **[Audit] 🎛️ Command Center**, set the time to the last 24 hours, and set **Project**, **Identity type**, **Identity** and **Client IP** to Any.\n2. Read **Audit volume by source**. The gap in that source's bars is the time nothing was delivered; the alert's last event is where it starts.\n3. In Elastic Cloud, open the project's Log delivery page and check that audit logs are still being sent to this project.\n4. Read **Live signal feed** up to the start of the gap to see who was active just before it.\n5. If logging was turned off on purpose, record who did it and why. If not, contact Elastic support.\n\n**What is normal.** A short delivery delay closes the alert by itself at the next check, once events arrive. A Kibana that nobody is using never fires this alert."
+      }
+    }
+  ]
+}

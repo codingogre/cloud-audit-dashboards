@@ -1,6 +1,7 @@
 /** 05 Geo & Network — see scripts/lib/definitions.mjs for how the suite is assembled. */
 import {
-  IDX, ACTOR_RESOLVE, ACTOR_KEYS, IP_GEO, TIME, BUCKET, dash, kpi, xy, table, vega, filterable, sized, resetIds, grouped
+  IDX, ACTOR_RESOLVE, ACTOR_KEYS, IP_GEO, TIME, BUCKET, dash, kpi, xy, table, vega, filterable, sized, resetIds, grouped,
+  INTERNAL_NET
 } from '../panels.mjs';
 import { rawId } from '../suite.mjs';
 import { RAW_RECORDS, IDENTITY_HOW_TO } from './shared.mjs';
@@ -21,7 +22,6 @@ import { RAW_RECORDS, IDENTITY_HOW_TO } from './shared.mjs';
  * Kibana's server calling Elasticsearch for that user. Labelled "Carrier NAT (CGNAT)", 51–62% of the
  * stream was explained away as expected clients.
  */
-const INTERNAL_NET = 'CIDR_MATCH(client.ip, "100.64.0.0/10")';
 const INTERNAL = 'Platform-internal (100.64/10)';
 const NOT_PLACED = 'Not placed';
 const ADDRESS_CLASS =

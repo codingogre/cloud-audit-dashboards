@@ -3,15 +3,50 @@
 `CLAUDE.md`-style durable context lives in `README.md` and `esql/fragments.md` and wins on
 conflict. This file is "where we are right now" and should be assumed stale.
 
-## Next: 1.0.6 starter alert pack
+## Next: 1.0.7 Pivots and navigation
 
-Five ES|QL alert rules shipped as code with `--deploy`, each linked to the dashboard that explains it: failed-sign-in
-burst (by client IP, and by user name excluding platform internals), sign-in success after a failure burst, new API key
-or role change, security change outside business hours, first-seen identity. Build the conditions from the shared
-fragments so the drift check covers them, and name identities the way the Identity dropdown does (`ACTOR_KEYS` then
-`ACTOR_RESOLVE`). A rule query must not use `TIME`: it carries `IDENTITY_WHERE`, whose `?identity` variables only a
-dashboard binds. Open questions for the human (connectors, thresholds, enabled or disabled, first-seen baseline) and the
-starting material are in the session handoff under `.sessions/` (local).
+Goal: every panel leads somewhere. Identity click columns and the treemap click; pivots by object, space and index
+family; Discover links that carry the filters and the time range; grouping on the Live signal feed; Identity 360's
+windows anchored to the time picker; session panels.
+
+## Release 1.0.6 — starter alert pack, 2026-10-26
+
+Six ES|QL alert rules on Kibana's Universal Alerting (`alerting_v2`, `/api/alerting/v2/rules`, GA on serverless 9.6),
+shipped as code beside the dashboards, each linked to the dashboard to start on and carrying a runbook: failed sign-in
+burst (UC-002), successful sign-in after failed sign-ins (UC-003), new API key or role change (UC-032, UC-049, UC-050),
+security change at an unusual hour (UC-129), new identity seen (UC-070), audit events stopped arriving (UC-125). README
+*The alert pack* has the table, the limits and the routing; `scripts/lib/rules.mjs` has the reasoning behind each query.
+
+- **Deploy.** `./audit --rules`, and the last step of `--deploy`, after the dashboards. Payloads are written to
+  `rules/<slug>.json` for review. A new rule is created disabled; a redeploy keeps each rule's on/off state and skips a
+  rule that has not changed. `enabled` is sent on every PUT. With Universal Alerting off (`alerting:v2:enabled`, routes
+  answer 503) `--deploy` warns and skips the rules and `--rules` fails. Writes need `manage_alerting-v2-rules`.
+- **No actions.** Customers route alerts with their own action policies (matcher tags include the routing tag
+  `cloud-audit`) to a Kibana Workflow, for example one that sends email through a connector.
+- **Ids.** `cloud-audit-rule-<slug>`; under `AUDIT_ID_NS=<ns>`, `cloud-audit-<ns>-rule-<slug>` with tag and routing tag
+  `cloud-audit-<ns>`. `rule` joined `RESERVED_NS`. Suite-owned ids, not PM link ids.
+- **Time.** Kibana sends a range filter for the lookback and binds `?_tstart`/`?_tend`, so every rule uses `TIME_ONLY`
+  and counts inner windows back from `?_tend`, never `NOW()`. No rule uses `TIME`, `CONTROLS_WHERE` or `?identity`.
+- **Lint.** `--lint` runs each rule as Kibana does (the two parameters, the DSL filter, `| LIMIT 1000`) and checks the
+  `severity` and grouping columns. `--lint rules` runs the rules alone and needs no events view, so it works on a
+  private copy.
+- **Clean.** `--clean rules` deletes the rules by exact id; `--clean all` includes them; `--clean dashboards` does not,
+  so a customer can rebuild the dashboards without losing an enabled, routed set-up.
+- **Shared fragments.** `CHG` and `TARGET` moved from 04 to `panels.mjs`, `INTERNAL_NET` from 05, and `PRIVILEGED_TEST`
+  is `PRIVILEGED`'s bare condition (see `esql/fragments.md` *Alert rules*).
+- **Learned on the platform** (README *Platform constraints*): enabling a v2 rule mints a Cloud API key that runs it,
+  and its requests carry the rule-runner marker (`x-opaque-id` containing `alerting_v2:rule_executor`); Kibana Task
+  Manager creates managed API keys (`create_apikey` by `elastic/kibana`, `"managed":true`), which the API-key rule
+  leaves out; Kibana records no failed sign-ins (SSO failures happen in Elastic Cloud); Kibana logs only when used and
+  can be silent for days; a rule needs `state_transition.pending.count: 0` to alert on its first breach.
+- **Deliberate defaults.** Burst thresholds 10 failures or 5 names in 15 minutes (high at 5+ names or 100+ failures),
+  for review. The same-account case of rule 2 did not occur on this project's data. "Made by an API key" makes most
+  rule 3 alerts high on serverless. Rule 4 needs 7 days of history and compares with the 30 days before the last 24
+  hours, in UTC. Rule 5's alert closes after about an hour. Rule 6 cannot see a fully-down Kibana and watches the whole
+  stream, not each project. UC-129's admin-role-assignment half is only in the Elastic Cloud organisation audit log.
+- **Not done:** UC-112 (first access to a space); the rule-runner keys still show as Cloud API key identities on the
+  dashboards (only rule 5 leaves them out); a per-project stop rule; a test that checks each rule's joined query against Kibana's own
+  query-joining code (`composeEsqlQuery` in `@kbn/alerting-v2-schemas`; equivalent today, but it needs that package).
 
 ## Release 1.0.5.6 — Request column on the Live signal feed, 2026-10-25
 

@@ -1,0 +1,55 @@
+{
+  "kind": "alert",
+  "metadata": {
+    "name": "[Audit] Security change at an unusual hour",
+    "description": "An identity changed an API key, role or user at an hour of day (UTC) when it had no activity at all in its last 30 days, not counting the last 24 hours. Identities first seen less than 7 days ago, Elastic's own automation and the profile updates at each sign-in are left out. Open Identity 360, pick the identity and read Working rhythm, then the Config-change event feed on Security & Anomalies.",
+    "tags": [
+      "cloud-audit",
+      "UC-129"
+    ],
+    "routing_tags": [
+      "cloud-audit"
+    ]
+  },
+  "time_field": "@timestamp",
+  "schedule": {
+    "every": "15m",
+    "lookback": "30d"
+  },
+  "query": {
+    "base": "SET unmapped_fields=\"nullify\"; FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | WHERE @timestamp <= TO_DATETIME(?_tend) - 24 hours OR (@timestamp > TO_DATETIME(?_tend) - 16 minutes AND elasticsearch.audit.security_config_change IS NOT NULL AND NOT (event.action IS NOT NULL AND event.action == \"invalidate_apikeys\" AND user.name IS NOT NULL AND user.name IN (\"elastic.maintenance\",\"autoscaling\",\"elasticsearch-controller\",\"elastic/fleet-server\",\"elastic/kibana\") AND api_key.name IS NULL) AND (event.action IS NULL OR NOT event.action IN (\"activate_user_profile\",\"update_user_profile_data\")) AND NOT (user.name IS NOT NULL AND user.name IN (\"elastic.maintenance\",\"autoscaling\",\"elasticsearch-controller\",\"elastic/fleet-server\",\"elastic/kibana\") AND api_key.name IS NULL)) | EVAL recent = @timestamp > TO_DATETIME(?_tend) - 24 hours | STATS prior = COUNT(*) WHERE NOT recent, changes = COUNT(*) WHERE recent, first_ts = MIN(@timestamp), last_change = MAX(@timestamp) WHERE recent, actions = VALUES(event.action) WHERE recent BY user.email, api_key.name, user.domain, user.name, failed_signin = COALESCE(event.action IN (\"authentication_failed\",\"anonymous_access_denied\"), false), hr = DATE_TRUNC(1 hour, @timestamp) | EVAL actor = CASE(user.email IS NOT NULL, user.email, api_key.name IS NOT NULL, api_key.name, user.domain == \"_cloud_api_key\", CONCAT(user.name, \" · Cloud API key\"), user.domain == \"_es_api_key\", CONCAT(\"Unnamed key of \", user.name), user.name IS NOT NULL, user.name, \"(unattributed)\") | EVAL identity_kind = CASE(user.email IS NOT NULL, \"Person\", api_key.name IS NOT NULL, \"Elasticsearch API key\", user.domain == \"_es_api_key\", \"Unnamed API key\", user.domain == \"_cloud_api_key\", \"Cloud API key\", user.domain == \"_service_account\", \"Service account\", failed_signin, \"Failed sign-in\", user.name IS NULL, \"Unattributed\", \"Other\") | EVAL hour_utc = DATE_EXTRACT(\"hour_of_day\", hr) | STATS prior = SUM(prior), changes = SUM(changes), first_ts = MIN(first_ts), last_change = MAX(last_change), actions = VALUES(actions) BY actor, identity_kind, hour_utc | STATS worked_hours = COUNT(*) WHERE prior > 0, first_seen = MIN(first_ts), changes = SUM(changes) WHERE prior == 0, actions = VALUES(actions) WHERE prior == 0, last_change = MAX(last_change) WHERE prior == 0, hour_utc = VALUES(hour_utc) WHERE prior == 0 AND changes > 0 BY actor, identity_kind | WHERE changes > 0 AND first_seen <= TO_DATETIME(?_tend) - 7 days | EVAL severity = CASE(TRIM(REPLACE(MV_CONCAT(actions, \" \"), \"[a-z_]*apikeys?\", \"\")) == \"\", \"medium\", \"high\") | KEEP severity, actor, identity_kind, hour_utc, changes, actions, worked_hours, last_change, first_seen"
+  },
+  "recovery": {
+    "strategy": "no_breach"
+  },
+  "no_data": {
+    "strategy": "ignore"
+  },
+  "state_transition": {
+    "pending": {
+      "count": 0
+    }
+  },
+  "grouping": {
+    "fields": [
+      "actor",
+      "identity_kind"
+    ]
+  },
+  "artifacts": [
+    {
+      "id": "dashboard",
+      "type": "dashboard",
+      "data": {
+        "dashboard_id": "elastic_cloud-audit-actor-360"
+      }
+    },
+    {
+      "id": "runbook",
+      "type": "runbook",
+      "data": {
+        "content": "**What it means.** An identity changed API keys, roles or users at an hour of day (UTC) it has not worked in its last 30 days. \"Worked\" means any activity at all, not only changes, and the last 24 hours are not part of the comparison. The alert shows the identity, its type, the hour, the actions, how many hours of the day it normally works, and when it was first seen. Severity is high when the change is more than API keys (a role, role mapping, user or privilege), and medium for API keys only.\n\n**Triage**\n1. Open **[Audit] 👤 Identity 360**. In **Identity type** and **Identity**, pick the alert's values, then set the time to cover the change.\n2. Compare **Working rhythm — by hour (UTC)** and **Is this normal for them? — hourly (UTC)**. Both always show the last 7 days and include the change itself. The alert compared the 30 days before the last 24 hours, so trust its count of the hours this identity normally works.\n3. Check **Busiest addresses they used** and **Who this is — by identity and principal id** for an address or principal you do not recognise.\n4. Open **[Audit] 🚨 Security & Anomalies** and read **Config-change event feed** for the full change record, including what a new key or role grants.\n5. If the owner cannot explain it, invalidate the new keys, revert the role change, and review what the identity did next.\n\n**What is normal.** Planned maintenance or a release outside normal hours, someone working late or from another time zone, an automation job moved to a new time, or a one-off key rotation. Confirm with the owner before closing."
+      }
+    }
+  ]
+}
