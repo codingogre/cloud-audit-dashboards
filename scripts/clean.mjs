@@ -97,8 +97,14 @@ export async function run(argv = []) {
   const target = argv[0];
   if (!target) { info('Nothing deleted. Pass a target: dashboards | rules | ingest | all'); return; }
   if (!['dashboards', 'rules', 'ingest', 'all'].includes(target)) throw new Error(`unknown --clean target "${target}" (dashboards | rules | ingest | all)`);
+  // The pipeline and templates have no namespace: one set serves production and every private copy.
+  // Under AUDIT_ID_NS, "ingest" refuses and "all" leaves them alone, so cleaning a private copy can
+  // never stop enrichment on the live stream (it did once, for 30 seconds, on 2026-10-26).
+  const ns = process.env.AUDIT_ID_NS;
+  if (ns && target === 'ingest') throw new Error(`AUDIT_ID_NS=${ns}: the ingest pipeline and templates are shared with production, not part of a private copy; unset AUDIT_ID_NS to remove them`);
   // Rules first: they link to the dashboards.
   if (target === 'rules' || target === 'all') await (await import('./rules.mjs')).clean();
   if (target === 'dashboards' || target === 'all') await cleanDashboards();
-  if (target === 'ingest' || target === 'all') await cleanIngest();
+  if (target === 'all' && ns) info(`AUDIT_ID_NS=${ns}: ingest left in place (shared with production)`);
+  else if (target === 'ingest' || target === 'all') await cleanIngest();
 }

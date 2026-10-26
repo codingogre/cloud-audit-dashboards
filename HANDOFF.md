@@ -12,6 +12,11 @@ key's row pins the key (its Principal id is the owner; today only the descriptio
 (1.0.7.3), Identity 360 anchored to the picker (1.0.7.4), objects/spaces/index pivots (1.0.7.5), sign-ins and sessions
 (1.0.7.6), discovery against a baseline on 03 (1.0.7.7).
 
+Already on the 1.0.7.1 branch: `--clean` under `AUDIT_ID_NS` no longer touches ingest (`ingest` refuses, `all` skips it;
+`test/unit/clean.test.mjs`). The pipeline and templates have no namespace, and `AUDIT_ID_NS=r107 ./audit --clean all`
+after the 1.0.7 deploy took them off the live stream for about 30 seconds (05:43Z, 2026-10-26; 55 events in that
+minute have no client.ip or geo; `./audit --ingest` restored it and `--ingest-check` passed).
+
 ## Release 1.0.7 — every identity clicks through, 2026-10-26
 
 Step 1 of the 1.0.7 plan; closes hole 0, hole 15 and hole 20c. No public id changed; no shared fragment's text changed

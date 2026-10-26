@@ -911,7 +911,8 @@ legends over an empty domain, decade axes, solid placeholder cells, a flat line 
                          rules, with a warning, when Universal Alerting is off
 ./audit --demo-guide     Generate the presenter runbook from live data (--redact to mask identities)
 ./audit --clean <target> Tear down: dashboards (and the ES|QL view) | rules | ingest | all.
-                         'dashboards' leaves the rules; 'all' removes them
+                         'dashboards' leaves the rules; 'all' removes them. Under AUDIT_ID_NS,
+                         'ingest' refuses and 'all' leaves ingest alone (it is shared with production)
 ./audit --synth <sub>    Synthetic audit activity — see below
 ./audit <command> --with platform-volume
                          Include the opt-in Platform Volume dashboard (AUDIT_WITH=platform-volume)
