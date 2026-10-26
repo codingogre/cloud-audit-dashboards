@@ -13,6 +13,11 @@ fragments so the drift check covers them, and name identities the way the Identi
 dashboard binds. Open questions for the human (connectors, thresholds, enabled or disabled, first-seen baseline) and the
 starting material are in the session handoff under `.sessions/` (local).
 
+## Release 1.0.5.6 — Request column on the Live signal feed, 2026-10-25
+
+- 00 Live signal feed: Transport action became Request (transport action, or Kibana's "<type>: <title or id>", or a
+  web request's path). Computed, so not clickable; the user chose readability on every row (option A of three).
+
 ## Release 1.0.5.5 — more click-to-filter columns, 2026-10-25
 
 - Raw, clickable: Action (00 Most frequent actions), Transport action (03 Top transport actions), Object type (02 Object

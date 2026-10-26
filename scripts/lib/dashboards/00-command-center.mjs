@@ -53,17 +53,23 @@ const COUNT_W = 72;
 /**
  * Live signal feed: searches/10-raw-signal-feed.json's logic, bounded by TIME so the identity dropdowns narrow it
  * (RECORD FEEDS, panels.mjs). Sorted and cut straight after the filter (QUERY SHAPE rule 3); the CASEs that word
- * each row run on the 200 rows kept. Every column a reader might want to narrow by is a raw field, so it filters on
- * click: Action, Transport action, Client IP. There is no Detail column since 1.0.5.4: it was Kibana's message (the
- * action, object type and id in a sentence), else the transport action, else the security change; all but the
- * change payload are columns or a click away, and the payloads have their own feed on Security & Anomalies.
+ * each row run on the 200 rows kept. Action and Client IP are raw fields, so they filter on click. Request (1.0.5.6)
+ * says what each request touched, on every row: an Elasticsearch event's transport action, a Kibana saved-object
+ * event's "<type>: <title or id>" (about 80% of Kibana signal events over 7 days), or a Kibana web request's path
+ * (the other 20%). One column for both sources reads better than two half-empty raw ones, but it is computed, so it
+ * does not click; transport actions click on Elasticsearch Data Access. The Detail column it replaced (until 1.0.5.4)
+ * was Kibana's message, and the security change payloads have their own feed on Security & Anomalies.
  * client.ip is kept raw, with no "internal" tag (searches/10 adds one); the How to read block says what a
  * 100.64/10 or private address means.
  */
 const LIVE_FEED = `FROM ${IDX} | ${TIME} | ${NOISE} | WHERE NOT ${HOUSEKEEPING} | SORT @timestamp DESC | LIMIT 200 | ${ACTOR_RESOLVE} | ${KIND_EVENT} ` +
   '| EVAL result = CASE(event.outcome == "unknown", "attempted", event.outcome), ' +
-  'source = CASE(service.name == "serverless-elasticsearch", "Elasticsearch", service.name == "serverless-kibana", "Kibana", service.name) ' +
-  '| KEEP @timestamp, actor, identity_kind, source, event.action, elasticsearch.audit.action, result, client.ip';
+  'source = CASE(service.name == "serverless-elasticsearch", "Elasticsearch", service.name == "serverless-kibana", "Kibana", service.name), ' +
+  'request = CASE(elasticsearch.audit.action IS NOT NULL, elasticsearch.audit.action, ' +
+  'kibana.saved_object.type IS NOT NULL, CONCAT(kibana.saved_object.type, ": ", COALESCE(kibana.saved_object.name, kibana.saved_object.id, "(no id)")), ' +
+  // A bulk saved-object read ("User has accessed saved objects") records no object at all.
+  'url.original IS NOT NULL, REPLACE(url.original, "^https?://[^/]+", ""), event.action LIKE "saved_object_*", "(objects not recorded)", " ") ' +
+  '| KEEP @timestamp, actor, identity_kind, source, event.action, request, result, client.ip';
 
 /** The intro (draft 1 of the 1.0.3 customer copy; INTRO TEXT in panels.mjs). */
 const INTRO = {
@@ -187,7 +193,7 @@ export function build() {
     // left out. 25 rows show 26 lines (fitRows), and the 200 the title states scroll.
     table(0, 49, 48, 25, 'Live signal feed · Kibana key clean-up left out', LIVE_FEED,
       [sized('actor', 245, { min: 200 }), sized('source', 100, { min: 100 }), filterable('event.action', { label: 'Action', width: 175, min: 165 }),
-        filterable('elasticsearch.audit.action'), sized('result', 90, { label: 'Outcome' }), filterable('client.ip', { label: 'Client IP', width: 125, min: 118 })],
+        { column: 'request', label: 'Request' }, sized('result', 90, { label: 'Outcome' }), filterable('client.ip', { label: 'Client IP', width: 125, min: 118 })],
       ['@timestamp'],
       'The newest signal events, routine traffic and Kibana’s own key clean-up left out. Long runs of near-identical rows from one identity are automation: pick it in the Identity dropdown to read it alone.',
       { scroll: true }),

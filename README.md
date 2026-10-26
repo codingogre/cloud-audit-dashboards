@@ -587,7 +587,7 @@ legend and the How to read blocks, not in each tooltip: `table()` appends the la
   first `BY IDENTITY_KEYS` and add `KIND_GROUPED`, feeds add `KIND_EVENT` after their LIMIT; an identity seen as
   two types is two rows. `--lint` fails a table whose query does not return a column it shows. The free-text
   *Detail* and *Message* columns went: Kibana's message restated Action, object type and id, and their place
-  went to raw columns that filter on click (Transport action on the Live signal feed, Action on Kibana
+  went to raw columns that filter on click (Action on Kibana
   saved-object activity, Action and Client IP on 01 *Top failed or denied access*, Space on 02 *Mutations*,
   Action on 04 *Config changes* and *Top failures*, Principal id on the Config-change feed). The one payload that
   says something no column does, an Elasticsearch security change, stays whole in 04's *Config-change event
@@ -598,6 +598,9 @@ legend and the How to read blocks, not in each tooltip: `table()` appends the la
   aliases). 04 *Why these identities scored* shows the outcome in its own Outcome column (success, failure,
   attempted) instead of appending " (failed)" to the action, so Action is raw and clicks too. 07 *What they changed*
   keeps a computed Space: its rows are packed into a string to fold a deleted space with its contents, then unpacked.
+- *Request on the Live signal feed (1.0.5.6).* One column says what each request touched on every row: the transport
+  action for Elasticsearch, `<type>: <title or id>` for a Kibana saved-object event, the path for a Kibana web
+  request. It is computed, so it does not click; Action and Client IP do.
 
 **Tooltips — two tiers, 40 words.** A panel's description is its ⓘ tooltip, and a reader hovers it to learn
 what the panel shows and the one thing needed to read it — not every caveat behind it. So it is **40 words at
