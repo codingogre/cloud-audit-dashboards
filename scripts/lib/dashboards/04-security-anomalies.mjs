@@ -51,7 +51,7 @@ const MUTATION_FEED = `FROM ${IDX} | ${TIME} | WHERE ${CHANGE_PRED} OR ${CHG} IS
   '| EVAL target = COALESCE(t_name, REPLACE(REPLACE(t_ids, "\\"", ""), ",", ", "), t_id, t_uid) ' +
   `| EVAL obj_name = COALESCE(obj_name, target, CASE(${CHG} IS NOT NULL, "(none named in the payload)")) ` +
   '| EVAL obj_type = CASE(service.name == "serverless-kibana", obj_type, event.action LIKE "*apikey*", "api-key", event.action LIKE "*_role", "role", event.action LIKE "*user_profile*", "user-profile", obj_type) ' +
-  '| KEEP @timestamp, actor, identity_kind, event.action, obj_type, obj_name, kibana.space.id';
+  '| KEEP @timestamp, actor, identity_kind, user.name, event.action, obj_type, obj_name, kibana.space.id';
 
 /**
  * PRIVILEGED, on every panel here that counts security config changes (the two tiles, the table, the
@@ -250,10 +250,13 @@ export function build() {
       'Every security configuration change, newest first, with the raw change record; hover a cut record to expand it. The Config changes tile has the total. Click a Principal id or Action to pin it.',
       { scroll: true, empty: 'good' }),
     table(0, 77, 48, 25, 'Mutation feed', MUTATION_FEED,
-      [sized('actor', 245, { min: 200 }), filterable('event.action', { label: 'Action', width: 190, min: 175 }), sized('obj_type', 120, { label: 'Object type' }), { column: 'obj_name', label: 'Object' },
+      // Identity 190 (1.0.7, an email of ~29 characters needs ~150px) and Action 175 (saved_object_delete needs ~150px),
+      // so Object keeps ~200px beside Principal id at 1440px: at Identity 210 / Action 190 it cut every name at
+      // "cloud-audit-…-search-" and the rows read alike (rendered).
+      [sized('actor', 190, { min: 180 }), PIN_PRINCIPAL_SHORT, filterable('event.action', { label: 'Action', width: 175, min: 165 }), sized('obj_type', 120, { label: 'Object type' }), { column: 'obj_name', label: 'Object' },
         filterable('kibana.space.id')],
       ['@timestamp'],
-      'Every create, update and delete in Kibana and in Elasticsearch security configuration, newest first, with what each change named. Kibana’s routine API-key clean-up is left out. Click an Action or Space to pin it.',
+      'Every create, update and delete in Kibana and in Elasticsearch security configuration, newest first, with what each change named. Kibana’s routine API-key clean-up is left out. Click a Principal id, Action or Space to pin it.',
       { scroll: true }),
   ];
   return dash(rawId('04-security-anomalies'), '[Audit] 🚨 Security & Anomalies',

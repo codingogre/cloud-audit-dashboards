@@ -647,3 +647,130 @@ test('Identity type (1.0.5.4): a badge beside Identity on every table, one colou
   }
   assert.ok(tables >= 22, `${tables} identity tables`);
 });
+
+test('checkIdentityPins() (1.0.7): a table showing Identity needs a click-to-filter identity column, or a recorded noPin reason', async () => {
+  const { checkIdentityPins } = await import('../../scripts/lib/layout.mjs');
+  const { PIN_PRINCIPAL_SHORT } = await import('../../scripts/lib/dashboards/shared.mjs');
+  const q = 'FROM x | STATS events = COUNT(*) BY actor, identity_kind, user.name | SORT events DESC | LIMIT 10';
+  const run = (rows, opts) => { const problems = []; checkIdentityPins('d', [table(0, 0, 48, 12, 't', q, rows, ['events'], 'd', opts)], problems); return problems; };
+  const noPin = run(['actor', filterable('event.action')]);
+  assert.equal(noPin.length, 1);
+  assert.match(noPin[0], /shows Identity but has no click-to-filter identity column/);
+  assert.deepEqual(run(['actor', filterable('event.action')], { noPin: 'the fold row has no principal' }), []);
+  assert.equal(run(['actor'], { noPin: '  ' }).length, 1, 'a blank reason is no reason');
+  assert.deepEqual(run(['actor', PIN_PRINCIPAL_SHORT]), []);
+  assert.deepEqual(run(['actor', filterable('user.email')]), []);
+  assert.deepEqual(run(['actor', filterable('api_key.name')]), []);
+  assert.deepEqual(run([filterable('event.action')]), [], 'no Identity column, nothing to pin');
+  assert.equal(run(['actor', { column: 'user.name' }]).length, 1, 'a user.name column that does not click does not count');
+});
+
+test('every identity table in the suite pins (1.0.7); the two exemptions say why, and the treemap drills into Identity 360', async () => {
+  const { checkIdentityPins } = await import('../../scripts/lib/layout.mjs');
+  const { flatPanels } = await import('../../scripts/lib/panels.mjs');
+  const { payload } = await import('../../scripts/dashboards.mjs');
+  const prev = process.env.AUDIT_WITH;
+  process.env.AUDIT_WITH = 'platform-volume';
+  try {
+    const all = buildAll();
+    const exempt = [];
+    for (const [name, def] of Object.entries(all)) {
+      const problems = []; checkIdentityPins(name, flatPanels(def.panels), problems);
+      assert.deepEqual(problems, [], name);
+      for (const p of flatPanels(def.panels).filter((x) => x.lint?.noPin)) exempt.push(`${name}: ${p.config.title.split(' · ')[0]}`);
+    }
+    assert.deepEqual(exempt.sort(), ['03-data-access: Denied requests by identity', '06-platform-volume: Highest-volume identities']);
+    const tree = flatPanels(all['00-command-center'].panels).find((p) => p.config?.ref_id?.endsWith('actor-risk-treemap'));
+    assert.equal(tree.pins, true, 'the treemap pins an identity, so it gets the drilldown');
+    const sent = JSON.stringify(payload(all['00-command-center']));
+    assert.doesNotMatch(sent, /"pins":/, 'pins is stripped from the payload');
+    assert.doesNotMatch(sent, /"noPin":/);
+  } finally {
+    if (prev === undefined) delete process.env.AUDIT_WITH; else process.env.AUDIT_WITH = prev;
+  }
+});
+
+test('checkGradientLegends() (1.0.7, hole 15): a gradient legend and its scale fills go through a zero-domain guard', async () => {
+  const { checkGradientLegends } = await import('../../scripts/lib/layout.mjs');
+  const spec = (guarded) => ({
+    signals: [{ name: 'empty', update: "length(data('raw')) === 0" }, ...(guarded ? [{ name: 'noRisk', update: "!empty && domain('risk')[1] <= 0" }] : [])],
+    scales: [{ name: 'risk', type: 'sqrt', domain: { data: 'raw', field: 'severity' }, range: ['#54B399', '#D6BF57', '#E7664C'] }],
+    marks: [{ type: 'rect', encode: { update: { fill: { signal: guarded ? "noRisk ? '#54B399' : scale('risk', datum.severity)" : "scale('risk', datum.severity)" } } } }],
+    legends: [{ fill: 'risk', type: 'gradient', values: { signal: guarded ? "empty || noRisk ? [] : [0, domain('risk')[1]]" : "empty ? [] : [0, domain('risk')[1]]" } }],
+  });
+  const run = (s) => { const problems = []; checkGradientLegends('vega/x.json', s, problems); return problems; };
+  assert.equal(run(spec(false)).length, 1, 'no guard signal at all');
+  assert.match(run(spec(false))[0], /no signal compares domain\('risk'\)\[1\] with 0/);
+  assert.deepEqual(run(spec(true)), []);
+  const half = spec(true); half.marks[0].encode.update.fill.signal = "scale('risk', datum.severity)";
+  assert.equal(run(half).length, 1, 'an unguarded fill beside a guarded legend');
+  const vals = spec(true); vals.legends[0].values.signal = "empty ? [] : [0, domain('risk')[1]]";
+  assert.equal(run(vals).length, 1, 'legend values that ignore the guard');
+  // Blind spots the 1.0.7 review found, each of which used to pass.
+  const enc = spec(true); enc.marks[0].encode.update.fill = { scale: 'risk', field: 'severity' };
+  assert.equal(run(enc).length, 1, 'a { scale } fill encoding');
+  const list = spec(true); list.marks[0].encode.update.fill = [{ test: 'datum.folded', value: '#98A2B3' }, { scale: 'risk', field: 'severity' }];
+  assert.equal(run(list).length, 1, 'a { scale } fill behind a test that is not the guard');
+  const ok = spec(true); ok.marks[0].encode.update.fill = [{ test: 'noRisk', value: '#54B399' }, { scale: 'risk', field: 'severity' }];
+  assert.deepEqual(run(ok), [], 'a { scale } fill behind the guard');
+  const untyped = spec(false); delete untyped.legends[0].type;
+  assert.equal(run(untyped).length, 1, 'no legend type over a continuous scale is still a gradient');
+  const sym = spec(false); delete sym.legends[0].type; sym.scales[0].type = 'ordinal';
+  assert.deepEqual(run(sym), [], 'a symbol legend over an ordinal scale is not checked');
+  const reads = spec(true); reads.signals[1] = { name: 'noRisk', update: "domain('risk')[1] / 4" };
+  assert.equal(run(reads).length, 1, 'a signal that only reads domain(S)[1] is not a guard');
+  const nested = spec(false); nested.marks = [{ type: 'group', legends: nested.legends, marks: nested.marks }]; nested.legends = [];
+  assert.equal(run(nested).length, 1, 'a legend inside a group mark');
+  // The shipped treemap passes.
+  const { readFileSync } = await import('node:fs');
+  const tm = JSON.parse(readFileSync(new URL('../../vega/01-actor-risk-treemap.json', import.meta.url), 'utf8'));
+  assert.deepEqual(run(tm), []);
+});
+
+test('vega/01 treemap (1.0.7): a tile click pins the identity by its prefix, a folded tile pins nothing; vega/11 has no clear-all', async () => {
+  const { readFileSync } = await import('node:fs');
+  const read = (f) => JSON.parse(readFileSync(new URL(`../../vega/${f}`, import.meta.url), 'utf8'));
+  const tm = read('01-actor-risk-treemap.json');
+  const q = tm.data[0].url.query;
+  assert.match(q, /pin = CASE\(user\.email IS NOT NULL, CONCAT\("e\|", user\.email\), api_key\.name IS NOT NULL, CONCAT\("k\|"/);
+  assert.match(q, /pin = MAX\(pin\) BY actor/);
+  assert.match(q, /KEEP actor, actor_kind, owner, pin,/);
+  const rect = tm.marks.find((m) => m.type === 'rect');
+  assert.equal(rect.name, 'tile');
+  assert.ok(rect.encode.update.cursor, 'cursor pointer on a pinnable tile');
+  const click = tm.signals.find((s) => s.on?.some((o) => o.events === '@tile:click'));
+  const expr = click.on[0].update;
+  assert.match(expr, /^datum\.folded \|\| !datum\.pin \? null : kibanaAddFilter\(/);
+  for (const f of ['user.email', 'api_key.name', 'user.domain', 'user.name']) assert.ok(expr.includes(`'${f}'`), f);
+  assert.match(expr, /must_not: \[\{exists: \{field: 'user\.email'\}\}, \{exists: \{field: 'api_key\.name'\}\}\]/);
+  // k| and u| carry the Identity dropdown's own conditions (1.0.7 review): a bare user.name phrase on a 1-event
+  // "user, no email" tile matched that person's 6,570 events.
+  assert.ok(expr.includes("{bool: {filter: [{match_phrase: {'api_key.name': substring(datum.pin, 2)}}], must_not: [{exists: {field: 'user.email'}}]}}"), 'k| excludes events with an email');
+  assert.ok(expr.includes("{terms: {'user.domain': ['_cloud_api_key', '_es_api_key']}}"), 'u| excludes key realms');
+  assert.doesNotMatch(expr, /: \{match_phrase: \{'user\.name'/, 'no bare user.name phrase');
+  assert.deepEqual(tm.scales.find((x) => x.name === 'risk').domain, { data: 'raw', field: 'severity' }, 'the colour scale and the no-risk guard cover folded identities');
+  assert.ok(tm.marks.find((m) => m.type === 'text' && m.from?.data === 'leaves'), 'tile text');
+  const leaves = tm.data.find((d) => d.name === 'leaves').transform.map((t) => t.as);
+  for (const x of ['a', 'b', 'c']) assert.ok(leaves.includes(`${x}_risk`), `${x}_risk line`);
+  assert.ok(!read('11-actor-object-flow.json').signals.some((s) => s.on?.some((o) => /dblclick/.test(JSON.stringify(o.events)))), 'no double-click clear-all');
+});
+
+test('drillTargets()/repointVega() (1.0.7): a pinning Vega panel gets the drilldown and the scoped savedObjectRef', async () => {
+  const { drillTargets, repointVega } = await import('../../scripts/dashboards.mjs');
+  const { ACTOR_360 } = await import('../../scripts/lib/drilldowns.mjs');
+  const flat = [
+    { id: 'v1', type: 'vis', pins: true, config: { ref_id: 'tree' } },
+    { id: 'v2', type: 'vis', config: { ref_id: 'flow' } },
+  ];
+  const drill = drillTargets('elastic_cloud-audit-00-command-center', flat);
+  assert.deepEqual([...drill.keys()], ['v1'], 'pins puts a Vega panel among the drilled panels');
+  assert.equal(drill.get('v1'), ACTOR_360);
+  const panels = [{ panelIndex: 'v1', panelRefName: 'panel_v1', embeddableConfig: { savedObjectId: 'x' } }, { panelIndex: 'v2', embeddableConfig: {} }];
+  const refs0 = [{ name: 'panel_v1', type: 'visualization', id: 'old' }, { name: 'v1:savedObjectRef', type: 'visualization', id: 'old' }];
+  const { refs, changed } = repointVega(panels, refs0, { v1: 'tree', v2: 'flow' }, drill);
+  assert.equal(changed, 2);
+  assert.equal(panels[0].panelRefName, undefined, 'a drilled Vega panel has no legacy panelRefName');
+  assert.equal(panels[0].embeddableConfig.savedObjectId, undefined);
+  assert.equal(panels[1].panelRefName, 'panel_v2', 'an undrilled one keeps panel_<idx>');
+  assert.deepEqual(refs, [{ name: 'v1:savedObjectRef', type: 'visualization', id: 'tree' }, { name: 'panel_v2', type: 'visualization', id: 'flow' }]);
+});

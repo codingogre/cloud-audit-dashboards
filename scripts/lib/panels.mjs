@@ -1504,7 +1504,13 @@ const withEmptyTitle = (title, empty) => (empty && emptyOf(empty).title ? `${tit
  * everything or all, unless it is { scroll: true } (and then the LIMIT itself is the promise). The
  * in-memory `lint` annotation carries what the check needs; dashboards.mjs strips it from the payload.
  */
-export const table = (x, y, w, h, title, q, rows, metrics, desc, { scroll = false, wrap = false, empty, cut = true } = {}) => {
+/*
+ * IDENTITY PINS (1.0.7). A table that shows Identity (`actor`, computed, so it cannot click) also carries a
+ * click-to-filter identity column on the raw field — Principal id (`user.name`), API key or Email — so a click pins
+ * the identity and offers Open in Identity 360. layout.mjs checkIdentityPins fails a table without one, unless it
+ * passes `{ noPin: '<why>' }`: the reason is kept in `lint` (stripped from the payload) so the exemption is on record.
+ */
+export const table = (x, y, w, h, title, q, rows, metrics, desc, { scroll = false, wrap = false, empty, cut = true, noPin } = {}) => {
   let query = q;
   if (!scroll && !wrap) {
     // Exactly the rows that fit, in both directions: above it rows hide with no cue, below it the title's
@@ -1530,7 +1536,7 @@ export const table = (x, y, w, h, title, q, rows, metrics, desc, { scroll = fals
   if (r.some((c) => c.column === 'actor')) query = `${query} | ${ACTOR_LABEL}`;
   return {
     type: 'vis', id: nid('tbl'), grid: { x, y, w, h }, ...(fits ? {} : { narrow1440: true }),
-    lint: { limit, scroll: scroll || wrap, wrap, cut, ...(empty ? { empty } : {}) },
+    lint: { limit, scroll: scroll || wrap, wrap, cut, ...(empty ? { empty } : {}), ...(noPin ? { noPin } : {}) },
     config: {
       title: withEmptyTitle(withCut(title, query, { cut }), empty),
       description: withScrollNote(desc, wrap || (scroll && limit > fitRows(h))),
@@ -1638,10 +1644,15 @@ export const fixedWindow = (src) => VEGA_WINDOWS[String(src).replace(/^vega\//, 
 export const HOUR_AGO = 'ago = DATE_DIFF("hour", hour, DATE_TRUNC(1 hour, TO_DATETIME(?_tend)))';
 
 /** Vega panels are legacy `visualization` saved objects; see dashboards.mjs repointVega(). */
-export const vega = (x, y, w, h, ref, title, desc) => {
+/**
+ * `{ pins: true }` (1.0.7): the spec pins an identity with kibanaAddFilter (vega/01's tiles), so the panel gets the
+ * Open in Identity 360 drilldown like a table with a click column (dashboards.mjs drillPanels). Kept in memory and
+ * stripped from the payload, like `drill`.
+ */
+export const vega = (x, y, w, h, ref, title, desc, { pins = false } = {}) => {
   const config = { ref_id: objId('vega', ref), title, description: desc };
   if (VEGA_WINDOWS[ref]) config.time_range = { ...VEGA_WINDOWS[ref] };
-  return { type: 'vis', id: nid('vega'), grid: { x, y, w, h }, config };
+  return { type: 'vis', id: nid('vega'), grid: { x, y, w, h }, config, ...(pins ? { pins: true } : {}) };
 };
 
 /**

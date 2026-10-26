@@ -360,6 +360,72 @@ function checkMagnitude(file, spec, problems) {
 }
 
 /**
+ * GRADIENT LEGENDS (1.0.7, hole 15). When every value of a continuous colour scale is 0 its domain has no width,
+ * d3 normalises every value to 0.5, and every mark paints the ramp's MIDDLE colour (the treemap went all yellow at a
+ * quiet hour) while the legend printed "0" three times over itself. So a gradient legend over scale S (an explicit
+ * `type: 'gradient'`, or no type over a continuous scale, which Vega draws as a gradient anyway), at any depth, and
+ * every fill drawn from S — `scale('S', …)` in a signal or a `{ scale: 'S' }` encoding — must go through a signal
+ * that compares `domain('S')[1]` with 0 (or with `domain('S')[0]`): the legend's values and each fill expression
+ * reference that signal by name, and a `{ scale: 'S' }` fill sits in a rule list behind a `test` that does.
+ */
+const DISCRETE_SCALES = new Set(['ordinal', 'band', 'point', 'quantize', 'quantile', 'threshold', 'bin-ordinal']);
+function collect(node, key, out = []) {
+  if (Array.isArray(node)) { node.forEach((n) => collect(n, key, out)); return out; }
+  if (!node || typeof node !== 'object') return out;
+  for (const [k, v] of Object.entries(node)) {
+    if (k === key && Array.isArray(v)) out.push(...v.filter((x) => x && typeof x === 'object'));
+    collect(v, key, out);
+  }
+  return out;
+}
+/** Every fill encoding at any depth: { signal } or { scale } objects, or a rule list of them. */
+function fillEncodings(node, out = []) {
+  if (Array.isArray(node)) { node.forEach((n) => fillEncodings(n, out)); return out; }
+  if (!node || typeof node !== 'object') return out;
+  for (const [k, v] of Object.entries(node)) {
+    if (k === 'fill' && v && typeof v === 'object') out.push(Array.isArray(v) ? v : [v]);
+    fillEncodings(v, out);
+  }
+  return out;
+}
+export function checkGradientLegends(file, spec, problems) {
+  const signals = collect(spec, 'signals').filter((sg) => typeof sg.update === 'string');
+  const scales = new Map(collect(spec, 'scales').map((sc) => [sc.name, sc]));
+  const legends = [...(spec.legends || []), ...collect(spec.marks || [], 'legends')];
+  const gradient = (lg) => typeof lg.fill === 'string'
+    && (lg.type === 'gradient' || (lg.type === undefined && !DISCRETE_SCALES.has(scales.get(lg.fill)?.type || 'linear')));
+  const fills = fillEncodings(spec.marks || []);
+  for (const lg of legends.filter(gradient)) {
+    const S = lg.fill;
+    const esc = S.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const top = `domain\\(\\s*['"]${esc}['"]\\s*\\)\\s*\\[\\s*1\\s*\\]`;
+    const floor = `(0(\\.0+)?\\b|domain\\(\\s*['"]${esc}['"]\\s*\\)\\s*\\[\\s*0\\s*\\])`;
+    const tests = new RegExp(`${top}\\s*(<=|===?)\\s*${floor}|${floor}\\s*(>=|===?)\\s*${top}`);
+    const guards = signals.filter((sg) => tests.test(sg.update)).map((sg) => sg.name);
+    const uses = (expr) => typeof expr === 'string' && guards.some((g) => new RegExp(`\\b${g}\\b`).test(expr));
+    if (!guards.length) {
+      problems.push(`vega: ${file} has a gradient legend over scale "${S}" but no signal compares domain('${S}')[1] with 0 — at a zero-width domain every mark paints the ramp's middle colour; add a guard signal`);
+      continue;
+    }
+    if (!uses(lg.values?.signal)) {
+      problems.push(`vega: ${file} gradient legend over "${S}" does not hide its values through ${guards.join('/')} — it prints one value three times when the domain has no width`);
+    }
+    const scaleCall = new RegExp(`scale\\(\\s*['"]${esc}['"]`);
+    for (const rules of fills) {
+      rules.forEach((r, i) => {
+        const guardedBefore = rules.slice(0, i).some((x) => uses(x?.test));
+        if (typeof r?.signal === 'string' && scaleCall.test(r.signal) && !uses(r.signal) && !guardedBefore) {
+          problems.push(`vega: ${file} fills with scale('${S}', …) without ${guards.join('/')} — at a zero-width domain it paints the middle colour`);
+        }
+        if (r?.scale === S && !guardedBefore && !uses(r.test)) {
+          problems.push(`vega: ${file} fills with { scale: '${S}' } and no ${guards.join('/')} test before it — at a zero-width domain it paints the middle colour`);
+        }
+      });
+    }
+  }
+}
+
+/**
  * Rules for Vega specs that nothing downstream can see break. Each was established on a live 9.6
  * serverless dashboard, not read off documentation.
  */
@@ -415,6 +481,7 @@ function checkVega(problems) {
     }
 
     checkMagnitude(file, spec, problems);
+    checkGradientLegends(file, spec, problems);
     checkEscape(file, spec, problems);
 
     // Kibana themes guide/title styles but not mark text: an unstyled text mark renders #000, which is
@@ -566,6 +633,25 @@ export function checkClickFilters(name, panels, problems) {
 }
 
 /**
+ * IDENTITY PINS (1.0.7, panels.mjs table()). Identity (`actor`) is computed, so it cannot click: a table that shows
+ * it and nothing an identity can be pinned by left the reader on Identity 360 with only an action or an address
+ * pinned, or with no way there at all. Every data_table with an `actor` column carries a click-to-filter column on
+ * user.name (Principal id), api_key.name or user.email, unless `{ noPin: '<why>' }` records why it cannot.
+ */
+export const PIN_FIELDS = ['user.name', 'api_key.name', 'user.email'];
+export function checkIdentityPins(name, panels, problems) {
+  for (const p of panels) {
+    if (p.config?.type !== 'data_table') continue;
+    const rows = p.config.rows || [];
+    if (!rows.some((r) => (r?.column || r) === 'actor')) continue;
+    if (rows.some((r) => r?.click_filter && PIN_FIELDS.includes(r.column))) continue;
+    const why = p.lint?.noPin;
+    if (typeof why === 'string' && why.trim()) continue;
+    problems.push(`${name}: table ${p.id} "${p.config.title}" shows Identity but has no click-to-filter identity column (Principal id, API key or Email) — add PIN_PRINCIPAL(_SHORT) on the raw field, or pass { noPin: '<why>' }`);
+  }
+}
+
+/**
  * TITLES (panels.mjs, CUT). Every panel title is shown at every time range and every row count, so it
  * may state only what is true at all of them. Three forms were false at some window in the round-5
  * review, and are rejected on every panel type (tables, charts, Vega, Discover sessions):
@@ -666,6 +752,7 @@ export function checkLayout(all) {
     checkCompleteness(name, panels, problems);
     checkRows(name, panels, problems);
     checkClickFilters(name, panels, problems);
+    checkIdentityPins(name, panels, problems);
     checkTitles(name, panels, problems);
     checkEmptyWording(name, panels, problems);
     checkFixedWindows(name, panels, problems);

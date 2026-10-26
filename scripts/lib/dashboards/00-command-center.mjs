@@ -4,7 +4,7 @@ import {
   privilegedKpi, prevKpi, grouped, fitRows, COVERAGE_REF, COVERAGE_TITLE, ACTOR, filterable, HOUSEKEEPING, KIND_EVENT, KIND_GROUPED, IDENTITY_KEYS
 } from '../panels.mjs';
 import {
-  legendPanel, ACTOR_KEYS, PIN_PRINCIPAL, RAW_RECORDS
+  legendPanel, ACTOR_KEYS, PIN_PRINCIPAL, PIN_PRINCIPAL_SHORT, RAW_RECORDS
 } from './shared.mjs';
 import { isDeployed, rawId } from '../suite.mjs';
 
@@ -60,7 +60,9 @@ const COUNT_W = 72;
  * does not click; transport actions click on Elasticsearch Data Access. The Detail column it replaced (until 1.0.5.4)
  * was Kibana's message, and the security change payloads have their own feed on Security & Anomalies.
  * client.ip is kept raw, with no "internal" tag (searches/10 adds one); the How to read block says what a
- * 100.64/10 or private address means.
+ * 100.64/10 or private address means. Principal id (1.0.7) is the raw user.name, kept as it is, so it pins the
+ * identity and offers Open in Identity 360; the short width (PIN_PRINCIPAL_SHORT) because a placeholder principal
+ * reaches this feed rarely and Identity beside it shows it whole.
  */
 const LIVE_FEED = `FROM ${IDX} | ${TIME} | ${NOISE} | WHERE NOT ${HOUSEKEEPING} | SORT @timestamp DESC | LIMIT 200 | ${ACTOR_RESOLVE} | ${KIND_EVENT} ` +
   '| EVAL result = CASE(event.outcome == "unknown", "attempted", event.outcome), ' +
@@ -69,7 +71,7 @@ const LIVE_FEED = `FROM ${IDX} | ${TIME} | ${NOISE} | WHERE NOT ${HOUSEKEEPING} 
   'kibana.saved_object.type IS NOT NULL, CONCAT(kibana.saved_object.type, ": ", COALESCE(kibana.saved_object.name, kibana.saved_object.id, "(no id)")), ' +
   // A bulk saved-object read ("User has accessed saved objects") records no object at all.
   'url.original IS NOT NULL, REPLACE(url.original, "^https?://[^/]+", ""), event.action LIKE "saved_object_*", "(objects not recorded)", " ") ' +
-  '| KEEP @timestamp, actor, identity_kind, source, event.action, request, result, client.ip';
+  '| KEEP @timestamp, actor, identity_kind, user.name, source, event.action, request, result, client.ip';
 
 /** The intro (draft 1 of the 1.0.3 customer copy; INTRO TEXT in panels.mjs). */
 const INTRO = {
@@ -135,8 +137,10 @@ export function build() {
       'How far back this project\'s audit stream goes: its first stored event and the days since. It ignores the time picker and the controls. The retention line is the data stream\'s setting, read when the dashboards were installed.'),
     // Two rows taller than the rest of the page: at 13 the treemap's floor-sized tiles were too short
     // for a two-line name once the legend took its row under the plot.
+    // A tile click pins the identity (vega/01 kibanaAddFilter), so the panel carries the Identity 360 drilldown (`pins`).
     vega(0, 21, 24, 15, '01-actor-risk-treemap', 'Identity footprint · area by √events, color by risk total',
-      'The busiest identities as tiles, grouped by kind: Elasticsearch API key, person, Cloud API key, platform, user without email, unattributed. Bigger means more activity, but read the printed count, not the area. Stronger color means more risk.'),
+      'The busiest identities as tiles, grouped by kind. Bigger means more activity: read the printed count, not the area. Stronger color means more risk; all green means nothing scored. Click a tile to pin the identity or open Identity 360.',
+      { pins: true }),
     /**
      * Lens, not the Vega band stream (vega/07, which 06 keeps): stacked on a linear axis, Signal — the band
      * this chart is named after — was a 1px sliver at 1h (0.7% of the stream), and its buckets and time
@@ -192,10 +196,10 @@ export function build() {
     // events as the Raw signal feed session the intro links to: NOISE, then Kibana's key clean-up (HOUSEKEEPING)
     // left out. 25 rows show 26 lines (fitRows), and the 200 the title states scroll.
     table(0, 49, 48, 25, 'Live signal feed · Kibana key clean-up left out', LIVE_FEED,
-      [sized('actor', 245, { min: 200 }), sized('source', 100, { min: 100 }), filterable('event.action', { label: 'Action', width: 175, min: 165 }),
+      [sized('actor', 245, { min: 200 }), PIN_PRINCIPAL_SHORT, sized('source', 100, { min: 100 }), filterable('event.action', { label: 'Action', width: 175, min: 165 }),
         { column: 'request', label: 'Request' }, sized('result', 90, { label: 'Outcome' }), filterable('client.ip', { label: 'Client IP', width: 125, min: 118 })],
       ['@timestamp'],
-      'The newest signal events, routine traffic and Kibana’s own key clean-up left out. Long runs of near-identical rows from one identity are automation: pick it in the Identity dropdown to read it alone.',
+      'The newest signal events, routine traffic and Kibana’s own key clean-up left out. Long runs of near-identical rows from one identity are automation: click its Principal id to read it alone.',
       { scroll: true }),
   ];
   return dash(rawId('00-command-center'), '[Audit] 🎛️ Command Center',

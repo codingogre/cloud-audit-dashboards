@@ -3,11 +3,63 @@
 `CLAUDE.md`-style durable context lives in `README.md` and `esql/fragments.md` and wins on
 conflict. This file is "where we are right now" and should be assumed stale.
 
-## Next: 1.0.7 Pivots and navigation
+## Next: 1.0.7.1 Live feed grouped, context for failed access
 
-Goal: every panel leads somewhere. Identity click columns and the treemap click; pivots by object, space and index
-family; Discover links that carry the filters and the time range; grouping on the Live signal feed; Identity 360's
-windows anchored to the time picker; session panels.
+Step 2 of the 1.0.7 plan ("Pivots and navigation"): the Live signal feed groups repeats (one STATS that also carries
+step 1's Principal id and the request path), and 01's Top failed and Failed sign-ins gain Path and Caller columns
+(UC-006, hole 3). Carry from 1.0.7: an API key column (`PIN_KEY`) on 01 Top failed and Failed sign-ins, so a named
+key's row pins the key (its Principal id is the owner; today only the descriptions say so). After it: links that open a new tab and per-panel Discover sessions (1.0.7.2), default windows
+(1.0.7.3), Identity 360 anchored to the picker (1.0.7.4), objects/spaces/index pivots (1.0.7.5), sign-ins and sessions
+(1.0.7.6), discovery against a baseline on 03 (1.0.7.7).
+
+## Release 1.0.7 — every identity clicks through, 2026-10-26
+
+Step 1 of the 1.0.7 plan; closes hole 0, hole 15 and hole 20c. No public id changed; no shared fragment's text changed
+(the alert rules are untouched).
+
+- **Identity tables.** Every data_table that shows Identity now has a click-to-filter identity column, so a click pins
+  the identity and offers *Open in Identity 360*: Principal id (raw `user.name`, kept or grouped on) added to 00 Live
+  signal feed, 01 Top failed (full width; Last seen stays the sort tie-break but is no longer shown), 01 Failed sign-ins
+  (full width), 01 Identity first and last seen (full width; Action types dropped for room), 02 Latest high-value,
+  02 Cross-space (now w=30 beside an 18-wide spaces bar; Object types moved up beside Busiest objects, "up to 10"),
+  02 Saved-object activity, the shared Session records (02 and 07), 03 Raw system index requests, 04 Mutation feed.
+  Widths rebalanced at 1440 (Identity 190 on 04 Mutation feed with Action 175, Identity 185 on Session records,
+  Identity 210 on 02 activity and 03 raw requests, Session 170, Country 85…). 23 tables show Identity. The three 01
+  tables say in their descriptions that an API key's Principal id is its owner; click hints use one wording
+  ("Click a Principal id, Action or Space to pin it") where the 40 words allow.
+- **Exemptions, recorded** as `table(…, { noPin: '<why>' })` (kept in `lint`, stripped from the payload): 03 Denied
+  requests by identity (the folded "N other identities" row has no principal, and a null click cell pins
+  `NOT user.name exists`), 06 Highest-volume identities (width).
+- **Treemap (vega/01).** The query carries a `pin` (`e|`/`k|`/`d|`/`u|` + value, same order as the identity CASE,
+  `MAX(pin) BY actor`); a tile click calls `kibanaAddFilter` with the Identity dropdown's own conditions: user.email;
+  api_key.name with no email; user.domain + user.name with no email or key name; user.name with no email, key name or
+  key domain (a bare user.name phrase on a 1-event tile matched that person's 6,570 events, review); a folded tile pins nothing; pointer
+  cursor. The panel's in-memory `pins: true` gives it the Identity 360 drilldown (clicked on a private deploy: the menu
+  offers *Apply filter to current view* and *Open in Identity 360*; both work). Hole 15: `noRisk` signal; with nothing
+  scored every tile is `#54B399`, the gradient and its labels hide and the legend title reads *No risk scored in range*
+  (the title, rather than a separate text mark: it sits exactly where the legend was). Tiles with room print a
+  `risk N` line, ahead of the owner line. The risk scale's domain (and so the guard) is every identity in range, not
+  only the drawn tiles, so a folded identity's risk never sits beside a "No risk scored" legend. The tooltip's *Click
+  pins* row names what a click pins (email, API key or Principal id, in full).
+- **Drilldown on a Vega panel** needs the scoped reference `<panelIndex>:savedObjectRef`: with the legacy
+  `panel_<id>` reference plus drilldown references, the panel rendered *Cannot read properties of undefined (reading
+  'type')*. `repointVega()` (pure, unit-tested with `drillTargets()`) does that for drilled Vega panels only (README *Platform
+  constraints*).
+- **vega/11:** the double-click clear-all signal is gone (README lines removed).
+- **Lint:** `checkIdentityPins` (`checkLayout`) and `checkGradientLegends` (`checkVega`) in `layout.mjs`, unit-tested;
+  the gradient check also catches `{ scale }` fills, untyped legends over a continuous scale, legends in group marks,
+  and a "guard" that only reads the domain without comparing it with 0.
+- **`--rules` hint:** the rules are in Kibana under Alerting → Rules, on the Universal tab (it said Stack Management).
+- **Not done:** the treemap pill carried to Identity 360 reads "identity: …: Warning" ("Field query does not exist in
+  the current view"; it still filters — a Vega pill is a custom query filter, README *Platform constraints*); 00 Live
+  feed's Request column is ~140px at 1440 (step 2 regroups the feed); Identity on 01 Top failed and Failed sign-ins
+  still cuts the 36-character placeholder at 1440 (Principal id beside it shows it whole); a named key's row on 01 Top
+  failed, Failed sign-ins and first and last seen pins its owner, not the key (no room for an API key column at 1440;
+  1.0.7.1 adds one to the two failure tables); at 1440 the record feeds still cut long Object names and 44-character
+  session ids (hover expands); 01 API key inventory cuts 22-character key ids in Principal id (as before); the 01
+  *Credential type by identity* heatmap's rotated y title overlaps its row labels (not this release); the optional 03
+  Top index families "Busiest identity" pin; the advisory for Vega specs that draw identities without a click (02, 04,
+  05, 06).
 
 ## Release 1.0.6 — starter alert pack, 2026-10-26
 

@@ -113,7 +113,7 @@ const SERIES_ORDER = 'SORT verb != "create", verb != "update", verb != "delete"'
  * WORD JOINER after each hyphen stops "r3chk-04" breaking into "r3chk-" and "04".
  */
 const CROSS_SPACE = `FROM ${IDX} | ${TIME} | WHERE kibana.space.id IS NOT NULL | STATS n = COUNT(*) BY ${IDENTITY_KEYS}, kibana.space.id ` +
-  `| ${ACTOR_RESOLVE} | ${KIND_GROUPED} | STATS events = SUM(n), spaces = COUNT_DISTINCT(kibana.space.id), space_list = VALUES(kibana.space.id) BY actor, identity_kind ` +
+  `| ${ACTOR_RESOLVE} | ${KIND_GROUPED} | STATS events = SUM(n), spaces = COUNT_DISTINCT(kibana.space.id), space_list = VALUES(kibana.space.id) BY actor, identity_kind, user.name ` +
   '| SORT spaces DESC, events DESC | LIMIT 1000 | EVAL space_list = REPLACE(MV_CONCAT(MV_SORT(space_list), ", "), "-", "-⁠")';
 
 /**
@@ -123,7 +123,7 @@ const CROSS_SPACE = `FROM ${IDX} | ${TIME} | WHERE kibana.space.id IS NOT NULL |
  * action, the object type and its id in a sentence).
  */
 const OBJECT_ACTIVITY = `FROM ${IDX} | ${TIME} | ${KIB} | WHERE ${OBJ_PRESENT} | ${NOT_INTERNAL} | SORT @timestamp DESC | LIMIT 1000 ` +
-  `| ${ACTOR_RESOLVE} | ${KIND_EVENT} | ${OBJ} | ${objLabel('obj_name', 'obj_type')} | KEEP @timestamp, actor, identity_kind, event.action, obj_type, obj_name, kibana.space.id`;
+  `| ${ACTOR_RESOLVE} | ${KIND_EVENT} | ${OBJ} | ${objLabel('obj_name', 'obj_type')} | KEEP @timestamp, actor, identity_kind, user.name, event.action, obj_type, obj_name, kibana.space.id`;
 
 /** The intro (draft 4 of the 1.0.3 customer copy; INTRO TEXT in panels.mjs). */
 const INTRO = {
@@ -204,12 +204,13 @@ export function build() {
       // row is still one line.
       { wrap: true, empty: 'empty when only internals' }),
     table(0, 32, 48, 12, 'Latest high-value object access · noise gate applied',
-      `FROM ${IDX} | ${TIME} | ${KIB} | ${NOT_HTTP} | ${NOT_INTERNAL} | ${OBJ_GROK} | ${OBJ_NAME} | ${EXEC_FLAG} | STATS n = COUNT(*), last_ts = MAX(@timestamp) BY ${IDENTITY_KEYS}, ${CHANGED_KEYS}, obj_name, is_exec | ${ACTOR_RESOLVE} | ${KIND_GROUPED} | ${CHANGED_DERIVE} | WHERE obj_type IN ("dashboard","slo","alert","alerting_rule","tag","index-pattern","workflow","agent-builder-agent","agent-builder-tool","ml-job") | STATS last_seen = MAX(last_ts) BY actor, identity_kind, verb, type = obj_type, name = obj_name, is_exec | SORT last_seen DESC | LIMIT 10 | ${EXEC_LABEL}`,
+      `FROM ${IDX} | ${TIME} | ${KIB} | ${NOT_HTTP} | ${NOT_INTERNAL} | ${OBJ_GROK} | ${OBJ_NAME} | ${EXEC_FLAG} | STATS n = COUNT(*), last_ts = MAX(@timestamp) BY ${IDENTITY_KEYS}, ${CHANGED_KEYS}, obj_name, is_exec | ${ACTOR_RESOLVE} | ${KIND_GROUPED} | ${CHANGED_DERIVE} | WHERE obj_type IN ("dashboard","slo","alert","alerting_rule","tag","index-pattern","workflow","agent-builder-agent","agent-builder-tool","ml-job") | STATS last_seen = MAX(last_ts) BY actor, identity_kind, user.name, verb, type = obj_type, name = obj_name, is_exec | SORT last_seen DESC | LIMIT 10 | ${EXEC_LABEL}`,
       // Full width since 1.0.5.4: with the Identity type badge its columns no longer fit beside Busiest objects
-      // at a 1440px viewport, so that table moved down beside Cross-space activity. Every pixel the fixed
+      // at a 1440px viewport, so that table moved down (beside Object types since 1.0.7). Every pixel the fixed
       // columns do not need goes to Object. Identity keeps its width at a narrow viewport (min): an email cut
       // short names nobody.
-      [sized('actor', 245, { min: 200 }), sized('verb', 80), sized('type', 150, { label: 'Object type' }), { column: 'name', label: 'Object' }],
+      // Principal id (1.0.7): raw user.name, a group key, so a click pins the identity and opens Identity 360.
+      [sized('actor', 245, { min: 200 }), PIN_PRINCIPAL_SHORT, sized('verb', 80), sized('type', 150, { label: 'Object type' }), { column: 'name', label: 'Object' }],
       // No Events column: the panel answers "who touched it, and when", and the 72px a count took was
       // what left Object clipped at a 1440px viewport.
       ['last_seen'],
@@ -224,27 +225,31 @@ export function build() {
     // "noise included", the counterpart of the "noise gate applied" on the tables above (round 5 said
     // "suite included" here and "suite left out" above, and the tables above were then full of the
     // suite's review tooling, which the gate rightly keeps). Not "all traffic" like the two panels beside
-    // it: a LIMITed table may not say "all" (layout.mjs PROMISES_ALL). "up to 9" (the bound fitRows(11)
-    // sets) rather than the appended "· top 9 at most", which lost its "9" past the title line at a 1440px
+    // it: a LIMITed table may not say "all" (layout.mjs PROMISES_ALL). "up to 10" (the bound fitRows(12)
+    // sets; 9 at h=11 until the 1.0.7 relayout put it beside Busiest objects) rather than the appended
+    // "· top 9 at most", which lost its "9" past the title line at a 1440px
     // viewport; "Object types" is the tile's own name.
-    table(0, 56, 24, 11, 'Object types · noise included · up to 9',
-      `FROM ${IDX} | ${TIME} | WHERE kibana.saved_object.type IS NOT NULL | STATS events = COUNT(*), objects = COUNT_DISTINCT(kibana.saved_object.id) BY kibana.saved_object.type | SORT events DESC | LIMIT 9`,
+    table(24, 44, 24, 12, 'Object types · noise included · up to 10',
+      `FROM ${IDX} | ${TIME} | WHERE kibana.saved_object.type IS NOT NULL | STATS events = COUNT(*), objects = COUNT_DISTINCT(kibana.saved_object.id) BY kibana.saved_object.type | SORT events DESC | LIMIT 10`,
       [filterable('kibana.saved_object.type', { label: 'Object type', width: 150 })], ['events', sized('objects', 90, { label: 'Objects' })],
       'Saved-object types with the most events, reads and changes, over all Kibana traffic (routine included, unlike the two tables above). Objects counts distinct objects touched. “space” ranks high because every page load reads the active space.'),
-    bar(24, 56, 24, 11, 'Busiest spaces by id · all traffic · up to 10',
+    bar(30, 56, 18, 11, 'Busiest spaces by id · all traffic · up to 10',
       `FROM ${IDX} | ${TIME} | WHERE kibana.space.id IS NOT NULL | STATS events = COUNT(*) BY space = kibana.space.id | SORT events DESC | LIMIT 10`,
       'space', 'events', 'Kibana activity in the busiest spaces, all traffic; hover a bar for its count. Viewing these dashboards counts too, in the space they are viewed from.'),
     // Lens tables since 1.0.5.1 (RECORD FEEDS, panels.mjs), so the identity dropdowns narrow them; each keeps the
     // logic of the Discover session of the same name (searches/08, 04). Space list wraps, as the session's three-line
     // rows did, so a long list is read whole.
-    table(24, 44, 24, 12, 'Cross-space activity · all traffic', CROSS_SPACE,
-      ['actor', { column: 'space_list', label: 'Space list' }], [sized('spaces', 80, { label: 'Spaces' }), 'events'],
-      'Identities ranked by how many Kibana spaces they touched, all traffic, with the spaces named. More than one space is worth understanding.',
+    // 1.0.7: 30 columns for Principal id (raw user.name, the click-through to Identity 360); at 24 each text column
+    // kept 89px at a 1440px viewport. Object types moved up beside Busiest objects, and the spaces bar narrowed to 18.
+    table(0, 56, 30, 11, 'Cross-space activity · all traffic', CROSS_SPACE,
+      ['actor', PIN_PRINCIPAL_SHORT, { column: 'space_list', label: 'Space list' }], [sized('spaces', 80, { label: 'Spaces' }), 'events'],
+      'Identities ranked by how many Kibana spaces they touched, all traffic, with the spaces named. More than one space is worth understanding. Click a Principal id to pin it.',
       { wrap: true }),
     table(0, 67, 48, 15, 'Kibana saved-object activity · noise gate applied', OBJECT_ACTIVITY,
-      [sized('actor', 245, { min: 200 }), filterable('event.action', { label: 'Action', width: 190, min: 175 }), sized('obj_type', 140, { label: 'Object type' }), { column: 'obj_name', label: 'Object' }, filterable('kibana.space.id')],
+      // Identity 210 (1.0.7, an email of ~29 characters) so Object keeps more than 153px beside Principal id at 1440px.
+      [sized('actor', 210, { min: 200 }), PIN_PRINCIPAL_SHORT, filterable('event.action', { label: 'Action', width: 190, min: 175 }), sized('obj_type', 115, { label: 'Object type' }), { column: 'obj_name', label: 'Object' }, filterable('kibana.space.id')],
       ['@timestamp'],
-      'Kibana reads and changes of named objects, record by record, newest first. Routine page loads and this suite’s own activity are left out. Click an Action or a Space to pin it.',
+      'Kibana reads and changes of named objects, record by record, newest first. Routine page loads and this suite’s own activity are left out. Click a Principal id, Action or Space to pin it.',
       { scroll: true }),
     // The session timeline from Identity 360 (vega/13, one spec, so the two pages cannot disagree), directly
     // above the records it indexes: a click on a bar pins that session and zooms the picker to it, which

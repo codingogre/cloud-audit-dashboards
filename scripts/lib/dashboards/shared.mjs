@@ -156,7 +156,10 @@ export const CHANGED_DERIVE = `${VERB} | ${OBJ_TYPE}`;
  *
  * Object names what the row touched (1.0.5.4): "<type>: <title>", the id where Kibana recorded no title (a find
  * never carries one), and for a web request its path. Together with Operation that is everything Kibana's own
- * message said ("User has accessed dashboard [id=…]"), so the Message column went, for Identity type.
+ * message said ("User has accessed dashboard [id=…]"), so the Message column went, for Identity type. Principal id
+ * (1.0.7, PIN_PRINCIPAL_SHORT below) is the raw user.name, kept, so a click pins the identity or opens Identity 360.
+ * Session (170px of a 44-character id still tells sessions apart; a click pins the whole id) and Identity (185px holds
+ * an email of ~29 characters) gave it room, so Object keeps ~225px at a 1440px viewport.
  */
 const SESSION_TAB_NOISE = 'event.action IN ("saved_object_open_point_in_time", "saved_object_close_point_in_time", "space_get", "space_find") ' +
   'OR (event.action == "http_request" AND (NOT body.text LIKE "*/api/*" OR body.text LIKE "*/api/ui_counters/*" OR body.text LIKE "*/api/content_management/*"))';
@@ -165,8 +168,8 @@ export const SESSION_RECORDS = `FROM ${IDX} | ${TIME} | ${KIB} | WHERE kibana.se
   '| EVAL op = CASE(verb != "other", verb, COALESCE(REPLACE(event.action, "_", " "), "other")), ' +
   'object = CASE(kibana.saved_object.type IS NOT NULL, CONCAT(kibana.saved_object.type, ": ", COALESCE(kibana.saved_object.name, kibana.saved_object.id, "(no id)")), ' +
   'url.original IS NOT NULL, REPLACE(url.original, "^https?://[^/]+", ""), " ") ' +
-  '| KEEP @timestamp, actor, identity_kind, kibana.session.id, op, object, kibana.space.id';
+  '| KEEP @timestamp, actor, identity_kind, user.name, kibana.session.id, op, object, kibana.space.id';
 export const sessionRecords = (x, y, w, h, title, desc, opts = {}) => table(x, y, w, h, title, SESSION_RECORDS,
-  [sized('actor', 245, { min: 200 }), filterable('kibana.session.id', { width: 230, min: 220 }), { column: 'op', label: 'Operation', width: 100 },
+  [sized('actor', 185, { min: 175 }), PIN_PRINCIPAL_SHORT, filterable('kibana.session.id', { width: 170, min: 160 }), { column: 'op', label: 'Operation', width: 100 },
     { column: 'object', label: 'Object' }, filterable('kibana.space.id')],
   ['@timestamp'], desc, { scroll: true, ...opts });

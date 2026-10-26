@@ -36,9 +36,10 @@ import { requireView } from './lib/view.mjs';
  * layout check read. `PUT /api/dashboards/{id}` is Zod-strict, so a panel's `drill` destination and
  * table()'s `narrow1440` flag and the `lint` annotation (table(), search()) cannot ride along — they are kept on the in-memory definition and
  * stripped here, which is also what gets written to dashboards/*.json, since those files are the
- * payload as sent. So are `headed` and `small` (the post-pass's small-text markers, panels.mjs INTRO TEXT).
+ * payload as sent. So are `headed` and `small` (the post-pass's small-text markers, panels.mjs INTRO TEXT), and a Vega
+ * panel's `pins` (it pins an identity, so it gets the Identity 360 drilldown).
  */
-const strip = ({ drill, narrow1440, lint, headed, small, ...p }) => p;
+const strip = ({ drill, pins, narrow1440, lint, headed, small, ...p }) => p;
 /**
  * A section (panels.mjs, SECTIONS) goes out as the API's shape — a `panels` entry with no `type`, its grid only
  * a y — and its own panels stripped the same way. Exported for the unit tests.
@@ -96,6 +97,46 @@ export function checkSections(id, obj, panels, sections) {
   }
 }
 
+/**
+ * Which panels of dashboard `id` get the Identity 360 drilldown, as Map(panelIndex → destination dashboard id).
+ * Drilldowns fire on FILTER_TRIGGER, so they belong only on panels that already carry a click-to-filter column,
+ * or on a Vega panel that pins an identity itself (`pins`, panels.mjs vega(): the 00 treemap). Everywhere else
+ * drills IN to Identity 360; Identity 360's panels drill OUT only where a panel names its destination — drilling
+ * from it to itself would be a no-op. Pure, so the unit tests hold it.
+ */
+export const drillTargets = (id, flat) => new Map(flat.filter((p) => hasFilterableColumn(p) || p.pins)
+  .map((p) => [p.id, id === ACTOR_360 ? p.drill : ACTOR_360]).filter(([, dest]) => dest));
+
+/**
+ * Re-point every Vega panel of an exported dashboard (`panels`, mutated) at its saved visualization and return the
+ * new reference list. Pure apart from mutating `panels`, so the unit tests hold the drilled-Vega case (1.0.7).
+ */
+export function repointVega(panels, refs, vegaPanels, drillPanels) {
+  let changed = 0;
+  for (const p of panels) {
+    const vid = vegaPanels[p.panelIndex];
+    if (!vid) continue;
+    const refName = `panel_${p.panelIndex}`;
+    p.type = 'visualization';
+    delete p.embeddableConfig?.savedObjectId;
+    refs = refs.filter((r) => r.name !== `${p.panelIndex}:savedObjectRef` && r.name !== refName);
+    if (drillPanels.has(p.panelIndex)) {
+      // A Vega panel that also carries a drilldown (the 00 treemap, `pins`) has panel-scoped references
+      // (`<panelIndex>:drilldown:…`), and then Kibana hands the embeddable only its scoped references: the legacy
+      // `panel_<id>` one is not among them, the saved vis never loads, and the panel shows "Cannot read properties
+      // of undefined (reading 'type')" (rendered on a private 1.0.7 deploy). So it is referenced the scoped way,
+      // `<panelIndex>:savedObjectRef`, which the visualize embeddable's transform reads directly.
+      delete p.panelRefName;
+      refs.push({ name: `${p.panelIndex}:savedObjectRef`, type: 'visualization', id: vid });
+    } else {
+      p.panelRefName = refName;
+      refs.push({ name: refName, type: 'visualization', id: vid });
+    }
+    changed++;
+  }
+  return { refs, changed };
+}
+
 async function applyImportOnlyState(all) {
   let vegaTotal = 0;
   let drillTotal = 0;
@@ -109,11 +150,7 @@ async function applyImportOnlyState(all) {
     const introPanels = Object.fromEntries(flat.filter((p) => p.headed || p.small).map((p) => [p.id, p.config.content]));
     const vegaPanels = Object.fromEntries(
       flat.filter((p) => p.type === 'vis' && p.config?.ref_id).map((p) => [p.id, p.config.ref_id]));
-    // Drilldowns fire on FILTER_TRIGGER, so they belong only on panels that already carry a
-    // click-to-filter column. Everywhere else drills IN to Identity 360; Identity 360's panels drill OUT
-    // only where a panel names its destination — drilling from it to itself would be a no-op.
-    const drillPanels = new Map(flat.filter(hasFilterableColumn)
-      .map((p) => [p.id, id === ACTOR_360 ? p.drill : ACTOR_360]).filter(([, dest]) => dest));
+    const drillPanels = drillTargets(id, flat);
 
     const [obj] = await kb.exportObjects([{ type: 'dashboard', id }]);
     const panels = JSON.parse(obj.attributes.panelsJSON);
@@ -121,18 +158,8 @@ async function applyImportOnlyState(all) {
     // Drop the control-group references a pre-1.0.5.1 deploy patched in (controlGroup_<id>:optionsListDataView).
     // The ES|QL controls in pinned_panels reference no data view (1.0.5.2); the PUT replaced the classic ones'.
     let refs = (obj.references || []).filter((r) => !isControlRef(r.name) && !isDrilldownRef(r.name));
-    let changed = 0;
-    for (const p of panels) {
-      const vid = vegaPanels[p.panelIndex];
-      if (!vid) continue;
-      const refName = `panel_${p.panelIndex}`;
-      p.type = 'visualization';
-      p.panelRefName = refName;
-      delete p.embeddableConfig?.savedObjectId;
-      refs = refs.filter((r) => r.name !== `${p.panelIndex}:savedObjectRef` && r.name !== refName);
-      refs.push({ name: refName, type: 'visualization', id: vid });
-      changed++;
-    }
+    let changed;
+    ({ refs, changed } = repointVega(panels, refs, vegaPanels, drillPanels));
     // Column widths used to be patched in here. The 9.6 Dashboards API now carries `width` (and
     // `label`) on data_table rows AND metrics itself — verified by PUT then _export — so they ride
     // the PUT like any other panel option and this post-pass no longer touches them.

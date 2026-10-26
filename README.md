@@ -151,7 +151,10 @@ round-trip would destroy every Vega panel, which the API itself warns about via
 repoints Vega — see `applyImportOnlyState()` in `scripts/dashboards.mjs`. Because the PUT passes wipe that
 state on every deploy, the post-pass is part of every `--dashboards` run, not an install step.
 
-**Drilldowns run both ways.** Every identity panel elsewhere offers *Open in Identity 360*. Identity 360's
+**Drilldowns run both ways.** Every table that shows an identity has a click-to-filter Principal id (plus
+API key on some) that offers *Open in Identity 360*, and so do the Command Center treemap's tiles (1.0.7); 03
+*Denied requests by identity* and 06 *Highest-volume identities* are the two exceptions, and say why in a
+`noPin` reason (`checkIdentityPins` in `layout.mjs` fails any other table without one). Identity 360's
 own panels drill **out**, to the dashboard that owns the dimension clicked — an action to Security &
 Anomalies, an address to Geo & Network, an index to Elasticsearch Data Access — because Identity 360 is
 where something is noticed and the topic dashboards are where it is investigated. A panel names its
@@ -167,8 +170,10 @@ the session plus a minute either side, because the records under the timeline fo
 the timeline is fixed at 24 hours. The zoom is sent 0.7s and 1.4s after the click, from a Vega timer:
 `kibanaAddFilter` resolves its data view over the network before it fires, and a time change sent first
 reloads the panel and drops the filter (clicked in Playwright: the pill never appeared); sent 5s later,
-the reload the filter itself causes has already replaced the view and the zoom is lost. Double-clicking
-the flow clears every pill on the page.
+the reload the filter itself causes has already replaced the view and the zoom is lost. On Command Center,
+clicking a treemap tile pins that identity — its email, key name, or user name, each with the Identity dropdown's own conditions (the key
+domain for a Cloud or unnamed key; no email, key name or key domain beside a bare user name) — and the panel offers *Open in Identity 360*, from
+the same filter trigger (the panel's in-memory `pins` flag); a folded "+N more" tile pins nothing.
 
 **The control bar** — four dropdowns on every dashboard, defined in `scripts/lib/controls.mjs` (width `small`
 with grow, so the four share one row at 1440px and at 1920px). All four are ES|QL variable controls since
@@ -246,7 +251,7 @@ The older click-to-filter path still exists and needs neither:
 - the nav bar's `dashboardLink`s carry `use_filters: true`.
 
 **Identity tables click through to Identity 360** (1.0.5). An identity table shows *Identity*, the computed
-`actor`, which cannot be clicked. Beside it, the tables on 00, 02, 03 and 04 carry the raw fields behind it as
+`actor`, which cannot be clicked. Beside it, every identity table but two (since 1.0.7, the two with a `noPin` reason above; 00, 02, 03 and 04 in 1.0.5) carries the raw fields behind it as
 STATS BY group keys and show them as narrow click-to-filter columns (`PIN_BY`, `PIN_KEY`, `PIN_PRINCIPAL` in
 `scripts/lib/dashboards/shared.mjs`): **Principal id** (`user.name`: a Cloud API key's full id, a service
 account, a person's numeric id) everywhere, and **API key** (`api_key.name`) where a row has room for both
@@ -256,10 +261,12 @@ Identity 360 with `user.name: <id>` pinned, every panel narrowed). Two things to
 blocks of 00, 03 and 04):
 - A Principal id pin is the principal, not the credential. On a Cloud API key it also matches every
   Elasticsearch API key that key created, because Elasticsearch stamps the creator in `user.name`; a named
-  key's row, where there is no API key column, pins the identity that owns it. Picking the key in Identity
+  key's row, where there is no API key column, pins the identity that owns it (01's *Top failed*, *Failed
+  sign-ins* and *Identity first and last seen* say so in their descriptions). Picking the key in Identity
   narrows to the key itself.
-- *Principal id* is 250px where `<unauthenticated-cloud-access-token>` (36 characters) can appear, and 165px
-  where it cannot (it never signs in, so it changes nothing and reads no index). 00's *Busiest identities*
+- *Principal id* is 250px where `<unauthenticated-cloud-access-token>` (36 characters) is common (01's failure
+  tables and first and last seen), and 165px where it is rare or never appears (it never signs in, so it changes
+  nothing and reads no index; the Live feed shows it only on a failure, cut). 00's *Busiest identities*
   gave Last seen and Actions to it.
 03's *Denied requests by identity* has none: its last row folds the rest (`foldRest`), and nulling the raw
 keys there would mean assigning them. 07's *Who this is* groups by email **and** principal id, so it is not
@@ -508,7 +515,7 @@ Probed against Kibana 9.6 serverless. Several are undocumented and cost real tim
 | ES\|QL visualizations cannot be standalone saved objects | Lens panels are inline in the dashboard definition, which also keeps each dashboard self-contained and diffable |
 | XY split key is `breakdown_by`, not `breakdown` | — |
 | Partition charts use `metrics[]` + `group_by[]`, not `slice_by`/`metric` | — |
-| A `data_table` with an empty `metrics` array crashes the API | A record feed (a raw event listing) carries its time as the metric column: `@timestamp`, *Time*, at the right end, as *Last seen* is on every other table (*Record feeds* under Presentation conventions) |
+| A `data_table` with an empty `metrics` array crashes the API | A record feed (a raw event listing) carries its time as the metric column: `@timestamp`, *Time*, at the right end, as *Last seen* is on every other table (01 *Top failed* keeps it as a sort tie-break only; *Record feeds* under Presentation conventions) |
 | A Lens table prints a null cell as `-` (a clickable, underlined `-` in a click-to-filter column) and an empty string as `(blank)`; a column the query assigns — even `EVAL user.email = COALESCE(…)` — loses click-to-filter (*"relies on a field created at query time"*) | `blankNull()` blanks display columns only; a filter column keeps its nulls, or is dropped where they dominate |
 | A pie's outside slice labels are dropped for small slices when the panel is short | `pie()` always draws a legend (`right`, size `l`), so every category is named somewhere |
 | On an ES\|QL Vega spec, `"domain": {"%timefilter%": true}` renders the bare "Error" | Echo `?_tstart` / `?_tend` after the `STATS` and draw them as an invisible mark, so the axis spans the whole window (vega/07) |
@@ -525,6 +532,8 @@ Probed against Kibana 9.6 serverless. Several are undocumented and cost real tim
 | Two **unnamed** DSL datasets in one Vega spec cross their responses — the second gets nothing and the panel shows a bare "Error" | Every DSL dataset carries a unique `name`; `layout.mjs` fails the build otherwise. (Kibana's `es_query_parser` matches results by the result's index, not the request's) |
 | Kibana themes axis, legend and title text, but **not text marks** — an unstyled text mark is `#000` on the dark theme | Full Vega text marks take `style: "guide-label"` / `"guide-title"`, which Kibana colours per theme. Vega-Lite `style` does not reach text marks at all; there, words go in a `title` whose `text` is an expression. Every themed Vega style is the same *subdued* text colour (measured: `rgb(152,168,195)` dark, `rgb(81,99,129)` light), a step softer than a Lens metric, and a spec cannot ask for the theme. It can infer it, though (1.0.5.2): the Vega metric tiles carry an invisible text mark named `theme` on `guide-label`, read its fill back as data (`data('theme')[0].fill`, a named mark's items are a dataset), and pick a Lens metric's colours by its luminance: `#E3E8F2` / `#111C2C` for title and number, `#CAD3E2` / `#1D2A3E` for the line under the title (`TILE_INK`, `tileMarks()` in `panels.mjs`; pixel-identical to the Lens tiles beside them in both themes). Kibana main (#298989, after the 9.6 build of 2026-10-21) themes unstyled text marks with the paragraph colour |
 | `kibanaAddFilter(query, index)` resolves `index` by data view **title** | Pass `logs-elastic_cloud.serverless_audit.otel-default`; the id `elastic_cloud-audit-logs` renders *Index "elastic_cloud-audit-logs" not found* |
+| A Vega pill (`kibanaAddFilter`) is a custom query filter, so carried to another dashboard (a drilldown or a nav link) it reads *identity: … : Warning* with the hover text "Field query does not exist in the current view" (seen on the 00 treemap → Identity 360, 1.0.7) | It still filters: Identity 360 narrowed to the pinned identity. A table cell's pill is a phrase filter on the field and shows no warning; Vega has no API to build one |
+| A Vega panel with a drilldown loses its saved vis if it is referenced the legacy way (`panelRefName` / `panel_<id>`): it then has panel-scoped references and renders *Cannot read properties of undefined (reading 'type')* (1.0.7, private deploy) | The post-pass references that panel as `<panelIndex>:savedObjectRef` (`repointVega()` in `scripts/dashboards.mjs`, unit-tested) |
 | External URLs are blocked in Vega on serverless | The basemap is Elastic Maps Service: `{"%type%": "emsfile", "name": "World Countries"}` with `format: {type: "topojson", feature: "data"}` — not `property: "features"`, which yields one useless row |
 | Vega errors render inside the panel as `li.vgaVis__message--err`, often as a bare "Error" | `--verify` counts those elements in addition to reading text |
 | Dashboards, visualizations, searches and data views are **multiple-isolated**: an id is unique across all spaces | With the suite deployed in one space, a second space's `PUT /api/dashboards/elastic_cloud-audit-…` is a 409 and `_import` silently re-ids the Vega and Discover objects. The suite lives in the Default space, so a private render sits beside production under its own ids: set `AUDIT_ID_NS` (`AUDIT_ID_NS=x ./audit --objects`, then `--dashboards`, `--verify`) and every id is namespaced: `cloud-audit-x-…` for the Vega and Discover objects, `elastic_cloud-audit-x-…` for the dashboards and the data view (`elastic_cloud-audit-x-dashboard`, `elastic_cloud-audit-x-logs`, …) |
@@ -666,10 +675,10 @@ legend and the How to read blocks, not in each tooltip: `table()` appends the la
   bound the title states (*"· newest 1,000 at most"*, 200 on the Live signal feed). Raw fields shown as they are
   (Action, Client IP, Space, Session, Transport action, Index) are click-to-filter, so those feeds drill into Identity
   360 (Identity 360's own *Session records* only pins); a computed column never is. A hard-cut cell (a long message, a
-  change payload) opens whole from the expand icon its cell shows on hover. The Session column is 150px of a
+  change payload) opens whole from the expand icon its cell shows on hover. The Session column is 170px of a
   44-character id: enough to tell sessions apart, and a click pins the whole id.
 - *Identity type and click columns (1.0.5.4).* Every table that shows *Identity* shows *Identity type* right after
-  it, as a coloured badge worded exactly as the Identity type dropdown lists it (22 tables; `table()` adds the
+  it, as a coloured badge worded exactly as the Identity type dropdown lists it (23 tables; `table()` adds the
   column, `IDENTITY_KIND_COLORS` in `panels.mjs` colours it the same everywhere: red for a failed sign-in, grey for
   Unattributed and Other). The type cannot be read back from the name (`elastic` is an account and also a name
   tried at a failed sign-in), so each query works it out where it resolves the identity: grouped tables count
@@ -835,6 +844,13 @@ background (dark panels are ~`#111C2C`, light are white).
 - *Severity* (a second quantity on the same mark, as on the treemap and the rare-event scatter):
   `"range": ["#54B399", "#D6BF57", "#E7664C"]` (`SEVERITY_RAMP`) over `[0, RISK_MAX]` — mid-tones only,
   monotone in meaning. Text drawn over a severity fill uses `#1D1E24` on the yellow and orange stops.
+  **Guard a zero-width domain** (1.0.7): when every value is 0, d3 maps all of them to the ramp's middle, so
+  the treemap went all yellow at a quiet hour and its legend printed "0" three times. A signal tests
+  `domain('risk')[1] <= 0`, over every identity in range (the scale's domain is the raw rows, so a folded
+  identity's risk counts); the fills then paint `#54B399` and the legend hides its gradient and reads *No risk
+  scored in range*. `--lint` (`checkGradientLegends`) fails a gradient legend at any depth (explicit, or untyped
+  over a continuous scale), or a `scale()` or `{ scale }` fill under it, that does not go through a signal
+  comparing `domain(S)[1]` with 0.
 - *Categories*: `PALETTE` in `panels.mjs` (`#54B399, #6092C0, #D36086, #9170B8, #CA8EAE, #D6BF57,
   #B9A888, #DA8B45, #AA6556, #E7664C`) — the same ten Lens draws breakdowns with, so a category
   pinned with `xy({ colors })` and the same category in Vega can match.

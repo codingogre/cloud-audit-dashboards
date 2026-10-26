@@ -224,11 +224,13 @@ export function build() {
     // the Access denied tile at any count (round 4: ten of fifteen identities summed to 842 of 853).
     // No API key / Principal id click columns here (PIN_COLS, shared.mjs): the folded row would need its raw
     // keys nulled, and a column the query assigns cannot be clicked. The fold wins; the table below has them.
+    // A null user.name in a click column pins `NOT user.name exists` (Kibana's create_filters_from_value_click),
+    // so on the fold row a click would wrongly pin anonymous requests. Recorded as { noPin } (layout.mjs checkIdentityPins).
     table(0, 49, 48, 12, 'Denied requests by identity',
       `FROM ${IDX} | ${TIME} | WHERE event.action == "access_denied" OR event.action == "anonymous_access_denied" | STATS events = COUNT(*), seen = MAX(@timestamp) BY ${IDENTITY_KEYS}, elasticsearch.audit.action, elasticsearch.audit.indices | ${ACTOR_RESOLVE}, k = CONCAT(TO_STRING(seen), "|", COALESCE(elasticsearch.audit.action, "—"), "|", COALESCE(elasticsearch.audit.indices, "—")) | ${KIND_GROUPED} | STATS events = SUM(events), last_seen = MAX(seen), latest = MAX(k), actions = VALUES(elasticsearch.audit.action), indices = VALUES(elasticsearch.audit.indices) BY actor, identity_kind | ${foldRest(fitRows(12))} | EVAL latest_action = MV_SLICE(SPLIT(latest, "|"), 1), latest_index = MV_SLICE(SPLIT(latest, "|"), 2), actions = COALESCE(MV_COUNT(actions), 0), indices = COALESCE(MV_COUNT(indices), 0) | KEEP actor, identity_kind, latest_action, latest_index, actions, indices, events, last_seen | SORT last_seen DESC | LIMIT ${fitRows(12)}`,
       ['actor', { column: 'latest_action', label: 'Latest denied action' }, { column: 'latest_index', label: 'On index' }], [{ column: 'actions', label: 'Actions' }, 'indices', { column: 'events', label: 'Denials' }, 'last_seen'],
       'Who was refused, newest first: each identity’s latest denied action and index, how many actions and indices, and its denials. A last row “N other identities” holds the rest; index “—” is a cluster-level request.',
-      { empty: 'good' }),
+      { empty: 'good', noPin: 'the folded “N other identities” row has no principal, and a null click cell pins NOT user.name exists' }),
     // One row per identity, for the same reason: per (identity, index group, action) a single
     // resolve/index request naming a dozen system areas filled the panel and pushed every other
     // identity out of view, so the newest-first sort hid the one-off reads it exists to surface.
@@ -242,9 +244,10 @@ export function build() {
     // it: searches/05's logic, sorted and cut straight after the filter (QUERY SHAPE rule 3). Transport action,
     // Index and Client IP are the raw fields, so a click pins them.
     table(0, 71, 48, 12, 'Raw system index requests',
-      `FROM ${IDX} | ${TIME} | WHERE elasticsearch.audit.indices IS NOT NULL | MV_EXPAND elasticsearch.audit.indices | ${SYS_INDEX} | SORT @timestamp DESC | LIMIT 1000 | ${ACTOR_RESOLVE} | ${KIND_EVENT} | KEEP @timestamp, actor, identity_kind, elasticsearch.audit.action, elasticsearch.audit.indices, client.ip`,
-      [sized('actor', 245, { min: 200 }), filterable('elasticsearch.audit.action', { width: 300, min: 240 }), filterable('elasticsearch.audit.indices'), filterable('client.ip')], ['@timestamp'],
-      'The raw requests behind the system index table above, one row per index named, newest first: one request naming ten indices is ten rows. Click an action, index or address to pin it.',
+      `FROM ${IDX} | ${TIME} | WHERE elasticsearch.audit.indices IS NOT NULL | MV_EXPAND elasticsearch.audit.indices | ${SYS_INDEX} | SORT @timestamp DESC | LIMIT 1000 | ${ACTOR_RESOLVE} | ${KIND_EVENT} | KEEP @timestamp, actor, identity_kind, user.name, elasticsearch.audit.action, elasticsearch.audit.indices, client.ip`,
+      // 1.0.7: Identity 210 and Transport action 250 so Index keeps more than 153px beside Principal id at 1440px.
+      [sized('actor', 210, { min: 200 }), PIN_PRINCIPAL_SHORT, filterable('elasticsearch.audit.action', { width: 250, min: 230 }), filterable('elasticsearch.audit.indices'), filterable('client.ip')], ['@timestamp'],
+      'The raw requests behind the system index table above, one row per index named, newest first: one request naming ten indices is ten rows. Click a Principal id, Transport action, Index or Client IP to pin it.',
       { scroll: true, empty: 'quiet' }),
   ];
   return dash(rawId('03-data-access'), '[Audit] 🔎 Elasticsearch Data Access',

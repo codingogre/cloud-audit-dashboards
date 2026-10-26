@@ -219,7 +219,10 @@ export function build() {
       // "<unauthenticated-cloud-access-token>" ran into Kind (round-5 skeptic); Noisiest's longest
       // action and "_4KEO… · Cloud API key + 19 more" still fit at 22.
       ['actor', { column: 'actor_kind', width: 120 }], ['events', { column: 'actions', width: 72 }],
-      'Unfiltered volume leaderboard: where machine traffic shows up. Kind “API key” is a named, unnamed or Cloud API key; “failed sign-in” is a user name that never signed in.'),
+      'Unfiltered volume leaderboard: where machine traffic shows up. Kind “API key” is a named, unnamed or Cloud API key; “failed sign-in” is a user name that never signed in.',
+      // No Principal id (1.0.7): at w=26 a 250px column leaves Identity ~65px at a 1440px viewport. Named API keys
+      // beside it pins keys, and the board is opt-in.
+      { noPin: 'width: at w=26 a Principal id column leaves Identity about 65px at 1440px; Named API keys beside it pins keys' }),
   ];
   return dash(rawId('06-platform-volume'), '[Audit] 📊 Platform Volume & API Keys',
     'The unfiltered firehose, quarantined so the forensic dashboards stay readable.', P, { intro: INTRO });

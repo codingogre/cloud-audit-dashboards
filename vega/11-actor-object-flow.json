@@ -44,16 +44,6 @@
       ]
     },
     {
-      "name": "clearAll",
-      "value": null,
-      "on": [
-        {
-          "events": "dblclick",
-          "update": "kibanaRemoveAllFilters()"
-        }
-      ]
-    },
-    {
       "name": "foldK",
       "value": 8
     },

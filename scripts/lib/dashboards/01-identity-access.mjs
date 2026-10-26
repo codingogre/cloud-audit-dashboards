@@ -4,7 +4,7 @@ import {
   grouped, FAILED_OR_DENIED, SIGNIN_FAILED, NOISE, cloudKeyLabel, IDENTITY_KEYS, KIND_GROUPED, KIND_EVENT
 } from '../panels.mjs';
 import { rawId } from '../suite.mjs';
-import { WHO, RAW_RECORDS, PIN_PRINCIPAL_SHORT } from './shared.mjs';
+import { WHO, RAW_RECORDS, PIN_PRINCIPAL, PIN_PRINCIPAL_SHORT } from './shared.mjs';
 
 // FAILED_OR_DENIED and SIGNIN_FAILED live in panels.mjs: 04's failure panels count the same way.
 
@@ -104,13 +104,14 @@ const compactLog = (p) => {
  *
  * FAILED_FEED (searches/02): every failure FAILED_OR_DENIED counts, newest first, sorted and cut before the CASEs
  * that word each row (QUERY SHAPE rule 3). Action and Client IP are the raw fields, so a click pins them. No Result
- * column since 1.0.5.4: Identity type marks the failed sign-ins and Action names every other failure.
+ * column since 1.0.5.4: Identity type marks the failed sign-ins and Action names every other failure. Principal id
+ * (1.0.7) is the raw user.name, kept: PIN_PRINCIPAL's full width, because placeholder principals are certain here.
  */
 const FAILED_FEED = `FROM ${IDX} | ${TIME} | ${FAILED_OR_DENIED} | SORT @timestamp DESC | LIMIT 1000 | ${ACTOR_RESOLVE} | ${KIND_EVENT} ` +
   `| EVAL ${CRED_TYPE_LABEL}, result = CASE(event.action IN (${SIGNIN_FAILED}), "failed sign-in", event.action == "access_denied", "denied", "failed") ` +
   '| EVAL auth = COALESCE(auth, CASE(result == "failed sign-in", "not authenticated", user.domain IN ("_es_api_key", "_cloud_api_key"), "API key", user.domain == "cloud-saml-kibana", "SAML SSO", user.domain)), ' +
   'country = COALESCE(client.geo.country_iso_code, CASE(client.ip IS NULL, "no IP", CIDR_MATCH(client.ip, "100.64.0.0/10", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8"), "internal", "not located")) ' +
-  '| KEEP @timestamp, actor, identity_kind, event.action, auth, country, client.ip';
+  '| KEEP @timestamp, actor, identity_kind, user.name, event.action, auth, country, client.ip';
 /**
  * KEY_INVENTORY (searches/07): one row per key, busiest first, cut before the labels are worded. A Cloud API key
  * has no name and no recorded owner, so its row reads the shared short form and "Cloud organization".
@@ -132,17 +133,17 @@ const KEY_INVENTORY = `FROM ${IDX} | ${TIME} | ${KEYED} | STATS events = COUNT(*
 // 935ms over 30 days.
 const FIRST_SEEN = `FROM ${IDX} | ${TIME} ` +
   '| FORK (STATS first_seen = MIN(@timestamp), last_seen = MAX(@timestamp), events = COUNT(*), ipv = VALUES(client.ip), ' +
-  `cv = VALUES(client.geo.country_iso_code), ip_lo = MIN(client.ip), ip_hi = MAX(client.ip), av = VALUES(event.action) BY ${IDENTITY_KEYS}) ` +
+  `cv = VALUES(client.geo.country_iso_code), ip_lo = MIN(client.ip), ip_hi = MAX(client.ip) BY ${IDENTITY_KEYS}) ` +
   `(${NOISE} | STATS signal = COUNT(*) BY ${IDENTITY_KEYS}) ` +
   `| ${ACTOR_RESOLVE} | ${KIND_GROUPED} ` +
   '| STATS first_seen = MIN(first_seen), last_seen = MAX(last_seen), events = SUM(events), signal = SUM(signal), ipv = VALUES(ipv), cv = VALUES(cv), ' +
-  'ip_lo = MIN(ip_lo), ip_hi = MAX(ip_hi), av = VALUES(av) BY actor, identity_kind ' +
-  '| EVAL ips = COALESCE(MV_COUNT(ipv), 0), countries = COALESCE(MV_COUNT(cv), 0), actions = COALESCE(MV_COUNT(av), 0) ' +
+  'ip_lo = MIN(ip_lo), ip_hi = MAX(ip_hi) BY actor, identity_kind, user.name ' +
+  '| EVAL ips = COALESCE(MV_COUNT(ipv), 0), countries = COALESCE(MV_COUNT(cv), 0) ' +
   '| SORT first_seen DESC | LIMIT 1000 ' +
   '| EVAL signal = COALESCE(signal, 0), countries = CASE(countries == 1, "1 country", countries > 1, CONCAT(TO_STRING(countries), " countries"), ips == 0, "no IP", ' +
   ['100.64.0.0/10', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '127.0.0.0/8'].map((c) => `(CIDR_MATCH(ip_lo, "${c}") AND CIDR_MATCH(ip_hi, "${c}"))`).join(' OR ') +
   ', "internal", "not located") ' +
-  '| KEEP actor, identity_kind, countries, first_seen, last_seen, events, signal, ips, actions';
+  '| KEEP actor, identity_kind, user.name, countries, first_seen, last_seen, events, signal, ips';
 
 /** The intro (draft 3 of the 1.0.3 customer copy; INTRO TEXT in panels.mjs). */
 const INTRO = {
@@ -286,19 +287,24 @@ export function build() {
     // Result went to make room for Identity type. A failure with no client address (anonymous_access_denied)
     // reads "-": a filter column cannot be assigned in ES|QL. Ties are broken by recency and then by name: on
     // events alone, rows with equal counts (admin and elastic at 30 each) swapped places between two renders.
+    // Principal id (1.0.7, raw user.name, a group key) pins the identity and opens Identity 360. Full width: failed
+    // sign-ins carry the placeholder principals. Last seen stays the tie-break but is no longer shown: with it,
+    // Identity kept 67px at a 1440px viewport.
     table(12, 29, 36, 12, 'Top failed or denied access',
-      `FROM ${IDX} | ${TIME} | ${FAILED_OR_DENIED} | STATS events = COUNT(*), last_seen = MAX(@timestamp) BY ${IDENTITY_KEYS}, event.action, client.ip | ${ACTOR_RESOLVE} | ${KIND_GROUPED} | STATS events = SUM(events), last_seen = MAX(last_seen) BY actor, identity_kind, event.action, client.ip | SORT events DESC, last_seen DESC, actor, event.action, client.ip | LIMIT 10`,
-      ['actor', filterable('event.action', { label: 'Action', width: 175 }), filterable('client.ip')], ['events', 'last_seen'],
-      'Failed sign-ins and refused requests by identity, action and client IP, most frequent first. Click an action or an address to filter the page by it.',
+      `FROM ${IDX} | ${TIME} | ${FAILED_OR_DENIED} | STATS events = COUNT(*), last_seen = MAX(@timestamp) BY ${IDENTITY_KEYS}, event.action, client.ip | ${ACTOR_RESOLVE} | ${KIND_GROUPED} | STATS events = SUM(events), last_seen = MAX(last_seen) BY actor, identity_kind, user.name, event.action, client.ip | SORT events DESC, last_seen DESC, actor, event.action, client.ip | LIMIT 10`,
+      ['actor', PIN_PRINCIPAL, filterable('event.action', { label: 'Action', width: 175 }), filterable('client.ip')], [sized('events', 72)],
+      'Failed sign-ins and refused requests by identity, action and client IP, most frequent first. Click a Principal id, Action or Client IP to pin it; an API key’s Principal id is its owner.',
       { empty: 'good' }),
     // The three record lists run full width: they are the evidence, so every column has to be readable. Lens
     // tables since 1.0.5.1 (RECORD FEEDS, panels.mjs), so the identity dropdowns narrow them too; each keeps the
     // logic of the Discover session of the same name (searches/02, 07, 06) and scrolls to that session's bound.
     table(0, 41, 48, 12, 'Failed sign-ins and denied access', FAILED_FEED,
-      ['actor', filterable('event.action', { label: 'Action', width: 220, min: 200 }), { column: 'auth', label: 'Credential', width: 150, min: 130 },
-        'country', filterable('client.ip')],
+      // 1.0.7: Action and Credential give back what their longest values do not need, so Identity (the one column
+      // that flexes) keeps more than the 153px Principal id left it at a 1440px viewport (rendered).
+      ['actor', PIN_PRINCIPAL, filterable('event.action', { label: 'Action', width: 185, min: 175 }), { column: 'auth', label: 'Credential', width: 125, min: 120 },
+        sized('country', 85), filterable('client.ip')],
       ['@timestamp'],
-      'Failed sign-ins and refused requests, record by record, newest first; the Failed or denied tile has the total. Credential reads “not authenticated” when no credential worked; Country “internal” is Kibana or the platform acting for someone.',
+      'Failed sign-ins and refused requests, newest first. Credential “not authenticated”: no credential worked. Country “internal”: Kibana or the platform acting for someone. Click a Principal id to pin it; an API key’s Principal id is its owner.',
       { scroll: true, empty: 'good' }),
     table(0, 53, 48, 12, 'API key inventory', KEY_INVENTORY,
       [{ column: 'api_key', label: 'API key' }, filterable('api_key.id', { label: 'Key ID', width: 175, min: 160 }), PIN_PRINCIPAL_SHORT, 'owner'],
@@ -306,9 +312,11 @@ export function build() {
       'Every API key used in range, Cloud and Elasticsearch, busiest first, with owner, volume, IP spread, indices touched and first and last use. Owner is its creator: a person or the Cloud API key that minted it.',
       { scroll: true }),
     table(0, 65, 48, 14, 'Identity first and last seen', FIRST_SEEN,
-      ['actor', { column: 'countries', label: 'Located in', width: 105 }],
-      ['first_seen', 'last_seen', 'events', sized('signal', 115, { label: 'Signal events' }), 'ips', sized('actions', 105, { label: 'Action types' })],
-      'Every identity in range, all traffic, newest first appearance on top, with all its events and its signal events after the noise gate. Widen the time range to tell a brand-new identity from a quiet one.',
+      ['actor', PIN_PRINCIPAL, { column: 'countries', label: 'Located in', width: 90 }],
+      // No Action types since 1.0.7: with Principal id beside Identity it left Identity 147px at a 1440px viewport and
+      // wrapped the Signal events header onto two lines (rendered).
+      ['first_seen', 'last_seen', sized('events', 72), sized('signal', 105, { label: 'Signal events' }), sized('ips', 60, { label: 'IPs' })],
+      'Every identity in range, all traffic, newest first appearance on top, with events and signal events after the noise gate. Widen the range to tell new from quiet. An API key’s Principal id is its owner.',
       { scroll: true }),
   ];
   return dash(rawId('01-identity-access'), '[Audit] 🔐 Identity & Access',

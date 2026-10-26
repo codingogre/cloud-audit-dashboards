@@ -112,7 +112,7 @@ export async function run() {
   }
   await removeRetired();
   success(`${out.length} alert rules deployed to the Default space (${created} created disabled, ${replaced} replaced, ${unchanged} unchanged; on/off kept)`);
-  info(`Enable them in Stack Management → Rules, and route alerts with an action policy matching the tag "${ruleTag()}"`);
+  info(`Enable them in Kibana under Alerting → Rules, on the Universal tab, and route alerts with an action policy matching the tag "${ruleTag()}"`);
   return out;
 }
 
