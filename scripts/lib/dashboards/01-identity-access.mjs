@@ -1,10 +1,10 @@
 /** 01 Identity & Access — see scripts/lib/definitions.mjs for how the suite is assembled. */
 import {
   IDX, ACTOR_RESOLVE, ACTOR_KEYS, ORG, CRED_TYPE_LABEL, CRED_TYPE_COLORS, TIME, dash, kpi, xy, table, sized, vega, resetIds, bar, filterable,
-  grouped, FAILED_OR_DENIED, SIGNIN_FAILED, NOISE, cloudKeyLabel, IDENTITY_KEYS, KIND_GROUPED, KIND_EVENT
+  grouped, FAILED_OR_DENIED, SIGNIN_FAILED, NOISE, cloudKeyLabel, IDENTITY_KEYS, KIND_GROUPED
 } from '../panels.mjs';
 import { rawId } from '../suite.mjs';
-import { WHO, RAW_RECORDS, PIN_PRINCIPAL, PIN_PRINCIPAL_SHORT } from './shared.mjs';
+import { WHO, RAW_RECORDS, PIN_PRINCIPAL, PIN_PRINCIPAL_SHORT, PIN_KEY } from './shared.mjs';
 
 // FAILED_OR_DENIED and SIGNIN_FAILED live in panels.mjs: 04's failure panels count the same way.
 
@@ -103,15 +103,40 @@ const compactLog = (p) => {
  * panels.mjs); each is the logic of the Discover session of the same name.
  *
  * FAILED_FEED (searches/02): every failure FAILED_OR_DENIED counts, newest first, sorted and cut before the CASEs
- * that word each row (QUERY SHAPE rule 3). Action and Client IP are the raw fields, so a click pins them. No Result
- * column since 1.0.5.4: Identity type marks the failed sign-ins and Action names every other failure. Principal id
- * (1.0.7) is the raw user.name, kept: PIN_PRINCIPAL's full width, because placeholder principals are certain here.
+ * that word each row (QUERY SHAPE rule 3). Action, Path, Client IP, Principal id and API key are the raw fields, so a
+ * click pins them. Principal id (1.0.7) is the raw user.name; on a named Elasticsearch key's row it is the key's owner,
+ * so API key (1.0.7.1, api_key.name) is the click that pins the key itself.
+ *
+ * Path and Caller (1.0.7.1, UC-006). Every failed sign-in is an Elasticsearch event with a url.path and an x-opaque-id
+ * but no transport action (7 days, live: 49 of 49), and its client.ip is the platform proxy (100.64/10), so the path and
+ * the caller are what say where a failure came from. CALLER is the requesting client's x-opaque-id without Kibana's
+ * per-request id: "Kibana dashboards · elastic_cloud-audit-dashboard" is Kibana itself, retrying with an expired browser
+ * session while a dashboard stays open (30 days: 54 of 54 at /_security/_authenticate). The raw header is unique per
+ * request, so Caller is display-only. The field name needs backticks.
+ *
+ * Columns at 1440px (1300px full width): Time, Identity, Principal id, API key, Action, Path, Caller and Client IP, and
+ * the rows wrap. Credential and Country (until 1.0.7.1) and the Identity type badge (noKind) gave way: on a failure
+ * Credential read "not authenticated" and Country "internal" on nearly every row, and with all three Caller kept ~0px.
+ * Without the badge, Action (authentication_failed, access_denied, …) says what kind of failure a row is, but a named
+ * key reads like any other identity: the type cannot be read back from the name (README). searches/02 keeps Credential and Country.
  */
-const FAILED_FEED = `FROM ${IDX} | ${TIME} | ${FAILED_OR_DENIED} | SORT @timestamp DESC | LIMIT 1000 | ${ACTOR_RESOLVE} | ${KIND_EVENT} ` +
-  `| EVAL ${CRED_TYPE_LABEL}, result = CASE(event.action IN (${SIGNIN_FAILED}), "failed sign-in", event.action == "access_denied", "denied", "failed") ` +
-  '| EVAL auth = COALESCE(auth, CASE(result == "failed sign-in", "not authenticated", user.domain IN ("_es_api_key", "_cloud_api_key"), "API key", user.domain == "cloud-saml-kibana", "SAML SSO", user.domain)), ' +
-  'country = COALESCE(client.geo.country_iso_code, CASE(client.ip IS NULL, "no IP", CIDR_MATCH(client.ip, "100.64.0.0/10", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8"), "internal", "not located")) ' +
-  '| KEEP @timestamp, actor, identity_kind, user.name, event.action, auth, country, client.ip';
+/**
+ * API key (PIN_KEY in shared.mjs) at 120px on Failed sign-ins, where Caller needs the room: a named key's full name is
+ * already the row's Identity, so this column is the click that pins it, and its rows wrap. Top failed keeps PIN_KEY's
+ * 150px: at 120 a ~45-character key name wrapped to five lines and the table showed four rows (rendered, 7 days).
+ */
+const KEY_PIN = { ...PIN_KEY, width: 120 };
+// Kibana's audit events never record the header (30 days: 102 Kibana failures, none with it), so a Kibana row reads
+// "not recorded" rather than "not sent". A Kibana application id with nothing after it (2 events in 30 days) reads
+// "Kibana dashboards", not "Kibana dashboards · ".
+const CALLER = 'caller = CASE(`http.request.header.x-opaque-id` IS NULL AND service.name == "serverless-kibana", "not recorded", ' +
+  '`http.request.header.x-opaque-id` IS NULL, "not sent", ' +
+  '`http.request.header.x-opaque-id` RLIKE "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", "request id only", ' +
+  'REPLACE(REPLACE(REPLACE(`http.request.header.x-opaque-id`, "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12};", ""), ' +
+  '"^kibana:application:([^:]+):(.+)$", "Kibana $1 · $2"), "^kibana:application:([^:]+):$", "Kibana $1"))';
+const FAILED_FEED = `FROM ${IDX} | ${TIME} | ${FAILED_OR_DENIED} | SORT @timestamp DESC | LIMIT 1000 | ${ACTOR_RESOLVE} ` +
+  `| EVAL ${CALLER} ` +
+  '| KEEP @timestamp, actor, user.name, api_key.name, event.action, url.path, caller, client.ip';
 /**
  * KEY_INVENTORY (searches/07): one row per key, busiest first, cut before the labels are worded. A Cloud API key
  * has no name and no recorded owner, so its row reads the shared short form and "Cloud organization".
@@ -159,7 +184,7 @@ const INTRO = {
     'API key traffic has carried no email in this audit log. Kibana does not record which Elasticsearch key it was given, so those rows read “Unnamed key of” the key’s owner.',
     'Cloud API keys have no name or owner: tables show the start of the id, “_4KEO… · Cloud API key”, with Owner “Cloud organization”.',
     'A re-issued key keeps its name under a new id, so key ids can outnumber names.',
-    'A failed sign-in counts once per attempt. Credential type exists only on Elasticsearch requests, so those panels leave out Kibana traffic.',
+    'A failed sign-in counts once per attempt. Caller “Kibana dashboards · …” is Kibana retrying with an expired browser session, usually harmless. Credential type covers Elasticsearch requests only.',
     'The links above carry the time range and filter pills to the next page, but no dropdown choice: pick again there.',
   ],
 };
@@ -281,31 +306,32 @@ export function build() {
       [WHO], ['events'],
       'The people the Humans tile counts, busiest first, over all traffic. Identity first and last seen has the rest, with first and last seen times and IP counts. Click an email to pin that person across the suite.'),
     // Grouped on the raw identity fields and resolved afterwards (QUERY SHAPE rule 2): the CASE then runs once per
-    // group instead of once per failed event. Action and Client IP are the raw fields, so both filter on click
-    // (1.0.5.4; until then they were STATS aliases, display only, and a Result column named the kind of failure).
-    // Every row here is a failure, Identity type says which were sign-ins, and the action names the rest, so
-    // Result went to make room for Identity type. A failure with no client address (anonymous_access_denied)
-    // reads "-": a filter column cannot be assigned in ES|QL. Ties are broken by recency and then by name: on
-    // events alone, rows with equal counts (admin and elastic at 30 each) swapped places between two renders.
-    // Principal id (1.0.7, raw user.name, a group key) pins the identity and opens Identity 360. Full width: failed
-    // sign-ins carry the placeholder principals. Last seen stays the tie-break but is no longer shown: with it,
-    // Identity kept 67px at a 1440px viewport.
+    // group instead of once per failed event. Action, Path, Principal id and API key are group keys on the raw fields,
+    // so each filters on click. Ties are broken by recency and then by name: on events alone, rows with equal counts
+    // (admin and elastic at 30 each) swapped places between two renders. Last seen stays the tie-break but is not shown.
+    // Principal id (1.0.7, raw user.name) pins the identity and opens Identity 360; on a named key's row it is the key's
+    // owner, so API key (1.0.7.1) pins the key. 1.0.7.1 (UC-006) adds Path, the request a failure was refused on
+    // (FAILED_FEED); a refused request (access_denied) and a Kibana failure carry no url.path, so theirs read "-". At 36 columns (969px at 1440) Path and API key fit only in place of Client IP (on failures, the
+    // platform proxy) and the Identity type badge (noKind); Caller is on Failed sign-ins below, where the width is.
+    // The rows wrap (1.0.7.1): at 7 days the denied rows were named keys of ~45 characters (cloud-audit-r1051c-
+    // privprobe-…), cut in Identity and API key alike so that eight rows read the same (rendered). Wrapped, Identity
+    // (~280px, Principal id at the short width) shows a name whole on one or two lines, and the placeholder principal
+    // breaks onto a second line in Principal id instead of being cut.
     table(12, 29, 36, 12, 'Top failed or denied access',
-      `FROM ${IDX} | ${TIME} | ${FAILED_OR_DENIED} | STATS events = COUNT(*), last_seen = MAX(@timestamp) BY ${IDENTITY_KEYS}, event.action, client.ip | ${ACTOR_RESOLVE} | ${KIND_GROUPED} | STATS events = SUM(events), last_seen = MAX(last_seen) BY actor, identity_kind, user.name, event.action, client.ip | SORT events DESC, last_seen DESC, actor, event.action, client.ip | LIMIT 10`,
-      ['actor', PIN_PRINCIPAL, filterable('event.action', { label: 'Action', width: 175 }), filterable('client.ip')], [sized('events', 72)],
-      'Failed sign-ins and refused requests by identity, action and client IP, most frequent first. Click a Principal id, Action or Client IP to pin it; an API key’s Principal id is its owner.',
-      { empty: 'good' }),
+      `FROM ${IDX} | ${TIME} | ${FAILED_OR_DENIED} | STATS events = COUNT(*), last_seen = MAX(@timestamp) BY ${ACTOR_KEYS}, event.action, url.path | ${ACTOR_RESOLVE} | STATS events = SUM(events), last_seen = MAX(last_seen) BY actor, user.name, api_key.name, event.action, url.path | SORT events DESC, last_seen DESC, actor, event.action, url.path | LIMIT 10`,
+      ['actor', PIN_PRINCIPAL_SHORT, PIN_KEY, filterable('event.action', { label: 'Action', width: 172, min: 172 }), filterable('url.path', { label: 'Path', width: 155, min: 150 })],
+      [sized('events', 64, { min: 64 })],
+      'Failed sign-ins and refused requests by identity, action and path, most frequent first. Click a Principal id, API key, Action or Path to pin it; a named key’s Principal id is its owner.',
+      { wrap: true, empty: 'good', noKind: 'Path and API key need the room at 36 columns; Action says the kind of failure' }),
     // The three record lists run full width: they are the evidence, so every column has to be readable. Lens
     // tables since 1.0.5.1 (RECORD FEEDS, panels.mjs), so the identity dropdowns narrow them too; each keeps the
     // logic of the Discover session of the same name (searches/02, 07, 06) and scrolls to that session's bound.
     table(0, 41, 48, 12, 'Failed sign-ins and denied access', FAILED_FEED,
-      // 1.0.7: Action and Credential give back what their longest values do not need, so Identity (the one column
-      // that flexes) keeps more than the 153px Principal id left it at a 1440px viewport (rendered).
-      ['actor', PIN_PRINCIPAL, filterable('event.action', { label: 'Action', width: 185, min: 175 }), { column: 'auth', label: 'Credential', width: 125, min: 120 },
-        sized('country', 85), filterable('client.ip')],
+      ['actor', PIN_PRINCIPAL_SHORT, KEY_PIN, filterable('event.action', { label: 'Action', width: 172, min: 172 }),
+        filterable('url.path', { label: 'Path', width: 155, min: 150 }), { column: 'caller', label: 'Caller' }, filterable('client.ip')],
       ['@timestamp'],
-      'Failed sign-ins and refused requests, newest first. Credential “not authenticated”: no credential worked. Country “internal”: Kibana or the platform acting for someone. Click a Principal id to pin it; an API key’s Principal id is its owner.',
-      { scroll: true, empty: 'good' }),
+      'Failed sign-ins and refused requests. Caller is the requesting client, Kibana’s request id removed. Click a Principal id, API key, Action, Path or Client IP to pin it; a named key’s Principal id is its owner.',
+      { wrap: true, empty: 'good', noKind: 'Path and Caller need the room at 1440px; Action says the kind of failure' }),
     table(0, 53, 48, 12, 'API key inventory', KEY_INVENTORY,
       [{ column: 'api_key', label: 'API key' }, filterable('api_key.id', { label: 'Key ID', width: 175, min: 160 }), PIN_PRINCIPAL_SHORT, 'owner'],
       ['first_seen', 'last_seen', 'events', 'ips', 'indices'],
@@ -316,7 +342,7 @@ export function build() {
       // No Action types since 1.0.7: with Principal id beside Identity it left Identity 147px at a 1440px viewport and
       // wrapped the Signal events header onto two lines (rendered).
       ['first_seen', 'last_seen', sized('events', 72), sized('signal', 105, { label: 'Signal events' }), sized('ips', 60, { label: 'IPs' })],
-      'Every identity in range, all traffic, newest first appearance on top, with events and signal events after the noise gate. Widen the range to tell new from quiet. An API key’s Principal id is its owner.',
+      'Every identity in range, all traffic, newest first appearance on top, with events and signal events after the noise gate. Widen the range to tell new from quiet. A named key’s Principal id is its owner.',
       { scroll: true }),
   ];
   return dash(rawId('01-identity-access'), '[Audit] 🔐 Identity & Access',

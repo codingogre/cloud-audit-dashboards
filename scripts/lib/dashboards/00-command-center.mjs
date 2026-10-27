@@ -1,7 +1,7 @@
 /** 00 Command Center — see scripts/lib/definitions.mjs for how the suite is assembled. */
 import {
   IDX, ACTOR_RESOLVE, NOISE, BAND, BAND_KEYS, TIME, BUCKET, SOURCE_LABEL, SOURCE_COLORS, dash, kpi, xy, bar, table, sized, vega, resetIds,
-  privilegedKpi, prevKpi, grouped, fitRows, COVERAGE_REF, COVERAGE_TITLE, ACTOR, filterable, HOUSEKEEPING, KIND_EVENT, KIND_GROUPED, IDENTITY_KEYS
+  privilegedKpi, prevKpi, grouped, fitRows, COVERAGE_REF, COVERAGE_TITLE, ACTOR, filterable, HOUSEKEEPING, KIND_GROUPED, IDENTITY_KEYS
 } from '../panels.mjs';
 import {
   legendPanel, ACTOR_KEYS, PIN_PRINCIPAL, PIN_PRINCIPAL_SHORT, RAW_RECORDS
@@ -51,27 +51,62 @@ const TABLE_H = 13;
 const COUNT_W = 72;
 
 /**
- * Live signal feed: searches/10-raw-signal-feed.json's logic, bounded by TIME so the identity dropdowns narrow it
- * (RECORD FEEDS, panels.mjs). Sorted and cut straight after the filter (QUERY SHAPE rule 3); the CASEs that word
- * each row run on the 200 rows kept. Action and Client IP are raw fields, so they filter on click. Request (1.0.5.6)
- * says what each request touched, on every row: an Elasticsearch event's transport action, a Kibana saved-object
- * event's "<type>: <title or id>" (about 80% of Kibana signal events over 7 days), or a Kibana web request's path
- * (the other 20%). One column for both sources reads better than two half-empty raw ones, but it is computed, so it
- * does not click; transport actions click on Elasticsearch Data Access. The Detail column it replaced (until 1.0.5.4)
- * was Kibana's message, and the security change payloads have their own feed on Security & Anomalies.
- * client.ip is kept raw, with no "internal" tag (searches/10 adds one); the How to read block says what a
- * 100.64/10 or private address means. Principal id (1.0.7) is the raw user.name, kept as it is, so it pins the
- * identity and offers Open in Identity 360; the short width (PIN_PRINCIPAL_SHORT) because a placeholder principal
- * reaches this feed rarely and Identity beside it shows it whole.
+ * Live signal feed (1.0.7.1: repeats grouped): searches/10-raw-signal-feed.json's events, bounded by TIME so the identity
+ * dropdowns narrow it (RECORD FEEDS, panels.mjs), one row per identity, action, request, outcome and address. Until 1.0.7.1
+ * it listed the newest 200 events, and one burst filled it: at 24h the 200 rows reached back 2h40m, 78 of them one Cloud
+ * key's saved_object_find run inside 3 seconds (survey, hole 3). Grouped, 49 rows hold all 754 signal events of a 24h day,
+ * and the burst is one row ("dashboard: 39 objects", 78 events).
+ *
+ * One STATS over the raw keys first (QUERY SHAPE rule 2: ACTOR_KEYS, the action, the request's parts, the outcome and
+ * client.ip), cut to the 200 newest groups by their last event (QUERY SHAPE rule 3), and the CASEs that word each row run
+ * on those 200. Request (1.0.5.6) still says what each request touched: an Elasticsearch event's transport action, a
+ * Kibana saved-object event's "<type>: <title or id>" ("<type>: N objects" when a group read several), a Kibana web
+ * request's path with its query string dropped (so the requests of one page group), or an Elasticsearch request's own
+ * url.path when it ran no transport action (failed sign-ins: these rows read " " until 1.0.7.1), and "(not recorded)" on
+ * the rest (7 days, live: 87 events, mostly activate_user_profile and create_apikey, carry no transport action, URL or
+ * saved object; Action names them). `path` is computed only
+ * where no transport action names the request: an Elasticsearch document path would otherwise split one action's group
+ * per document. Request is computed, so it does not click; Action, Client IP and Principal id (the raw user.name, a group
+ * key: it pins the identity and offers Open in Identity 360) do.
+ *
+ * Two STATS, because the path is the expensive part (measured on the 2.6M-event perf replica, `took`): with the REPLACE
+ * on every event the query took 440ms at 24h and 1,974ms at 7d; without a path, 91ms and 278ms. So the first STATS
+ * groups on the raw url.original and url.path (both wildcard fields, which group fine here), the REPLACE runs on those
+ * groups, and a second STATS folds the groups whose paths differ only in host or query string: 101ms and 326ms. The
+ * object count re-aggregates exactly by MAX: a saved-object event carries no URL, so each of its groups is one group of
+ * the first STATS; that holds only while Kibana logs no URL on saved-object events (0 of 7,976 over 7 days, 2026-10-26),
+ * and if it starts to, "N objects" would undercount with no error. The 1.0.7 feed (sorted and cut to 200 events first) took ~90ms at both windows; grouping has to read
+ * every signal event in range, which is the price of a feed one burst cannot fill. The perf replica is the live stream
+ * copied and re-dated, so a wider window adds events there but no new groups (647 at 24h and 7d; live: 70 and 234):
+ * --perf times the event count, not the group count, and a stream with thousands of groups should be timed on real data.
+ *
+ * Columns at 1440px (1300px for a full-width table): Identity, Principal id, Action, Request, Outcome, Client IP, Events
+ * and Last seen. Request is the column this feed is read for, and a transport action or a Kibana API path runs to
+ * ~270px ("indices:admin/data_stream/lifecycle/get"); beside the Identity type badge it kept ~150px (~140px in 1.0.7).
+ * So the feed is one of the tables with `noKind` (panels.mjs table()). That costs something: the type cannot be read
+ * back from the name (README), so a named key or a service account reads like any other identity here; only a Cloud
+ * key ("· Cloud API key") and an unnamed key ("Unnamed key of") still say what they are. The Identity type dropdown
+ * still narrows the feed. The survey's Source
+ * and First seen columns do not fit either: Source is implied by Request (a transport action is Elasticsearch, a saved
+ * object or a path is Kibana), and a group's first event is in the Raw signal feed session.
+ * client.ip is kept raw, with no "internal" tag (searches/10 adds one); the How to read block says what a 100.64/10 or
+ * private address means.
  */
-const LIVE_FEED = `FROM ${IDX} | ${TIME} | ${NOISE} | WHERE NOT ${HOUSEKEEPING} | SORT @timestamp DESC | LIMIT 200 | ${ACTOR_RESOLVE} | ${KIND_EVENT} ` +
-  '| EVAL result = CASE(event.outcome == "unknown", "attempted", event.outcome), ' +
-  'source = CASE(service.name == "serverless-elasticsearch", "Elasticsearch", service.name == "serverless-kibana", "Kibana", service.name), ' +
+const FEED_KEYS = `${ACTOR_KEYS}, event.action, elasticsearch.audit.action, kibana.saved_object.type`;
+const LIVE_FEED = `FROM ${IDX} | ${TIME} | ${NOISE} | WHERE NOT ${HOUSEKEEPING} ` +
+  '| STATS events = COUNT(*), objects = COUNT_DISTINCT(kibana.saved_object.id), obj = MAX(COALESCE(kibana.saved_object.name, kibana.saved_object.id)), ' +
+  `first_ts = MIN(@timestamp), last_ts = MAX(@timestamp) BY ${FEED_KEYS}, url.original, url.path, outcome = event.outcome, client.ip ` +
+  '| EVAL path = CASE(elasticsearch.audit.action IS NULL, COALESCE(REPLACE(url.original, "^https?://[^/]+|[?].*$", ""), url.path)) ' +
+  '| STATS events = SUM(events), objects = MAX(objects), obj = MAX(obj), first_ts = MIN(first_ts), last_ts = MAX(last_ts) ' +
+  `BY ${FEED_KEYS}, path, outcome, client.ip ` +
+  `| SORT last_ts DESC | LIMIT 200 | ${ACTOR_RESOLVE} ` +
+  '| EVAL result = CASE(outcome == "unknown", "attempted", outcome), ' +
   'request = CASE(elasticsearch.audit.action IS NOT NULL, elasticsearch.audit.action, ' +
-  'kibana.saved_object.type IS NOT NULL, CONCAT(kibana.saved_object.type, ": ", COALESCE(kibana.saved_object.name, kibana.saved_object.id, "(no id)")), ' +
+  'objects > 1, CONCAT(kibana.saved_object.type, ": ", TO_STRING(objects), " objects"), ' +
+  'kibana.saved_object.type IS NOT NULL, CONCAT(kibana.saved_object.type, ": ", COALESCE(obj, "(no id)")), ' +
   // A bulk saved-object read ("User has accessed saved objects") records no object at all.
-  'url.original IS NOT NULL, REPLACE(url.original, "^https?://[^/]+", ""), event.action LIKE "saved_object_*", "(objects not recorded)", " ") ' +
-  '| KEEP @timestamp, actor, identity_kind, user.name, source, event.action, request, result, client.ip';
+  'path IS NOT NULL, path, event.action LIKE "saved_object_*", "(objects not recorded)", "(not recorded)") ' +
+  '| KEEP last_ts, events, actor, user.name, event.action, request, result, client.ip';
 
 /** The intro (draft 1 of the 1.0.3 customer copy; INTRO TEXT in panels.mjs). */
 const INTRO = {
@@ -193,14 +228,14 @@ export function build() {
       'category', 'events', 'Event categories across all traffic, routine included. Log scale: read each bar’s count, not its length. An event can belong to two categories, so the bars sum to more than the total; “none recorded” means no category.',
       { yScale: 'log' })),
     // The record feed (RECORD FEEDS, panels.mjs): a Lens table, so the identity dropdowns narrow it. The same
-    // events as the Raw signal feed session the intro links to: NOISE, then Kibana's key clean-up (HOUSEKEEPING)
-    // left out. 25 rows show 26 lines (fitRows), and the 200 the title states scroll.
-    table(0, 49, 48, 25, 'Live signal feed · Kibana key clean-up left out', LIVE_FEED,
-      [sized('actor', 245, { min: 200 }), PIN_PRINCIPAL_SHORT, sized('source', 100, { min: 100 }), filterable('event.action', { label: 'Action', width: 175, min: 165 }),
-        { column: 'request', label: 'Request' }, sized('result', 90, { label: 'Outcome' }), filterable('client.ip', { label: 'Client IP', width: 125, min: 118 })],
-      ['@timestamp'],
-      'The newest signal events, routine traffic and Kibana’s own key clean-up left out. Long runs of near-identical rows from one identity are automation: click its Principal id to read it alone.',
-      { scroll: true }),
+    // events as the Raw signal feed session the intro links to (NOISE, then Kibana's key clean-up left out), with
+    // repeats grouped (LIVE_FEED). 25 rows show 26 lines (fitRows), and the 200 groups the title states scroll.
+    table(0, 49, 48, 25, 'Live signal feed · repeats grouped · Kibana key clean-up left out', LIVE_FEED,
+      [sized('actor', 240, { min: 210 }), PIN_PRINCIPAL_SHORT, filterable('event.action', { label: 'Action', width: 175, min: 165 }),
+        { column: 'request', label: 'Request' }, sized('result', 85, { label: 'Outcome', min: 80 }), filterable('client.ip', { label: 'Client IP', width: 125, min: 118 })],
+      [sized('events', 66, { min: 64 }), sized('last_ts', 190, { label: 'Last seen', min: 190 })],
+      'The newest signal activity, one row per identity, action, request, outcome and address, with its event count. Routine traffic and Kibana’s key clean-up left out. Click a Principal id, Action or Client IP to pin it.',
+      { scroll: true, noKind: 'Request needs the room at 1440px; the Identity type dropdown still narrows the feed' }),
   ];
   return dash(rawId('00-command-center'), '[Audit] 🎛️ Command Center',
     'Entry point for Cloud Audit Dashboards. KPIs, volume, identity risk and the live signal feed.', P, { intro: INTRO });

@@ -1,12 +1,14 @@
 {
   "title": "[Audit] Failed sign-ins and denied access",
-  "description": "The newest 1,000 failed sign-ins and denied or failed requests, newest first; the Failed or denied tile counts them all. Result says which kind: failed sign-in, denied (a permission wall) or failed (anything else).",
-  "esql": "SET unmapped_fields=\"nullify\"; FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE event.action IN (\"authentication_failed\",\"anonymous_access_denied\") OR (event.outcome == \"failure\" AND (event.action IS NULL OR event.action != \"realm_authentication_failed\")) | SORT @timestamp DESC | LIMIT 1000 | EVAL actor = CASE(user.email IS NOT NULL, user.email, api_key.name IS NOT NULL, api_key.name, user.domain == \"_cloud_api_key\", CONCAT(user.name, \" · Cloud API key\"), user.domain == \"_es_api_key\", CONCAT(\"Unnamed key of \", user.name), user.name IS NOT NULL, user.name, \"(unattributed)\") | EVAL auth = CASE(authentication.type == \"api_key\", \"API key\", authentication.type == \"token\", \"Token\", authentication.type == \"realm\", \"Realm\", authentication.type == \"saml\", \"SAML\", authentication.type == \"anonymous\", \"Anonymous\", authentication.type == \"internal\", \"Internal\", authentication.type), result = CASE(event.action IN (\"authentication_failed\",\"anonymous_access_denied\"), \"failed sign-in\", event.action == \"access_denied\", \"denied\", \"failed\") | EVAL auth = COALESCE(auth, CASE(result == \"failed sign-in\", \"not authenticated\", user.domain IN (\"_es_api_key\", \"_cloud_api_key\"), \"API key\", user.domain == \"cloud-saml-kibana\", \"SAML SSO\", user.domain)), country = COALESCE(client.geo.country_iso_code, CASE(client.ip IS NULL, \"no IP\", CIDR_MATCH(client.ip, \"100.64.0.0/10\", \"10.0.0.0/8\", \"172.16.0.0/12\", \"192.168.0.0/16\", \"127.0.0.0/8\"), \"internal\", \"not located\")) | KEEP @timestamp, actor, event.action, result, auth, country, client.ip | EVAL actor = REPLACE(REPLACE(actor, \"^([-_A-Za-z0-9]{5})[-_A-Za-z0-9]{15} · Cloud API key$\", \"$1… · Cloud API key\"), \"^Unnamed key of ([-_A-Za-z0-9]{5})[-_A-Za-z0-9]{15}$\", \"Unnamed key of $1…\") | RENAME @timestamp AS Time, actor AS Identity, event.action AS Action, result AS Result, auth AS Credential, country AS Country, client.ip AS `Client IP`",
+  "description": "The newest 1,000 failed sign-ins and denied or failed requests; the Failed or denied tile counts them all. Result says which kind: failed sign-in, denied or failed. Path is the request; Caller is the requesting client.",
+  "esql": "SET unmapped_fields=\"nullify\"; FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE event.action IN (\"authentication_failed\",\"anonymous_access_denied\") OR (event.outcome == \"failure\" AND (event.action IS NULL OR event.action != \"realm_authentication_failed\")) | SORT @timestamp DESC | LIMIT 1000 | EVAL actor = CASE(user.email IS NOT NULL, user.email, api_key.name IS NOT NULL, api_key.name, user.domain == \"_cloud_api_key\", CONCAT(user.name, \" · Cloud API key\"), user.domain == \"_es_api_key\", CONCAT(\"Unnamed key of \", user.name), user.name IS NOT NULL, user.name, \"(unattributed)\") | EVAL auth = CASE(authentication.type == \"api_key\", \"API key\", authentication.type == \"token\", \"Token\", authentication.type == \"realm\", \"Realm\", authentication.type == \"saml\", \"SAML\", authentication.type == \"anonymous\", \"Anonymous\", authentication.type == \"internal\", \"Internal\", authentication.type), result = CASE(event.action IN (\"authentication_failed\",\"anonymous_access_denied\"), \"failed sign-in\", event.action == \"access_denied\", \"denied\", \"failed\") | EVAL auth = COALESCE(auth, CASE(result == \"failed sign-in\", \"not authenticated\", user.domain IN (\"_es_api_key\", \"_cloud_api_key\"), \"API key\", user.domain == \"cloud-saml-kibana\", \"SAML SSO\", user.domain)), country = COALESCE(client.geo.country_iso_code, CASE(client.ip IS NULL, \"no IP\", CIDR_MATCH(client.ip, \"100.64.0.0/10\", \"10.0.0.0/8\", \"172.16.0.0/12\", \"192.168.0.0/16\", \"127.0.0.0/8\"), \"internal\", \"not located\")) | EVAL caller = CASE(`http.request.header.x-opaque-id` IS NULL AND service.name == \"serverless-kibana\", \"not recorded\", `http.request.header.x-opaque-id` IS NULL, \"not sent\", `http.request.header.x-opaque-id` RLIKE \"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\", \"request id only\", REPLACE(REPLACE(REPLACE(`http.request.header.x-opaque-id`, \"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12};\", \"\"), \"^kibana:application:([^:]+):(.+)$\", \"Kibana $1 · $2\"), \"^kibana:application:([^:]+):$\", \"Kibana $1\")) | KEEP @timestamp, actor, event.action, result, url.path, caller, auth, country, client.ip | EVAL actor = REPLACE(REPLACE(actor, \"^([-_A-Za-z0-9]{5})[-_A-Za-z0-9]{15} · Cloud API key$\", \"$1… · Cloud API key\"), \"^Unnamed key of ([-_A-Za-z0-9]{5})[-_A-Za-z0-9]{15}$\", \"Unnamed key of $1…\") | RENAME @timestamp AS Time, actor AS Identity, event.action AS Action, result AS Result, url.path AS Path, caller AS Caller, auth AS Credential, country AS Country, client.ip AS `Client IP`",
   "columns": [
     "Time",
     "Identity",
     "Action",
     "Result",
+    "Path",
+    "Caller",
     "Credential",
     "Country",
     "Client IP"
@@ -27,6 +29,12 @@
       },
       "Result": {
         "width": 115
+      },
+      "Path": {
+        "width": 220
+      },
+      "Caller": {
+        "width": 300
       },
       "Credential": {
         "width": 150

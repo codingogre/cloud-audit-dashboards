@@ -255,19 +255,21 @@ The older click-to-filter path still exists and needs neither:
 STATS BY group keys and show them as narrow click-to-filter columns (`PIN_BY`, `PIN_KEY`, `PIN_PRINCIPAL` in
 `scripts/lib/dashboards/shared.mjs`): **Principal id** (`user.name`: a Cloud API key's full id, a service
 account, a person's numeric id) everywhere, and **API key** (`api_key.name`) where a row has room for both
-(04's *Risk leaderboard* and *Config changes*, 03's system-index table). A click pins the field and offers
+(04's *Risk leaderboard* and *Config changes*, 03's system-index table, and since 1.0.7.1 01's *Top failed or denied
+access* and *Failed sign-ins and denied access*, where a named key is denied often enough to need its own pin). A click pins the field and offers
 *Open in Identity 360*; verified in Playwright on a private deploy (04 leaderboard and 01 Busiest API keys →
 Identity 360 with `user.name: <id>` pinned, every panel narrowed). Two things to know (the first is in the How to read
 blocks of 00, 03 and 04):
 - A Principal id pin is the principal, not the credential. On a Cloud API key it also matches every
   Elasticsearch API key that key created, because Elasticsearch stamps the creator in `user.name`; a named
-  key's row, where there is no API key column, pins the identity that owns it (01's *Top failed*, *Failed
-  sign-ins* and *Identity first and last seen* say so in their descriptions). Picking the key in Identity
-  narrows to the key itself.
-- *Principal id* is 250px where `<unauthenticated-cloud-access-token>` (36 characters) is common (01's failure
-  tables and first and last seen), and 165px where it is rare or never appears (it never signs in, so it changes
-  nothing and reads no index; the Live feed shows it only on a failure, cut). 00's *Busiest identities*
-  gave Last seen and Actions to it.
+  key's row, where there is no API key column, pins the identity that owns it (01's *Identity first and last seen*
+  says so in its description). On 01's two failure tables the API key column pins the key itself, and their
+  descriptions say a named key's Principal id is its owner. Picking the key in Identity also narrows to the key.
+- *Principal id* is 250px where `<unauthenticated-cloud-access-token>` (36 characters) is common (01's *Identity
+  first and last seen*), and 165px where it is rare or never appears (it never signs in, so it changes nothing and
+  reads no index; the Live feed shows it only on a failure, cut). 01's two failure tables have 165px and wrap their
+  rows (1.0.7.1), so the placeholder breaks onto a second line rather than being cut. 00's *Busiest identities* gave
+  Last seen and Actions to it.
 03's *Denied requests by identity* has none: its last row folds the rest (`foldRest`), and nulling the raw
 keys there would mean assigning them. 07's *Who this is* groups by email **and** principal id, so it is not
 empty under a key or Cloud-key pill. The extra group keys split a row only where one identity carries two
@@ -362,8 +364,27 @@ still counts in *Signal events*. The two *Kibana saved-object* panels on 02 and 
   Cloud key authenticates there), `_service_account`. Anonymous and unauthenticated requests carry no realm, so
   *Events by authentication realm* sums to less than *Events by identity origin*. Credential type exists only on
   Elasticsearch events, so the credential matrix leaves out identities seen only in Kibana or only anonymously.
-- A Principal id pin on a named key's row pins the identity that owns the key; picking the key in Identity narrows to the key.
-  A key named `TaskManager: … - <id>` is one Kibana created to run a task for that identity: the id is its owner's.
+- A Principal id pin on a named key's row pins the identity that owns the key; picking the key in Identity, or
+  clicking its API key cell on 01's failure tables, narrows to the key. A key named `TaskManager: … - <id>` is one
+  Kibana created to run a task for that identity: the id is its owner's.
+- *Failed access on 01: Path and Caller (1.0.7.1).* A failed sign-in is an Elasticsearch event with no transport
+  action, and its `client.ip` is Elastic Cloud's proxy (`100.64.0.0/10`), so where it came from is in two other
+  fields. *Path* is `url.path`, the request that was refused (a click pins it); a refused request (`access_denied`)
+  and a Kibana failure carry no path, so theirs read "-". *Caller* is the request's
+  `x-opaque-id` header without the per-request id Kibana puts in front of it: *Kibana dashboards ·
+  elastic_cloud-audit-dashboard* is Kibana itself, retrying with an expired browser session while that dashboard
+  stays open (30 days to 2026-10-26: all 54 failures at `/_security/_authenticate`, all
+  `<unauthenticated-cloud-access-token>`), and usually harmless. *not sent* means the client set no header, and *not recorded* marks a Kibana failure (Kibana's audit events never
+  record it);
+  *request id only* that it sent a bare id. Any other value is the client's own (`syn-…/…` is the synthetic
+  activity). Caller is display-only: the raw header is unique per request. The key a failed sign-in tried is not
+  recorded on the event (no `api_key.*` field, and `user.name` is the placeholder), so neither table can name it; a
+  named key that signed in and was then **denied** carries its name, in *API key*.
+- *Fitting 1440px (1.0.7.1).* *Top failed or denied access* (36 columns) shows Identity, Principal id, API key,
+  Action, Path and Events: Client IP (on a failure, the proxy) and the Identity type badge gave way, and Caller is
+  on *Failed sign-ins*. *Failed sign-ins* dropped Credential (*not authenticated* on nearly every failure) and Country
+  (*internal*); its Discover session keeps both. Both tables wrap their rows: a denied named key's name runs to ~45
+  characters, and cut it read the same as the next key's.
 
 **Kibana objects (02, 07).** Type and name are recovered from the event message (`OBJ_GROK`, `OBJ_TYPE`) for
 workflows, ML jobs, agent-builder agents and tools, and secrets, which carry no `saved_object` fields. Kibana records
@@ -672,13 +693,16 @@ legend and the How to read blocks, not in each tooltip: `table()` appends the la
   of the Discover session of the same name, bounded by `TIME` so the Identity dropdowns narrow it. A feed is
   `… | TIME | <filter> | SORT @timestamp DESC | LIMIT n | <per-row EVALs> | KEEP …` (QUERY SHAPE rule 3), its time
   is the metric column at the right end (the API rejects a table with no metric), and `{ scroll: true }` keeps the
-  bound the title states (*"· newest 1,000 at most"*, 200 on the Live signal feed). Raw fields shown as they are
+  bound the title states (*"· newest 1,000 at most"*). The Live signal feed is the one grouped feed (1.0.7.1, below):
+  one row per identity, action, request, outcome and address, 200 groups at most. Raw fields shown as they are
   (Action, Client IP, Space, Session, Transport action, Index) are click-to-filter, so those feeds drill into Identity
   360 (Identity 360's own *Session records* only pins); a computed column never is. A hard-cut cell (a long message, a
   change payload) opens whole from the expand icon its cell shows on hover. The Session column is 170px of a
   44-character id: enough to tell sessions apart, and a click pins the whole id.
 - *Identity type and click columns (1.0.5.4).* Every table that shows *Identity* shows *Identity type* right after
-  it, as a coloured badge worded exactly as the Identity type dropdown lists it (23 tables; `table()` adds the
+  it, as a coloured badge worded exactly as the Identity type dropdown lists it (since 1.0.7.1, all but three that
+  record why with `noKind`: 00 *Live signal feed* and 01's two failure tables, where the columns they are read for
+  need the room at 1440px; `table()` adds the
   column, `IDENTITY_KIND_COLORS` in `panels.mjs` colours it the same everywhere: red for a failed sign-in, grey for
   Unattributed and Other). The type cannot be read back from the name (`elastic` is an account and also a name
   tried at a failed sign-in), so each query works it out where it resolves the identity: grouped tables count
@@ -686,19 +710,29 @@ legend and the How to read blocks, not in each tooltip: `table()` appends the la
   two types is two rows. `--lint` fails a table whose query does not return a column it shows. The free-text
   *Detail* and *Message* columns went: Kibana's message restated Action, object type and id, and their place
   went to raw columns that filter on click (Action on Kibana
-  saved-object activity, Action and Client IP on 01 *Top failed or denied access*, Space on 02 *Mutations*,
+  saved-object activity, Action and Path on 01 *Top failed or denied access*, Space on 02 *Mutations*,
   Action on 04 *Config changes* and *Top failures*, Principal id on the Config-change feed). The one payload that
   says something no column does, an Elasticsearch security change, stays whole in 04's *Config-change event
-  feed*. *Scope* now shows on the Risk leaderboard only, and 01's *Result* column went (Identity type marks the
-  failed sign-ins; Action names the rest).
+  feed*. *Scope* now shows on the Risk leaderboard only, and 01's *Result* column went (Action names the kind of
+  failure; since 1.0.7.1 the 01 failure tables have no Identity type badge).
 - *More click columns (1.0.5.5).* Action on 00 *Most frequent actions*, Transport action on 03 *Top transport
   actions*, and Object type on 02 *Object types* and *Busiest objects* are now the raw fields (they were STATS BY
   aliases). 04 *Why these identities scored* shows the outcome in its own Outcome column (success, failure,
   attempted) instead of appending " (failed)" to the action, so Action is raw and clicks too. 07 *What they changed*
   keeps a computed Space: its rows are packed into a string to fold a deleted space with its contents, then unpacked.
-- *Request on the Live signal feed (1.0.5.6).* One column says what each request touched on every row: the transport
+- *Request on the Live signal feed (1.0.5.6).* One column says what each request touched: the transport
   action for Elasticsearch, `<type>: <title or id>` for a Kibana saved-object event, the path for a Kibana web
-  request. It is computed, so it does not click; Action and Client IP do.
+  request, and *(not recorded)* when the event names none (`activate_user_profile`, `create_apikey`, …). It is computed, so it does not click; Action and Client IP do.
+- *Live signal feed, repeats grouped (1.0.7.1).* Until 1.0.7.1 the feed listed the newest 200 events, and one burst
+  filled it: at 24h the 200 rows reached back 2 hours 40 minutes, 78 of them one Cloud API key's `saved_object_find`
+  run inside 3 seconds. It now counts first by the identity fields, action, the request's parts, outcome and client
+  address, and keeps the 200 groups with the newest last event: at 24h 49 rows held all 754 signal events. A group
+  that read several saved objects of one type reads `<type>: N objects` (*dashboard: 39 objects*); a Kibana path
+  drops its query string, so one page's requests group; an Elasticsearch request with no transport action (a failed
+  sign-in) shows its `url.path` instead of a blank. *Events* is the group's count and *Last seen* its newest event.
+  The columns are Identity, Principal id, Action, Request, Outcome, Client IP, Events and Last seen: Source (implied
+  by Request), First seen and the Identity type badge left so that Request keeps ~250px at 1440 (it had ~140px).
+  The *Raw signal feed* session still lists every event.
 
 **Tooltips — two tiers, 40 words.** A panel's description is its ⓘ tooltip, and a reader hovers it to learn
 what the panel shows and the one thing needed to read it — not every caveat behind it. So it is **40 words at

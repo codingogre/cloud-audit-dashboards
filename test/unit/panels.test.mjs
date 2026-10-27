@@ -638,6 +638,8 @@ test('Identity type (1.0.5.4): a badge beside Identity on every table, one colou
       const at = cols.indexOf('actor');
       if (at < 0) continue;
       tables++;
+      // 1.0.7.1: a table that cannot fit the badge at 1440px records why (table() noKind), and shows no type column.
+      if (p.lint?.noKind) { assert.ok(!cols.includes('identity_kind'), `${name}: ${p.config.title} has noKind and a type column`); continue; }
       const kind = p.config.rows[at + 1];
       assert.equal(kind?.column, 'identity_kind', `${name}: ${p.config.title} shows Identity type right after Identity`);
       assert.equal(kind.apply_color_to, 'badge');

@@ -1509,8 +1509,12 @@ const withEmptyTitle = (title, empty) => (empty && emptyOf(empty).title ? `${tit
  * click-to-filter identity column on the raw field — Principal id (`user.name`), API key or Email — so a click pins
  * the identity and offers Open in Identity 360. layout.mjs checkIdentityPins fails a table without one, unless it
  * passes `{ noPin: '<why>' }`: the reason is kept in `lint` (stripped from the payload) so the exemption is on record.
+ *
+ * `{ noKind: '<why>' }` (1.0.7.1) leaves out the Identity type badge table() otherwise puts beside Identity (IDENTITY
+ * TYPE IN TABLES), for a table that cannot fit it at a 1440px viewport beside the columns it is read for. The reason is
+ * kept in `lint` the same way, and the unit test that holds every Identity column to its badge reads it.
  */
-export const table = (x, y, w, h, title, q, rows, metrics, desc, { scroll = false, wrap = false, empty, cut = true, noPin } = {}) => {
+export const table = (x, y, w, h, title, q, rows, metrics, desc, { scroll = false, wrap = false, empty, cut = true, noPin, noKind } = {}) => {
   let query = q;
   if (!scroll && !wrap) {
     // Exactly the rows that fit, in both directions: above it rows hide with no cue, below it the title's
@@ -1519,7 +1523,8 @@ export const table = (x, y, w, h, title, q, rows, metrics, desc, { scroll = fals
   }
   // Identity type rides beside Identity on every table (1.0.5.4; IDENTITY TYPE IN TABLES above).
   const ids = rows.findIndex((c) => (c.column || c) === 'actor');
-  const withKind = ids >= 0 && !rows.some((c) => (c.column || c) === 'identity_kind')
+  if (noKind !== undefined && !(typeof noKind === 'string' && noKind.trim())) throw new Error(`table "${title}": noKind needs a reason`);
+  const withKind = ids >= 0 && !noKind && !rows.some((c) => (c.column || c) === 'identity_kind')
     ? [...rows.slice(0, ids + 1), 'identity_kind', ...rows.slice(ids + 1)] : rows;
   const r = withKind.map(column);
   const m = metrics.map(column);
@@ -1536,7 +1541,7 @@ export const table = (x, y, w, h, title, q, rows, metrics, desc, { scroll = fals
   if (r.some((c) => c.column === 'actor')) query = `${query} | ${ACTOR_LABEL}`;
   return {
     type: 'vis', id: nid('tbl'), grid: { x, y, w, h }, ...(fits ? {} : { narrow1440: true }),
-    lint: { limit, scroll: scroll || wrap, wrap, cut, ...(empty ? { empty } : {}), ...(noPin ? { noPin } : {}) },
+    lint: { limit, scroll: scroll || wrap, wrap, cut, ...(empty ? { empty } : {}), ...(noPin ? { noPin } : {}), ...(noKind ? { noKind } : {}) },
     config: {
       title: withEmptyTitle(withCut(title, query, { cut }), empty),
       description: withScrollNote(desc, wrap || (scroll && limit > fitRows(h))),
