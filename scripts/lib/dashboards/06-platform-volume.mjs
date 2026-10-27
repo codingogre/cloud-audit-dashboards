@@ -1,6 +1,6 @@
 /** 06 Platform Volume — see scripts/lib/definitions.mjs for how the suite is assembled. */
 import {
-  IDX, ACTOR, ACTOR_RESOLVE, ACTOR_KEYS, CLOUD_KEY_SUFFIX, UNNAMED_KEY_PREFIX, NOISE, BAND, BAND_KEYS, TIME, BUCKET, KIND_REFINE, SOURCE_LABEL, SOURCE_COLORS,
+  IDX, ACTOR_RESOLVE, ACTOR_KEYS, IDENTITY_KEYS, KIND_GROUPED, NOISE, BAND, BAND_KEYS, TIME, BUCKET, SOURCE_LABEL, SOURCE_COLORS,
   dash, kpi, xy, table, vega, filterable, resetIds, cloudKeyLabel, identityLabel, grouped
 } from '../panels.mjs';
 import { rawId } from '../suite.mjs';
@@ -190,39 +190,31 @@ export function build() {
       // "cluster:admin/xpack/security/api_key/get" 4px short of the identity beside it.
       ['elasticsearch.audit.action', { column: 'top_identity', label: 'Busiest identity', width: 210 }], [{ column: 'events', width: 80 }],
       'The highest-volume Elasticsearch transport actions, unfiltered, with the identity behind most of each and how many others called it. Much of it is dashboards querying this stream, often the key running this suite.'),
-    // Counted by ACTOR_KEYS and resolved on the grouped rows (1.0.5.1). Kind is refined after the STATS
-    // (KIND_REFINE, then the key cases), where it costs nothing: ACTOR's two-way CASE called every key — the
-    // Cloud API key and each named key — "service", the same word as a service account, on a dashboard titled
-    // "… & API Keys" (round-5 review). A Cloud API key and an unnamed key say so in their identity; a row is a
-    // named key when all its events came through one (via_key == events). "human + key" (a person's row
-    // carrying a key's traffic) is gone: no API key event carries an email, so it never applied.
+    // Counted by IDENTITY_KEYS and resolved on the grouped rows (1.0.5.1), with the Identity type badge (KIND_GROUPED,
+    // 1.0.7.1) the other identity tables show, worded as the Identity type dropdown words it. Until 1.0.7.1 this table
+    // had its own Kind column (API key, human, service, platform, unauthenticated, failed sign-in: ACTOR's two-way cut
+    // refined by KIND_REFINE and two key cases), a second vocabulary for the same thing; both fragments went with it.
+    // An identity seen as two types is two rows, as the two dropdowns would select it (a name that failed to sign in and
+    // also ran as an account). Actions is the distinct actions the row ran (VALUES re-aggregated, then MV_COUNT).
     // No Created by column: at 1h, with no named key in the window, it was a 140px header over nothing on
     // every row (round-5 review). Who made a key is Named API keys' column, beside the stream; a key's row
     // here has the same count as there.
-    // A name that only ever failed to sign in ("admin", 93 events at 24h: realm_authentication_failed and
-    // authentication_failed, nothing else) is a guessed username, not a service account; ACTOR's cut called
-    // it "service" (round-5 skeptic). Tested on the action VALUES after the STATS, not with a per-event
-    // filtered COUNT: 7d replica 375–448ms against 384–402ms before, where VALUES replaces the
-    // COUNT_DISTINCT that Actions was (MV_COUNT of the same set).
     // h=10 for both tables in this row: fitRows(10) = 8 rows, ending 14px above the grid's bottom rule.
     // At h=13 (12 rows) the last row ended 2px above it and read as a sliver of a thirteenth (round-5
     // review), and at 1h, when a handful of identities make the whole stream, 12 rows left 60% blank.
     table(22, 30, 26, 10, 'Highest-volume identities',
-      `FROM ${IDX} | ${TIME} | STATS events = COUNT(*), via_key = COUNT(api_key.name), acts = VALUES(event.action) BY ${ACTOR_KEYS} ` +
-      `| ${ACTOR} | STATS events = SUM(events), via_key = SUM(via_key), acts = VALUES(acts) BY actor, actor_kind | ${KIND_REFINE} ` +
-      '| EVAL actions = MV_COUNT(acts), acts = MV_CONCAT(MV_SORT(acts), ",") ' +
-      `| EVAL actor_kind = CASE(ENDS_WITH(actor, "${CLOUD_KEY_SUFFIX}") OR STARTS_WITH(actor, "${UNNAMED_KEY_PREFIX}"), "API key", actor_kind == "service" AND via_key == events, "API key", ` +
-      'actor_kind == "service" AND acts IN ("authentication_failed", "realm_authentication_failed", "authentication_failed,realm_authentication_failed"), "failed sign-in", actor_kind) ' +
-      '| KEEP actor, actor_kind, events, actions | SORT events DESC, actor | LIMIT 8',
-      // Kind at 120px holds "unauthenticated" (it was cut at 92).
+      `FROM ${IDX} | ${TIME} | STATS events = COUNT(*), acts = VALUES(event.action) BY ${IDENTITY_KEYS} ` +
+      `| ${ACTOR_RESOLVE} | ${KIND_GROUPED} | STATS events = SUM(events), acts = VALUES(acts) BY actor, identity_kind ` +
+      '| EVAL actions = MV_COUNT(acts) | KEEP actor, identity_kind, events, actions | SORT events DESC, actor | LIMIT 8',
       // 26 columns, Noisiest 22: at 24 / 24 the Identity column kept ~215px at a 1440px viewport and
-      // "<unauthenticated-cloud-access-token>" ran into Kind (round-5 skeptic); Noisiest's longest
-      // action and "_4KEO… · Cloud API key + 19 more" still fit at 22.
-      ['actor', { column: 'actor_kind', width: 120 }], ['events', { column: 'actions', width: 72 }],
-      'Unfiltered volume leaderboard: where machine traffic shows up. Kind “API key” is a named, unnamed or Cloud API key; “failed sign-in” is a user name that never signed in.',
-      // No Principal id (1.0.7): at w=26 a 250px column leaves Identity ~65px at a 1440px viewport. Named API keys
-      // beside it pins keys, and the board is opt-in.
-      { noPin: 'width: at w=26 a Principal id column leaves Identity about 65px at 1440px; Named API keys beside it pins keys' }),
+      // "<unauthenticated-cloud-access-token>" ran into the next column (round-5 skeptic); Noisiest's longest
+      // action and "_4KEO… · Cloud API key + 19 more" still fit at 22. With the badge (160px), Events (80) and
+      // Actions (72), Identity keeps ~380px at 1440.
+      ['actor'], [{ column: 'events', width: 80 }, { column: 'actions', width: 72 }],
+      'Unfiltered volume leaderboard: where machine traffic shows up. Each identity carries its Identity type, as in the dropdown; Actions counts the distinct actions it ran.',
+      // No Principal id (1.0.7): at w=26 a 250px column beside the badge leaves Identity under 150px at a 1440px
+      // viewport. Named API keys beside it pins keys, and the board is opt-in.
+      { noPin: 'width: at w=26 a Principal id column beside the Identity type badge leaves Identity too narrow at 1440px; Named API keys beside it pins keys' }),
   ];
   return dash(rawId('06-platform-volume'), '[Audit] 📊 Platform Volume & API Keys',
     'The unfiltered firehose, quarantined so the forensic dashboards stay readable.', P, { intro: INTRO });

@@ -1,7 +1,7 @@
 /** 02 Kibana Object Forensics — see scripts/lib/definitions.mjs for how the suite is assembled. */
 import {
   IDX, ACTOR_KEYS, ACTOR_RESOLVE, TIME, BUCKET, KIB, VERB, CHANGE, OBJ_GROK, OBJ_NAME, OBJ_ID, OBJ_TYPE, PALETTE, KIBANA_INTERNALS, dash, kpi,
-  prevKpi, xy, bar, table, vega, resetIds, sized, ACTOR, OBJ, OBJ_PRESENT, filterable, IDENTITY_KEYS, KIND_GROUPED, KIND_EVENT
+  prevKpi, xy, bar, table, vega, resetIds, sized, OBJ, OBJ_PRESENT, filterable, IDENTITY_KEYS, KIND_GROUPED, KIND_EVENT
 } from '../panels.mjs';
 import { rawId } from '../suite.mjs';
 import {

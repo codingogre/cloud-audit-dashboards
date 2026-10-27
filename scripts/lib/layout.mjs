@@ -22,6 +22,7 @@ import {
   CRED_TYPE_LABEL, INDEX_FAMILY, CONCRETE, SYS_INDEX, ACTOR_LABEL, MAGNITUDE_RAMP, SEVERITY_RAMP, fitRows, tableLimit,
   KIBANA_INTERNALS, BOUNDED, BARE_COUNT, grouped, FAILED_OR_DENIED, PREV_TILES, prevRef, COVERAGE_REF, flatPanels,
   HOW_TO_LABEL, TIME, TIME_ONLY, IDENTITY_WHERE, PROJECT_WHERE, CONTROLS_WHERE, HOUR_AGO, VEGA_WINDOWS, windowMs, NULL_SAFE, VIEW_TIME,
+  IDENTITY_KEYS, KIND_GROUPED,
 } from './panels.mjs';
 import { DEFAULT_VIEW } from './env.mjs';
 
@@ -43,8 +44,10 @@ export const GRID_W = 48;
 // ACTOR_KEYS: where it resolves after a STATS, the STATS groups on the fields it reads (user.domain included).
 // ACTOR_LABEL: every static file that DISPLAYS an identity shortens a Cloud API key the one shared way
 // ("_4KEO… · Cloud API key", "Unnamed key of _4KEO…"); Lens tables get it from table().
+// IDENTITY_KEYS + KIND_GROUPED (1.0.7.1): the treemap's blocks are the Identity type dropdown's values, worked out as
+// the identity tables work them out.
 const FRAGMENT_USES = {
-  'vega/01-actor-risk-treemap.json': { TIME, NOISE, RISK, RISK_KEYS, RISK_RESTORE, ACTOR_RESOLVE, ACTOR_LABEL },
+  'vega/01-actor-risk-treemap.json': { TIME, NOISE, RISK, RISK_KEYS, RISK_RESTORE, ACTOR_RESOLVE, IDENTITY_KEYS, KIND_GROUPED, ACTOR_LABEL },
   'vega/03-object-verb-heatmap.json': { TIME, VERB, OBJ_ID, OBJ_TYPE },
   'vega/02-auth-matrix.json': { TIME, ACTOR_KEYS, ACTOR_RESOLVE, CRED_TYPE_LABEL, ACTOR_LABEL },
   'vega/04-actor-index-matrix.json': { TIME, ACTOR_KEYS, ACTOR_RESOLVE, CONCRETE, INDEX_FAMILY, ACTOR_LABEL },

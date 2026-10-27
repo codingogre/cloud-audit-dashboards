@@ -1,10 +1,10 @@
 /** 00 Command Center — see scripts/lib/definitions.mjs for how the suite is assembled. */
 import {
   IDX, ACTOR_RESOLVE, NOISE, BAND, BAND_KEYS, TIME, BUCKET, SOURCE_LABEL, SOURCE_COLORS, dash, kpi, xy, bar, table, sized, vega, resetIds,
-  privilegedKpi, prevKpi, grouped, fitRows, COVERAGE_REF, COVERAGE_TITLE, ACTOR, filterable, HOUSEKEEPING, KIND_GROUPED, IDENTITY_KEYS
+  privilegedKpi, prevKpi, grouped, fitRows, COVERAGE_REF, COVERAGE_TITLE, filterable, HOUSEKEEPING, KIND_GROUPED, KIND_EVENT, IDENTITY_KEYS
 } from '../panels.mjs';
 import {
-  legendPanel, ACTOR_KEYS, PIN_PRINCIPAL, PIN_PRINCIPAL_SHORT, RAW_RECORDS
+  legendPanel, ACTOR_KEYS, PIN_PRINCIPAL, PIN_PRINCIPAL_SHORT, RAW_RECORDS, requestCase
 } from './shared.mjs';
 import { isDeployed, rawId } from '../suite.mjs';
 
@@ -59,7 +59,7 @@ const COUNT_W = 72;
  *
  * One STATS over the raw keys first (QUERY SHAPE rule 2: ACTOR_KEYS, the action, the request's parts, the outcome and
  * client.ip), cut to the 200 newest groups by their last event (QUERY SHAPE rule 3), and the CASEs that word each row run
- * on those 200. Request (1.0.5.6) still says what each request touched: an Elasticsearch event's transport action, a
+ * on those 200. Request (1.0.5.6; requestCase in shared.mjs, which the 01 failure tables share) still says what each request touched: an Elasticsearch event's transport action, a
  * Kibana saved-object event's "<type>: <title or id>" ("<type>: N objects" when a group read several), a Kibana web
  * request's path with its query string dropped (so the requests of one page group), or an Elasticsearch request's own
  * url.path when it ran no transport action (failed sign-ins: these rows read " " until 1.0.7.1), and "(not recorded)" on
@@ -80,15 +80,15 @@ const COUNT_W = 72;
  * copied and re-dated, so a wider window adds events there but no new groups (647 at 24h and 7d; live: 70 and 234):
  * --perf times the event count, not the group count, and a stream with thousands of groups should be timed on real data.
  *
- * Columns at 1440px (1300px for a full-width table): Identity, Principal id, Action, Request, Outcome, Client IP, Events
- * and Last seen. Request is the column this feed is read for, and a transport action or a Kibana API path runs to
- * ~270px ("indices:admin/data_stream/lifecycle/get"); beside the Identity type badge it kept ~150px (~140px in 1.0.7).
- * So the feed is one of the tables with `noKind` (panels.mjs table()). That costs something: the type cannot be read
- * back from the name (README), so a named key or a service account reads like any other identity here; only a Cloud
- * key ("· Cloud API key") and an unnamed key ("Unnamed key of") still say what they are. The Identity type dropdown
- * still narrows the feed. The survey's Source
- * and First seen columns do not fit either: Source is implied by Request (a transport action is Elasticsearch, a saved
- * object or a path is Kibana), and a group's first event is in the Raw signal feed session.
+ * Columns at 1440px (1300px for a full-width table): Identity, Identity type, Principal id, Action, Request, Outcome,
+ * Client IP, Events and Last seen. Request is the column this feed is read for (a transport action or a Kibana API path
+ * runs to ~270px, "indices:admin/data_stream/lifecycle/get"). 1.0.7.1 first left the Identity type badge out to give it
+ * ~250px; the user put the badge back (2026-10-26: every table that shows Identity shows its type, as the name cannot
+ * say it), so Identity narrowed to 170px (an email of ~24 characters, "_4KEO… · Cloud API key" whole; a long key name
+ * is cut, hover shows it), Action to 165 and Outcome to 80, and Request keeps ~180px. KIND_EVENT runs on the 200 rows
+ * kept: every field it reads (event.action included) is a group key. The survey's Source and First seen columns do not
+ * fit: Source is implied by Request (a transport action is Elasticsearch, a saved object or a path is Kibana), and a
+ * group's first event is in the Raw signal feed session.
  * client.ip is kept raw, with no "internal" tag (searches/10 adds one); the How to read block says what a 100.64/10 or
  * private address means.
  */
@@ -99,14 +99,9 @@ const LIVE_FEED = `FROM ${IDX} | ${TIME} | ${NOISE} | WHERE NOT ${HOUSEKEEPING} 
   '| EVAL path = CASE(elasticsearch.audit.action IS NULL, COALESCE(REPLACE(url.original, "^https?://[^/]+|[?].*$", ""), url.path)) ' +
   '| STATS events = SUM(events), objects = MAX(objects), obj = MAX(obj), first_ts = MIN(first_ts), last_ts = MAX(last_ts) ' +
   `BY ${FEED_KEYS}, path, outcome, client.ip ` +
-  `| SORT last_ts DESC | LIMIT 200 | ${ACTOR_RESOLVE} ` +
-  '| EVAL result = CASE(outcome == "unknown", "attempted", outcome), ' +
-  'request = CASE(elasticsearch.audit.action IS NOT NULL, elasticsearch.audit.action, ' +
-  'objects > 1, CONCAT(kibana.saved_object.type, ": ", TO_STRING(objects), " objects"), ' +
-  'kibana.saved_object.type IS NOT NULL, CONCAT(kibana.saved_object.type, ": ", COALESCE(obj, "(no id)")), ' +
-  // A bulk saved-object read ("User has accessed saved objects") records no object at all.
-  'path IS NOT NULL, path, event.action LIKE "saved_object_*", "(objects not recorded)", "(not recorded)") ' +
-  '| KEEP last_ts, events, actor, user.name, event.action, request, result, client.ip';
+  `| SORT last_ts DESC | LIMIT 200 | ${ACTOR_RESOLVE} | ${KIND_EVENT} ` +
+  `| EVAL result = CASE(outcome == "unknown", "attempted", outcome), ${requestCase({ objects: 'objects', obj: 'obj', path: 'path' })} ` +
+  '| KEEP last_ts, events, actor, identity_kind, user.name, event.action, request, result, client.ip';
 
 /** The intro (draft 1 of the 1.0.3 customer copy; INTRO TEXT in panels.mjs). */
 const INTRO = {
@@ -173,8 +168,10 @@ export function build() {
     // Two rows taller than the rest of the page: at 13 the treemap's floor-sized tiles were too short
     // for a two-line name once the legend took its row under the plot.
     // A tile click pins the identity (vega/01 kibanaAddFilter), so the panel carries the Identity 360 drilldown (`pins`).
+    // Blocks are the eight Identity types (1.0.7.1), largest first: squarify packs near-square tiles only when siblings
+    // are sorted by size, and the block header names the type, so a fixed dropdown order would buy slivers and nothing else.
     vega(0, 21, 24, 15, '01-actor-risk-treemap', 'Identity footprint · area by √events, color by risk total',
-      'The busiest identities as tiles, grouped by kind. Bigger means more activity: read the printed count, not the area. Stronger color means more risk; all green means nothing scored. Click a tile to pin the identity or open Identity 360.',
+      'The busiest identities as tiles, grouped by Identity type. Bigger means more activity: read the count, not the area. Stronger color means more risk; all green means nothing scored. Click a tile to pin the identity or open Identity 360.',
       { pins: true }),
     /**
      * Lens, not the Vega band stream (vega/07, which 06 keeps): stacked on a linear axis, Signal — the band
@@ -231,11 +228,11 @@ export function build() {
     // events as the Raw signal feed session the intro links to (NOISE, then Kibana's key clean-up left out), with
     // repeats grouped (LIVE_FEED). 25 rows show 26 lines (fitRows), and the 200 groups the title states scroll.
     table(0, 49, 48, 25, 'Live signal feed · repeats grouped · Kibana key clean-up left out', LIVE_FEED,
-      [sized('actor', 240, { min: 210 }), PIN_PRINCIPAL_SHORT, filterable('event.action', { label: 'Action', width: 175, min: 165 }),
-        { column: 'request', label: 'Request' }, sized('result', 85, { label: 'Outcome', min: 80 }), filterable('client.ip', { label: 'Client IP', width: 125, min: 118 })],
+      [sized('actor', 170, { min: 160 }), PIN_PRINCIPAL_SHORT, filterable('event.action', { label: 'Action', width: 165, min: 165 }),
+        { column: 'request', label: 'Request' }, sized('result', 80, { label: 'Outcome', min: 80 }), filterable('client.ip', { label: 'Client IP', width: 125, min: 118 })],
       [sized('events', 66, { min: 64 }), sized('last_ts', 190, { label: 'Last seen', min: 190 })],
       'The newest signal activity, one row per identity, action, request, outcome and address, with its event count. Routine traffic and Kibana’s key clean-up left out. Click a Principal id, Action or Client IP to pin it.',
-      { scroll: true, noKind: 'Request needs the room at 1440px; the Identity type dropdown still narrows the feed' }),
+      { scroll: true }),
   ];
   return dash(rawId('00-command-center'), '[Audit] 🎛️ Command Center',
     'Entry point for Cloud Audit Dashboards. KPIs, volume, identity risk and the live signal feed.', P, { intro: INTRO });

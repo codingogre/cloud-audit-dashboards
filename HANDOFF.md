@@ -6,76 +6,90 @@ conflict. This file is "where we are right now" and should be assumed stale.
 ## Next: 1.0.7.2 per-panel Discover links and a way back
 
 Step 3 of the 1.0.7 plan, as the user narrowed it on 2026-10-26: drilldowns **stay in the same tab** (Kibana's
-convention; no `openInNewTab` change), so 1.0.7.2 is only a per-panel *Open in Discover* link to the matching session at
+convention; no `openInNewTab` change), so 1.0.7.2 is a per-panel *Open in Discover* link to the matching session at
 the panel's time range, and a way back after a session-bar click, plus the Discover-session work the user added on
-2026-10-26: an Identity type column (`KIND_EVENT`) on the 9 sessions that show Identity, "Session" instead of the raw
-`kibana.session.id` header in 09, and the unused `actor_kind` removed from searches 01 and 04. Then 1.0.7.3 **keeps the 24h default** (no 7-day
-default, for performance) and only states each page's window in its intro; then Identity 360 anchored to the picker
-(1.0.7.4), objects/spaces/index pivots (1.0.7.5), sign-ins and sessions (1.0.7.6), discovery against a baseline on 03
-(1.0.7.7).
+2026-10-26: an Identity type column (`KIND_EVENT`) on the 9 sessions that show Identity (searches/02 included: it got
+Request and Caller in 1.0.7.1 but no type), "Session" instead of the raw `kibana.session.id` header in 09, and the
+unused `actor_kind` removed from searches 01 and 04 (the last two places the old kind words live). Then 1.0.7.3
+**keeps the 24h default** (no 7-day default, for performance) and only states each page's window in its intro; then
+Identity 360 anchored to the picker (1.0.7.4), objects/spaces/index pivots (1.0.7.5), sign-ins and sessions (1.0.7.6),
+discovery against a baseline on 03 (1.0.7.7).
 
-Before the 1.0.7.1 release the user makes the Identity type changes themselves: the treemap (vega/01) groups by the
-eight Identity types (`IDENTITY_KEYS` → `ACTOR_RESOLVE` → `KIND_GROUPED`, the dropdown's labels and order), its tooltip
-says "Identity type", the narrow-tile "1" gets its "event" back, and Platform Volume's *Highest-volume identities* swaps
-Kind for the Identity type badge; both timed with `--perf` at 24h and 7d.
-
-**Open for the user (1.0.7.1 review):** the Identity type badge is left out on the Live signal feed and Failed sign-ins
-as well as Top failed (only Top failed was approved), and Credential and Country (Failed sign-ins), Client IP (Top
-failed), and Source and First seen (Live feed) were dropped for width without asking. Keep or revert.
+No open user decisions for 1.0.7.1: the badge, Request and the dropped columns were decided on 2026-10-26 (below).
 
 Already on the 1.0.7.1 branch: `--clean` under `AUDIT_ID_NS` no longer touches ingest (`ingest` refuses, `all` skips it;
 `test/unit/clean.test.mjs`). The pipeline and templates have no namespace, and `AUDIT_ID_NS=r107 ./audit --clean all`
 after the 1.0.7 deploy took them off the live stream for about 30 seconds (05:43Z, 2026-10-26; 55 events in that
 minute have no client.ip or geo; `./audit --ingest` restored it and `--ingest-check` passed).
 
-## Release 1.0.7.1 — Live feed grouped, context for failed access, 2026-10-26
+## Release 1.0.7.1 — Live feed grouped; failed access says what was refused, 2026-10-26
 
-Step 2 of the 1.0.7 plan; closes hole 3 and UC-006. No public id or panel id changed; no shared fragment's text changed
-(the alert rules are untouched; their runbook's **Live signal feed** still matches the title).
+Step 2 of the 1.0.7 plan; closes hole 3 and UC-006, and puts one Identity type vocabulary on every page. No public id
+or panel id changed; no shared fragment's text changed (the alert rules are untouched; their runbook's **Live signal
+feed** still matches the title). The user's decisions of 2026-10-26 are applied as given: the badge stays everywhere,
+Path became a display-only Request, and the columns dropped for width stay dropped.
 
 - **00 Live signal feed groups repeats** (*Live signal feed · repeats grouped · Kibana key clean-up left out · newest
   200 at most*). One row per identity, action, request, outcome and client address, with Events and Last seen; the 200
-  groups with the newest last event. At 24h, 49 rows hold all 754 signal events; the 78-row Cloud-key burst is one row
-  (*dashboard: 39 objects*). Request gains `<type>: N objects` for a group of several objects, a Kibana path without
-  its query string, and an Elasticsearch request's `url.path` when there is no transport action (failed sign-ins read
-  " " before). Principal id (raw `user.name`), Action and Client IP still click. Columns: Identity, Principal id,
-  Action, Request, Outcome, Client IP, Events, Last seen. Request is ~254px at 1440 (was ~140).
-- **01 Top failed or denied access** adds Path (`url.path`, a group key, clicks) and API key (`api_key.name`, clicks;
-  a named key's Principal id is its owner, so this pins the key itself). It drops Client IP (on a failure, the
-  platform proxy) and its rows wrap. **01 Failed sign-ins and denied access** adds API key, Path and a display-only
-  Caller (the request's `x-opaque-id` without Kibana's per-request id, the survey's tested CASE: *Kibana dashboards ·
-  elastic_cloud-audit-dashboard* is Kibana retrying with an expired browser session); it drops Credential and Country,
-  and its rows wrap. `searches/02-failed-authentications.json` gains Path and Caller (Credential and Country stay).
-  Both descriptions now say a named key's Principal id is its owner and name API key as the click for the key.
-- **Identity type badge left out on three tables**, recorded as `table(…, { noKind: '<why>' })` (new, kept in `lint`,
-  stripped from the payload; the 1.0.5.4 unit test reads it): 00 Live signal feed, 01 Top failed, 01 Failed sign-ins.
-  At 1440 the columns each is read for (Request; Path, API key and Caller) did not fit beside it. The cost: the type
-  cannot be read from the name, so a named key or service account reads like any other identity on these rows (only
-  Cloud keys and unnamed keys say so); Action says the kind of failure, and the Identity type dropdown still narrows
-  them. Only Top failed's drop was approved; the other two await the user.
-- **Copy:** 01 How to read merges the Caller line into the failed-sign-in bullet (six bullets). README: Drill-down
-  (API key columns on 01, Principal id widths), *Reading the panels* (Path and Caller; the key a failed sign-in tried is
-  not recorded; what gave way at 1440), *Record feeds*, *Identity type and click columns*, and a *Live signal feed,
-  repeats grouped* entry.
-- **Performance** (`./audit --perf run --only 00-command,01-identity --windows 24h,7d`, 2.6M-event replica, three runs
-  each, sequential ms): Live signal feed ~90 / ~90 → ~160 / ~390 (24h / 7d); Top failed ~42 / ~44 → ~40 / ~52; Failed
-  sign-ins ~93 / ~113 → ~88 / ~82. Page loads (concurrent wall): 00 ~640 / ~2,190 → ~560 / ~2,340; 01 ~480 / ~2,390 →
-  ~440 / ~2,340. The feed is dearer because it reads every signal event in range instead of the 200 newest; the first
-  version, with the path REPLACE on every event, took 2.4s at 7d, so the query groups on raw `url.original`/`url.path`
-  first and normalises the path on the groups (`LIVE_FEED` comment).
-- **Deviations from the plan:** Source and First seen are not on the feed (no room at 1440; Source is implied by
-  Request); the title uses " · " rather than the plan's dash (the alert runbook names **Live signal feed** and the test
-  matches `<name> · `); Caller is not on Top failed (no room at 36 columns); Identity type dropped on three tables, not
-  only Top failed; both failure tables wrap.
-- **Not done:** the Live feed's Principal id still cuts the 36-character placeholder at 1440 (Identity beside it shows
-  it whole); a group's first event is not shown (the Raw signal feed session has every event); Caller is computed, so
-  it does not click; the key a failed sign-in tried cannot be named (not in the event); Top failed shows four or five
-  wrapped rows of 10 when long key names are denied (it scrolls, and says so); Path is "-" on every refused request
-  and Kibana failure (they carry no `url.path`; what was refused is `elasticsearch.audit.action`, which no 01 failure
-  table shows yet), and clicking that "-" pins *no path*, not the row; Principal id stays 165px and wraps the
-  placeholder at 1920 too; the Live feed's `MAX(objects)` is exact only while Kibana logs no URL on saved-object
-  events; `--perf`'s replica has as many groups at 7d as at 24h, so it times event count, not group count. Rendered
-  at 1440 light (24h, 7d), 1440 dark (7d) and 1920 dark (24h).
+  groups with the newest last event. At 24h, 49 rows held all 754 signal events; the 78-row Cloud-key burst is one row
+  (*dashboard: 39 objects*). Request gains `<type>: N objects`, a Kibana path without its query string, an
+  Elasticsearch request's `url.path` when there is no transport action, and *(not recorded)* when nothing names the
+  request. Columns: Identity (170px), Identity type, Principal id, Action, Request (~180px at 1440), Outcome, Client IP,
+  Events, Last seen. Source (implied by Request) and First seen (the Raw signal feed session has it) are not shown.
+  Principal id, Action and Client IP click. The type is `KIND_EVENT` on the 200 rows kept.
+- **01 Top failed or denied access**: Identity, Identity type, Principal id (160px), API key (clicks), Action,
+  **Request** (165px) and Events; Identity and API key share the slack (~130px each at 1440, ~290px at 1920), one line per row, so all 10 rows show at 1440 at 24h and 7d
+  (rendered). Request is `requestCase` (`shared.mjs`, the Live feed's own CASE): the transport action a refused
+  request names, the path a failed sign-in names, `<type>: <title>` or `<type>: N objects` for a Kibana failure,
+  *(not recorded)* otherwise; computed, so it does not click. The first STATS groups on its raw parts
+  (`elasticsearch.audit.action`, `url.path`, `kibana.saved_object.type`, with the object count) and the CASEs run on
+  those groups (43 over 30 days). Client IP (on a failure, the platform proxy) is not shown.
+- **01 Failed sign-ins and denied access**: Time, Identity, Identity type, Principal id, API key (95px), Action,
+  Request (160px, so `/_security/_authenticate` stays on one line), Caller and Client IP; the rows wrap (nine columns
+  leave Identity and Caller ~130px each; it scrolls to its *1,000 at most*). Caller is the request's `x-opaque-id`
+  without Kibana's per-request id (*Kibana dashboards · elastic_cloud-audit-dashboard* is Kibana retrying with an
+  expired browser session; *not recorded* on Kibana rows; *request id only*; *not sent*). Credential and Country are
+  not shown. `searches/02-failed-authentications.json` carries the same Request and Caller (Credential, Country and
+  Result stay; no type until 1.0.7.2).
+- **Identity type everywhere.** The `noKind` option and its exemptions are gone; the 1.0.5.4 test plus a new one hold
+  every table that shows Identity, Platform Volume's included, to `identity_kind`.
+  - *Identity footprint* (vega/01): blocks are the eight types as the dropdown words them, via `IDENTITY_KEYS` →
+    `ACTOR_RESOLVE` → `KIND_GROUPED` (an identity seen as two types is two tiles), replacing its own `kind_rank`/
+    `actor_kind` (*person, platform, user, no email, unattributed*). Blocks are largest first (squarify packs
+    near-square tiles only when siblings are sorted by size; the header names the type). Tooltip row *Identity type*;
+    panel description updated. Pins: `d|` now covers a service account (realm + name), a new `f|` pins a *Failed
+    sign-in* tile to the failed sign-ins under that name, and `u|` (*Other*) leaves out key and service-account realms
+    and failed sign-ins, and a new `n|f` / `n|u` pins an `(unattributed)` tile (Failed sign-in / Unattributed) to the
+    events with no principal of that type, so every type pins what the two dropdowns would select; the pill reads
+    *identity: <name> (<type>)*, without the type when the name says it (`… · Cloud API key`, `Unnamed key of …`). A
+    block too narrow for its header shortens it with an ellipsis instead of dropping it (the longer type names had
+    left a narrow Failed sign-in block headerless at 1920). The zero-risk guard and the *risk N* lines are unchanged. A narrow tile prints *1 event* or no count,
+    never a bare "1". `layout.mjs` now drift-checks `IDENTITY_KEYS` and `KIND_GROUPED` in the spec.
+  - 06 *Highest-volume identities*: the badge replaces Kind (*API key, human, service, platform, unauthenticated,
+    failed sign-in*); counted by `IDENTITY_KEYS`, `KIND_GROUPED`, re-aggregated by actor and type; Identity keeps
+    ~380px at w=26 at 1440. `KIND_REFINE` and `ACTOR` (with its `actor_kind`) are gone from `panels.mjs` (no rule
+    used them; `demo-guide.mjs` now uses `ACTOR_RESOLVE`); `esql/fragments.md` says so.
+- **Copy:** tooltips for the treemap, Top failed, Failed sign-ins, Highest-volume identities and searches/02 (all at
+  most 40 words); README *Reading the panels* (treemap blocks, Request and Caller, fitting 1440), *Identity type and
+  click columns*, *Live signal feed, repeats grouped*, treemap pins, and a *Performance* note that the replica scales
+  events, not distinct groups.
+- **Performance** (`./audit --perf run --windows 24h,7d --only 00-command,01-identity,06-platform --with
+  platform-volume`, 2.6M-event replica, three runs each, sequential medians, old = 260b5a9 → new): treemap 135 → 135 /
+  350 → 350ms (24h / 7d); Live feed 158 → 159 / 384 → 401; Top failed 39 → 41 / 51 → 58; Failed sign-ins 87 → 93 /
+  90 → 119; Highest-volume identities 87 → 93 / 332 → 358. Page loads (concurrent wall, 7d): 00 2,365 → 2,298; 01
+  2,398 → 2,398; 06 3,524 → 3,736 (run-to-run spread ~±200ms). Live stream, 7d, read-only `_query` `took`, three runs:
+  treemap 247–254 → 248–286ms, Live feed 254–261 → 256–259ms. Against 1.0.7 the Live feed is dearer at 7d (~90 →
+  ~400ms on the replica) because grouping reads every signal event in range, not the 200 newest.
+- **Not done / known:** a ~45-character key name (the r1051c probes) is cut at 1440 in Top failed's Identity and API
+  key alike, so at 7d rows that differ only in the name's tail look alike (hover shows it; at 1920 both hold it; a
+  full-width Top failed would fix it, a layout decision not taken); the Live feed's Request is ~180px at 1440 and cuts long
+  transport actions and API paths (hover shows them; it was ~250px in the badge-less draft); Principal id cuts the
+  36-character placeholder at 1440 on the Live feed and Top failed (it wraps on Failed sign-ins); a group's first
+  event is not shown on the Live feed; Caller and Request are computed, so they do not click; the key a failed
+  sign-in tried cannot be named (not in the event); a 22-character Cloud key id is not shortened (`ACTOR_LABEL`
+  matches 20; seen on 06 at 7d, as before); the Live feed's `MAX(objects)` is exact only while Kibana logs no URL on
+  saved-object events; `--perf`'s replica has as many groups at 7d as at 24h (README *Performance*). Rendered at 1440
+  light (24h and 7d) and 1920 dark (24h) on the r1071 private copy; tile clicks checked for every type.
 
 ## Release 1.0.7 — every identity clicks through, 2026-10-26
 

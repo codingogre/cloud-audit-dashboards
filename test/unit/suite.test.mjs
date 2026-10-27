@@ -262,7 +262,7 @@ test('identity tables (1.0.5): a raw Principal id / API key click column on each
       '00-command-center': { 'Busiest identities': ['user.name'], 'Most frequent actions': ['event.action'] },
       // 1.0.5.4: Space, Action and Client IP became raw group keys where a table showed them, so they click too.
       // 1.0.7: Principal id on Top failed, High-value and Cross-space (raw user.name, a group key). 1.0.7.1: API key and Path on Top failed.
-      '01-identity-access': { 'Busiest API keys by name': ['api_key.name', 'user.name'], 'Top failed or denied access': ['user.name', 'api_key.name', 'event.action', 'url.path'] },
+      '01-identity-access': { 'Busiest API keys by name': ['api_key.name', 'user.name'], 'Top failed or denied access': ['user.name', 'api_key.name', 'event.action'] },
       '02-kibana-objects': {
         '⚠️ Mutations': ['user.name', 'kibana.space.id'], 'Object types': ['kibana.saved_object.type'], 'Busiest objects': ['kibana.saved_object.type'],
         'Latest high-value object access': ['user.name'], 'Cross-space activity': ['user.name'],
@@ -345,7 +345,7 @@ test('record feeds (1.0.5.1): no Discover session panel; each record list is a L
     const want = {
       // 1.0.7: every feed that shows Identity also pins it, by the raw user.name (Principal id).
       '00-command-center': { 'Live signal feed': ['user.name', 'event.action', 'client.ip'] },
-      '01-identity-access': { 'Failed sign-ins and denied access': ['user.name', 'api_key.name', 'event.action', 'url.path', 'client.ip'], 'API key inventory': ['api_key.id', 'user.name'], 'Identity first and last seen': ['user.name'] },
+      '01-identity-access': { 'Failed sign-ins and denied access': ['user.name', 'api_key.name', 'event.action', 'client.ip'], 'API key inventory': ['api_key.id', 'user.name'], 'Identity first and last seen': ['user.name'] },
       '02-kibana-objects': { 'Cross-space activity': ['user.name'], 'Kibana saved-object activity': ['user.name', 'event.action', 'kibana.space.id'], 'Session reconstruction': ['user.name', 'kibana.session.id', 'kibana.space.id'] },
       '03-data-access': { 'Raw system index requests': ['user.name', 'elasticsearch.audit.action', 'elasticsearch.audit.indices', 'client.ip'] },
       '04-security-anomalies': { 'Config-change event feed': ['user.name', 'event.action'], 'Mutation feed': ['user.name', 'event.action', 'kibana.space.id'] },

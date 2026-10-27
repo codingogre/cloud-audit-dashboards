@@ -638,8 +638,6 @@ test('Identity type (1.0.5.4): a badge beside Identity on every table, one colou
       const at = cols.indexOf('actor');
       if (at < 0) continue;
       tables++;
-      // 1.0.7.1: a table that cannot fit the badge at 1440px records why (table() noKind), and shows no type column.
-      if (p.lint?.noKind) { assert.ok(!cols.includes('identity_kind'), `${name}: ${p.config.title} has noKind and a type column`); continue; }
       const kind = p.config.rows[at + 1];
       assert.equal(kind?.column, 'identity_kind', `${name}: ${p.config.title} shows Identity type right after Identity`);
       assert.equal(kind.apply_color_to, 'badge');
@@ -648,6 +646,34 @@ test('Identity type (1.0.5.4): a badge beside Identity on every table, one colou
     }
   }
   assert.ok(tables >= 22, `${tables} identity tables`);
+});
+
+test('Identity type (1.0.7.1): every table that shows Identity, the opt-in Platform Volume included, returns identity_kind and shows it; no exemption exists', async () => {
+  const { flatPanels } = await import('../../scripts/lib/panels.mjs');
+  const prev = process.env.AUDIT_WITH;
+  process.env.AUDIT_WITH = 'platform-volume';
+  try {
+    const all = buildAll();
+    assert.ok(all['06-platform-volume'], 'Platform Volume is built');
+    const seen = [];
+    for (const [name, def] of Object.entries(all)) {
+      for (const p of flatPanels(def.panels).filter((x) => x.config?.type === 'data_table' && x.config.rows.some((r) => r.column === 'actor'))) {
+        const cols = p.config.rows.map((r) => r.column);
+        assert.ok(cols.includes('identity_kind'), `${name}: ${p.config.title} shows Identity without its Identity type`);
+        assert.match(p.config.data_source.query, /\| KEEP [^|]*\bidentity_kind\b|BY [^|]*\bidentity_kind\b/, `${name}: ${p.config.title} returns identity_kind`);
+        assert.equal(p.lint?.noKind, undefined, `${name}: ${p.config.title}`);
+        seen.push(`${name}: ${p.config.title.split(' · ')[0]}`);
+      }
+    }
+    for (const t of ['00-command-center: Live signal feed', '01-identity-access: Top failed or denied access', '01-identity-access: Failed sign-ins and denied access', '06-platform-volume: Highest-volume identities']) {
+      assert.ok(seen.includes(t), t);
+    }
+    const t = table(0, 0, 48, 12, 't', 'FROM x | KEEP actor, identity_kind, user.name | LIMIT 10', ['actor', filterable('user.name')], [], 'd', { noKind: 'old option' });
+    assert.deepEqual(t.config.rows.map((r) => r.column), ['actor', 'identity_kind', 'user.name'], 'noKind is no longer an option: the badge is always added');
+    assert.equal(t.lint.noKind, undefined);
+  } finally {
+    if (prev === undefined) delete process.env.AUDIT_WITH; else process.env.AUDIT_WITH = prev;
+  }
 });
 
 test('checkIdentityPins() (1.0.7): a table showing Identity needs a click-to-filter identity column, or a recorded noPin reason', async () => {
@@ -735,8 +761,14 @@ test('vega/01 treemap (1.0.7): a tile click pins the identity by its prefix, a f
   const tm = read('01-actor-risk-treemap.json');
   const q = tm.data[0].url.query;
   assert.match(q, /pin = CASE\(user\.email IS NOT NULL, CONCAT\("e\|", user\.email\), api_key\.name IS NOT NULL, CONCAT\("k\|"/);
-  assert.match(q, /pin = MAX\(pin\) BY actor/);
-  assert.match(q, /KEEP actor, actor_kind, owner, pin,/);
+  assert.match(q, /pin = MAX\(pin\) BY actor, identity_kind \|/);
+  assert.match(q, /KEEP actor, identity_kind, owner, pin,/);
+  // 1.0.7.1: blocks are the eight Identity types, worked out as the identity tables work them out.
+  const { IDENTITY_KEYS, KIND_GROUPED, ACTOR_RESOLVE, IDENTITY_KINDS } = await import('../../scripts/lib/panels.mjs');
+  assert.ok(q.includes(`BY ${IDENTITY_KEYS} | ${ACTOR_RESOLVE} | ${KIND_GROUPED} |`), 'IDENTITY_KEYS → ACTOR_RESOLVE → KIND_GROUPED');
+  for (const [k] of IDENTITY_KINDS) assert.ok(KIND_GROUPED.includes(`"${k}"`), k);
+  assert.doesNotMatch(JSON.stringify(tm), /actor_kind|kind_rank|"Kind"|'Kind'/, 'no second kind vocabulary');
+  assert.ok(tm.data.find((d) => d.name === 'tree').transform.find((t) => t.type === 'nest').keys.includes('identity_kind'));
   const rect = tm.marks.find((m) => m.type === 'rect');
   assert.equal(rect.name, 'tile');
   assert.ok(rect.encode.update.cursor, 'cursor pointer on a pinnable tile');
@@ -748,12 +780,21 @@ test('vega/01 treemap (1.0.7): a tile click pins the identity by its prefix, a f
   // k| and u| carry the Identity dropdown's own conditions (1.0.7 review): a bare user.name phrase on a 1-event
   // "user, no email" tile matched that person's 6,570 events.
   assert.ok(expr.includes("{bool: {filter: [{match_phrase: {'api_key.name': substring(datum.pin, 2)}}], must_not: [{exists: {field: 'user.email'}}]}}"), 'k| excludes events with an email');
-  assert.ok(expr.includes("{terms: {'user.domain': ['_cloud_api_key', '_es_api_key']}}"), 'u| excludes key realms');
+  assert.ok(expr.includes("{terms: {'user.domain': ['_cloud_api_key', '_es_api_key', '_service_account']}}"), 'u| and f| exclude key and service-account realms');
+  // f| (1.0.7.1) pins a Failed sign-in tile to the failed sign-ins under that name; u| (Other) leaves them out.
+  assert.ok(expr.includes("=== 'f|' ? {bool: {filter: [{match_phrase: {'user.name': substring(datum.pin, 2)}}, {terms: {'event.action': ['authentication_failed', 'anonymous_access_denied']}}]"), 'f| filters to failed sign-ins');
+  assert.match(expr, /must_not: \[[^\]]*\]\}\}, \{terms: \{'event\.action': \['authentication_failed', 'anonymous_access_denied'\]\}\}\]\}\}, 'logs-/, 'u| excludes failed sign-ins');
+  assert.match(q, /user\.domain IN \("_cloud_api_key","_es_api_key","_service_account"\), CONCAT\("d\|"/, 'a service account pins by its realm');
+  assert.match(q, /failed_signin, CONCAT\("f\|", user\.name\), CONCAT\("u\|", user\.name\)\)/);
   assert.doesNotMatch(expr, /: \{match_phrase: \{'user\.name'/, 'no bare user.name phrase');
   assert.deepEqual(tm.scales.find((x) => x.name === 'risk').domain, { data: 'raw', field: 'severity' }, 'the colour scale and the no-risk guard cover folded identities');
   assert.ok(tm.marks.find((m) => m.type === 'text' && m.from?.data === 'leaves'), 'tile text');
   const leaves = tm.data.find((d) => d.name === 'leaves').transform.map((t) => t.as);
   for (const x of ['a', 'b', 'c']) assert.ok(leaves.includes(`${x}_risk`), `${x}_risk line`);
+  // 1.0.7.1: a narrow tile printed "1" without "event"; the count prints whole ("1 event") or not at all.
+  const lt = tm.data.find((d) => d.name === 'leaves').transform;
+  for (const t of lt.filter((x) => /^[abc]_lines$|^lines$/.test(x.as))) assert.ok(!t.expr.includes("format(datum.events, ',')"), `${t.as} prints a bare number`);
+  for (const x of ['a', 'b', 'c']) assert.match(lt.find((t) => t.as === `${x}_cnt`).expr, /length\(datum\.count\) <=/);
   assert.ok(!read('11-actor-object-flow.json').signals.some((s) => s.on?.some((o) => /dblclick/.test(JSON.stringify(o.events)))), 'no double-click clear-all');
 });
 

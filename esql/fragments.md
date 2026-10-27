@@ -57,14 +57,11 @@ stream over 30 days, per event against count-first: Top client locations 223 →
 its owner, so a Cloud API key's Elasticsearch keys read as the Cloud API key itself (6,521 Kibana events on
 2026-10-14), and it printed values no dropdown lists.
 
-`actor_kind` is the cheap first cut beside it (`ACTOR`); a panel that shows the kind refines it on the
-grouped rows with `SCOPE`'s vocabulary, so `(unattributed)` and the `<unauthenticated-…>` placeholders read
-`unauthenticated` and Elastic's own service accounts read `platform`, not `service`:
-
-```esql
-| EVAL actor_kind = CASE(actor IN (<unauthenticated principals>), "unauthenticated",
-                         actor IN (<platform principals>), "platform", actor_kind)
-```
+Its type beside it is `KIND_GROUPED` on the same grouped rows (counted by `IDENTITY_KEYS`, which adds
+`failed_signin` to `ACTOR_KEYS`), or `KIND_EVENT` on a feed's returned rows: the eight Identity type values, worded as
+the dropdown words them. Since 1.0.7.1 that is the only kind vocabulary a dashboard shows; the older `actor_kind`
+(*human*/*service*, refined to *platform*/*unauthenticated* by `KIND_REFINE`) is gone, and only searches 01 and 04
+still carry a stray one (1.0.7.2 removes it).
 
 ### The short form: `ACTOR_LABEL`
 

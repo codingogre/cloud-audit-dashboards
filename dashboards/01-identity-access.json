@@ -711,18 +711,19 @@
       },
       "config": {
         "title": "Top failed or denied access · 10 at most (empty = good)",
-        "description": "Failed sign-ins and refused requests by identity, action and path, most frequent first. Click a Principal id, API key, Action or Path to pin it; a named key’s Principal id is its owner. Scroll for more.",
+        "description": "Failed sign-ins and refused requests, most frequent first. Request is what was asked for: a transport action, path or Kibana object. Click a Principal id, API key or Action to pin it; a named key’s Principal id is its owner.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "SET unmapped_fields=\"nullify\"; FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart AND ((?project == \"\" OR ?project == \"Any\") OR project.name == ?project) AND ((?identity == \"\" OR ?identity == \"Any\") OR user.email == ?identity OR api_key.name == ?identity OR user.name == ?identity OR user.name == REPLACE(REPLACE(?identity, \" · Cloud API key$\", \"\"), \"^Unnamed key of \", \"\") OR (?identity == \"(unattributed)\" AND user.name IS NULL)) AND ((?identity_kind == \"\" OR ?identity_kind == \"Any\") OR (?identity_kind == \"Person\" AND user.email IS NOT NULL) OR (?identity_kind == \"Elasticsearch API key\" AND user.email IS NULL AND api_key.name IS NOT NULL) OR (?identity_kind == \"Unnamed API key\" AND user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_es_api_key\") OR (?identity_kind == \"Cloud API key\" AND user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_cloud_api_key\") OR (?identity_kind == \"Service account\" AND user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_service_account\") OR (?identity_kind == \"Failed sign-in\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\",\"_service_account\")) AND event.action IN (\"authentication_failed\",\"anonymous_access_denied\")) OR (?identity_kind == \"Unattributed\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\",\"_service_account\")) AND (event.action IS NULL OR NOT event.action IN (\"authentication_failed\",\"anonymous_access_denied\")) AND user.name IS NULL) OR (?identity_kind == \"Other\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\",\"_service_account\")) AND (event.action IS NULL OR NOT event.action IN (\"authentication_failed\",\"anonymous_access_denied\")) AND user.name IS NOT NULL)) AND ((?identity == \"\" OR ?identity == \"Any\") OR user.email == ?identity OR (user.email IS NULL AND api_key.name == ?identity) OR (user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_cloud_api_key\" AND ENDS_WITH(?identity, \" · Cloud API key\") AND user.name == REPLACE(?identity, \" · Cloud API key$\", \"\")) OR (user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_es_api_key\" AND STARTS_WITH(?identity, \"Unnamed key of \") AND user.name == REPLACE(?identity, \"^Unnamed key of \", \"\")) OR (user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\")) AND user.name == ?identity) OR (?identity == \"(unattributed)\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\")) AND user.name IS NULL)) AND ((?client_ip == \"\" OR ?client_ip == \"Any\") OR client.ip == TO_IP(CASE((?client_ip == \"\" OR ?client_ip == \"Any\"), null, ?client_ip))) | WHERE event.action IN (\"authentication_failed\",\"anonymous_access_denied\") OR (event.outcome == \"failure\" AND (event.action IS NULL OR event.action != \"realm_authentication_failed\")) | STATS events = COUNT(*), last_seen = MAX(@timestamp) BY user.email, api_key.name, user.domain, user.name, event.action, url.path | EVAL actor = CASE(user.email IS NOT NULL, user.email, api_key.name IS NOT NULL, api_key.name, user.domain == \"_cloud_api_key\", CONCAT(user.name, \" · Cloud API key\"), user.domain == \"_es_api_key\", CONCAT(\"Unnamed key of \", user.name), user.name IS NOT NULL, user.name, \"(unattributed)\") | STATS events = SUM(events), last_seen = MAX(last_seen) BY actor, user.name, api_key.name, event.action, url.path | SORT events DESC, last_seen DESC, actor, event.action, url.path | LIMIT 10 | EVAL actor = REPLACE(REPLACE(actor, \"^([-_A-Za-z0-9]{5})[-_A-Za-z0-9]{15} · Cloud API key$\", \"$1… · Cloud API key\"), \"^Unnamed key of ([-_A-Za-z0-9]{5})[-_A-Za-z0-9]{15}$\", \"Unnamed key of $1…\")"
+          "query": "SET unmapped_fields=\"nullify\"; FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart AND ((?project == \"\" OR ?project == \"Any\") OR project.name == ?project) AND ((?identity == \"\" OR ?identity == \"Any\") OR user.email == ?identity OR api_key.name == ?identity OR user.name == ?identity OR user.name == REPLACE(REPLACE(?identity, \" · Cloud API key$\", \"\"), \"^Unnamed key of \", \"\") OR (?identity == \"(unattributed)\" AND user.name IS NULL)) AND ((?identity_kind == \"\" OR ?identity_kind == \"Any\") OR (?identity_kind == \"Person\" AND user.email IS NOT NULL) OR (?identity_kind == \"Elasticsearch API key\" AND user.email IS NULL AND api_key.name IS NOT NULL) OR (?identity_kind == \"Unnamed API key\" AND user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_es_api_key\") OR (?identity_kind == \"Cloud API key\" AND user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_cloud_api_key\") OR (?identity_kind == \"Service account\" AND user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_service_account\") OR (?identity_kind == \"Failed sign-in\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\",\"_service_account\")) AND event.action IN (\"authentication_failed\",\"anonymous_access_denied\")) OR (?identity_kind == \"Unattributed\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\",\"_service_account\")) AND (event.action IS NULL OR NOT event.action IN (\"authentication_failed\",\"anonymous_access_denied\")) AND user.name IS NULL) OR (?identity_kind == \"Other\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\",\"_service_account\")) AND (event.action IS NULL OR NOT event.action IN (\"authentication_failed\",\"anonymous_access_denied\")) AND user.name IS NOT NULL)) AND ((?identity == \"\" OR ?identity == \"Any\") OR user.email == ?identity OR (user.email IS NULL AND api_key.name == ?identity) OR (user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_cloud_api_key\" AND ENDS_WITH(?identity, \" · Cloud API key\") AND user.name == REPLACE(?identity, \" · Cloud API key$\", \"\")) OR (user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_es_api_key\" AND STARTS_WITH(?identity, \"Unnamed key of \") AND user.name == REPLACE(?identity, \"^Unnamed key of \", \"\")) OR (user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\")) AND user.name == ?identity) OR (?identity == \"(unattributed)\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\")) AND user.name IS NULL)) AND ((?client_ip == \"\" OR ?client_ip == \"Any\") OR client.ip == TO_IP(CASE((?client_ip == \"\" OR ?client_ip == \"Any\"), null, ?client_ip))) | WHERE event.action IN (\"authentication_failed\",\"anonymous_access_denied\") OR (event.outcome == \"failure\" AND (event.action IS NULL OR event.action != \"realm_authentication_failed\")) | STATS events = COUNT(*), last_seen = MAX(@timestamp), objects = COUNT_DISTINCT(kibana.saved_object.id), obj = MAX(COALESCE(kibana.saved_object.name, kibana.saved_object.id)) BY user.email, api_key.name, user.domain, user.name, event.action, elasticsearch.audit.action, url.path, kibana.saved_object.type | EVAL actor = CASE(user.email IS NOT NULL, user.email, api_key.name IS NOT NULL, api_key.name, user.domain == \"_cloud_api_key\", CONCAT(user.name, \" · Cloud API key\"), user.domain == \"_es_api_key\", CONCAT(\"Unnamed key of \", user.name), user.name IS NOT NULL, user.name, \"(unattributed)\") | EVAL identity_kind = CASE(user.email IS NOT NULL, \"Person\", api_key.name IS NOT NULL, \"Elasticsearch API key\", user.domain == \"_es_api_key\", \"Unnamed API key\", user.domain == \"_cloud_api_key\", \"Cloud API key\", user.domain == \"_service_account\", \"Service account\", event.action IN (\"authentication_failed\",\"anonymous_access_denied\"), \"Failed sign-in\", user.name IS NULL, \"Unattributed\", \"Other\") | EVAL request = CASE(elasticsearch.audit.action IS NOT NULL, elasticsearch.audit.action, objects > 1, CONCAT(kibana.saved_object.type, \": \", TO_STRING(objects), \" objects\"), kibana.saved_object.type IS NOT NULL, CONCAT(kibana.saved_object.type, \": \", COALESCE(obj, \"(no id)\")), url.path IS NOT NULL, url.path, event.action LIKE \"saved_object_*\", \"(objects not recorded)\", \"(not recorded)\") | STATS events = SUM(events), last_seen = MAX(last_seen) BY actor, identity_kind, user.name, api_key.name, event.action, request | SORT events DESC, last_seen DESC, actor, event.action, request | LIMIT 10 | EVAL actor = REPLACE(REPLACE(actor, \"^([-_A-Za-z0-9]{5})[-_A-Za-z0-9]{15} · Cloud API key$\", \"$1… · Cloud API key\"), \"^Unnamed key of ([-_A-Za-z0-9]{5})[-_A-Za-z0-9]{15}$\", \"Unnamed key of $1…\")"
         },
         "styling": {
           "density": {
             "mode": "compact",
             "height": {
               "value": {
-                "type": "auto"
+                "type": "custom",
+                "lines": 1
               }
             }
           }
@@ -733,28 +734,110 @@
             "column": "actor"
           },
           {
+            "label": "Identity type",
+            "apply_color_to": "badge",
+            "color": {
+              "mode": "categorical",
+              "palette": "eui_amsterdam",
+              "mapping": [
+                {
+                  "values": [
+                    "Person"
+                  ],
+                  "color": {
+                    "type": "color_code",
+                    "value": "#6092C0"
+                  }
+                },
+                {
+                  "values": [
+                    "Cloud API key"
+                  ],
+                  "color": {
+                    "type": "color_code",
+                    "value": "#9170B8"
+                  }
+                },
+                {
+                  "values": [
+                    "Elasticsearch API key"
+                  ],
+                  "color": {
+                    "type": "color_code",
+                    "value": "#16C5C0"
+                  }
+                },
+                {
+                  "values": [
+                    "Unnamed API key"
+                  ],
+                  "color": {
+                    "type": "color_code",
+                    "value": "#16C5C0"
+                  }
+                },
+                {
+                  "values": [
+                    "Service account"
+                  ],
+                  "color": {
+                    "type": "color_code",
+                    "value": "#54B399"
+                  }
+                },
+                {
+                  "values": [
+                    "Failed sign-in"
+                  ],
+                  "color": {
+                    "type": "color_code",
+                    "value": "#E7664C"
+                  }
+                },
+                {
+                  "values": [
+                    "Unattributed"
+                  ],
+                  "color": {
+                    "type": "color_code",
+                    "value": "#98A2B3"
+                  }
+                },
+                {
+                  "values": [
+                    "Other"
+                  ],
+                  "color": {
+                    "type": "color_code",
+                    "value": "#98A2B3"
+                  }
+                }
+              ]
+            },
+            "width": 155,
+            "column": "identity_kind"
+          },
+          {
             "label": "Principal id",
             "column": "user.name",
             "click_filter": true,
-            "width": 165
+            "width": 160
           },
           {
             "label": "API key",
             "column": "api_key.name",
-            "click_filter": true,
-            "width": 150
+            "click_filter": true
           },
           {
             "label": "Action",
             "column": "event.action",
             "click_filter": true,
-            "width": 172
+            "width": 165
           },
           {
-            "label": "Path",
-            "column": "url.path",
-            "click_filter": true,
-            "width": 155
+            "label": "Request",
+            "column": "request",
+            "width": 165
           }
         ],
         "metrics": [
@@ -777,11 +860,11 @@
       },
       "config": {
         "title": "Failed sign-ins and denied access · newest 1,000 at most (empty = good)",
-        "description": "Failed sign-ins and refused requests. Caller is the requesting client, Kibana’s request id removed. Click a Principal id, API key, Action, Path or Client IP to pin it; a named key’s Principal id is its owner. Scroll for more.",
+        "description": "Failed sign-ins and refused requests. Request is what was asked for: a transport action, path or Kibana object; Caller is the client. Click an underlined cell to pin it; a named key’s Principal id is its owner. Scroll for more.",
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "SET unmapped_fields=\"nullify\"; FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart AND ((?project == \"\" OR ?project == \"Any\") OR project.name == ?project) AND ((?identity == \"\" OR ?identity == \"Any\") OR user.email == ?identity OR api_key.name == ?identity OR user.name == ?identity OR user.name == REPLACE(REPLACE(?identity, \" · Cloud API key$\", \"\"), \"^Unnamed key of \", \"\") OR (?identity == \"(unattributed)\" AND user.name IS NULL)) AND ((?identity_kind == \"\" OR ?identity_kind == \"Any\") OR (?identity_kind == \"Person\" AND user.email IS NOT NULL) OR (?identity_kind == \"Elasticsearch API key\" AND user.email IS NULL AND api_key.name IS NOT NULL) OR (?identity_kind == \"Unnamed API key\" AND user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_es_api_key\") OR (?identity_kind == \"Cloud API key\" AND user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_cloud_api_key\") OR (?identity_kind == \"Service account\" AND user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_service_account\") OR (?identity_kind == \"Failed sign-in\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\",\"_service_account\")) AND event.action IN (\"authentication_failed\",\"anonymous_access_denied\")) OR (?identity_kind == \"Unattributed\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\",\"_service_account\")) AND (event.action IS NULL OR NOT event.action IN (\"authentication_failed\",\"anonymous_access_denied\")) AND user.name IS NULL) OR (?identity_kind == \"Other\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\",\"_service_account\")) AND (event.action IS NULL OR NOT event.action IN (\"authentication_failed\",\"anonymous_access_denied\")) AND user.name IS NOT NULL)) AND ((?identity == \"\" OR ?identity == \"Any\") OR user.email == ?identity OR (user.email IS NULL AND api_key.name == ?identity) OR (user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_cloud_api_key\" AND ENDS_WITH(?identity, \" · Cloud API key\") AND user.name == REPLACE(?identity, \" · Cloud API key$\", \"\")) OR (user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_es_api_key\" AND STARTS_WITH(?identity, \"Unnamed key of \") AND user.name == REPLACE(?identity, \"^Unnamed key of \", \"\")) OR (user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\")) AND user.name == ?identity) OR (?identity == \"(unattributed)\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\")) AND user.name IS NULL)) AND ((?client_ip == \"\" OR ?client_ip == \"Any\") OR client.ip == TO_IP(CASE((?client_ip == \"\" OR ?client_ip == \"Any\"), null, ?client_ip))) | WHERE event.action IN (\"authentication_failed\",\"anonymous_access_denied\") OR (event.outcome == \"failure\" AND (event.action IS NULL OR event.action != \"realm_authentication_failed\")) | SORT @timestamp DESC | LIMIT 1000 | EVAL actor = CASE(user.email IS NOT NULL, user.email, api_key.name IS NOT NULL, api_key.name, user.domain == \"_cloud_api_key\", CONCAT(user.name, \" · Cloud API key\"), user.domain == \"_es_api_key\", CONCAT(\"Unnamed key of \", user.name), user.name IS NOT NULL, user.name, \"(unattributed)\") | EVAL caller = CASE(`http.request.header.x-opaque-id` IS NULL AND service.name == \"serverless-kibana\", \"not recorded\", `http.request.header.x-opaque-id` IS NULL, \"not sent\", `http.request.header.x-opaque-id` RLIKE \"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\", \"request id only\", REPLACE(REPLACE(REPLACE(`http.request.header.x-opaque-id`, \"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12};\", \"\"), \"^kibana:application:([^:]+):(.+)$\", \"Kibana $1 · $2\"), \"^kibana:application:([^:]+):$\", \"Kibana $1\")) | KEEP @timestamp, actor, user.name, api_key.name, event.action, url.path, caller, client.ip | EVAL actor = REPLACE(REPLACE(actor, \"^([-_A-Za-z0-9]{5})[-_A-Za-z0-9]{15} · Cloud API key$\", \"$1… · Cloud API key\"), \"^Unnamed key of ([-_A-Za-z0-9]{5})[-_A-Za-z0-9]{15}$\", \"Unnamed key of $1…\")"
+          "query": "SET unmapped_fields=\"nullify\"; FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart AND ((?project == \"\" OR ?project == \"Any\") OR project.name == ?project) AND ((?identity == \"\" OR ?identity == \"Any\") OR user.email == ?identity OR api_key.name == ?identity OR user.name == ?identity OR user.name == REPLACE(REPLACE(?identity, \" · Cloud API key$\", \"\"), \"^Unnamed key of \", \"\") OR (?identity == \"(unattributed)\" AND user.name IS NULL)) AND ((?identity_kind == \"\" OR ?identity_kind == \"Any\") OR (?identity_kind == \"Person\" AND user.email IS NOT NULL) OR (?identity_kind == \"Elasticsearch API key\" AND user.email IS NULL AND api_key.name IS NOT NULL) OR (?identity_kind == \"Unnamed API key\" AND user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_es_api_key\") OR (?identity_kind == \"Cloud API key\" AND user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_cloud_api_key\") OR (?identity_kind == \"Service account\" AND user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_service_account\") OR (?identity_kind == \"Failed sign-in\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\",\"_service_account\")) AND event.action IN (\"authentication_failed\",\"anonymous_access_denied\")) OR (?identity_kind == \"Unattributed\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\",\"_service_account\")) AND (event.action IS NULL OR NOT event.action IN (\"authentication_failed\",\"anonymous_access_denied\")) AND user.name IS NULL) OR (?identity_kind == \"Other\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\",\"_service_account\")) AND (event.action IS NULL OR NOT event.action IN (\"authentication_failed\",\"anonymous_access_denied\")) AND user.name IS NOT NULL)) AND ((?identity == \"\" OR ?identity == \"Any\") OR user.email == ?identity OR (user.email IS NULL AND api_key.name == ?identity) OR (user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_cloud_api_key\" AND ENDS_WITH(?identity, \" · Cloud API key\") AND user.name == REPLACE(?identity, \" · Cloud API key$\", \"\")) OR (user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_es_api_key\" AND STARTS_WITH(?identity, \"Unnamed key of \") AND user.name == REPLACE(?identity, \"^Unnamed key of \", \"\")) OR (user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\")) AND user.name == ?identity) OR (?identity == \"(unattributed)\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\")) AND user.name IS NULL)) AND ((?client_ip == \"\" OR ?client_ip == \"Any\") OR client.ip == TO_IP(CASE((?client_ip == \"\" OR ?client_ip == \"Any\"), null, ?client_ip))) | WHERE event.action IN (\"authentication_failed\",\"anonymous_access_denied\") OR (event.outcome == \"failure\" AND (event.action IS NULL OR event.action != \"realm_authentication_failed\")) | SORT @timestamp DESC | LIMIT 1000 | EVAL actor = CASE(user.email IS NOT NULL, user.email, api_key.name IS NOT NULL, api_key.name, user.domain == \"_cloud_api_key\", CONCAT(user.name, \" · Cloud API key\"), user.domain == \"_es_api_key\", CONCAT(\"Unnamed key of \", user.name), user.name IS NOT NULL, user.name, \"(unattributed)\") | EVAL identity_kind = CASE(user.email IS NOT NULL, \"Person\", api_key.name IS NOT NULL, \"Elasticsearch API key\", user.domain == \"_es_api_key\", \"Unnamed API key\", user.domain == \"_cloud_api_key\", \"Cloud API key\", user.domain == \"_service_account\", \"Service account\", event.action IN (\"authentication_failed\",\"anonymous_access_denied\"), \"Failed sign-in\", user.name IS NULL, \"Unattributed\", \"Other\") | EVAL obj = COALESCE(kibana.saved_object.name, kibana.saved_object.id) | EVAL request = CASE(elasticsearch.audit.action IS NOT NULL, elasticsearch.audit.action, kibana.saved_object.type IS NOT NULL, CONCAT(kibana.saved_object.type, \": \", COALESCE(obj, \"(no id)\")), url.path IS NOT NULL, url.path, event.action LIKE \"saved_object_*\", \"(objects not recorded)\", \"(not recorded)\"), caller = CASE(`http.request.header.x-opaque-id` IS NULL AND service.name == \"serverless-kibana\", \"not recorded\", `http.request.header.x-opaque-id` IS NULL, \"not sent\", `http.request.header.x-opaque-id` RLIKE \"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\", \"request id only\", REPLACE(REPLACE(REPLACE(`http.request.header.x-opaque-id`, \"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12};\", \"\"), \"^kibana:application:([^:]+):(.+)$\", \"Kibana $1 · $2\"), \"^kibana:application:([^:]+):$\", \"Kibana $1\")) | KEEP @timestamp, actor, identity_kind, user.name, api_key.name, event.action, request, caller, client.ip | EVAL actor = REPLACE(REPLACE(actor, \"^([-_A-Za-z0-9]{5})[-_A-Za-z0-9]{15} · Cloud API key$\", \"$1… · Cloud API key\"), \"^Unnamed key of ([-_A-Za-z0-9]{5})[-_A-Za-z0-9]{15}$\", \"Unnamed key of $1…\")"
         },
         "styling": {
           "density": {
@@ -799,28 +882,111 @@
             "column": "actor"
           },
           {
+            "label": "Identity type",
+            "apply_color_to": "badge",
+            "color": {
+              "mode": "categorical",
+              "palette": "eui_amsterdam",
+              "mapping": [
+                {
+                  "values": [
+                    "Person"
+                  ],
+                  "color": {
+                    "type": "color_code",
+                    "value": "#6092C0"
+                  }
+                },
+                {
+                  "values": [
+                    "Cloud API key"
+                  ],
+                  "color": {
+                    "type": "color_code",
+                    "value": "#9170B8"
+                  }
+                },
+                {
+                  "values": [
+                    "Elasticsearch API key"
+                  ],
+                  "color": {
+                    "type": "color_code",
+                    "value": "#16C5C0"
+                  }
+                },
+                {
+                  "values": [
+                    "Unnamed API key"
+                  ],
+                  "color": {
+                    "type": "color_code",
+                    "value": "#16C5C0"
+                  }
+                },
+                {
+                  "values": [
+                    "Service account"
+                  ],
+                  "color": {
+                    "type": "color_code",
+                    "value": "#54B399"
+                  }
+                },
+                {
+                  "values": [
+                    "Failed sign-in"
+                  ],
+                  "color": {
+                    "type": "color_code",
+                    "value": "#E7664C"
+                  }
+                },
+                {
+                  "values": [
+                    "Unattributed"
+                  ],
+                  "color": {
+                    "type": "color_code",
+                    "value": "#98A2B3"
+                  }
+                },
+                {
+                  "values": [
+                    "Other"
+                  ],
+                  "color": {
+                    "type": "color_code",
+                    "value": "#98A2B3"
+                  }
+                }
+              ]
+            },
+            "width": 155,
+            "column": "identity_kind"
+          },
+          {
             "label": "Principal id",
             "column": "user.name",
             "click_filter": true,
-            "width": 165
+            "width": 160
           },
           {
             "label": "API key",
             "column": "api_key.name",
             "click_filter": true,
-            "width": 120
+            "width": 95
           },
           {
             "label": "Action",
             "column": "event.action",
             "click_filter": true,
-            "width": 172
+            "width": 165
           },
           {
-            "label": "Path",
-            "column": "url.path",
-            "click_filter": true,
-            "width": 155
+            "label": "Request",
+            "column": "request",
+            "width": 160
           },
           {
             "label": "Caller",
@@ -828,7 +994,7 @@
           },
           {
             "label": "Client IP",
-            "width": 125,
+            "width": 118,
             "column": "client.ip",
             "click_filter": true
           }

@@ -18,7 +18,7 @@ import { cfg, ROOT } from './lib/env.mjs';
 import { deployed, isDeployed, dashId } from './lib/suite.mjs';
 import { es } from './lib/http.mjs';
 import { success, info, detail, warn } from './lib/log.mjs';
-import { IDX, NOISE, BAND, BAND_KEYS, ACTOR, ACTOR_RESOLVE, CHANGE, TIME_TO, nullSafe } from './lib/panels.mjs';
+import { IDX, NOISE, BAND, BAND_KEYS, ACTOR_RESOLVE, CHANGE, TIME_TO, nullSafe } from './lib/panels.mjs';
 import { riskScored, ACTOR_KEYS } from './lib/dashboards/shared.mjs';
 import {
   CSS, COPY_JS, esc, rich, fmt, codeblock, talk, check, callout, a, rows, useCase,
@@ -116,7 +116,7 @@ export async function run(argv = []) {
     q('human interaction', `FROM ${IDX} | ${W} | WHERE service.name == "serverless-kibana" AND user.email IS NOT NULL | STATS events = COUNT(*), people = COUNT_DISTINCT(user.email)`),
     q('denials by country (24h)', `FROM ${IDX} | ${EV} | WHERE event.action == "anonymous_access_denied" | STATS n = COUNT(*) BY country = client.geo.country_iso_code | SORT n DESC | LIMIT 6`),
     q('denial paths (24h)', `FROM ${IDX} | ${EV} | WHERE event.action == "anonymous_access_denied" | STATS n = COUNT(*) BY path = url.path::keyword | SORT n DESC | LIMIT 8`),
-    q('config changes (24h)', `FROM ${IDX} | ${EV} | WHERE elasticsearch.audit.security_config_change IS NOT NULL | ${ACTOR} | STATS n = COUNT(*) BY actor, action = event.action | SORT n DESC | LIMIT 6`),
+    q('config changes (24h)', `FROM ${IDX} | ${EV} | WHERE elasticsearch.audit.security_config_change IS NOT NULL | ${ACTOR_RESOLVE} | STATS n = COUNT(*) BY actor, action = event.action | SORT n DESC | LIMIT 6`),
     q('mutations', `FROM ${IDX} | ${W} | ${CHANGE} | STATS n = COUNT(*)`),
     q('geo coverage', `FROM ${IDX} | ${W} | EVAL g = CASE(client.geo.country_iso_code IS NOT NULL, "resolved", client.ip IS NOT NULL, "ip, no geo", "no client ip") | STATS n = COUNT(*) BY g | SORT n DESC`),
     q('risk leaderboard (24h)', `FROM ${IDX} | ${EV} | ${riskScored({ by: ACTOR_KEYS })} | ${ACTOR_RESOLVE} | STATS severity = SUM(risk * n), events = SUM(n) BY actor, action = event.action | SORT severity DESC | LIMIT 8`),

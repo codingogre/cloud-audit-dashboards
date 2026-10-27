@@ -242,14 +242,6 @@ export const ACTOR_KEYS = 'user.email, api_key.name, user.domain, user.name';
 export const ACTOR_RESOLVE = `EVAL actor = ${IDENTITY_EXPR}`;
 
 /**
- * `actor_kind`: the cheap first cut, "human" when the row carries an email and "service" otherwise. A panel
- * that SHOWS the kind refines it on the grouped rows with KIND_REFINE. Like ACTOR_RESOLVE, it runs on rows
- * grouped by ACTOR_KEYS.
- */
-export const ACTOR =
-  `${ACTOR_RESOLVE}, actor_kind = CASE(user.email IS NOT NULL, "human", "service")`;
-
-/**
  * Where an identity's traffic comes from, by the email on the event. Title case because these are
  * display values — a pie's slices and legend print them as they are — and they sit beside the
  * realm and credential-type labels, which are title case too. ORG reads only user.email,
@@ -546,15 +538,6 @@ export const SCOPE =
   `actor IN (${UNAUTH_ACTORS}), "unauthenticated", "tenant")`;
 
 /**
- * ACTOR's `actor_kind`, refined with SCOPE's vocabulary: an unattributed principal is
- * "unauthenticated" and Elastic's own automation (elastic/kibana included) is "platform", rather than
- * both reading "service". A three-way CASE, so it runs on grouped rows that carry `actor` and
- * `actor_kind` — after the STATS, never per event.
- */
-export const KIND_REFINE =
-  `EVAL actor_kind = CASE(actor IN (${UNAUTH_ACTORS}), "unauthenticated", actor IN (${PLATFORM_ACTORS}), "platform", actor_kind)`;
-
-/**
  * PRIVILEGED OPERATIONS. A security_config_change is the stream's own word for a privileged write — an
  * API key created or invalidated, a role or user profile written — so "any non-zero value deserves
  * review" was the reading this KPI was built for. It stopped being true when Kibana started cleaning up
@@ -679,7 +662,7 @@ export const identityLabel = (col) =>
 export const ACTOR_LABEL = `EVAL actor = ${identityLabel('actor')}`;
 
 /**
- * Pushed ahead of the ACTOR/RISK EVALs so scoring runs over the few events that can score
+ * Pushed ahead of the identity and RISK EVALs so scoring runs over the few events that can score
  * instead of the whole window. Without it the leaderboard took 16s because COALESCE/CASE were
  * evaluated on every event before `WHERE risk > 0` pruned anything (re-measured on the perf replica:
  * 7.7–13.6s at 24h without it, 0.4s with it — it works by cutting the rows that reach RISK's CASE).
@@ -1229,7 +1212,7 @@ export const COLUMNS = {
   // who
   actor: C('Identity'),
   identity_kind: { label: 'Identity type', width: 160, min: 155, apply_color_to: 'badge', color: colorMapping(IDENTITY_KIND_COLORS) },
-  actor_kind: C('Kind', W.ENUM), actor_scope: C('Scope', W.SCOPE), actor_org: C('Origin', W.ENUM),
+  actor_scope: C('Scope', W.SCOPE), actor_org: C('Origin', W.ENUM),
   'user.email': C('Email'), 'user.name': C('User'), user: C('User'), owner: C('Owner'),
   api_key: C('API key'), 'api_key.name': C('API key'), key_id: C('Key ID'), 'api_key.id': C('Key ID'),
   credential: C('Credential', W.ENUM),
@@ -1509,12 +1492,8 @@ const withEmptyTitle = (title, empty) => (empty && emptyOf(empty).title ? `${tit
  * click-to-filter identity column on the raw field — Principal id (`user.name`), API key or Email — so a click pins
  * the identity and offers Open in Identity 360. layout.mjs checkIdentityPins fails a table without one, unless it
  * passes `{ noPin: '<why>' }`: the reason is kept in `lint` (stripped from the payload) so the exemption is on record.
- *
- * `{ noKind: '<why>' }` (1.0.7.1) leaves out the Identity type badge table() otherwise puts beside Identity (IDENTITY
- * TYPE IN TABLES), for a table that cannot fit it at a 1440px viewport beside the columns it is read for. The reason is
- * kept in `lint` the same way, and the unit test that holds every Identity column to its badge reads it.
  */
-export const table = (x, y, w, h, title, q, rows, metrics, desc, { scroll = false, wrap = false, empty, cut = true, noPin, noKind } = {}) => {
+export const table = (x, y, w, h, title, q, rows, metrics, desc, { scroll = false, wrap = false, empty, cut = true, noPin } = {}) => {
   let query = q;
   if (!scroll && !wrap) {
     // Exactly the rows that fit, in both directions: above it rows hide with no cue, below it the title's
@@ -1523,8 +1502,7 @@ export const table = (x, y, w, h, title, q, rows, metrics, desc, { scroll = fals
   }
   // Identity type rides beside Identity on every table (1.0.5.4; IDENTITY TYPE IN TABLES above).
   const ids = rows.findIndex((c) => (c.column || c) === 'actor');
-  if (noKind !== undefined && !(typeof noKind === 'string' && noKind.trim())) throw new Error(`table "${title}": noKind needs a reason`);
-  const withKind = ids >= 0 && !noKind && !rows.some((c) => (c.column || c) === 'identity_kind')
+  const withKind = ids >= 0 && !rows.some((c) => (c.column || c) === 'identity_kind')
     ? [...rows.slice(0, ids + 1), 'identity_kind', ...rows.slice(ids + 1)] : rows;
   const r = withKind.map(column);
   const m = metrics.map(column);
@@ -1541,7 +1519,7 @@ export const table = (x, y, w, h, title, q, rows, metrics, desc, { scroll = fals
   if (r.some((c) => c.column === 'actor')) query = `${query} | ${ACTOR_LABEL}`;
   return {
     type: 'vis', id: nid('tbl'), grid: { x, y, w, h }, ...(fits ? {} : { narrow1440: true }),
-    lint: { limit, scroll: scroll || wrap, wrap, cut, ...(empty ? { empty } : {}), ...(noPin ? { noPin } : {}), ...(noKind ? { noKind } : {}) },
+    lint: { limit, scroll: scroll || wrap, wrap, cut, ...(empty ? { empty } : {}), ...(noPin ? { noPin } : {}) },
     config: {
       title: withEmptyTitle(withCut(title, query, { cut }), empty),
       description: withScrollNote(desc, wrap || (scroll && limit > fitRows(h))),

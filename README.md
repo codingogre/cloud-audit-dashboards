@@ -173,9 +173,12 @@ the timeline is fixed at 24 hours. The zoom is sent 0.7s and 1.4s after the clic
 `kibanaAddFilter` resolves its data view over the network before it fires, and a time change sent first
 reloads the panel and drops the filter (clicked in Playwright: the pill never appeared); sent 5s later,
 the reload the filter itself causes has already replaced the view and the zoom is lost. On Command Center,
-clicking a treemap tile pins that identity — its email, key name, or user name, each with the Identity dropdown's own conditions (the key
-domain for a Cloud or unnamed key; no email, key name or key domain beside a bare user name) — and the panel offers *Open in Identity 360*, from
-the same filter trigger (the panel's in-memory `pins` flag); a folded "+N more" tile pins nothing.
+clicking a treemap tile pins that identity — its email, key name, or user name, each with the two dropdowns' own conditions (the realm
+for a Cloud key, an unnamed key or a service account; for a *Failed sign-in* tile, the failed sign-ins under that name; for any other name, no
+email, key name, key or service-account realm, and no failed sign-in; for an `(unattributed)` tile, the events with no
+principal of its type) — and the panel offers *Open in Identity 360*, from the same filter trigger (the panel's in-memory
+`pins` flag); a folded "+N more" tile pins nothing. The pill reads *identity: <name> (<type>)*, without the type when the
+name already says it (`… · Cloud API key`, `Unnamed key of …`).
 
 **The control bar** — four dropdowns on every dashboard, defined in `scripts/lib/controls.mjs` (width `small`
 with grow, so the four share one row at 1440px and at 1920px). All four are ES|QL variable controls since
@@ -269,8 +272,9 @@ blocks of 00, 03 and 04):
   descriptions say a named key's Principal id is its owner. Picking the key in Identity also narrows to the key.
 - *Principal id* is 250px where `<unauthenticated-cloud-access-token>` (36 characters) is common (01's *Identity
   first and last seen*), and 165px where it is rare or never appears (it never signs in, so it changes nothing and
-  reads no index; the Live feed shows it only on a failure, cut). 01's two failure tables have 165px and wrap their
-  rows (1.0.7.1), so the placeholder breaks onto a second line rather than being cut. 00's *Busiest identities* gave
+  reads no index; the Live feed shows it only on a failure, cut). 01's two failure tables have 160px: *Failed
+  sign-ins* wraps its rows (1.0.7.1), so the placeholder breaks onto a second line; *Top failed* keeps one line per
+  row and cuts it (hover shows it). 00's *Busiest identities* gave
   Last seen and Actions to it.
 03's *Denied requests by identity* has none: its last row folds the rest (`foldRest`), and nulling the raw
 keys there would mean assigning them. 07's *Who this is* groups by email **and** principal id, so it is not
@@ -339,14 +343,19 @@ still counts in *Signal events*. The two *Kibana saved-object* panels on 02 and 
 - Identity is the Identity dropdown's value (*What the identity fields mean*, under Drill-down): an email, else a
   key's name, else `Unnamed key of <owner>` or `<id> · Cloud API key` by realm, else `user.name`, else
   `(unattributed)`. It is worked out on rows already counted by `user.email`, `api_key.name`, `user.domain` and
-  `user.name` (`ACTOR_KEYS`), never per event. An identity whose events disagree on its kind is one treemap tile,
-  in the most specific block any of them supports. Treemap blocks: Elasticsearch API key (named keys labelled by
-  the key, owner underneath when there is room, and `Unnamed key of …`), person, Cloud API key, platform (Elastic's
-  service accounts such as `elastic/kibana`), user with no email, unattributed (`(unattributed)`, an
-  unauthenticated token, a user name that only ever failed to sign in). The top 12 by signal (down to 8 on a narrow
-  screen) are drawn, the rest of each kind folded into a grey *+N more* tile. Area is √events plus an equal floor, so
-  the quietest identity keeps a readable name but is never drawn larger than a busier one; colour is risk total on
-  a √ scale.
+  `user.name` (`ACTOR_KEYS`), never per event.
+- *Identity footprint* (00 treemap, 1.0.7.1): one block per Identity type, worded as the Identity type dropdown and
+  the table badges word it (Person, Elasticsearch API key, Unnamed API key, Cloud API key, Service account, Failed
+  sign-in, Unattributed, Other), worked out the tables' way (`IDENTITY_KEYS` → `ACTOR_RESOLVE` → `KIND_GROUPED`), so
+  an identity seen as two types is two tiles, as the two dropdowns would select it. Until 1.0.7.1 it had its own
+  six kinds (person, platform, "user, no email", unattributed …), so `elastic.maintenance` read *platform* here and
+  *Other* in the dropdown. Blocks and tiles are laid out largest first: squarify packs near-square tiles only when
+  siblings are sorted by size, and each block's header names its type (shortened with an ellipsis on a narrow
+  block, never dropped). Named keys show the owner underneath when
+  there is room. The top 12 by signal (down to 8 on a narrow screen) are drawn, the rest of each type folded into a
+  grey *+N more* tile. Area is √events plus an equal floor, so the quietest identity keeps a readable name but is
+  never drawn larger than a busier one; colour is risk total on a √ scale. A tile prints its count as *1 event* /
+  *N events* where it fits and drops it where it does not (a narrow tile printed a bare "1" before 1.0.7.1).
 - 1.0.5.1 changed what some rows read: Kibana actions made with an Elasticsearch key moved from the owning Cloud API
   key's row to `Unnamed key of _4KEO…` (6,521 events and 35,160 of the treemap's risk total over the 30 days to 2026-10-23), the
   identity with no principal reads `(unattributed)` rather than `<anonymous>`, Command Center's *Busiest
@@ -369,10 +378,14 @@ still counts in *Signal events*. The two *Kibana saved-object* panels on 02 and 
 - A Principal id pin on a named key's row pins the identity that owns the key; picking the key in Identity, or
   clicking its API key cell on 01's failure tables, narrows to the key. A key named `TaskManager: … - <id>` is one
   Kibana created to run a task for that identity: the id is its owner's.
-- *Failed access on 01: Path and Caller (1.0.7.1).* A failed sign-in is an Elasticsearch event with no transport
-  action, and its `client.ip` is Elastic Cloud's proxy (`100.64.0.0/10`), so where it came from is in two other
-  fields. *Path* is `url.path`, the request that was refused (a click pins it); a refused request (`access_denied`)
-  and a Kibana failure carry no path, so theirs read "-". *Caller* is the request's
+- *Failed access on 01: Request and Caller (1.0.7.1).* *Request* says what failed, in the Live signal feed's words
+  (`requestCase` in `shared.mjs`): a refused request (`access_denied`) names what was refused only in its transport
+  action (`indices:data/read/get`), a failed sign-in only in its path (`/_security/_authenticate`), and a Kibana
+  failure in its saved object (*dashboard: <title>*, *space: <id>*, *dashboard: N objects* on *Top failed*) or not at
+  all (*(not recorded)*). It is computed, so it does not click (until the user's 2026-10-26 decision it was a raw,
+  clickable *Path*, which read "-" on every refused request and Kibana failure, and clicking that "-" pinned all of
+  them). A failed sign-in's `client.ip` is Elastic Cloud's proxy (`100.64.0.0/10`), so the path and the caller are
+  what say where it came from. *Caller* is the request's
   `x-opaque-id` header without the per-request id Kibana puts in front of it: *Kibana dashboards ·
   elastic_cloud-audit-dashboard* is Kibana itself, retrying with an expired browser session while that dashboard
   stays open (30 days to 2026-10-26: all 54 failures at `/_security/_authenticate`, all
@@ -382,11 +395,16 @@ still counts in *Signal events*. The two *Kibana saved-object* panels on 02 and 
   activity). Caller is display-only: the raw header is unique per request. The key a failed sign-in tried is not
   recorded on the event (no `api_key.*` field, and `user.name` is the placeholder), so neither table can name it; a
   named key that signed in and was then **denied** carries its name, in *API key*.
-- *Fitting 1440px (1.0.7.1).* *Top failed or denied access* (36 columns) shows Identity, Principal id, API key,
-  Action, Path and Events: Client IP (on a failure, the proxy) and the Identity type badge gave way, and Caller is
-  on *Failed sign-ins*. *Failed sign-ins* dropped Credential (*not authenticated* on nearly every failure) and Country
-  (*internal*); its Discover session keeps both. Both tables wrap their rows: a denied named key's name runs to ~45
-  characters, and cut it read the same as the next key's.
+- *Fitting 1440px (1.0.7.1).* *Top failed or denied access* (36 columns) shows Identity, Identity type, Principal
+  id, API key, Action, Request and Events, one line per row, so all 10 rows show at 1440 (the LIMIT is the rows
+  shown). Identity and API key share the slack (~130px each at 1440, ~290px each at 1920): on a named key's row the
+  two repeat the name and the badge says it is a key. A ~45-character key name is cut at 1440 in both (hover shows it
+  whole), so rows that differ only in a long key name's tail look alike there. Client IP (on a failure, the proxy) gave way, and Caller is on *Failed sign-ins*. *Failed
+  sign-ins* shows Time, Identity, Identity type, Principal id, API key, Action, Request, Caller and Client IP; its
+  rows wrap (nine columns leave Identity and Caller ~130px each, and cut they would hide the placeholder's tail and
+  the dashboard a Kibana retry came from; it scrolls to its *1,000 at most*). It dropped Credential (*not
+  authenticated* on nearly every failure) and Country (*internal*); its Discover session keeps both, and shows
+  Request and Caller too.
 
 **Kibana objects (02, 07).** Type and name are recovered from the event message (`OBJ_GROK`, `OBJ_TYPE`) for
 workflows, ML jobs, agent-builder agents and tools, and secrets, which carry no `saved_object` fields. Kibana records
@@ -702,9 +720,9 @@ legend and the How to read blocks, not in each tooltip: `table()` appends the la
   change payload) opens whole from the expand icon its cell shows on hover. The Session column is 170px of a
   44-character id: enough to tell sessions apart, and a click pins the whole id.
 - *Identity type and click columns (1.0.5.4).* Every table that shows *Identity* shows *Identity type* right after
-  it, as a coloured badge worded exactly as the Identity type dropdown lists it (since 1.0.7.1, all but three that
-  record why with `noKind`: 00 *Live signal feed* and 01's two failure tables, where the columns they are read for
-  need the room at 1440px; `table()` adds the
+  it, as a coloured badge worded exactly as the Identity type dropdown lists it, with no exception (a 1.0.7.1 draft
+  left it off three tables for width; the user put it back, and a unit test now holds every Identity table, Platform
+  Volume's included, to it; `table()` adds the
   column, `IDENTITY_KIND_COLORS` in `panels.mjs` colours it the same everywhere: red for a failed sign-in, grey for
   Unattributed and Other). The type cannot be read back from the name (`elastic` is an account and also a name
   tried at a failed sign-in), so each query works it out where it resolves the identity: grouped tables count
@@ -712,11 +730,12 @@ legend and the How to read blocks, not in each tooltip: `table()` appends the la
   two types is two rows. `--lint` fails a table whose query does not return a column it shows. The free-text
   *Detail* and *Message* columns went: Kibana's message restated Action, object type and id, and their place
   went to raw columns that filter on click (Action on Kibana
-  saved-object activity, Action and Path on 01 *Top failed or denied access*, Space on 02 *Mutations*,
+  saved-object activity, Action on 01 *Top failed or denied access*, Space on 02 *Mutations*,
   Action on 04 *Config changes* and *Top failures*, Principal id on the Config-change feed). The one payload that
   says something no column does, an Elasticsearch security change, stays whole in 04's *Config-change event
   feed*. *Scope* now shows on the Risk leaderboard only, and 01's *Result* column went (Action names the kind of
-  failure; since 1.0.7.1 the 01 failure tables have no Identity type badge).
+  failure, and the Identity type badge marks a failed sign-in). The treemap and 06 *Highest-volume identities* used
+  their own kind words until 1.0.7.1 (*platform*, *human*, *unauthenticated* …); both now use the eight types.
 - *More click columns (1.0.5.5).* Action on 00 *Most frequent actions*, Transport action on 03 *Top transport
   actions*, and Object type on 02 *Object types* and *Busiest objects* are now the raw fields (they were STATS BY
   aliases). 04 *Why these identities scored* shows the outcome in its own Outcome column (success, failure,
@@ -732,8 +751,9 @@ legend and the How to read blocks, not in each tooltip: `table()` appends the la
   that read several saved objects of one type reads `<type>: N objects` (*dashboard: 39 objects*); a Kibana path
   drops its query string, so one page's requests group; an Elasticsearch request with no transport action (a failed
   sign-in) shows its `url.path` instead of a blank. *Events* is the group's count and *Last seen* its newest event.
-  The columns are Identity, Principal id, Action, Request, Outcome, Client IP, Events and Last seen: Source (implied
-  by Request), First seen and the Identity type badge left so that Request keeps ~250px at 1440 (it had ~140px).
+  The columns are Identity, Identity type, Principal id, Action, Request, Outcome, Client IP, Events and Last seen.
+  Source (implied by Request) and First seen (the session has it) left; Identity narrowed to 170px for the badge,
+  so Request keeps ~180px at 1440 (it had ~140px in 1.0.7) and a long transport action is cut there (hover shows it).
   The *Raw signal feed* session still lists every event.
 
 **Tooltips — two tiers, 40 words.** A panel's description is its ⓘ tooltip, and a reader hovers it to learn
@@ -1053,6 +1073,15 @@ where they had the most signal to chew — the treemap 819ms → 309ms, *Identit
 392ms → 159ms — and the band panels dearer: `BAND_KEYS` loads `url.original` and `saved_object.id` for
 every event, so each band query on Platform Volume went from ~100ms to ~450ms at 7 days (Signal vs noise
 294ms → 642ms), and that page's concurrent load from 1.9s to 3.2s.
+
+The replica is the live stream copied and re-dated, so a wider window holds more **events** but no more
+**distinct values**: the 1.0.7.1 Live signal feed has 647 groups on the replica at both 24h and 7d, against 70 and
+234 on the live stream. `--perf` therefore times event volume, not group count; a grouped panel (the Live signal feed,
+the treemap) on a stream with thousands of identities or requests should also be timed on that stream, read-only.
+1.0.7.1 (Identity type on the treemap, the failure tables, the Live feed and *Highest-volume identities*; Request on
+the failure tables) moved no query materially: 7d replica medians, old → new, treemap 350 → 350ms, Live feed 384 →
+401ms, Top failed 51 → 58ms, Failed sign-ins 90 → 119ms, Highest-volume identities 332 → 358ms; on the live stream at
+7d the treemap and the Live feed took ~250ms before and after.
 
 Before the query-shape rewrites in [`esql/fragments.md`](esql/fragments.md), the 7-day Command
 Center, Kibana Objects, Security Anomalies and Platform Volume loads each hit the 30s budget, and the

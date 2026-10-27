@@ -147,6 +147,26 @@ export const CHANGED_KEYS = 'event.action, kibana.saved_object.type';
 export const CHANGED_DERIVE = `${VERB} | ${OBJ_TYPE}`;
 
 /**
+ * REQUEST: what a request touched, in one display-only column (1.0.5.6 on 00 Live signal feed; since 1.0.7.1 also the
+ * two 01 failure tables, so the three read the same). In order: an Elasticsearch event's transport action (a refused
+ * request, `access_denied`, names what was refused only there); a Kibana saved-object event's "<type>: <title or id>",
+ * or "<type>: N objects" for a group that touched several (pass `objects` where the query counts them); the request's
+ * path (a failed sign-in, a Kibana web request); "(objects not recorded)" for a bulk saved-object read that names
+ * none; else "(not recorded)" (activate_user_profile, create_apikey, workflow_delete …). A multi-branch CASE, so it
+ * runs on grouped rows or a feed's returned rows only (QUERY SHAPE rules 1 and 3). Computed, so it does not click.
+ *
+ *   obj      the column holding the object's title or id
+ *   path     the column holding the request path
+ *   objects  the column holding a group's distinct object count (grouped queries)
+ */
+export const requestCase = ({ obj, path, objects }) =>
+  'request = CASE(elasticsearch.audit.action IS NOT NULL, elasticsearch.audit.action, ' +
+  (objects ? `${objects} > 1, CONCAT(kibana.saved_object.type, ": ", TO_STRING(${objects}), " objects"), ` : '') +
+  `kibana.saved_object.type IS NOT NULL, CONCAT(kibana.saved_object.type, ": ", COALESCE(${obj}, "(no id)")), ` +
+  // A bulk saved-object read ("User has accessed saved objects") records no object at all.
+  `${path} IS NOT NULL, ${path}, event.action LIKE "saved_object_*", "(objects not recorded)", "(not recorded)")`;
+
+/**
  * SESSION RECORDS (02 Session reconstruction, 07 Session records): the Kibana events behind the session timeline
  * (vega/13), newest first, as a Lens table so the identity dropdowns narrow it (RECORD FEEDS, panels.mjs). The
  * logic of searches/09: events with a browser session, less what an open tab does on its own (paging, space
