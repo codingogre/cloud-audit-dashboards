@@ -3,7 +3,8 @@
  *
  * Fragment rationale lives in esql/fragments.md. The panel shapes below were verified
  * empirically against Kibana 9.6 serverless — the Dashboards API accepts only
- * links / markdown / vis / discover_session panels, `breakdown_by` (not `breakdown`) is
+ * links / markdown / vis / discover_session panels (plus `custom_content` since the 9.6 tech preview;
+ * scripts/lib/custom.mjs), `breakdown_by` (not `breakdown`) is
  * the XY split key, partition charts use metrics[]+group_by[], and metric items take no
  * per-item colour.
  *
@@ -74,6 +75,7 @@ import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { cfg, nsId, objId, ROOT, DEFAULT_STREAM, DEFAULT_VIEW } from './env.mjs';
 import { deployed } from './suite.mjs';
+import { loadTemplate } from './custom.mjs';
 
 /** The audit stream, from config — one definition, so a rename is an .env change, not a code change. */
 export const IDX = cfg.dataStream;
@@ -1652,6 +1654,17 @@ export const vega = (x, y, w, h, ref, title, desc, { pins = false } = {}) => {
   if (VEGA_WINDOWS[ref]) config.time_range = { ...VEGA_WINDOWS[ref] };
   return { type: 'vis', id: nid('vega'), grid: { x, y, w, h }, config, ...(pins ? { pins: true } : {}) };
 };
+
+/**
+ * A custom panel (9.6 `custom_content`, serverless tech preview; scripts/lib/custom.mjs has what the API and the
+ * renderer accept). The template is custom/<ref>.html with its icons expanded at build time; the ONE query is
+ * built from the shared fragments in JS, so it cannot drift from them the way a hand-written Vega spec can.
+ * It follows the time picker, pills and the control bar like a Lens panel.
+ */
+export const custom = (x, y, w, h, ref, title, desc, query) => ({
+  type: 'custom_content', id: nid('custom'), grid: { x, y, w, h },
+  config: { title, description: desc, template: loadTemplate(ref), esql_query: [nullSafe(query)] },
+});
 
 /**
  * PREVIOUS-PERIOD TILES (1.0.5; ES|QL since 1.0.5.1). A headline count with a second line comparing it with

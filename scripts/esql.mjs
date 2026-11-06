@@ -93,6 +93,8 @@ function collect(node, out) {
   if (node && typeof node === 'object') {
     for (const [k, v] of Object.entries(node)) {
       if ((k === 'query' || k === 'esql') && typeof v === 'string' && /^\s*(SET\s[^;]*;\s*)*FROM\s/i.test(v)) out.push(v);
+      // A custom panel (9.6 custom_content) keeps its one query in an array.
+      else if (k === 'esql_query' && Array.isArray(v)) v.filter((q) => typeof q === 'string').forEach((q) => out.push(q));
       else collect(v, out);
     }
   }
