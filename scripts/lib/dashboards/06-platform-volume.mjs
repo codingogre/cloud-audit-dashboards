@@ -4,7 +4,7 @@ import {
   dash, kpi, xy, table, vega, filterable, resetIds, cloudKeyLabel, identityLabel, grouped
 } from '../panels.mjs';
 import { rawId } from '../suite.mjs';
-import { RAW_RECORDS, IDENTITY_HOW_TO } from './shared.mjs';
+import { RAW_RECORDS, IDENTITY_HOW_TO, openInByTitle } from './shared.mjs';
 
 /**
  * SIGNAL VS NOISE OVER TIME is one full-Vega panel (vega/07), not a Vega stream above a Lens share chart.
@@ -216,6 +216,11 @@ export function build() {
       // viewport. Named API keys beside it pins keys, and the board is opt-in.
       { noPin: 'width: at w=26 a Principal id column beside the Identity type badge leaves Identity too narrow at 1440px; Named API keys beside it pins keys' }),
   ];
+  // Open in Discover (1.0.7.2): each record panel's menu opens the session holding the same records (shared.mjs).
+  openInByTitle(P, {
+    "Named API keys": '07-api-key-activity',
+    "Highest-volume identities": '06-actor-first-seen',
+  });
   return dash(rawId('06-platform-volume'), '[Audit] 📊 Platform Volume & API Keys',
     'The unfiltered firehose, quarantined so the forensic dashboards stay readable.', P, { intro: INTRO });
 }

@@ -22,7 +22,7 @@ import {
   CRED_TYPE_LABEL, INDEX_FAMILY, CONCRETE, SYS_INDEX, ACTOR_LABEL, MAGNITUDE_RAMP, SEVERITY_RAMP, fitRows, tableLimit,
   KIBANA_INTERNALS, BOUNDED, BARE_COUNT, grouped, FAILED_OR_DENIED, PREV_TILES, prevRef, COVERAGE_REF, flatPanels,
   HOW_TO_LABEL, TIME, TIME_ONLY, IDENTITY_WHERE, PROJECT_WHERE, CONTROLS_WHERE, HOUR_AGO, VEGA_WINDOWS, windowMs, NULL_SAFE, VIEW_TIME,
-  IDENTITY_KEYS, KIND_GROUPED,
+  IDENTITY_KEYS, KIND_GROUPED, KIND_EVENT, KIBANA_REQUEST_FROM, KIBANA_REQUEST_KEY,
 } from './panels.mjs';
 import { DEFAULT_VIEW } from './env.mjs';
 
@@ -45,7 +45,8 @@ export const GRID_W = 48;
 // ACTOR_LABEL: every static file that DISPLAYS an identity shortens a Cloud API key the one shared way
 // ("_4KEO… · Cloud API key", "Unnamed key of _4KEO…"); Lens tables get it from table().
 // IDENTITY_KEYS + KIND_GROUPED (1.0.7.1): the treemap's blocks are the Identity type dropdown's values, worked out as
-// the identity tables work them out.
+// the identity tables work them out. KIND_EVENT / KIND_GROUPED on the sessions (1.0.7.2): every session that shows an
+// Identity shows its Identity type beside it, worked out as the Lens tables work it out.
 const FRAGMENT_USES = {
   'vega/01-actor-risk-treemap.json': { TIME, NOISE, RISK, RISK_KEYS, RISK_RESTORE, ACTOR_RESOLVE, IDENTITY_KEYS, KIND_GROUPED, ACTOR_LABEL },
   'vega/03-object-verb-heatmap.json': { TIME, VERB, OBJ_ID, OBJ_TYPE },
@@ -64,21 +65,23 @@ const FRAGMENT_USES = {
   'vega/10-actor-geography.json': { TIME },
   'vega/11-actor-object-flow.json': { TIME, OBJ_PRESENT, CRED, VERB, OBJ_TYPE },
   // 00 is the unfiltered full data set: no noise gate by design, only the shared identity.
-  'searches/00-all-events.json': { ACTOR_RESOLVE, ACTOR_LABEL },
-  'searches/01-all-mutations.json': { CHANGE_PRED, ACTOR_RESOLVE, VERB, OBJ, ACTOR_LABEL },
+  'searches/00-all-events.json': { ACTOR_RESOLVE, KIND_EVENT, ACTOR_LABEL },
+  'searches/01-all-mutations.json': { CHANGE_PRED, ACTOR_RESOLVE, KIND_EVENT, VERB, OBJ, ACTOR_LABEL },
   // FAILED_OR_DENIED: one failed sign-in counts once (no per-realm traces), as on 01's and 04's tiles.
-  'searches/02-failed-authentications.json': { ACTOR_RESOLVE, FAILED_OR_DENIED, ACTOR_LABEL },
-  'searches/03-security-config-changes.json': { ACTOR_RESOLVE, ACTOR_LABEL },
-  'searches/04-kibana-object-changes.json': { ACTOR_RESOLVE, VERB, OBJ, OBJ_PRESENT, KIBANA_INTERNALS, ACTOR_LABEL },
-  'searches/05-system-index-access.json': { ACTOR_RESOLVE, SYS_INDEX, ACTOR_LABEL },
+  'searches/02-failed-authentications.json': { ACTOR_RESOLVE, KIND_EVENT, FAILED_OR_DENIED, ACTOR_LABEL },
+  'searches/03-security-config-changes.json': { ACTOR_RESOLVE, KIND_EVENT, ACTOR_LABEL },
+  'searches/04-kibana-object-changes.json': { ACTOR_RESOLVE, KIND_EVENT, VERB, OBJ, OBJ_PRESENT, KIBANA_INTERNALS, ACTOR_LABEL },
+  'searches/05-system-index-access.json': { ACTOR_RESOLVE, KIND_EVENT, SYS_INDEX, ACTOR_LABEL },
   // 06 and 10 previously carried a bare `NOT (... IN ...)` gate. That is null on Kibana events —
   // where the Elasticsearch action field does not exist — and `WHERE null` drops the row, so both
   // sessions were silently returning ZERO Kibana audit, measured live against an hour that held
   // plenty. The fragment is null-guarded; pinning these two to it is what stops that regressing again.
-  'searches/06-actor-first-seen.json': { ACTOR_KEYS, ACTOR_RESOLVE, NOISE, ACTOR_LABEL },
-  'searches/08-cross-space-activity.json': { ACTOR_KEYS, ACTOR_RESOLVE, ACTOR_LABEL },
-  'searches/09-session-reconstruction.json': { ACTOR_RESOLVE, ACTOR_LABEL },
-  'searches/10-raw-signal-feed.json': { ACTOR_RESOLVE, NOISE, ACTOR_LABEL },
+  'searches/06-actor-first-seen.json': { ACTOR_KEYS, IDENTITY_KEYS, ACTOR_RESOLVE, KIND_GROUPED, NOISE, ACTOR_LABEL },
+  'searches/08-cross-space-activity.json': { ACTOR_KEYS, IDENTITY_KEYS, ACTOR_RESOLVE, KIND_GROUPED, ACTOR_LABEL },
+  'searches/09-session-reconstruction.json': { ACTOR_RESOLVE, KIND_EVENT, ACTOR_LABEL },
+  'searches/10-raw-signal-feed.json': { ACTOR_RESOLVE, KIND_EVENT, NOISE, ACTOR_LABEL },
+  // UC-117 (1.0.7.2): a Kibana request beside the Elasticsearch requests it made, keyed on the opaque id's first part.
+  'searches/11-kibana-request-trace.json': { ACTOR_RESOLVE, KIND_EVENT, ACTOR_LABEL, KIBANA_REQUEST_FROM, KIBANA_REQUEST_KEY },
   // The prior-period tiles (PREV_TILES, generated) read the events view, not the stream, so they bound their own
   // window and cannot embed TIME: they pin CONTROLS_WHERE, which is what makes both counts follow the dropdowns,
   // and the tile's own filter. --lint parity then checks both counts against TIME on the stream.
@@ -737,6 +740,18 @@ export function checkSections(name, panels, problems) {
 }
 
 /** Returns an array of human-readable problems; empty means clean. */
+/**
+ * OPEN IN DISCOVER (1.0.7.2; drilldowns.mjs). A panel's `discover` names a session in searches/, and only a panel
+ * that renders records or a chart over them carries one: a link to a session that is not deployed opens Discover
+ * on "not found", and one on a markdown panel has no panel menu to sit in.
+ */
+export function checkDiscoverLinks(name, panels, problems, dir = join(ROOT, 'searches')) {
+  for (const p of panels.filter((q) => q.discover !== undefined)) {
+    if (typeof p.discover !== 'string' || !existsSync(join(dir, `${p.discover}.json`))) problems.push(`${name}: panel ${p.id} links to Discover session "${p.discover}", which is not a file in searches/`);
+    if (p.type !== 'vis') problems.push(`${name}: panel ${p.id} (${p.type}) carries an Open in Discover link, which only a chart or table panel can show`);
+  }
+}
+
 export function checkLayout(all) {
   const problems = [];
   let panelCount = 0;
@@ -756,6 +771,7 @@ export function checkLayout(all) {
     checkRows(name, panels, problems);
     checkClickFilters(name, panels, problems);
     checkIdentityPins(name, panels, problems);
+    checkDiscoverLinks(name, panels, problems);
     checkTitles(name, panels, problems);
     checkEmptyWording(name, panels, problems);
     checkFixedWindows(name, panels, problems);

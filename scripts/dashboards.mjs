@@ -26,7 +26,7 @@ import { kb } from './lib/http.mjs';
 import { success, detail, info } from './lib/log.mjs';
 import { buildAll } from './lib/definitions.mjs';
 import { pinnedPanels, dataViewObject, isControlRef, CONTROLS, RETIRED_DATA_VIEW_IDS } from './lib/controls.mjs';
-import { panelDrilldown, hasFilterableColumn, ACTOR_360, drilldownRefs, isDrilldownRef } from './lib/drilldowns.mjs';
+import { panelEnhancements, hasFilterableColumn, ACTOR_360, drilldownRefs, isDrilldownRef } from './lib/drilldowns.mjs';
 import { checkLayout } from './lib/layout.mjs';
 import { smallMarkdown, writeTileSpecs, flatPanels } from './lib/panels.mjs';
 import { requireView } from './lib/view.mjs';
@@ -37,9 +37,10 @@ import { requireView } from './lib/view.mjs';
  * table()'s `narrow1440` flag and the `lint` annotation (table(), search()) cannot ride along — they are kept on the in-memory definition and
  * stripped here, which is also what gets written to dashboards/*.json, since those files are the
  * payload as sent. So are `headed` and `small` (the post-pass's small-text markers, panels.mjs INTRO TEXT), and a Vega
- * panel's `pins` (it pins an identity, so it gets the Identity 360 drilldown).
+ * panel's `pins` (it pins an identity, so it gets the Identity 360 drilldown), and a record panel's `discover` (the
+ * Discover session its Open in Discover link opens; drilldowns.mjs, OPEN IN DISCOVER).
  */
-const strip = ({ drill, pins, narrow1440, lint, headed, small, ...p }) => p;
+const strip = ({ drill, pins, discover, discoverName, narrow1440, lint, headed, small, ...p }) => p;
 /**
  * A section (panels.mjs, SECTIONS) goes out as the API's shape — a `panels` entry with no `type`, its grid only
  * a y — and its own panels stripped the same way. Exported for the unit tests.
@@ -106,6 +107,8 @@ export function checkSections(id, obj, panels, sections) {
  */
 export const drillTargets = (id, flat) => new Map(flat.filter((p) => hasFilterableColumn(p) || p.pins)
   .map((p) => [p.id, id === ACTOR_360 ? p.drill : ACTOR_360]).filter(([, dest]) => dest));
+/** Which panels carry an Open in Discover link, as Map(panelIndex → searches ref). Pure, unit-tested. */
+export const discoverTargets = (flat) => new Map(flat.filter((p) => p.discover).map((p) => [p.id, p.discover]));
 
 /**
  * Re-point every Vega panel of an exported dashboard (`panels`, mutated) at its saved visualization and return the
@@ -151,6 +154,8 @@ async function applyImportOnlyState(all) {
     const vegaPanels = Object.fromEntries(
       flat.filter((p) => p.type === 'vis' && p.config?.ref_id).map((p) => [p.id, p.config.ref_id]));
     const drillPanels = drillTargets(id, flat);
+    const discoverPanels = discoverTargets(flat);
+    const discoverNames = new Map(flat.filter((p) => p.discoverName).map((p) => [p.id, p.discoverName]));
 
     const [obj] = await kb.exportObjects([{ type: 'dashboard', id }]);
     const panels = JSON.parse(obj.attributes.panelsJSON);
@@ -159,7 +164,8 @@ async function applyImportOnlyState(all) {
     // The ES|QL controls in pinned_panels reference no data view (1.0.5.2); the PUT replaced the classic ones'.
     let refs = (obj.references || []).filter((r) => !isControlRef(r.name) && !isDrilldownRef(r.name));
     let changed;
-    ({ refs, changed } = repointVega(panels, refs, vegaPanels, drillPanels));
+    // A Vega panel with any drilldown (an Open in Discover link included) is referenced the scoped way (repointVega).
+    ({ refs, changed } = repointVega(panels, refs, vegaPanels, new Set([...drillPanels.keys(), ...discoverPanels.keys()])));
     // Column widths used to be patched in here. The 9.6 Dashboards API now carries `width` (and
     // `label`) on data_table rows AND metrics itself — verified by PUT then _export — so they ride
     // the PUT like any other panel option and this post-pass no longer touches them.
@@ -178,13 +184,17 @@ async function applyImportOnlyState(all) {
     }
 
     let drilled = 0;
+    let discovered = 0;
     for (const p of panels) {
-      if (!drillPanels.has(p.panelIndex)) continue;
+      const enh = panelEnhancements(id, p.panelIndex, { dest: drillPanels.get(p.panelIndex), discover: discoverPanels.get(p.panelIndex), discoverName: discoverNames.get(p.panelIndex) });
+      if (!enh) continue;
       p.embeddableConfig = p.embeddableConfig || {};
-      p.embeddableConfig.enhancements = panelDrilldown(id, p.panelIndex, drillPanels.get(p.panelIndex));
-      refs.push(...drilldownRefs(p.panelIndex, p.embeddableConfig.enhancements));
-      drilled++;
+      p.embeddableConfig.enhancements = enh;
+      refs.push(...drilldownRefs(p.panelIndex, enh));
+      if (drillPanels.has(p.panelIndex)) drilled++;
+      if (discoverPanels.has(p.panelIndex)) discovered++;
     }
+    if (discovered !== discoverPanels.size) throw new Error(`${id}: ${discovered} of ${discoverPanels.size} Open in Discover panels found in the export`);
     obj.attributes.panelsJSON = JSON.stringify(panels);
     delete obj.attributes.controlGroupInput;
     obj.references = refs;
@@ -194,7 +204,7 @@ async function applyImportOnlyState(all) {
     const [back] = await kb.exportObjects([{ type: 'dashboard', id }]);
     checkSections(`${id} (after import)`, back, JSON.parse(back.attributes.panelsJSON), sections);
     if (intros !== Object.keys(introPanels).length) throw new Error(`${id}: ${intros} of ${Object.keys(introPanels).length} intro panels found in the export`);
-    detail(`${id}: ${changed} vega re-pointed, ${intros} small-text panel(s), ${sections.length} section(s), ${CONTROLS.length} controls, ${drilled} drilldown(s)`);
+    detail(`${id}: ${changed} vega re-pointed, ${intros} small-text panel(s), ${sections.length} section(s), ${CONTROLS.length} controls, ${drilled} drilldown(s), ${discovered} Open in Discover`);
     vegaTotal += changed;
     drillTotal += drilled;
   }

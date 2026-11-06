@@ -4,7 +4,7 @@ import {
   grouped, FAILED_OR_DENIED, SIGNIN_FAILED, NOISE, cloudKeyLabel, IDENTITY_KEYS, KIND_GROUPED, KIND_EVENT
 } from '../panels.mjs';
 import { rawId } from '../suite.mjs';
-import { WHO, RAW_RECORDS, PIN_PRINCIPAL, PIN_PRINCIPAL_SHORT, PIN_KEY, requestCase } from './shared.mjs';
+import { WHO, RAW_RECORDS, PIN_PRINCIPAL, PIN_PRINCIPAL_SHORT, PIN_KEY, requestCase, openInByTitle } from './shared.mjs';
 
 // FAILED_OR_DENIED and SIGNIN_FAILED live in panels.mjs: 04's failure panels count the same way.
 
@@ -192,7 +192,7 @@ const INTRO = {
     'Cloud API keys have no name or owner: tables show the start of the id, “_4KEO… · Cloud API key”, with Owner “Cloud organization”.',
     'A re-issued key keeps its name under a new id, so key ids can outnumber names.',
     'A failed sign-in counts once per attempt. Caller “Kibana dashboards · …” is Kibana retrying with an expired browser session, usually harmless. Credential type covers Elasticsearch requests only.',
-    'The links above carry the time range and filter pills to the next page, but no dropdown choice: pick again there.',
+    'The dashboard links above carry the time range and filter pills, but no dropdown choice: pick again there. Raw records keep only the time range; a panel’s ⋯ › Open in Discover keeps the pills too.',
   ],
 };
 
@@ -272,11 +272,11 @@ export function build() {
     // a count of 1 a visible bar (logBar).
     // Grouped on the raw email first, then classified: ORG reads only user.email, so the
     // CASE runs once per person instead of once per event.
-    compactLog(logBar(bar(0, 17, 12, 12, 'Events by identity origin',
+    compactLog(logBar(bar(0, 17, 24, 10, 'Events by identity origin',
       `FROM ${IDX} | ${TIME} | STATS events = COUNT(*) BY user.email | ${ORG} | STATS events = SUM(events) BY origin = actor_org | EVAL origin = CONCAT(origin, " · ", ${grouped('events')}) | SORT events DESC`,
       'origin', 'events', 'Events, not identities, by the email on the event: Elastic (@elastic.co), Tenant (any other address) or Machine (no email). Log scale: read the count, not the bar length. One busy key can make Machine nearly all traffic.',
       { yScale: 'log' }), 1e9)),
-    compactLog(logBar(bar(12, 17, 12, 12, 'Events by authentication realm',
+    compactLog(logBar(bar(24, 17, 24, 10, 'Events by authentication realm',
       `FROM ${IDX} | ${TIME} | WHERE user.domain IS NOT NULL | STATS events = COUNT(*) BY user.domain | EVAL realm = CASE(user.domain == "cloud-saml-kibana", "SAML SSO", user.domain == "_es_api_key", "Elasticsearch API key", user.domain == "_cloud_api_key", "Cloud API key", STARTS_WITH(user.domain, "_service_account"), "Service account", STARTS_WITH(user.domain, "_"), "Other internal", user.domain) | STATS events = SUM(events) BY realm | EVAL realm = CONCAT(realm, " · ", ${grouped('events')}) | SORT events DESC`,
       'realm', 'events', 'Events by how they were authenticated: SAML SSO is people signing in through a browser; Elasticsearch and Cloud API keys are programmatic; Service account is Elastic’s own components. Log scale: read each bar’s count, not its length.',
       { yScale: 'log' }), 1e9)),
@@ -297,7 +297,7 @@ export function build() {
     // Elasticsearch key's row shows its creator's principal there. The Kind column gave its width to that
     // column: at 24 columns a 1440px viewport cannot hold both beside a 36-character key name, and the "-"
     // under API key says Cloud. Events and IPs are sized: auto, they took ~240px of a 655px panel at 1440.
-    table(24, 17, 24, 12, 'Busiest API keys by name',
+    table(16, 27, 32, 12, 'Busiest API keys by name',
       `FROM ${IDX} | ${TIME} | ${KEYED} | STATS events = COUNT(*), ips = COUNT_DISTINCT(client.ip), key_ids = COUNT_DISTINCT(api_key.id) BY api_key.name, user.name | EVAL key_ids = GREATEST(key_ids, 1) | SORT events DESC, api_key.name, user.name | LIMIT 10`,
       [filterable('api_key.name', { label: 'API key' }), filterable('user.name', { label: 'Key ID (Cloud) / creator', width: 175, min: 165 })], [sized('key_ids', 90, { label: 'Key IDs', min: 72 }), sized('events', 100), sized('ips', 56)],
       'The busiest API keys, one row per name, with volume and distinct client IPs. The next column is the creator, or a Cloud API key’s full id (it has no name). Many IPs on one key deserve a look.'),
@@ -305,10 +305,10 @@ export function build() {
     // but 2 of ~11,600 events for the one SSO user, and on those 2 it held the email again — so it split
     // one person into two rows and otherwise filled a column with "-". The email is the person, and it
     // is the click filter. First and last seen and IPs are not repeated here: they are on Identity first
-    // and last seen, for the same events. Without them this table fits 12 columns (an email keeps ~215px
-    // at a 1440px viewport), and the failures beside it get the 36 that six columns need there: at 32 the
-    // Result column cut "<unauthenticated-cloud-access-token>" in Identity (rendered at 1440).
-    table(0, 29, 12, 12, 'Busiest human identities',
+    // and last seen, for the same events. Since 1.0.7.2 it shares a row with Busiest API keys (16 + 32 columns): Top
+    // failed or denied access, which sat beside it, went full width. The two "busiest" tables pair naturally, and API
+    // keys at 32 columns shows a 45-character key name whole at 1440 (rendered).
+    table(0, 27, 16, 12, 'Busiest human identities',
       `FROM ${IDX} | ${TIME} | WHERE user.email IS NOT NULL | STATS events = COUNT(*) BY user.email | SORT events DESC | LIMIT 10`,
       [WHO], ['events'],
       'The people the Humans tile counts, busiest first, over all traffic. Identity first and last seen has the rest, with first and last seen times and IP counts. Click an email to pin that person across the suite.'),
@@ -321,39 +321,43 @@ export function build() {
     // says what failed: the first STATS groups on its raw parts (elasticsearch.audit.action, url.path, the saved-object
     // type, and counts the objects), the CASE and KIND_EVENT run on those few groups (30 days: 43), and the second
     // STATS folds them per shown row. Identity type is back beside Identity (the user, 2026-10-26).
-    // One line per row, so the LIMIT is the rows shown (fitRows: 10 at h=12, README). At 36 columns (969px at 1440) the
-    // seven columns leave ~260px of text room, and Identity and API key share it (both flex, ~130px each at 1440,
-    // ~290px each at 1920). Until the fix round API key alone flexed: at 1920 it took ~470px to print "-" on a failed
-    // sign-in's row while Identity cut <unauthenticated-cloud-access-token> (rendered, dark). A ~45-character name (the
-    // r1051c probes) is still cut at 1440, in both columns; hover shows it.
-    // Request keeps 165px, enough for "/_security/_authenticate" and "indices:admin/esql/view/get" on one line.
+    // One line per row, so the LIMIT is the rows shown (fitRows: 10 at h=12, README). Full width since 1.0.7.2 (the user,
+    // 2026-10-27): at 36 columns a ~45-character key name (cloud-audit-r1051c-privprobe-readStreamAndOneView, ~330px)
+    // was cut in both Identity and API key at 1440, so rows for different keys looked alike. At 48 columns, both
+    // flexing, each got ~285px at 1440 (rendered at 7d): still cut. So Identity is fixed at 340px and always shows the
+    // whole name, and API key takes the rest (~230px at 1440, the whole name at 1920); on a named key's row the two hold
+    // the same name, and API key is the one that clicks. Principal id flexes here too, not the shared 165px
+    // PIN_PRINCIPAL_SHORT (1.0.7.2 review): it showed "<unauthenticated-cloud-ac" at 1920 beside ~700px of empty API
+    // key; sharing the rest, each gets ~190px at 1440 and ~410px at 1920, where both hold their whole value.
+    // Request is 200px, enough for "indices:admin/esql/view/delete" and "/_security/_authenticate" on one line; Action
+    // 150px holds "authentication_failed".
     // Client IP (on a failure, the platform proxy) gave way in 1.0.7.1; Caller is on Failed sign-ins below.
-    table(12, 29, 36, 12, 'Top failed or denied access',
+    table(0, 39, 48, 12, 'Top failed or denied access',
       `FROM ${IDX} | ${TIME} | ${FAILED_OR_DENIED} | STATS events = COUNT(*), last_seen = MAX(@timestamp), objects = COUNT_DISTINCT(kibana.saved_object.id), ` +
       `obj = MAX(COALESCE(kibana.saved_object.name, kibana.saved_object.id)) BY ${ACTOR_KEYS}, event.action, elasticsearch.audit.action, url.path, kibana.saved_object.type ` +
       `| ${ACTOR_RESOLVE} | ${KIND_EVENT} | EVAL ${requestCase({ objects: 'objects', obj: 'obj', path: 'url.path' })} ` +
       '| STATS events = SUM(events), last_seen = MAX(last_seen) BY actor, identity_kind, user.name, api_key.name, event.action, request ' +
       '| SORT events DESC, last_seen DESC, actor, event.action, request | LIMIT 10',
-      ['actor', PIN_PRINCIPAL_SHORT, filterable('api_key.name', { label: 'API key' }), filterable('event.action', { label: 'Action', width: 165, min: 165 }),
-        sized('request', 175, { label: 'Request', min: 165 })],
+      [sized('actor', 340, { min: 330 }), filterable('user.name', { label: 'Principal id' }), filterable('api_key.name', { label: 'API key' }), filterable('event.action', { label: 'Action', width: 150, min: 145 }),
+        sized('request', 200, { label: 'Request', min: 190 })],
       [sized('events', 64, { min: 64 })],
       'Failed sign-ins and refused requests, most frequent first. Request is what was asked for: a transport action, path or Kibana object. Click a Principal id, API key or Action to pin it; a named key’s Principal id is its owner.',
       { empty: 'good' }),
     // The three record lists run full width: they are the evidence, so every column has to be readable. Lens
     // tables since 1.0.5.1 (RECORD FEEDS, panels.mjs), so the identity dropdowns narrow them too; each keeps the
     // logic of the Discover session of the same name (searches/02, 07, 06) and scrolls to that session's bound.
-    table(0, 41, 48, 12, 'Failed sign-ins and denied access', FAILED_FEED,
+    table(0, 51, 48, 12, 'Failed sign-ins and denied access', FAILED_FEED,
       ['actor', PIN_PRINCIPAL_SHORT, KEY_PIN, filterable('event.action', { label: 'Action', width: 165, min: 165 }),
         sized('request', 165, { label: 'Request', min: 160 }), { column: 'caller', label: 'Caller' }, filterable('client.ip')],
       ['@timestamp'],
       'Failed sign-ins and refused requests. Request is what was asked for: a transport action, path or Kibana object; Caller is the client. Click an underlined cell to pin it; a named key’s Principal id is its owner.',
       { wrap: true, empty: 'good' }),
-    table(0, 53, 48, 12, 'API key inventory', KEY_INVENTORY,
+    table(0, 63, 48, 12, 'API key inventory', KEY_INVENTORY,
       [{ column: 'api_key', label: 'API key' }, filterable('api_key.id', { label: 'Key ID', width: 175, min: 160 }), PIN_PRINCIPAL_SHORT, 'owner'],
       ['first_seen', 'last_seen', 'events', 'ips', 'indices'],
       'Every API key used in range, Cloud and Elasticsearch, busiest first, with owner, volume, IP spread, indices touched and first and last use. Owner is its creator: a person or the Cloud API key that minted it.',
       { scroll: true }),
-    table(0, 65, 48, 14, 'Identity first and last seen', FIRST_SEEN,
+    table(0, 75, 48, 14, 'Identity first and last seen', FIRST_SEEN,
       ['actor', PIN_PRINCIPAL, { column: 'countries', label: 'Located in', width: 90 }],
       // No Action types since 1.0.7: with Principal id beside Identity it left Identity 147px at a 1440px viewport and
       // wrapped the Signal events header onto two lines (rendered).
@@ -361,6 +365,15 @@ export function build() {
       'Every identity in range, all traffic, newest first appearance on top, with events and signal events after the noise gate. Widen the range to tell new from quiet. A named key’s Principal id is its owner.',
       { scroll: true }),
   ];
+  // Open in Discover (1.0.7.2): each record panel's menu opens the session holding the same records (shared.mjs).
+  openInByTitle(P, {
+    "Busiest API keys by name": '07-api-key-activity',
+    "Busiest human identities": '06-actor-first-seen',
+    "Top failed or denied access": '02-failed-authentications',
+    "Failed sign-ins and denied access": '02-failed-authentications',
+    "API key inventory": '07-api-key-activity',
+    "Identity first and last seen": '06-actor-first-seen',
+  });
   return dash(rawId('01-identity-access'), '[Audit] 🔐 Identity & Access',
     'Who authenticated, how, from where, and what failed. Resolves the numeric user.name into real identities.', P, { intro: INTRO });
 }

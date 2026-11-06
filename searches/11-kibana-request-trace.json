@@ -1,0 +1,48 @@
+{
+  "title": "[Audit] Kibana request → Elasticsearch requests",
+  "description": "Each Kibana request beside the Elasticsearch requests it made, newest first. Narrow the time range first, then Filter for value on a Kibana request to follow one; a pinned request id filter would hide the Elasticsearch side.",
+  "esql": "SET unmapped_fields=\"nullify\"; FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE service.name == \"serverless-kibana\" OR `http.request.header.x-opaque-id` LIKE \"*;kibana:*\" OR `http.request.header.x-opaque-id` RLIKE \"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\" | EVAL kibana_request = CASE(service.name == \"serverless-kibana\", http.request.id, MV_FIRST(SPLIT(`http.request.header.x-opaque-id`, \";\"))) | SORT @timestamp DESC | EVAL actor = CASE(user.email IS NOT NULL, user.email, api_key.name IS NOT NULL, api_key.name, user.domain == \"_cloud_api_key\", CONCAT(user.name, \" · Cloud API key\"), user.domain == \"_es_api_key\", CONCAT(\"Unnamed key of \", user.name), user.name IS NOT NULL, user.name, \"(unattributed)\") | EVAL identity_kind = CASE(user.email IS NOT NULL, \"Person\", api_key.name IS NOT NULL, \"Elasticsearch API key\", user.domain == \"_es_api_key\", \"Unnamed API key\", user.domain == \"_cloud_api_key\", \"Cloud API key\", user.domain == \"_service_account\", \"Service account\", event.action IN (\"authentication_failed\",\"anonymous_access_denied\"), \"Failed sign-in\", user.name IS NULL, \"Unattributed\", \"Other\") | EVAL source = CASE(service.name == \"serverless-elasticsearch\", \"Elasticsearch\", service.name == \"serverless-kibana\", \"Kibana\", service.name), path = REPLACE(url.original, \"^https?://[^/]+\", \"\"), obj = COALESCE(kibana.saved_object.name, kibana.saved_object.id), result = CASE(event.outcome == \"unknown\", \"attempted\", event.outcome), caller = REPLACE(`http.request.header.x-opaque-id`, \"^[^;]*;\", \"\") | EVAL request = CASE(elasticsearch.audit.action IS NOT NULL, elasticsearch.audit.action, kibana.saved_object.type IS NOT NULL, CONCAT(kibana.saved_object.type, \": \", COALESCE(obj, \"(no id)\")), path IS NOT NULL, path, event.action LIKE \"saved_object_*\", \"(objects not recorded)\", \"(not recorded)\") | KEEP @timestamp, kibana_request, source, actor, identity_kind, event.action, request, result, caller | EVAL actor = REPLACE(REPLACE(actor, \"^([-_A-Za-z0-9]{5})[-_A-Za-z0-9]{15} · Cloud API key$\", \"$1… · Cloud API key\"), \"^Unnamed key of ([-_A-Za-z0-9]{5})[-_A-Za-z0-9]{15}$\", \"Unnamed key of $1…\") | RENAME @timestamp AS Time, kibana_request AS `Kibana request`, source AS Source, actor AS Identity, identity_kind AS `Identity type`, event.action AS Action, request AS Request, result AS Outcome, caller AS Caller",
+  "columns": [
+    "Time",
+    "Kibana request",
+    "Source",
+    "Identity",
+    "Identity type",
+    "Action",
+    "Request",
+    "Outcome",
+    "Caller"
+  ],
+  "sort": [
+    [
+      "Time",
+      "desc"
+    ]
+  ],
+  "grid": {
+    "columns": {
+      "Kibana request": {
+        "width": 330
+      },
+      "Source": {
+        "width": 120
+      },
+      "Identity": {
+        "width": 200
+      },
+      "Identity type": {
+        "width": 175
+      },
+      "Action": {
+        "width": 160
+      },
+      "Request": {
+        "width": 300
+      },
+      "Outcome": {
+        "width": 95
+      }
+    }
+  },
+  "hide_chart": true
+}

@@ -7,7 +7,7 @@ import {
   fitRows, resetIds, cloudKeyLabel, filterable, IDENTITY_KEYS, KIND_GROUPED, KIND_EVENT
 } from '../panels.mjs';
 import { rawId } from '../suite.mjs';
-import { PIN_BY, PIN_KEY, PIN_PRINCIPAL_SHORT, RAW_RECORDS, IDENTITY_HOW_TO } from './shared.mjs';
+import { PIN_BY, PIN_KEY, PIN_PRINCIPAL_SHORT, RAW_RECORDS, IDENTITY_HOW_TO, openInByTitle } from './shared.mjs';
 
 /**
  * Transport fan-out, dropped AFTER aggregation so it costs nothing: shard/node copies (`…[s]`, `[n]`,
@@ -250,6 +250,12 @@ export function build() {
       'The raw requests behind the system index table above, one row per index named, newest first: one request naming ten indices is ten rows. Click a Principal id, Transport action, Index or Client IP to pin it.',
       { scroll: true, empty: 'quiet' }),
   ];
+  // Open in Discover (1.0.7.2): each record panel's menu opens the session holding the same records (shared.mjs).
+  openInByTitle(P, {
+    "Denied requests by identity": '02-failed-authentications',
+    "⚠️ Who touched system and hidden indices": '05-system-index-access',
+    "Raw system index requests": '05-system-index-access',
+  });
   return dash(rawId('03-data-access'), '[Audit] 🔎 Elasticsearch Data Access',
     'What data was read, by whom, through which transport action — including system indices.', P, { intro: INTRO });
 }

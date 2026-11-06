@@ -6,7 +6,7 @@ import {
 } from '../panels.mjs';
 import { rawId } from '../suite.mjs';
 import {
-  ACTOR_KEYS, riskScored, PIN_BY, PIN_COLS, PIN_KEY, PIN_PRINCIPAL, PIN_PRINCIPAL_SHORT, RAW_RECORDS, IDENTITY_HOW_TO
+  ACTOR_KEYS, riskScored, PIN_BY, PIN_COLS, PIN_KEY, PIN_PRINCIPAL, PIN_PRINCIPAL_SHORT, RAW_RECORDS, IDENTITY_HOW_TO, openInByTitle
 } from './shared.mjs';
 
 /**
@@ -259,6 +259,14 @@ export function build() {
       'Every create, update and delete in Kibana and in Elasticsearch security configuration, newest first, with what each change named. Kibana’s routine API-key clean-up is left out. Click a Principal id, Action or Space to pin it.',
       { scroll: true }),
   ];
+  // Open in Discover (1.0.7.2): each record panel's menu opens the session holding the same records (shared.mjs).
+  openInByTitle(P, {
+    "🚨 Config changes": '03-security-config-changes',
+    "Identities by first appearance in range": '06-actor-first-seen',
+    "Top failures and denials by identity and action": '02-failed-authentications',
+    "Mutation feed": '01-all-mutations',
+    "Config-change event feed": '03-security-config-changes',
+  });
   return dash(rawId('04-security-anomalies'), '[Audit] 🚨 Security & Anomalies',
     'Mean-severity risk scoring, privileged operations, failures and newly seen identities.', P, { intro: INTRO });
 }

@@ -5,7 +5,7 @@ import {
 } from '../panels.mjs';
 import { rawId } from '../suite.mjs';
 import {
-  riskScored, CHANGED, CHANGED_KEYS, CHANGED_DERIVE, specDescription, RAW_RECORDS, IDENTITY_HOW_TO, sessionRecords
+  riskScored, CHANGED, CHANGED_KEYS, CHANGED_DERIVE, specDescription, RAW_RECORDS, IDENTITY_HOW_TO, sessionRecords, openInByTitle
 } from './shared.mjs';
 
 /**
@@ -121,7 +121,7 @@ const INTRO = {
     'The ① panels read a fixed 7 days with no noise gate, so they will not match the Events tile or the time picker.',
     'Baseline: the band is their usual range for each hour; with under three days of history no band is drawn.',
     'The Risk tile and Every scoring action count whole minutes only, so they can stop up to a minute short of the panels around them.',
-    'Session timeline: click a bar to pin a session (Elasticsearch panels then read empty); API-only identities have no sessions.',
+    'Session timeline: click a bar to pin a session and zoom to it (Elasticsearch panels then read empty); the browser’s Back button returns to the previous time range, and removing the pill shows every session again. API-only identities have no sessions.',
     IDENTITY_HOW_TO,
   ],
 };
@@ -301,6 +301,16 @@ export function build() {
     row(12, [[48, (x, y, w, h) => sessionRecords(x, y, w, h, 'Session records',
       'The raw Kibana events behind the session timeline, newest first. Click a timeline bar, or a Session cell, to read one session. An hour with only an idle Kibana tab is empty.', { empty: 'quiet' })]]),
   ]);
+  // Open in Discover (1.0.7.2): each record panel's menu opens the session holding the same records (shared.mjs).
+  openInByTitle(P, {
+    "Who this is": '06-actor-first-seen',
+    "⚠️ What they changed": '01-all-mutations',
+    "⚠️ System and hidden index reads": '05-system-index-access',
+    "Kibana browser sessions": '09-session-reconstruction',
+    "Session records": '09-session-reconstruction',
+    // A URL drilldown cannot read an ES|QL variable, so a link opens every identity's records unless the identity
+    // arrived as a pill (a click-through); the menu says so (1.0.7.2 review).
+  }, 'Open in Discover (ignores the Identity dropdown)');
   return dash(rawId('07-actor-360'), '[Audit] 👤 Identity 360',
     'One identity’s complete footprint — pick someone in Identity in the control bar and every panel becomes their story.', P, { intro: INTRO });
 }

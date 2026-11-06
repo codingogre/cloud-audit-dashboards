@@ -301,6 +301,10 @@ test('1.0.5.1: the identity a panel shows is resolved on grouped rows (by ACTOR_
   const { readFileSync, readdirSync } = await import('node:fs');
   // Filtered to a few hundred events before resolving, and measured (22ms and 10ms at 30 days): panels.mjs.
   const PER_EVENT_OK = ['🚨 Config changes', 'Top failures and denials'];
+  // UC-117 (1.0.7.2): sorted but not LIMITed, so a Filter for on Kibana request (appended after the query) reaches the
+  // whole range. ES|QL's own 1,000-row cap is pushed under the EVALs, so the identity is resolved on the rows returned:
+  // 25ms at 7d on the replica, against 21ms with no resolve at all.
+  PER_EVENT_OK.push('searches/11-kibana-request-trace.json');
   const check = (where, q) => {
     const at = q.indexOf(ACTOR_RESOLVE);
     if (at < 0) return;

@@ -4,7 +4,7 @@ import {
   privilegedKpi, prevKpi, grouped, fitRows, COVERAGE_REF, COVERAGE_TITLE, filterable, HOUSEKEEPING, KIND_GROUPED, KIND_EVENT, IDENTITY_KEYS
 } from '../panels.mjs';
 import {
-  legendPanel, ACTOR_KEYS, PIN_PRINCIPAL, PIN_PRINCIPAL_SHORT, RAW_RECORDS, requestCase
+  legendPanel, ACTOR_KEYS, PIN_PRINCIPAL, PIN_PRINCIPAL_SHORT, RAW_RECORDS, requestCase, openInByTitle
 } from './shared.mjs';
 import { isDeployed, rawId } from '../suite.mjs';
 
@@ -115,7 +115,7 @@ const INTRO = {
   howTo: [
     'Risk is weight × events, from 10 for a workflow run to 50 for a security change, so it runs far above event counts.',
     'Identities read as in the Identity dropdown; a Cloud API key is shortened to the start of its id, “_4KEO… · Cloud API key”. The badge beside each is its Identity type.',
-    'The links above carry the time range and filter pills to the next page, but no dropdown choice: pick again there.',
+    'The dashboard links above carry the time range and filter pills, but no dropdown choice: pick again there. Raw records keep only the time range; a panel’s ⋯ › Open in Discover keeps the pills too.',
     'Click an underlined value (an action, an address, a Principal id) to filter the page; a Principal id also opens Identity 360, and a Cloud API key’s id covers the keys it created.',
     'In the Live signal feed, a Client IP in 100.64/10 or a private range is Kibana or the platform acting for someone, not where they are.',
     'The last time bucket is partial, and panels side by side can differ by an event or two at the edges of the range.',
@@ -234,6 +234,11 @@ export function build() {
       'The newest signal activity, one row per identity, action, request, outcome and address, with its event count. Routine traffic and Kibana’s key clean-up left out. Click a Principal id, Action or Client IP to pin it.',
       { scroll: true }),
   ];
+  // Open in Discover (1.0.7.2): each record panel's menu opens the session holding the same records (shared.mjs).
+  openInByTitle(P, {
+    "Live signal feed": '10-raw-signal-feed',
+    "Busiest identities": '06-actor-first-seen',
+  });
   return dash(rawId('00-command-center'), '[Audit] 🎛️ Command Center',
     'Entry point for Cloud Audit Dashboards. KPIs, volume, identity risk and the live signal feed.', P, { intro: INTRO });
 }

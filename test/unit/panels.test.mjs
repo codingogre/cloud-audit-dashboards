@@ -817,3 +817,43 @@ test('drillTargets()/repointVega() (1.0.7): a pinning Vega panel gets the drilld
   assert.equal(panels[1].panelRefName, 'panel_v2', 'an undrilled one keeps panel_<idx>');
   assert.deepEqual(refs, [{ name: 'v1:savedObjectRef', type: 'visualization', id: 'tree' }, { name: 'panel_v2', type: 'visualization', id: 'flow' }]);
 });
+
+test('Open in Discover (1.0.7.2): a panel-menu URL drilldown, same tab, time in _g, pills and KQL written into the session ES|QL', async () => {
+  const { discoverTargets, payload } = await import('../../scripts/dashboards.mjs');
+  const { discoverDrilldown, discoverTemplate, panelEnhancements, PILLS_AS_ESQL } = await import('../../scripts/lib/drilldowns.mjs');
+  const { checkDiscoverLinks } = await import('../../scripts/lib/layout.mjs');
+  const { buildAll } = await import('../../scripts/lib/definitions.mjs');
+  const d = discoverDrilldown('dash', 'tbl-1', '02-failed-authentications');
+  assert.deepEqual(d.triggers, ['CONTEXT_MENU_TRIGGER']);
+  assert.equal(d.action.factoryId, 'URL_DRILLDOWN');
+  assert.equal(d.action.config.openInNewTab, false, 'same tab, as Kibana');
+  const t = d.action.config.url.template;
+  assert.match(t, /^\{\{kibanaUrl\}\}\/app\/discover#\/view\/cloud-audit-search-failed-authentications\?_g=\(time:\{\{rison context\.panel\.timeRange\}\}\)&_a=\(query:\(esql:'/);
+  // The pills go straight after FROM <stream>, where the raw fields exist; rison escapes the session's own ! and '.
+  // The fixed text is URL-encoded here (encodeUrl false), so a value's + or & survives: each value goes through
+  // Kibana's encodeURIComponent helper instead. Decoded, the pills sit straight after FROM <stream>, where the raw
+  // fields exist, and rison escapes the session's own ! and '.
+  assert.equal(d.action.config.encodeUrl, false);
+  assert.ok(!/[ "|`]/.test(t.replace(/\{\{[^}]*\}\}\}?/g, '')), 'no raw space, quote, pipe or backtick outside the template blocks');
+  const plain = decodeURIComponent(t);
+  assert.ok(plain.includes(`FROM logs-elastic_cloud.serverless_audit.otel-default${decodeURIComponent(PILLS_AS_ESQL)} | WHERE`));
+  assert.ok(plain.includes('event.action !!= "realm_authentication_failed"'));
+  // A pill is a KQL phrase (multi-value fields match on any value; an excluding pill keeps a missing field), not ==.
+  assert.ok(plain.includes('KQL("""{{{encodeURIComponent @key}}}:"'));
+  assert.ok(!/` == "\{\{/.test(plain), 'no == translation of a pill');
+  assert.ok(t.endsWith("'))"));
+  assert.throws(() => discoverTemplate('x', 'ROW a = 1'), /FROM <stream>/);
+  assert.throws(() => discoverTemplate('x', 'FROM s | EVAL a = "{{b}}"'), /\{\{/);
+  // Both drilldowns ride one enhancements object; a panel with neither gets none.
+  assert.equal(panelEnhancements('d', 'p', {}), null);
+  assert.equal(panelEnhancements('d', 'p', { discover: '00-all-events' }).dynamicActions.events.length, 1);
+  // Every link names a session that exists, on a chart or table; the annotation never reaches the API payload.
+  const problems = [];
+  checkDiscoverLinks('x', [{ id: 'a', type: 'vis', discover: '99-nope' }, { id: 'b', type: 'markdown', discover: '00-all-events' }], problems);
+  assert.equal(problems.length, 2);
+  for (const def of Object.values(buildAll())) {
+    const flat = def.panels.flatMap((p) => (p.section ? p.panels : [p]));
+    assert.ok(discoverTargets(flat).size >= 2, `${def.id}: at least two Open in Discover links`);
+    assert.ok(!JSON.stringify(payload(def)).includes('"discover"'), `${def.id}: discover stripped from the payload`);
+  }
+});

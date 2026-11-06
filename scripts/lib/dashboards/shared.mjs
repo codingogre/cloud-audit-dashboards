@@ -193,3 +193,27 @@ export const sessionRecords = (x, y, w, h, title, desc, opts = {}) => table(x, y
   [sized('actor', 185, { min: 175 }), PIN_PRINCIPAL_SHORT, filterable('kibana.session.id', { width: 170, min: 160 }), { column: 'op', label: 'Operation', width: 100 },
     { column: 'object', label: 'Object' }, filterable('kibana.space.id')],
   ['@timestamp'], desc, { scroll: true, ...opts });
+
+/**
+ * OPEN IN DISCOVER (1.0.7.2; drilldowns.mjs): `openIn('<searches ref>', panel)` gives a record panel a panel-menu link
+ * to the Discover session holding the same records, at the dashboard's current time range and filter pills. The
+ * session is the panel's logic with Discover's columns, paging and cell filters; it keeps its own LIMIT (1,000 on most,
+ * 200 on the raw signal feed, 10,000 on all events), so it does not reach past the panel's rows. Kept on the in-memory
+ * definition (`discover`, and `discoverName` when the menu entry needs its own words), stripped from the payload,
+ * applied by the post-pass.
+ */
+export const openIn = (ref, panel, name) => Object.assign(panel, { discover: ref }, name ? { discoverName: name } : {});
+/**
+ * The same, by title: `openInByTitle(P, { 'Live signal feed': '10-raw-signal-feed' })` links each panel whose title
+ * starts with a key (a builder may append "· top 10 at most" and the like). A key that matches no panel, or more than
+ * one, fails the build: a renamed panel must not lose its link silently.
+ */
+export const openInByTitle = (panels, links, name) => {
+  const flat = panels.flatMap((p) => (p.section ? p.panels : [p]));
+  for (const [title, ref] of Object.entries(links)) {
+    const hits = flat.filter((p) => (p.config?.title || '').startsWith(title));
+    if (hits.length !== 1) throw new Error(`Open in Discover "${title}": ${hits.length} panels have that title`);
+    openIn(ref, hits[0], name);
+  }
+  return panels;
+};

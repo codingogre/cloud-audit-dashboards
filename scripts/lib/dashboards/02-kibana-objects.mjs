@@ -5,7 +5,7 @@ import {
 } from '../panels.mjs';
 import { rawId } from '../suite.mjs';
 import {
-  CHANGED, CHANGED_KEYS, CHANGED_DERIVE, specDescription, PIN_PRINCIPAL_SHORT, RAW_RECORDS, IDENTITY_HOW_TO, sessionRecords
+  CHANGED, CHANGED_KEYS, CHANGED_DERIVE, specDescription, PIN_PRINCIPAL_SHORT, RAW_RECORDS, IDENTITY_HOW_TO, sessionRecords, openInByTitle
 } from './shared.mjs';
 
 /**
@@ -138,7 +138,7 @@ const INTRO = {
     '*Noise gate applied* leaves out page loads, usage counters, paging and these dashboards’ own views and install; real changes, test spaces included, stay.',
     'Object is the title at the time, so a renamed object shows its old name on older rows; a workflow run reads “execution” and its run id.',
     'Spaces show by the id in their URL, not by name, which the audit log does not record. A sign-in belongs to no space.',
-    'Click a session bar to pin that session and zoom to it; remove the pill and reset the time to return. Shift-click pins the identity.',
+    'Click a session bar to pin that session and zoom to it; the browser’s Back button returns to the previous time range, and removing the pill shows every session again. Shift-click pins the identity.',
     'While a session is pinned, Elasticsearch panels read empty: only browser sign-ins carry a session id, so API-only identities have no bars.',
     IDENTITY_HOW_TO,
   ],
@@ -260,6 +260,15 @@ export function build() {
       'One person’s Kibana session, event by event, newest first: each object they opened or changed, in Kibana’s own words. Click a session bar above, or a Session cell, to narrow it to one session.',
       { empty: 'empty when no browser session opened or changed anything' }),
   ];
+  // Open in Discover (1.0.7.2): each record panel's menu opens the session holding the same records (shared.mjs).
+  openInByTitle(P, {
+    "⚠️ Mutations": '01-all-mutations',
+    "Latest high-value object access": '04-kibana-object-changes',
+    "Cross-space activity": '08-cross-space-activity',
+    "Kibana saved-object activity": '04-kibana-object-changes',
+    "Kibana browser sessions": '09-session-reconstruction',
+    "Session reconstruction": '09-session-reconstruction',
+  });
   return dash(rawId('02-kibana-objects'), '[Audit] 🗂️ Kibana Object Forensics',
     'Every Kibana saved-object read and change, by type, name, space and identity.', P, { intro: INTRO });
 }

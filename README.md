@@ -165,6 +165,46 @@ click-to-filter column must reach Lens as the raw field (a group key, or kept as
 filter from a column the query assigns, even under a real field name, so the cell still looks like a link
 but a click opens nothing, drilldown included. `layout.mjs` fails such a column (`checkClickFilters`).
 
+**Open in Discover (1.0.7.2).** Every record panel, and the session timeline, has *Open in Discover* in its panel
+menu (⋯), beside Settings: it opens the Discover session that holds the same records, with Discover's columns, paging
+and cell filters (the session keeps its own LIMIT: 1,000 on most, 200 on the raw signal feed, 10,000 on all events)
+(`openInByTitle()` in `shared.mjs`, `discoverDrilldown()` in `lib/drilldowns.mjs`, applied by the post-pass), in the
+same tab. It is a Kibana URL drilldown on the panel menu trigger, and it carries the dashboard's **current** state:
+
+| Carried | How |
+|---|---|
+| Time range | `_g=(time:…)` from the panel's time range (the picker's, or a fixed panel's own 24 hours) |
+| Filter pills | written into the session's ES\|QL, straight after `FROM`, as `WHERE KQL("""field:"value" """)` (`NOT KQL(…)` when negated), one per enabled single-field phrase pill: every table cell's pin, and the timeline's *session:* pill. KQL keeps the pill's own meaning: a multi-valued field (an event's indices) matches on any value, and an excluding pill keeps events without the field; ``==`` gave 0 rows in both cases (measured live: 0 against 1,972, and 0 against 96,247) |
+| Query bar | `WHERE KQL("""…""")` in the same place |
+| Not carried | the four dropdowns (ES\|QL variables; no session reads them), and a pill that is not a single-field phrase (the treemap's identity pill, a range, an *exists*) |
+
+With no pills and no query text the session opens unmodified. Each value goes through Kibana's `encodeURIComponent`
+helper and is rison-quoted at click time (the template's fixed text is encoded at build, `encodeUrl: false`), so a `+`,
+`&`, `'`, `!` or `"` in a value survives. On Identity 360 the menu entry reads *Open in Discover (ignores the Identity
+dropdown)*: the page's scope is that dropdown, which a URL drilldown cannot read, so the session lists every identity
+unless the identity arrived as a pill. Kibana's own Discover icon in a panel's hover toolbar opens the panel's query as
+it is (its row cap included); the ⋯ entry opens the session. The pills go into the query because Discover in ES\|QL
+mode ignores filter pills (*Platform constraints*). Which session each panel opens is listed in the dashboard module
+(`openInByTitle(P, { … })`); `checkDiscoverLinks` (`layout.mjs`) fails a link to a session that does not exist. The
+links cost nothing at page load: a drilldown builds its URL only when the menu opens.
+
+The intros' *Raw records* links are plain markdown, so they cannot be built from the page's state: clicking one keeps
+the time range (Kibana carries it between apps) but not the pills. The per-panel links are the way to take a filtered
+view to Discover.
+
+**Kibana request → Elasticsearch requests (UC-117).** `searches/11-kibana-request-trace.json`, a Discover session
+only, lists each Kibana request beside the Elasticsearch requests it made, newest first: Kibana sends
+`x-opaque-id: <its http.request.id>;kibana:<app>:…` on every Elasticsearch call, so the key is the Kibana event's
+`http.request.id` and the first `;` part of an Elasticsearch event's opaque id (`KIBANA_REQUEST_KEY`); Kibana also
+sends a bare request id with no suffix, which is kept too (`KIBANA_REQUEST_FROM`: 183 of 184 such keys in 24h were
+Kibana requests). Hover a *Kibana request* cell and *Filter for value* to follow one request; the session has no
+LIMIT of its own, so the filter reaches the whole range. A pinned `http.request.id` filter cannot do this: it keeps the
+Kibana event and drops every Elasticsearch one. Cost (median of 5): ~30ms unfiltered at 24h and 7d, live and replica;
+*Filter for value* ~0.2s at 24h and **~2s at 7d** on the live stream (~0.4s / ~1.7s on the replica), because the key is
+computed per event, so the session's description says to narrow the range first. To follow a known request at any
+range, put ``WHERE http.request.id == "<id>" OR `http.request.header.x-opaque-id` == "<id>" OR
+STARTS_WITH(`http.request.header.x-opaque-id`, "<id>;")`` straight after `FROM`: the same rows in ~16ms.
+
 **Vega panels filter too.** On Identity 360, clicking a credential or a space in the flow, or
 shift-clicking a session, pins it across the suite. Clicking a session (on Identity 360 and on Kibana
 Object Forensics) pins a `session: …` pill on `kibana.session.id` AND sets the time range to
@@ -172,7 +212,12 @@ the session plus a minute either side, because the records under the timeline fo
 the timeline is fixed at 24 hours. The zoom is sent 0.7s and 1.4s after the click, from a Vega timer:
 `kibanaAddFilter` resolves its data view over the network before it fires, and a time change sent first
 reloads the panel and drops the filter (clicked in Playwright: the pill never appeared); sent 5s later,
-the reload the filter itself causes has already replaced the view and the zoom is lost. On Command Center,
+the reload the filter itself causes has already replaced the view and the zoom is lost. **The way back is the
+browser's Back button** (1.0.7.2, measured on a 9.6 private deploy): the zoom pushes a history entry, and one Back
+returns the picker to the range before the click (*24 hours ago → 1 minute ago*); the *session:* pill stays, because
+the 9.6 dashboard keeps pills out of the URL, so the how-to says to remove it to see every session. The spec cannot
+draw a *Back to previous range* mark itself: the pill reloads the panel, so it forgets the click, and its fixed
+24-hour window hides the picker from it. On Command Center,
 clicking a treemap tile pins that identity — its email, key name, or user name, each with the two dropdowns' own conditions (the realm
 for a Cloud key, an unnamed key or a service account; for a *Failed sign-in* tile, the failed sign-ins under that name; for any other name, no
 email, key name, key or service-account realm, and no failed sign-in; for an `(unattributed)` tile, the events with no
@@ -395,11 +440,12 @@ still counts in *Signal events*. The two *Kibana saved-object* panels on 02 and 
   activity). Caller is display-only: the raw header is unique per request. The key a failed sign-in tried is not
   recorded on the event (no `api_key.*` field, and `user.name` is the placeholder), so neither table can name it; a
   named key that signed in and was then **denied** carries its name, in *API key*.
-- *Fitting 1440px (1.0.7.1).* *Top failed or denied access* (36 columns) shows Identity, Identity type, Principal
-  id, API key, Action, Request and Events, one line per row, so all 10 rows show at 1440 (the LIMIT is the rows
-  shown). Identity and API key share the slack (~130px each at 1440, ~290px each at 1920): on a named key's row the
-  two repeat the name and the badge says it is a key. A ~45-character key name is cut at 1440 in both (hover shows it
-  whole), so rows that differ only in a long key name's tail look alike there. Client IP (on a failure, the proxy) gave way, and Caller is on *Failed sign-ins*. *Failed
+- *Fitting 1440px (1.0.7.2).* *Top failed or denied access* is full width (48 columns) and shows Identity, Identity
+  type, Principal id, API key, Action, Request and Events, one line per row, so all 10 rows show at 1440 (the LIMIT is
+  the rows shown). Identity is fixed at 340px, so a ~45-character key name (the r1051c probes) is whole and rows for
+  different keys differ at 1440; API key takes the rest (~230px at 1440, the whole name at 1920), and on a named key's
+  row it repeats the name as the cell that clicks. *Busiest human identities* (16 columns) and *Busiest API keys by
+  name* (32) share the row above it. Client IP (on a failure, the proxy) gave way, and Caller is on *Failed sign-ins*. *Failed
   sign-ins* shows Time, Identity, Identity type, Principal id, API key, Action, Request, Caller and Client IP; its
   rows wrap (nine columns leave Identity and Caller ~130px each, and cut they would hide the placeholder's tail and
   the dashboard a Kibana retry came from; it scrolls to its *1,000 at most*). It dropped Credential (*not
@@ -422,7 +468,8 @@ Kibana writes no display name, not even on `space_get`. Suite views count in the
 requests, usage counters, space lookups, point-in-time paging), so a tab left open does not stretch a bar and every
 bar has records; public `/api/` calls (export, import) and views of this suite stay. A session already open at the
 window's start is labelled *or earlier*; the dashed line marks the latest API or Elasticsearch event. Click pins
-`kibana.session.id` and zooms the range to the session plus a minute either side; shift-click pins the email.
+`kibana.session.id` and zooms the range to the session plus a minute either side; Back returns to the previous range
+(the pill stays); shift-click pins the email.
 
 **Data access (03, 07).** A request counts once per index it names. Shard and node copies (`search[phase/query]`,
 `bulk[s][p]`), the ES\|QL engine's per-shard steps and an async search's inner search are folded away (an ES\|QL
@@ -590,7 +637,11 @@ Probed against Kibana 9.6 serverless. Several are undocumented and cost real tim
 | One ES\|QL control chains on another only through its query (a classic control never narrowed one) | Identity's query reads `?identity_kind`; nothing else chains. With a Project chosen, Identity and Client IP still list values from every project, so no choice strands another |
 | A **stale chained selection is not cleared**: change Identity type and an Identity of the old type stays chosen | The dropdown warns, and panels read 0 until Identity is set back to "Any" (a single-select ES\|QL control has no Clear button; "Any" is the reset) |
 | Discover in ES\|QL mode ignores the ad-hoc data view's `fieldAttrs.customLabel` | Session headers come from a trailing `RENAME` — see *Presentation conventions* for the filter trade-off |
-| A Discover session panel takes no ES\|QL control variables (`?identity_kind`, `?identity`) | No dashboard embeds one since 1.0.5.1: every record list is a Lens ES\|QL table bounded by `TIME`, so the Identity dropdowns narrow it. The sessions still deploy, for the intros' *Raw records* links and for Discover |
+| A Discover session panel takes no ES\|QL control variables (`?identity_kind`, `?identity`) | No dashboard embeds one since 1.0.5.1: every record list is a Lens ES\|QL table bounded by `TIME`, so the Identity dropdowns narrow it. The sessions still deploy, for the intros' *Raw records* links, the per-panel *Open in Discover* links and Discover |
+| **Discover in ES\|QL mode ignores filter pills** (1.0.7.2, measured): a session opened with a phrase pill in `_a` or in `_g` (pinned) listed 10,000 events of every kind, and no ES\|QL request carried the filter; the same pill written into the query listed 358. The time range in `_g` is honoured | *Open in Discover* writes each single-field phrase pill and the query bar's KQL into the session's ES\|QL after `FROM` (`discoverTemplate()`, `lib/drilldowns.mjs`; *Drill-down*) |
+| A **URL drilldown** whose template fails to build is **hidden from the panel menu**, with only a console warning. Kibana's handlebars fails on a string `{{this}}` (*Cannot use 'in' operator to search for 'undefined' in saved_object_create*); `{{#each}}`, `@key`, `../`, `{{#if}}`, `{{#unless}}`, triple-stash and `lookup` work | The pill value is read with `{{lookup ../query.match_phrase @key}}`, made a string with `concat`, escaped with `replace` and encoded with `encodeURIComponent` (Kibana's URL-drilldown helpers), with `encodeUrl: false`: `encodeURI` left a value's `+` and `&` to the hash parser, which reads `+` as a space. Verify a template change by opening the panel menu on a private deploy, not by the import succeeding |
+| `kibanaSetTimeFilter` pushes a browser history entry: **Back restores the previous time range** but not the pills (the 9.6 dashboard keeps app filters out of the URL) | The session timeline's how-to says the browser's *Back* button returns to the previous range and that removing the pill shows every session; its tooltip says the browser's *Back* button undoes the zoom |
+| A markdown link is static text: it cannot read the page's pills. In-app navigation keeps the time range (Kibana carries `_g`) | The intros' *Raw records* links keep the time only; per-panel *Open in Discover* carries the pills |
 | An `alerting_v2` rule's query gets a hidden `@timestamp` range filter for its lookback, and `?_tstart` / `?_tend` bound to the same window; **no other variable is bound** | Every rule bounds itself with `TIME_ONLY` and counts inner windows back from `?_tend`; none uses `TIME` or a dropdown variable. `--lint` sends the same parameters and filter (*The alert pack*) |
 | **Enabling an `alerting_v2` rule mints a Cloud API key that runs it** (a new key on every enable, with no `create_apikey` event). Every request it makes carries an `x-opaque-id` containing `alerting_v2:rule_executor` (the rule-runner marker) | Those keys show on the dashboards as Cloud API key identities (known; not yet filtered there). *New identity seen* leaves out Cloud API key events that carry the marker (`RULE_RUNNER` in `lib/rules.mjs`). A client sets its own `x-opaque-id`, so only Cloud API key events are dropped, and a new Cloud API key that sends the marker on every request is not seen; the runbook says so |
 | Kibana Task Manager **creates managed API keys** of its own: `create_apikey` by `elastic/kibana`, with no key name and `"managed":true` in the payload | *New API key or role change* leaves them out (`KIBANA_MANAGED_KEY`), as every privileged-ops panel leaves out Kibana's own key clean-up (`HOUSEKEEPING`) |
@@ -863,8 +914,9 @@ exceptions) goes in *Reading the panels*, not in either.
 Every intro (and so every dashboard) links to the raw events with `RAW_RECORDS` (`shared.mjs`): *"Raw records:
 All audit events, Raw signal feed"*, written `[words](@search:<ref>)` and resolved by `introMd()` to the
 relative `/app/discover#/view/<id>` through `nsId()`, so a private deploy links to its own sessions and no
-Kibana URL is committed. Clicking it opens the Discover session (verified). The nav strip stays dashboards
-only: a Links-panel `externalLink` carries neither the pills nor the time range.
+Kibana URL is committed. Clicking it opens the Discover session at the page's time range, but without its pills (a
+markdown link cannot read them; measured in 1.0.7.2): the per-panel *Open in Discover* links carry both (*Drill-down*).
+The nav strip stays dashboards only: a Links-panel `externalLink` carries neither the pills nor the time range.
 
 **Discover sessions — `searches/*.json`.** End the ES\|QL with `| RENAME field AS Header, …` after
 every drift-checked fragment, list the new names in `columns` and `sort`, and put `@timestamp` first
@@ -872,9 +924,11 @@ every drift-checked fragment, list the new names in `columns` and `sort`, and pu
 (`row_height` overrides). The trade-off, measured: on the embedded dashboard grid a renamed column
 loses its filter-for/out cell actions, because no index field stands behind the new name; in the
 Discover app filter-for still works — it appends `| WHERE \`Header\` == …`. The suite's pivots are
-the control bar and the Lens click-to-filter columns, so sessions rename everything they show, with
-one exception: `searches/09` keeps `kibana.session.id` raw, under its field name, so a
-session cell offers Filter for/out (on a dashboard grid, until 1.0.5.1). There is no friendlier header to be had: the saved
+the control bar and the Lens click-to-filter columns, so sessions rename everything they show (`searches/09`'s
+`kibana.session.id` too, as *Session*, since 1.0.7.2: no dashboard embeds a session any more, so its raw name bought
+nothing). Every session that shows Identity shows its *Identity type* beside it (1.0.7.2), worked out as the Lens
+tables work it out: `KIND_EVENT` on a feed's returned rows, `KIND_GROUPED` after a `STATS` by `IDENTITY_KEYS` on the
+two grouped sessions (06, 08; an identity seen as two types is two rows there). There is no friendlier header to be had: the saved
 search's `grid.columns.<name>` is a closed schema in 9.6 (import rejects `display`, `displayAsText`,
 `label`, `customLabel`, `displayName` and `name`; only `width` passes), and `fieldAttrs.customLabel` is
 ignored in ES|QL mode. `layout.mjs` fails a session that lists a renamed column by its old name. Pattern:
@@ -949,7 +1003,7 @@ legends over an empty domain, decade axes, solid placeholder cells, a flat line 
                          too, as Kibana runs them
 ./audit --lint rules     Lint the six alert rules alone (no events view needed, so it works on a
                          private copy)
-./audit --objects        Deploy the data view, 20 Vega visualizations, 11 Discover sessions and the
+./audit --objects        Deploy the data view, 20 Vega visualizations, 12 Discover sessions and the
                          ES|QL view the prior-period tiles read (logs-cloud-audit-events-view)
 ./audit --dashboards     Generate dashboards/*.json and deploy every dashboard
 ./audit --rules          Generate rules/*.json and deploy the six alert rules (Universal Alerting).
@@ -1082,6 +1136,14 @@ the treemap) on a stream with thousands of identities or requests should also be
 the failure tables) moved no query materially: 7d replica medians, old → new, treemap 350 → 350ms, Live feed 384 →
 401ms, Top failed 51 → 58ms, Failed sign-ins 90 → 119ms, Highest-volume identities 332 → 358ms; on the live stream at
 7d the treemap and the Live feed took ~250ms before and after.
+1.0.7.2 changed no dashboard query (the *Open in Discover* links build their URL only when a panel menu opens, so
+they cost nothing at page load); 01 at 24h and 7d on the replica read the same before and after (*HANDOFF*). The
+sessions are Discover-only: with Identity type, on the replica (median of 5, old → new, 24h / 7d) 08 *Cross-space*
+went 16 → 20 / 54 → 70ms (one more group key), 06 *Actor first-seen* 131 → 95 / 603 → 495ms (noise; an identity seen
+as two types is two rows, 33 → 36), the rest within ±5ms or noise; the new
+*Kibana request → Elasticsearch requests* is ~30ms unfiltered and ~2s at 7d live once filtered to one request with
+*Filter for value* (~16ms with the pushable `WHERE` in *Drill-down*). The KQL pills *Open in Discover* writes push down
+to Lucene: they make a session cheaper, never dearer (06 at 7d on the replica 502 → 91ms with one).
 
 Before the query-shape rewrites in [`esql/fragments.md`](esql/fragments.md), the 7-day Command
 Center, Kibana Objects, Security Anomalies and Platform Volume loads each hit the 30s budget, and the
@@ -1164,7 +1226,7 @@ scripts/
 dashboards/*.json           Generated definitions, committed for review
 rules/*.json                Generated alert rule payloads (the exact PUT bodies), committed for review
 vega/*.json                 20 Vega specs (13 full Vega, 7 Vega-Lite); 14 and 15-prev-* are generated
-searches/*.json             11 ES|QL Discover sessions (00 is every event, unfiltered)
+searches/*.json             12 ES|QL Discover sessions (00 is every event, unfiltered)
 ingest/*.json               Pipeline, templates, mappings
 esql/fragments.md           Canonical query fragments
 docs/roadmap.html           The roadmap: design holes, customer use cases and releases (the source; open in a browser)

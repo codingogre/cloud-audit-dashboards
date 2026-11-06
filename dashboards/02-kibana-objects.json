@@ -127,7 +127,7 @@
             "h": 7
           },
           "config": {
-            "content": "- *Noise gate applied* leaves out page loads, usage counters, paging and these dashboards’ own views and install; real changes, test spaces included, stay.\n- Object is the title at the time, so a renamed object shows its old name on older rows; a workflow run reads “execution” and its run id.\n- Spaces show by the id in their URL, not by name, which the audit log does not record. A sign-in belongs to no space.\n- Click a session bar to pin that session and zoom to it; remove the pill and reset the time to return. Shift-click pins the identity.\n- While a session is pinned, Elasticsearch panels read empty: only browser sign-ins carry a session id, so API-only identities have no bars.\n- Identities read as in the Identity dropdown, a Cloud API key shortened to “_4KEO… · Cloud API key”, with the Identity type badge beside each. The dropdowns apply to this page only; the links above do not carry them.\n"
+            "content": "- *Noise gate applied* leaves out page loads, usage counters, paging and these dashboards’ own views and install; real changes, test spaces included, stay.\n- Object is the title at the time, so a renamed object shows its old name on older rows; a workflow run reads “execution” and its run id.\n- Spaces show by the id in their URL, not by name, which the audit log does not record. A sign-in belongs to no space.\n- Click a session bar to pin that session and zoom to it; the browser’s Back button returns to the previous time range, and removing the pill shows every session again. Shift-click pins the identity.\n- While a session is pinned, Elasticsearch panels read empty: only browser sign-ins carry a session id, so API-only identities have no bars.\n- Identities read as in the Identity dropdown, a Cloud API key shortened to “_4KEO… · Cloud API key”, with the Identity type badge beside each. The dropdowns apply to this page only; the links above do not carry them.\n"
           }
         }
       ]
@@ -1175,7 +1175,7 @@
       "config": {
         "ref_id": "cloud-audit-vega-session-gantt",
         "title": "Kibana browser sessions · your time zone",
-        "description": "The 12 most recent Kibana browser sessions in the last 24 hours: length is how long, shade is how much was done. Click a bar to show that session’s records below. API-key work has no session. Ignores the time picker.",
+        "description": "The 12 latest Kibana browser sessions in the last 24 hours: length is how long, shade is how much was done. Click a bar for that session’s records; the browser’s Back button undoes the zoom. API-key work has no session.",
         "time_range": {
           "from": "now-24h",
           "to": "now"

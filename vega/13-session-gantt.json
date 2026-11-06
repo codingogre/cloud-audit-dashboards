@@ -1,6 +1,6 @@
 {
   "$schema": "https://vega.github.io/schema/vega/v5.json",
-  "description": "The 12 most recent Kibana browser sessions in the last 24 hours: length is how long, shade is how much was done. Click a bar to show that session’s records below. API-key work has no session. Ignores the time picker.",
+  "description": "The 12 latest Kibana browser sessions in the last 24 hours: length is how long, shade is how much was done. Click a bar for that session’s records; the browser’s Back button undoes the zoom. API-key work has no session.",
   "autosize": {
     "type": "fit",
     "contains": "padding"

@@ -3,24 +3,80 @@
 `CLAUDE.md`-style durable context lives in `README.md` and `esql/fragments.md` and wins on
 conflict. This file is "where we are right now" and should be assumed stale.
 
-## Next: 1.0.7.2 per-panel Discover links and a way back
+## Next: 1.0.7.3 "State the window"
 
-Step 3 of the 1.0.7 plan, as the user narrowed it on 2026-10-26: drilldowns **stay in the same tab** (Kibana's
-convention; no `openInNewTab` change), so 1.0.7.2 is a per-panel *Open in Discover* link to the matching session at
-the panel's time range, and a way back after a session-bar click, plus the Discover-session work the user added on
-2026-10-26: an Identity type column (`KIND_EVENT`) on the 9 sessions that show Identity (searches/02 included: it got
-Request and Caller in 1.0.7.1 but no type), "Session" instead of the raw `kibana.session.id` header in 09, and the
-unused `actor_kind` removed from searches 01 and 04 (the last two places the old kind words live). Then 1.0.7.3
-**keeps the 24h default** (no 7-day default, for performance) and only states each page's window in its intro; then
-Identity 360 anchored to the picker (1.0.7.4), objects/spaces/index pivots (1.0.7.5), sign-ins and sessions (1.0.7.6),
-discovery against a baseline on 03 (1.0.7.7).
+Step 4 of the 1.0.7 plan, as the user decided on 2026-10-26: **the 24h default stays** (no 7-day default: it would make
+every panel scan 7 days and the prior-period tiles 14, on streams far bigger than the test project). Each intro states
+the window the page opens on (24 hours; Identity 360's fixed 7-day panels say theirs), and How to read points a weekly
+reviewer to the time picker. Copy only; measure nothing new unless a query changes. Then Identity 360 anchored to the
+picker (1.0.7.4), objects/spaces/index pivots (1.0.7.5), sign-ins and sessions (1.0.7.6), discovery against a baseline
+on 03 (1.0.7.7). No open user decisions.
 
-No open user decisions for 1.0.7.1: the badge, Request and the dropped columns were decided on 2026-10-26 (below).
+## Release 1.0.7.2 — Open in Discover on every record panel; Back undoes a session zoom, 2026-10-27
 
-Already on the 1.0.7.1 branch: `--clean` under `AUDIT_ID_NS` no longer touches ingest (`ingest` refuses, `all` skips it;
-`test/unit/clean.test.mjs`). The pipeline and templates have no namespace, and `AUDIT_ID_NS=r107 ./audit --clean all`
-after the 1.0.7 deploy took them off the live stream for about 30 seconds (05:43Z, 2026-10-26; 55 events in that
-minute have no client.ip or geo; `./audit --ingest` restored it and `--ingest-check` passed).
+Step 3 of the 1.0.7 plan; closes holes 3 (Raw records without the page's state: answered by the per-panel *Open in
+Discover* links, since the intro *Raw records* links are markdown and still carry the time range only) and 16 (no way
+back after a session-bar click), and answers UC-117. No public id or panel id changed, no dashboard query changed, and no shared fragment's text
+changed (two fragments were added: `KIBANA_REQUEST_FROM`, `KIBANA_REQUEST_KEY`). Drilldowns stay in the same tab.
+
+- **Open in Discover** (README *Drill-down*): 29 record panels and the two session timelines (31 links) have it in the panel menu
+  (⋯), beside Settings; it opens the session with the same records (`openInByTitle()` per dashboard module →
+  `discover` on the panel → `discoverDrilldown()` in the post-pass; `checkDiscoverLinks` in `layout.mjs`). A Kibana
+  URL drilldown on `CONTEXT_MENU_TRIGGER`, `openInNewTab: false`. It carries the panel's time range (`_g`) and, because
+  **Discover in ES|QL mode ignores filter pills** (measured: a pill in `_a` or `_g` left 10,000 events of every kind,
+  and no ES|QL request carried it), writes each enabled single-field phrase pill (`WHERE KQL("""field:"value" """)`,
+  `NOT KQL(…)` when negated) and the query bar's KQL (`WHERE KQL("""…""")`) into the session's ES|QL straight after
+  `FROM`. KQL, not `==` (review fix): `==` dropped every event whose field holds several values (03's index pill: 0
+  rows against 1,972) and, negated, every event without the field (NOT space: 0 against 96,247). Values are made a
+  string (`concat`), escaped (`replace`) and encoded (`encodeURIComponent`) with Kibana's own helpers, the fixed text is
+  encoded at build, and `encodeUrl` is false, so `+ & ' ! "` in a value survive (`encodeURI` left `+` to be read as a
+  space). The session keeps its own LIMIT (1,000; 200 on 10; 10,000 on 00): the link adds Discover's columns, paging
+  and cell filters, not more rows. On 07 the entry reads *Open in Discover (ignores the Identity dropdown)*: the page's
+  scope is that dropdown, which a URL drilldown cannot read (`discoverName`). Not carried:
+  the dropdowns (ES|QL variables) and non-phrase pills (the treemap's identity pill, ranges, exists). A template that
+  fails to build hides the menu entry with only a console warning; Kibana's handlebars cannot print a string
+  `{{this}}`, so values are read with `lookup` (README *Platform constraints*). Links cost nothing at page load.
+- **Raw records** (intro links): plain markdown cannot read the page's state. Measured: clicking one keeps the time
+  range (Kibana carries `_g` between apps), not the pills. Left as is; the README says so, and 00/01 How to read now
+  say *Raw records keep only the time range; a panel's ⋯ › Open in Discover keeps the pills too*.
+- **The way back after a session-bar click is the browser's Back button** (measured on a private deploy): the zoom
+  (`kibanaSetTimeFilter`) pushes a history entry, and one Back restores *24 hours ago → 1 minute ago*; the *session:*
+  pill stays (the 9.6 dashboard keeps pills out of the URL). Copy only: 02 and 07 How to read (*the browser's Back
+  button returns to the previous time range, and removing the pill shows every session again*: "Back" alone could be
+  read as the header's ← arrow, which leaves the dashboard), and the vega/13 tooltip (*the browser's Back button undoes
+  the zoom*, 40 words; *Ignores the time picker* dropped; the panel's *Last 24 hours* badge says it).
+  No in-spec *Back to previous range* mark: the pill reloads the panel, so the spec forgets the click, and its fixed
+  24-hour window hides the picker from it.
+- **Discover sessions:** *Identity type* beside Identity on all ten sessions that show Identity (`KIND_EVENT` on 00,
+  01, 02, 03, 04, 05, 09, 10; `KIND_GROUPED` after a STATS by `IDENTITY_KEYS` on 06 and 08, where an identity seen as two
+  types is two rows); 09's `kibana.session.id` header is *Session*; `actor_kind` is gone from 01 and 04. Drift checks pin
+  the new fragments (`FRAGMENT_USES`).
+- **UC-117, `searches/11-kibana-request-trace.json`** (a Discover session only, no panel): each Kibana request beside
+  the Elasticsearch requests it made, keyed on the Kibana `http.request.id` = the first `;` part of the Elasticsearch
+  `x-opaque-id`; a bare request id (no `;kibana:` suffix) counts too (review fix: 183 of 184 such keys in 24h were
+  Kibana requests, 1,474 Elasticsearch events had been left out). No LIMIT of its own, so *Filter for value* on Kibana request reaches the whole range (the 1,000-row
+  cap is ES|QL's, pushed under the EVALs). A pinned `http.request.id` filter cannot do it (it drops the Elasticsearch
+  side). Cost (median of 5, after the bare-id fix): unfiltered ~28ms live and ~30ms on the replica at 24h and 7d;
+  *Filter for value* to one request 197ms / 2,010ms live (24h / 7d), 361 / 1,708ms on the replica, because the key is
+  computed per event. The session's description says to narrow the range first; README gives a pushable `WHERE` on
+  `http.request.id` / the opaque id that returns the same rows in 16–21ms at any range.
+- **01 layout:** *Top failed or denied access* is full width (48); *Busiest human identities* (16) and *Busiest API
+  keys by name* (32) share a row; *Events by identity origin* and *by authentication realm* are 24 wide and 10 high.
+  Top failed's Identity is fixed at 340px, so a 45-character key name is whole at 1440 and rows for different keys
+  differ; Principal id and API key share the rest (~190px each at 1440, ~410px at 1920, where both are whole; review
+  fix: Principal id had the shared 165px and read `<unauthenticated-cloud-ac` even at 1920); Request 200px holds
+  `indices:admin/esql/view/delete`. Rendered at 1440 light, 24h and 7d, on the r1072 private copy (read).
+- **Performance** (no dashboard query changed; `./audit --perf run --windows 24h,7d --only 01-identity`, replica,
+  main and new alternated, three runs each, median): slowest query 135 → 127ms (24h) / 534 → 538ms (7d), p50 46 → 44 / 58 → 58ms, page load 488 → 445 /
+  2,400 → 2,288ms (main: median of six; new: median of the three clean runs of six: one new run timed out on the
+  network, two had one sequential query stall 29.6s and 58.4s on the client while the same queries' concurrent page load
+  took 2.3–2.5s and the query itself is word for word main's). The same queries (all 95 identical to main), inside
+  run-to-run spread. Sessions (Discover-only, replica, median of five, 24h / 7d, old → new): 08 16 → 20 / 54 → 70ms (one
+  more group key), 06 131 → 95 / 603 → 495ms (noise; 33 → 36 rows, an identity seen as two types is two rows), the rest
+  within ±5ms or noise. The KQL pills push down: one makes a session cheaper (06 at 7d 502 → 91ms).
+- **Not done / known:** a non-phrase pill (the treemap's) does not reach Discover; the four dropdowns never do; a `\`
+  in a pill value is read by KQL as an escape (a Handlebars literal cannot hold a lone backslash; no suite click field
+  holds one); the session timeline has no in-spec back mark.
 
 ## Release 1.0.7.1 — Live feed grouped; failed access says what was refused, 2026-10-26
 

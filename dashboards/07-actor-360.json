@@ -127,7 +127,7 @@
             "h": 7
           },
           "config": {
-            "content": "- Pick an Identity type first to shorten the Identity list. A person’s API keys are identities of their own, so their traffic never counts under the person.\n- The ① panels read a fixed 7 days with no noise gate, so they will not match the Events tile or the time picker.\n- Baseline: the band is their usual range for each hour; with under three days of history no band is drawn.\n- The Risk tile and Every scoring action count whole minutes only, so they can stop up to a minute short of the panels around them.\n- Session timeline: click a bar to pin a session (Elasticsearch panels then read empty); API-only identities have no sessions.\n- Identities read as in the Identity dropdown, a Cloud API key shortened to “_4KEO… · Cloud API key”, with the Identity type badge beside each. The dropdowns apply to this page only; the links above do not carry them.\n"
+            "content": "- Pick an Identity type first to shorten the Identity list. A person’s API keys are identities of their own, so their traffic never counts under the person.\n- The ① panels read a fixed 7 days with no noise gate, so they will not match the Events tile or the time picker.\n- Baseline: the band is their usual range for each hour; with under three days of history no band is drawn.\n- The Risk tile and Every scoring action count whole minutes only, so they can stop up to a minute short of the panels around them.\n- Session timeline: click a bar to pin a session and zoom to it (Elasticsearch panels then read empty); the browser’s Back button returns to the previous time range, and removing the pill shows every session again. API-only identities have no sessions.\n- Identities read as in the Identity dropdown, a Cloud API key shortened to “_4KEO… · Cloud API key”, with the Identity type badge beside each. The dropdowns apply to this page only; the links above do not carry them.\n"
           }
         }
       ]
@@ -832,7 +832,7 @@
       "config": {
         "ref_id": "cloud-audit-vega-session-gantt",
         "title": "Kibana browser sessions · your time zone",
-        "description": "The 12 most recent Kibana browser sessions in the last 24 hours: length is how long, shade is how much was done. Click a bar to show that session’s records below. API-key work has no session. Ignores the time picker.",
+        "description": "The 12 latest Kibana browser sessions in the last 24 hours: length is how long, shade is how much was done. Click a bar for that session’s records; the browser’s Back button undoes the zoom. API-key work has no session.",
         "time_range": {
           "from": "now-24h",
           "to": "now"

@@ -127,7 +127,7 @@
             "h": 7
           },
           "config": {
-            "content": "- Identities read as in the Identity dropdown: an email, else an API key’s name, else the account name. A key named after a person is still a key.\n- API key traffic has carried no email in this audit log. Kibana does not record which Elasticsearch key it was given, so those rows read “Unnamed key of” the key’s owner.\n- Cloud API keys have no name or owner: tables show the start of the id, “_4KEO… · Cloud API key”, with Owner “Cloud organization”.\n- A re-issued key keeps its name under a new id, so key ids can outnumber names.\n- A failed sign-in counts once per attempt. Caller “Kibana dashboards · …” is Kibana retrying with an expired browser session, usually harmless. Credential type covers Elasticsearch requests only.\n- The links above carry the time range and filter pills to the next page, but no dropdown choice: pick again there.\n"
+            "content": "- Identities read as in the Identity dropdown: an email, else an API key’s name, else the account name. A key named after a person is still a key.\n- API key traffic has carried no email in this audit log. Kibana does not record which Elasticsearch key it was given, so those rows read “Unnamed key of” the key’s owner.\n- Cloud API keys have no name or owner: tables show the start of the id, “_4KEO… · Cloud API key”, with Owner “Cloud organization”.\n- A re-issued key keeps its name under a new id, so key ids can outnumber names.\n- A failed sign-in counts once per attempt. Caller “Kibana dashboards · …” is Kibana retrying with an expired browser session, usually harmless. Credential type covers Elasticsearch requests only.\n- The dashboard links above carry the time range and filter pills, but no dropdown choice: pick again there. Raw records keep only the time range; a panel’s ⋯ › Open in Discover keeps the pills too.\n"
           }
         }
       ]
@@ -482,8 +482,8 @@
       "grid": {
         "x": 0,
         "y": 27,
-        "w": 12,
-        "h": 12
+        "w": 24,
+        "h": 10
       },
       "config": {
         "title": "Events by identity origin",
@@ -540,10 +540,10 @@
       "type": "vis",
       "id": "xy-10",
       "grid": {
-        "x": 12,
+        "x": 24,
         "y": 27,
-        "w": 12,
-        "h": 12
+        "w": 24,
+        "h": 10
       },
       "config": {
         "title": "Events by authentication realm",
@@ -600,9 +600,9 @@
       "type": "vis",
       "id": "tbl-11",
       "grid": {
-        "x": 24,
-        "y": 27,
-        "w": 24,
+        "x": 16,
+        "y": 37,
+        "w": 32,
         "h": 12
       },
       "config": {
@@ -661,8 +661,8 @@
       "id": "tbl-12",
       "grid": {
         "x": 0,
-        "y": 39,
-        "w": 12,
+        "y": 37,
+        "w": 16,
         "h": 12
       },
       "config": {
@@ -704,9 +704,9 @@
       "type": "vis",
       "id": "tbl-13",
       "grid": {
-        "x": 12,
-        "y": 39,
-        "w": 36,
+        "x": 0,
+        "y": 49,
+        "w": 48,
         "h": 12
       },
       "config": {
@@ -731,7 +731,8 @@
         "rows": [
           {
             "label": "Identity",
-            "column": "actor"
+            "column": "actor",
+            "width": 340
           },
           {
             "label": "Identity type",
@@ -814,14 +815,13 @@
                 }
               ]
             },
-            "width": 155,
+            "width": 160,
             "column": "identity_kind"
           },
           {
             "label": "Principal id",
             "column": "user.name",
-            "click_filter": true,
-            "width": 160
+            "click_filter": true
           },
           {
             "label": "API key",
@@ -832,12 +832,12 @@
             "label": "Action",
             "column": "event.action",
             "click_filter": true,
-            "width": 165
+            "width": 150
           },
           {
             "label": "Request",
             "column": "request",
-            "width": 165
+            "width": 200
           }
         ],
         "metrics": [
@@ -854,7 +854,7 @@
       "id": "tbl-14",
       "grid": {
         "x": 0,
-        "y": 51,
+        "y": 61,
         "w": 48,
         "h": 12
       },
@@ -1013,7 +1013,7 @@
       "id": "tbl-15",
       "grid": {
         "x": 0,
-        "y": 63,
+        "y": 73,
         "w": 48,
         "h": 12
       },
@@ -1092,7 +1092,7 @@
       "id": "tbl-16",
       "grid": {
         "x": 0,
-        "y": 75,
+        "y": 85,
         "w": 48,
         "h": 14
       },

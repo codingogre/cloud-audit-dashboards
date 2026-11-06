@@ -169,6 +169,21 @@ export const IDENTITY_KIND = kindCase('failed_signin');
  */
 export const KIND_GROUPED = `EVAL ${IDENTITY_KIND}`;
 export const KIND_EVENT = `EVAL ${kindCase(FAILED_SIGNIN)}`;
+/**
+ * KIBANA REQUEST → ELASTICSEARCH REQUESTS (UC-117, 1.0.7.2; searches/11). Kibana sends every Elasticsearch request it
+ * makes for a browser or API request with `x-opaque-id: <the Kibana request's http.request.id>;kibana:<app>:…`, and
+ * Elasticsearch audits that header. So the Kibana event and the Elasticsearch events it caused share one key: the
+ * Kibana event's http.request.id, and the first `;`-separated part of an Elasticsearch event's opaque id (its own
+ * http.request.id is Elasticsearch's, and never matches). Measured live over 24h: 14,402 keys, 12,965 with both sides.
+ * A pinned http.request.id filter cannot follow a request across: it keeps the Kibana event and drops every
+ * Elasticsearch one, so the session is narrowed with a filter on this computed column instead.
+ * Kibana also sends a bare request id with no `;kibana:` suffix (02's Caller reads "request id only"): measured live
+ * over 24h, 184 such keys, 183 of them a Kibana request (1,474 events), so a bare UUID is kept too.
+ */
+export const KIBANA_REQUEST_FROM = 'WHERE service.name == "serverless-kibana" OR `http.request.header.x-opaque-id` LIKE "*;kibana:*" ' +
+  'OR `http.request.header.x-opaque-id` RLIKE "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"';
+export const KIBANA_REQUEST_KEY =
+  'EVAL kibana_request = CASE(service.name == "serverless-kibana", http.request.id, MV_FIRST(SPLIT(`http.request.header.x-opaque-id`, ";")))';
 const IDENTITY_EXPR =
   'CASE(user.email IS NOT NULL, user.email, api_key.name IS NOT NULL, api_key.name, ' +
   `user.domain == "_cloud_api_key", CONCAT(user.name, "${CLOUD_KEY_SUFFIX}"), ` +

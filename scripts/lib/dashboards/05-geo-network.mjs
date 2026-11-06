@@ -4,7 +4,7 @@ import {
   INTERNAL_NET
 } from '../panels.mjs';
 import { rawId } from '../suite.mjs';
-import { RAW_RECORDS, IDENTITY_HOW_TO } from './shared.mjs';
+import { RAW_RECORDS, IDENTITY_HOW_TO, openInByTitle } from './shared.mjs';
 
 /**
  * Why an address that reached the audit stream could not be placed, by address class. One CASE, used
@@ -250,6 +250,11 @@ export function build() {
       [{ column: 'client_events', label: 'Client events', width: 100 }, { column: 'hop_events', label: 'Internal-hop events', width: 130 }],
       'Proof that the source address is an Elastic Cloud proxy and the forwarded address is the real client: one row per proxy, with the client addresses it carried. Click a proxy to scope the suite to it.'),
   ];
+  // Open in Discover (1.0.7.2): each record panel's menu opens the session holding the same records (shared.mjs).
+  openInByTitle(P, {
+    "Countries per person": '00-all-events',
+    "Busiest client IPs": '00-all-events',
+  });
   return dash(rawId('05-geo-network'), '[Audit] 🌍 Geo & Network',
     'Real client geography from forwarded_ip, geo-resolved at ingest. Impossible-travel detection.', P, { intro: INTRO });
 }

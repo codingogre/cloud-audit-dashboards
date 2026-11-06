@@ -59,9 +59,10 @@ its owner, so a Cloud API key's Elasticsearch keys read as the Cloud API key its
 
 Its type beside it is `KIND_GROUPED` on the same grouped rows (counted by `IDENTITY_KEYS`, which adds
 `failed_signin` to `ACTOR_KEYS`), or `KIND_EVENT` on a feed's returned rows: the eight Identity type values, worded as
-the dropdown words them. Since 1.0.7.1 that is the only kind vocabulary a dashboard shows; the older `actor_kind`
-(*human*/*service*, refined to *platform*/*unauthenticated* by `KIND_REFINE`) is gone, and only searches 01 and 04
-still carry a stray one (1.0.7.2 removes it).
+the dropdown words them. That is the only kind vocabulary the suite shows: the older `actor_kind` (*human*/*service*,
+refined to *platform*/*unauthenticated* by `KIND_REFINE`) is gone from every dashboard (1.0.7.1) and every Discover
+session (1.0.7.2), and every session that shows Identity carries the same Identity type column (`layout.mjs` pins
+`KIND_EVENT` or `KIND_GROUPED` in each).
 
 ### The short form: `ACTOR_LABEL`
 
@@ -684,3 +685,13 @@ The dashboards do not apply either exclusion yet, so the rule-runner keys show t
 | Wide windows used to "time out past `now-1h`" | that timing was confounded: the queries ran back to back — a synchronous query outlives its client and cannot be cancelled on serverless. Dashboards defaulted to 1h until 1.0.5 and to 24h since; see *Query shape decides cost* for what actually costs |
 | `_field_caps` reports `url.path` / `url.original` as `keyword` | they are `wildcard` in the backing index mapping — read `_mapping`, and never group on them unguarded |
 | `LAST` is reserved | `last = MAX(@timestamp)` is a parse error; use `last_ts` |
+
+## Kibana request → Elasticsearch requests (UC-117)
+
+`KIBANA_REQUEST_FROM` keeps Kibana events and the Elasticsearch events Kibana sent (`x-opaque-id` holding
+`;kibana:`, or a bare request id with no suffix: 183 of 184 such keys in 24h were Kibana requests, 1,474 events); `KIBANA_REQUEST_KEY` gives both the same `kibana_request`: the Kibana event's `http.request.id`, or the
+first `;`-separated part of an Elasticsearch event's opaque id (an Elasticsearch event's own `http.request.id` is
+Elasticsearch's and never matches). `searches/11-kibana-request-trace.json` embeds both verbatim. Over 24h live:
+14,402 keys, 12,965 with both sides. Following one request with *Filter for value* on the computed key costs ~2s at 7d live; a
+`WHERE http.request.id == "<id>" OR \`http.request.header.x-opaque-id\` == "<id>" OR
+STARTS_WITH(\`http.request.header.x-opaque-id\`, "<id>;")` straight after `FROM` pushes down and takes ~16ms.
