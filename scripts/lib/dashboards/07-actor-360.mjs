@@ -53,7 +53,7 @@ import {
  * Client IP is tested after that, never in the source filter.
  *
  * SHAPE. Count first by raw fields with the request id as a key, derive on grouped rows, one INLINE STATS for the
- * object join, MV_EXPAND each fine row into the six levels it feeds, sum BY level and path, then TOP 10 children per
+ * object join, MV_EXPAND each fine row into the six levels it feeds, sum BY level and path, then TOP 25 children per
  * parent over a packed string (keep-risky flag first, then actions) and unpack. Ids are MD5 prefixes of the path, so
  * Liquid can emit one CSS rule per node that shows its children only while it and its ancestors are checked. No
  * FORK (each branch re-runs the pipeline). Never SUM a count after MV_EXPAND of indices: per-index rows repeat it.
@@ -96,7 +96,7 @@ export const IDENTITY_PATH =
   `meta = es AND ${inList('act', LOOKUP_ACTIONS)} ` +
   '| EVAL cred = COALESCE(user.domain, authentication.type, "unknown"), space = CASE(es, null, COALESCE(kibana.space.id, "no space")), ' +
   'cip = CASE(es, null, client.ip), rid = CASE(es, MV_FIRST(SPLIT(rq, ";")), rq), ' +
-  'type = CASE(es, CASE(c_app == "dashboards" AND c_id != "", "dashboard", c_app == "discover", "search", "app"), obj_type), ' +
+  'type = CASE(es, CASE(c_app == "dashboards" AND c_id != "", "dashboard", c_app == "discover", "search", CONCAT("app:", COALESCE(c_app, ""))), obj_type), ' +
   'op = CASE(es, "read", event.action LIKE "*_find", "list", event.action LIKE "*_get" OR event.action LIKE "*_resolve" OR event.action LIKE "*bulk_get*", "open", ' +
   'event.action LIKE "*_delete*", "delete", event.action LIKE "*_create*", "create", ' +
   'event.action LIKE "*_run*" OR event.action LIKE "*_test" OR event.action LIKE "*_execute*" OR event.action LIKE "*_start*", "run", "change"), ' +
@@ -141,7 +141,7 @@ export const IDENTITY_PATH =
   'lastf = DATE_FORMAT("MMM d HH:mm", seen), ' +
   `parent = CASE(lvl <= 1, "all", REPLACE(key, "${T_PATH}[^${T_PATH}]*$", "")) ` +
   `| EVAL pack = CONCAT(${T_PACKED.map((c) => (c === 'acts' ? 'TO_STRING(acts + 1000000000000)' : T_NUMS.includes(c) || c === 'keep' ? `TO_STRING(${c})` : `COALESCE(${c}, "")`)).join(`, "${T_SEP}", `)}) ` +
-  '| STATS kids = TOP(pack, 10, "desc"), sib_n = COUNT(*), sib_acts = SUM(acts), sib_opens = SUM(opens), sib_chg = SUM(creates + changes + deletes + runs), ' +
+  '| STATS kids = TOP(pack, 25, "desc"), sib_n = COUNT(*), sib_acts = SUM(acts), sib_opens = SUM(opens), sib_chg = SUM(creates + changes + deletes + runs), ' +
   'sib_k = SUM(kacts), sib_lists = SUM(lists), sib_dreq = SUM(dreq), sib_fails = SUM(fails) BY lvl, parent ' +
   '| MV_EXPAND kids ' +
   `| DISSECT kids "${T_PACKED.map((c) => `%{${c}}`).join(T_SEP)}" ` +

@@ -96,8 +96,14 @@ endpoints that look up or search data are read: all of them cost 1.0s at 7 days 
 keys). An API key's reads still take their object's space. The first version took the space from the object only,
 so every unsaved Discover session and app showed "Not recorded".
 
-**Risk carries up.** Failures (red) and Elastic system data sets (lock) are counted at every level. A risky child
-is kept in the top 10 of its parent ahead of busier ones.
+**Risk carries up.** Failures (red) and reads of Elastic system data sets (yellow "⛁ N system": names starting with a
+dot) are counted at every level, so a credential shows the risk somewhere beneath it. A first version marked the
+system reads with a lock, which beside a credential read as a property of the credential.
+
+**Every item can be picked.** Each column lists every child the query returns (up to 25 per parent, risky ones
+first) and scrolls. A first version showed 5 and folded the rest into a "+N more" row that could not be opened.
+Each Kibana app with no saved object is its own object type ("Management", "Observability overview"), not one
+"Kibana apps" item.
 
 **How the no-JavaScript drill-down works.** One radio group per parent node, so each hidden group remembers its
 own pick and choosing a different credential cascades to that credential's busiest path. Liquid writes one CSS
@@ -108,7 +114,7 @@ Node ids are MD5 prefixes of the path, computed in ES|QL. Items are styled with 
 
 **Query.** Count first by raw fields with the request id as a key. Join requests, then objects, each by pack, group
 and unpack in one pass: an `INLINE STATS` re-runs everything above it (2.4s at 7 days for the request join). Expand each fine row into the six levels it feeds, then take the
-`TOP` 10 children per parent over a packed string and unpack. No FORK.
+`TOP` 25 children per parent over a packed string and unpack. No FORK.
 
 **Measured (2026-11-06):** about 0.3s over 24h live, and 0.67 to 0.71s at 7 days on the 2.6M-event perf replica,
 at the 0.7s budget (0.6s before the request join). Identity 360 loads in 3.0s at 7 days. Rendered and

@@ -86,13 +86,22 @@ test('the drill-down query: action lists from the fragments, a tree with ids, no
   for (const a of [...READ_ACTIONS, ...LOOKUP_ACTIONS]) assert.ok(q.includes(`"${a}"`), a);
   assert.equal(READ_ACTIONS.filter((a) => LOOKUP_ACTIONS.includes(a)).length, 0, 'read and lookup are disjoint');
   assert.ok([...READ_ACTIONS, ...LOOKUP_ACTIONS].every((a) => !a.includes('[')), 'no shard or node copies');
-  assert.ok(q.includes('MV_EXPAND lvl') && q.includes('TOP(pack, 10, "desc")') && q.includes('MD5('));
+  assert.ok(q.includes('MV_EXPAND lvl') && q.includes('TOP(pack, 25, "desc")') && q.includes('MD5('));
   assert.ok(q.includes('COUNT_DISTINCT(rq) WHERE op == "list"'), 'a listing counts once per request, not per object returned');
   assert.ok(!q.includes('INLINE STATS'), 'an INLINE STATS re-runs everything above it (2.4s at 7d for the request join)');
   // the request join: space and browser address from Kibana's http_request event, people and data endpoints only
   assert.ok(q.includes('event.action == "http_request" AND NOT user.domain IN ("_cloud_api_key", "_es_api_key") AND url.original RLIKE'),
     'every http_request event took the query to 1.65s at 7d');
   assert.ok(q.includes('BY rid ') && q.includes('kspaces = VALUES(space), kips = VALUES(cip)'), 'a read with no event of its own takes its object\'s space and address');
+});
+
+test('every child the query returns can be picked, and each Kibana app is its own object type', () => {
+  const src = readFileSync('custom/11-identity-path.html', 'utf8');
+  assert.ok(src.includes('{%- assign cap = 1000 -%}'), '"+3 more" that could not be opened was a dead end');
+  assert.ok(src.includes('<div class="cs">') && /\.cs\{[^}]*overflow-y:auto/.test(src), 'a long column scrolls');
+  assert.ok(!src.includes('name="lock"'), 'a lock beside a credential read as a property of the credential');
+  assert.ok(IDENTITY_PATH.includes('CONCAT("app:", COALESCE(c_app, ""))'), 'each Kibana app is its own object type');
+  assert.ok(expandLabels('<labels level="L" key="k"/>').includes('contains "app:"'), 'and is labelled by its name');
 });
 
 test('the drill-down never adds Kibana actions and data requests into one figure', () => {

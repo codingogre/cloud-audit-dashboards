@@ -111,7 +111,6 @@ export const LABELS = {
     'config-global': ['Global settings', 'Kibana-wide settings', 'gear'],
     ingest_manager_settings: ['Fleet settings', 'Fleet configuration', 'gear'],
     space: ['Spaces', 'Kibana spaces', 'space'],
-    app: ['Kibana apps', 'no saved object', 'app'],
     workflow: ['Workflows', 'automation', 'flow'],
   },
   4: {
@@ -138,7 +137,12 @@ export function expandLabels(src) {
     const levels = Object.entries(LABELS).map(([n, table]) => {
       const [fsub, fic] = LABEL_FALLBACK[n];
       const whens = Object.entries(table).map(([k, v]) => `{%- when ${lit(k)} -%}${set(v)}`).join('');
-      return `{%- when ${n} -%}{%- case ${key} -%}${whens}{%- else -%}{%- assign lbl = ${key} | replace: "-", " " -%}{%- assign sub = ${lit(fsub)} -%}{%- assign ic = ${lit(fic)} -%}{%- endcase -%}`;
+      const fallback = `{%- assign lbl = ${key} | replace: "-", " " -%}{%- assign sub = ${lit(fsub)} -%}{%- assign ic = ${lit(fic)} -%}`;
+      // Level 3: a read from a Kibana app with no saved object is typed by the app ("app:management"), so the
+      // column names the app rather than lumping every app into one "Kibana apps".
+      const app = `{%- if ${key} contains "app:" -%}{%- assign lbl = ${key} | remove_first: "app:" | replace: "-", " " | replace: "_", " " | capitalize -%}` +
+        `{%- if lbl == blank -%}{%- assign lbl = "Kibana (no app recorded)" -%}{%- endif -%}{%- assign sub = "Kibana app" -%}{%- assign ic = "app" -%}{%- else -%}${fallback}{%- endif -%}`;
+      return `{%- when ${n} -%}{%- case ${key} -%}${whens}{%- else -%}${n === '3' ? app : fallback}{%- endcase -%}`;
     }).join('');
     return `{%- case ${lv} -%}${levels}{%- endcase -%}`;
   });

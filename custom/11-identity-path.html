@@ -18,6 +18,7 @@ html,body{height:100%}
 /* ---- columns ---- */
 .mc{flex:1;min-height:0;display:grid;grid-template-columns:repeat(4,minmax(124px,184px)) minmax(300px,1fr);column-gap:var(--g)}
 .col{min-width:0;min-height:0;display:flex;flex-direction:column}
+.cs{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;margin-right:calc(-1 * var(--g));padding-right:var(--g);scrollbar-width:thin;mask-image:linear-gradient(to bottom,#000 calc(100% - 14px),transparent);padding-bottom:12px}
 .col h4{margin:0 0 4px;font-size:11px;font-weight:600;letter-spacing:.02em;text-transform:uppercase;color:color-mix(in srgb,var(--cc-color-text) 60%,transparent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .col.objs .scroll{flex:1;min-height:0;overflow:auto;padding-right:4px;mask-image:linear-gradient(to bottom,#000 calc(100% - 20px),transparent)}
 .grp{display:none;flex-direction:column;gap:4px;animation:colIn var(--cc-motion-normal) var(--cc-ease) both;animation-delay:var(--lv,0ms)}
@@ -107,20 +108,20 @@ html,body{height:100%}
 <div class="mc">
 {%- assign heads = "Credential|Space|Object type|Operation" | split: "|" -%}
 {%- for L in (1..4) -%}
-<section class="col c{{ L }}"><h4>{{ heads[forloop.index0] }}</h4>
+<section class="col c{{ L }}"><h4>{{ heads[forloop.index0] }}</h4><div class="cs">
 {%- assign gp = "" -%}{%- assign isopen = false -%}
 {%- for r in rows -%}{%- if r["lvl"].value == L -%}
 {%- assign p = r["pid"].value | default: "root" -%}
 {%- if p != gp -%}
 {%- if isopen -%}
 {%- assign rest = sn | minus: c -%}{%- if c > cap -%}{%- assign rest = sn | minus: cap -%}{%- endif -%}
-{%- if rest > 0 -%}{%- assign ra = sk | minus: xa -%}{%- assign rd = sd | minus: xd -%}{%- assign rf = sf | minus: xf -%}<div class="fold">{%- if rf > 0 -%}<span class="dot"></span>{%- endif -%}+{{ rest }} more{% if ra > 0 %} · {{ ra }} {% if ra == 1 %}action{% else %}actions{% endif %}{% endif %}{% if rd > 0 %} · <span class="dq" title="{{ rd }} data requests"><icon name="db"/>{{ rd }}</span>{% endif %}</div>{%- endif -%}
+{%- if rest > 0 -%}{%- assign ra = sk | minus: xa -%}{%- assign rd = sd | minus: xd -%}{%- assign rf = sf | minus: xf -%}<div class="fold">{%- if rf > 0 -%}<span class="dot"></span>{%- endif -%}+{{ rest }} smaller not shown{% if ra > 0 %} · {{ ra }} {% if ra == 1 %}action{% else %}actions{% endif %}{% endif %}{% if rd > 0 %} · <span class="dq" title="{{ rd }} data requests"><icon name="db"/>{{ rd }}</span>{% endif %}</div>{%- endif -%}
 </div>
 {%- endif -%}
 <div class="grp {% if L == 1 %}root{% else %}g{{ p }}{% endif %}" role="radiogroup">
 {%- assign gp = p -%}{%- assign isopen = true -%}{%- assign c = 0 -%}{%- assign xa = 0 -%}{%- assign xd = 0 -%}{%- assign xf = 0 -%}
 {%- assign sn = r["sib_n"].value -%}{%- assign sa = r["sib_acts"].value -%}{%- assign sk = r["sib_k"].value -%}{%- assign sd = r["sib_dreq"].value -%}{%- assign sf = r["sib_fails"].value -%}
-{%- assign cap = 5 -%}{%- if sn > 5 -%}{%- assign cap = 4 -%}{%- endif -%}
+{%- assign cap = 1000 -%}
 {%- endif -%}
 {%- if c < cap -%}
 {%- assign k = r["k"].value -%}<labels level="L" key="k"/>
@@ -128,10 +129,10 @@ html,body{height:100%}
 {%- assign oo = r["opens"].value -%}{%- assign cc = r["creates"].value | plus: r["changes"].value | plus: r["deletes"].value -%}{%- assign ll = r["lists"].value -%}{%- assign dd = r["dreq"].value -%}{%- assign rr = r["runs"].value -%}
 {%- capture parts -%}{%- if oo > 0 -%}opened {{ oo }} · {% endif -%}{%- if cc > 0 -%}changed {{ cc }} · {% endif -%}{%- if rr > 0 -%}ran {{ rr }} · {% endif -%}{%- if ll > 0 -%}listed {{ ll }} · {% endif -%}{%- endcapture -%}
 {%- assign parts = parts | strip | remove_last: " ·" -%}
-<label class="it{% if r["fails"].value > 0 %} bad{% endif %}" style="--i:{{ c }}" title="{{ k }}"><input type="radio" name="r{{ p }}" id="n{{ r["nid"].value }}"{% if c == 0 %} checked{% endif %}><span class="bx">
+<label class="it{% if r["fails"].value > 0 %} bad{% endif %}" style="--i:{{ c }}" title="{{ lbl }}"><input type="radio" name="r{{ p }}" id="n{{ r["nid"].value }}"{% if c == 0 %} checked{% endif %}><span class="bx">
 {%- assign ka = r["kacts"].value -%}
 <icon var="ic"/><span class="lb">{{ lbl }}</span><span class="ct">{%- if ka > 0 -%}<span title="{{ ka }} Kibana {% if ka == 1 %}action{% else %}actions{% endif %}">{{ ka }}</span>{%- endif -%}{%- if dd > 0 -%}<span class="dq" title="{{ dd }} data {% if dd == 1 %}request{% else %}requests{% endif %} to Elasticsearch"><icon name="db"/>{{ dd }}</span>{%- endif -%}</span>
-<span class="sb">{%- if r["fails"].value > 0 -%}<span class="badge fail">{{ r["fails"].value }} failed</span> {% endif -%}{%- if r["sysn"].value > 0 -%}<span class="badge sys"><icon name="lock"/>{{ r["sysn"].value }}</span> {% endif -%}{%- if L == 1 or L == 4 or parts == blank -%}{{ sub }}{%- else -%}{{ parts }}{%- endif -%}</span>
+<span class="sb">{%- if r["fails"].value > 0 -%}<span class="badge fail">{{ r["fails"].value }} failed</span> {% endif -%}{%- if r["sysn"].value > 0 -%}<span class="badge sys" title="Kibana read {{ r["sysn"].value }} Elastic system data {% if r["sysn"].value == 1 %}set{% else %}sets{% endif %} (names starting with a dot) under this"><icon name="db"/>{{ r["sysn"].value }} system</span> {% endif -%}{%- if L == 1 or L == 4 or parts == blank -%}{{ sub }}{%- else -%}{{ parts }}{%- endif -%}</span>
 <span class="bar"><i style="--w:{{ sh }}%"></i></span></span></label>
 {%- assign xa = xa | plus: ka -%}{%- assign xd = xd | plus: dd -%}{%- assign xf = xf | plus: r["fails"].value -%}
 {%- endif -%}
@@ -139,10 +140,10 @@ html,body{height:100%}
 {%- endif -%}{%- endfor -%}
 {%- if isopen -%}
 {%- assign rest = sn | minus: c -%}{%- if c > cap -%}{%- assign rest = sn | minus: cap -%}{%- endif -%}
-{%- if rest > 0 -%}{%- assign ra = sk | minus: xa -%}{%- assign rd = sd | minus: xd -%}{%- assign rf = sf | minus: xf -%}<div class="fold">{%- if rf > 0 -%}<span class="dot"></span>{%- endif -%}+{{ rest }} more{% if ra > 0 %} · {{ ra }} {% if ra == 1 %}action{% else %}actions{% endif %}{% endif %}{% if rd > 0 %} · <span class="dq" title="{{ rd }} data requests"><icon name="db"/>{{ rd }}</span>{% endif %}</div>{%- endif -%}
+{%- if rest > 0 -%}{%- assign ra = sk | minus: xa -%}{%- assign rd = sd | minus: xd -%}{%- assign rf = sf | minus: xf -%}<div class="fold">{%- if rf > 0 -%}<span class="dot"></span>{%- endif -%}+{{ rest }} smaller not shown{% if ra > 0 %} · {{ ra }} {% if ra == 1 %}action{% else %}actions{% endif %}{% endif %}{% if rd > 0 %} · <span class="dq" title="{{ rd }} data requests"><icon name="db"/>{{ rd }}</span>{% endif %}</div>{%- endif -%}
 </div>
 {%- endif -%}
-</section>
+</div></section>
 {%- endfor -%}
 
 <section class="col objs"><h4>Objects &amp; the data Kibana read</h4><div class="scroll">
@@ -165,8 +166,8 @@ html,body{height:100%}
 {%- assign oo = r["opens"].value -%}{%- assign cc = r["creates"].value | plus: r["changes"].value | plus: r["deletes"].value -%}{%- assign ll = r["lists"].value -%}{%- assign rr = r["runs"].value -%}{%- assign dd = r["dreq"].value -%}{%- assign ds = r["dsets"].value -%}
 <div class="ob" style="--i:{{ c }}">
 <div class="l1"><icon var="ic"/><span class="nm" title="{{ k }}">{{ nm }}</span>
-<span class="v">{%- if dd > 0 -%}<span><b>{{ dd }}</b> data {% if dd == 1 %}request{% else %}requests{% endif %} · <b>{{ ds }}</b> data {% if ds == 1 %}set{% else %}sets{% endif %}</span>{%- if r["sysn"].value > 0 -%} <span class="badge sys"><icon name="lock"/>{{ r["sysn"].value }} system</span>{%- endif -%}{%- elsif op == "list" -%}<span class="mute">no data read</span>{%- endif -%}{%- if r["fails"].value > 0 -%} <span class="badge fail">{{ r["fails"].value }} failed</span>{%- endif -%}</span></div>
-<div class="l2">{%- if k == "new" -%}<span>never saved</span>{%- elsif t == "app" -%}<span>{{ sub }}</span>{%- endif -%}
+<span class="v">{%- if dd > 0 -%}<span><b>{{ dd }}</b> data {% if dd == 1 %}request{% else %}requests{% endif %} · <b>{{ ds }}</b> data {% if ds == 1 %}set{% else %}sets{% endif %}</span>{%- if r["sysn"].value > 0 -%} <span class="badge sys" title="Elastic system data sets: names starting with a dot"><icon name="db"/>{{ r["sysn"].value }} system</span>{%- endif -%}{%- elsif op == "list" -%}<span class="mute">no data read</span>{%- endif -%}{%- if r["fails"].value > 0 -%} <span class="badge fail">{{ r["fails"].value }} failed</span>{%- endif -%}</span></div>
+<div class="l2">{%- if k == "new" -%}<span>never saved</span>{%- elsif t contains "app:" -%}<span>no saved object</span>{%- endif -%}
 {%- if oo > 0 -%}<span>opened {{ oo }}×</span>{%- endif -%}{%- if cc > 0 -%}<span>changed {{ cc }}×</span>{%- endif -%}{%- if rr > 0 -%}<span>ran {{ rr }}×</span>{%- endif -%}
 {%- if ll > 0 -%}<span>appeared in {{ ll }} {% if ll == 1 %}list{% else %}lists{% endif %}</span>{%- endif -%}
 <span>last {{ r["lastf"].value }} UTC</span>
@@ -182,7 +183,7 @@ html,body{height:100%}
 {%- assign take = false -%}{%- if pass == 1 and c0 == "." -%}{%- assign take = true -%}{%- endif -%}{%- if pass == 2 and c0 != "." -%}{%- assign take = true -%}{%- endif -%}
 {%- if take and shown < 3 -%}
 {%- assign lab = fm | replace: "logs-elastic_cloud.serverless_audit.", "audit log · " -%}
-<span class="ds{% if c0 == "." %} sys{% endif %}" title="{{ fm }}">{%- if c0 == "." -%}<icon name="lock"/>{%- else -%}<icon name="db"/>{%- endif -%}{{ lab }}</span>{%- assign shown = shown | plus: 1 -%}
+<span class="ds{% if c0 == "." %} sys{% endif %}" title="{{ fm }}">{%- if c0 == "." -%}<icon name="db"/>{%- else -%}<icon name="db"/>{%- endif -%}{{ lab }}</span>{%- assign shown = shown | plus: 1 -%}
 {%- endif -%}
 {%- endfor -%}{%- endfor -%}
 {%- assign extra = ds | minus: shown -%}{%- if extra > 0 -%}<span class="ds mute">+{{ extra }}</span>{%- endif -%}
@@ -193,7 +194,7 @@ html,body{height:100%}
 {%- if ds > 3 -%}
 {%- assign nsys = r["sysn"].value -%}{%- assign nyour = ds | minus: nsys -%}
 {%- if nyour > 0 -%}<div class="grpt">Your data ({{ nyour }})</div><div class="chips" style="margin-left:0">{%- for fm in fams -%}{%- assign c0 = fm | slice: 0 -%}{%- if c0 != "." -%}<span class="ds" title="{{ fm }}"><icon name="db"/>{{ fm }}</span>{%- endif -%}{%- endfor -%}</div>{%- endif -%}
-{%- if nsys > 0 -%}<div class="grpt">Elastic system ({{ nsys }})</div><div class="chips" style="margin-left:0">{%- for fm in fams -%}{%- assign c0 = fm | slice: 0 -%}{%- if c0 == "." -%}<span class="ds sys" title="{{ fm }}"><icon name="lock"/>{{ fm }}</span>{%- endif -%}{%- endfor -%}</div>{%- endif -%}
+{%- if nsys > 0 -%}<div class="grpt">Elastic system ({{ nsys }})</div><div class="chips" style="margin-left:0">{%- for fm in fams -%}{%- assign c0 = fm | slice: 0 -%}{%- if c0 == "." -%}<span class="ds sys" title="{{ fm }}"><icon name="db"/>{{ fm }}</span>{%- endif -%}{%- endfor -%}</div>{%- endif -%}
 {%- endif -%}
 {%- if r["lk"].value > 0 -%}<div class="lk">Also looked up the names or fields of {{ r["lk"].value }} data {% if r["lk"].value == 1 %}set{% else %}sets{% endif %}; no documents read from those lookups.</div>{%- endif -%}
 </details>
