@@ -1,7 +1,8 @@
 /** 07 Identity 360 — see scripts/lib/definitions.mjs for how the suite is assembled. */
 import {
   IDX, TIME, CONTROLS_WHERE, ACTOR_KEYS, ACTOR_RESOLVE, INDEX_FAMILY, IP_GEO, indexFamily, dash, kpi, table, vega, section, row, stack, resetIds,
-  sized, filterable, grouped, SYS_INDEX, fitRows, IDENTITY_KEYS, KIND_GROUPED
+  sized, filterable, grouped, SYS_INDEX, fitRows, IDENTITY_KEYS, KIND_GROUPED,
+  custom, KIBANA_INTERNALS, OBJ_PRESENT, CRED, VERB, OBJ_TYPE
 } from '../panels.mjs';
 import { rawId } from '../suite.mjs';
 import {
@@ -26,6 +27,63 @@ import {
  * Who this is shows the identity as the Identity dropdown names it (ACTOR_RESOLVE, counted first by ACTOR_KEYS)
  * beside the raw Principal id it ran as, which is what a filter pill can match.
  */
+
+/**
+ * IDENTITY PATH (custom panel prototype, 1.0.7.2): the credential → space → object type → operation story of the
+ * Vega ribbon beside it, told as steps the reader clicks through (custom/11-identity-path.html), plus a fifth step
+ * the ribbon cannot show: the objects themselves and the Elasticsearch data sets read on their behalf.
+ *
+ * The link from an object to its data is Kibana's execution context. Every Elasticsearch request Kibana sends
+ * carries `x-opaque-id: <request id>;kibana:<kind>:<app>:<id>[;<child>…]` — `application:dashboards:<id>`,
+ * `dashboard:dashboards:<id>;lens:…`, `application:discover:new` — so the reads of a dashboard's panels name the
+ * dashboard. (The request id alone does not join them: a dashboard `get` and its panels' searches are separate
+ * requests.) Kibana sends those reads as the signed-in user, so the control bar narrows both sides.
+ *
+ * Kibana side: the Vega spec's population (OBJ_PRESENT) minus routine internals and the suite's own reads
+ * (KIBANA_INTERNALS, as 02 does). Elasticsearch side: requests that carry a Kibana context, minus the suite's own
+ * dashboards, for the same reason; no NOISE gate, which would remove the reads themselves. Patterns and date math
+ * are not data sets (CONCRETE's test), and backing and dated indices fold into their family.
+ *
+ * SHAPE. One query, as the panel allows. Count first by raw fields (the request id rides along inside `op`, the
+ * one high-cardinality key), derive on the grouped rows, fold to one row per (path, object), then MV_EXPAND each
+ * row into the seven stages it feeds and sum BY stage, key. The template takes the top of each stage and folds
+ * the rest from the `total` row. NOT FORK: a FORK branch re-runs everything above it, so seven branches cost
+ * seven times the ~0.8s base on the 7-day perf replica (4.8s measured); this shape is ~0.95s there and ~0.13s
+ * over 24h live. Stages sort in reading order with `obj` last, so the row cap can only trim the long tail of
+ * objects, never a stage. Indices ride as VALUES per request (a BY on the multivalued field fanned out first), and
+ * `reads` counts the distinct Kibana requests that read a data set: after MV_EXPAND idx a summed event count
+ * multiplied each request by the number of indices it named (872 against 113 for one app, measured).
+ */
+const K_SIDE = 'service.name == "serverless-kibana"';
+const OPAQUE = '`http.request.header.x-opaque-id`';
+const STAGES = ['total', 'cred', 'space', 'type', 'verb', 'path', 'obj'];
+export const IDENTITY_PATH =
+  `FROM ${IDX} | ${TIME} ` +
+  `| WHERE (${K_SIDE} AND ${OBJ_PRESENT} AND (event.action IS NULL OR NOT (${KIBANA_INTERNALS}))) ` +
+  `OR (service.name == "serverless-elasticsearch" AND ${OPAQUE} LIKE "*;kibana:*") ` +
+  `| STATS events = COUNT(*), idx = VALUES(elasticsearch.audit.indices) BY service.name, authentication.type, user.domain, kibana.space.id, kibana.saved_object.type, kibana.saved_object.id, kibana.saved_object.name, event.action, op = ${OPAQUE} ` +
+  '| MV_EXPAND idx ' +
+  '| EVAL ctx = REPLACE(op, "^[^;]*;kibana:", "") ' +
+  '| EVAL c_app = REPLACE(ctx, "^[^:;]*:([^:;]*):.*$", "$1"), c_id = REPLACE(ctx, "^[^:;]*:[^:;]*:([^;]*).*$", "$1") ' +
+  `| EVAL fam = CASE(NOT ${K_SIDE} AND LOCATE(idx, "*") == 0 AND NOT idx LIKE "<*", ${indexFamily('idx')}) ` +
+  `| ${CRED} | ${VERB} | ${OBJ_TYPE} ` +
+  `| EVAL kev = CASE(${K_SIDE}, events, 0), verb = CASE(${K_SIDE}, verb), ` +
+  `space = CASE(${K_SIDE}, COALESCE(kibana.space.id, "no space")), obj_type = CASE(${K_SIDE}, obj_type), ` +
+  `oid = CASE(${K_SIDE}, COALESCE(kibana.saved_object.id, obj_type), c_id != "", c_id, CONCAT("app:", c_app)), ` +
+  `otype = CASE(${K_SIDE}, obj_type, c_app == "dashboards", "dashboard", c_app == "discover", "search", "app") ` +
+  `| WHERE ${K_SIDE} OR NOT (oid LIKE "cloud-audit-*" OR oid LIKE "elastic_cloud-audit-*") ` +
+  '| STATS kev = SUM(kev), rev = COUNT_DISTINCT(op) WHERE fam IS NOT NULL, fams = VALUES(fam), title = MAX(kibana.saved_object.name), otype = MAX(otype) BY credential, space, obj_type, verb, oid ' +
+  `| EVAL stage = [${STAGES.map((s) => `"${s}"`).join(', ')}] | MV_EXPAND stage ` +
+  '| EVAL key = CASE(stage == "total", "all", stage == "cred", credential, stage == "space", space, stage == "type", obj_type, stage == "verb", verb, ' +
+  'stage == "path", CONCAT(credential, "|", space, "|", obj_type, "|", verb), oid), ' +
+  'fams = CASE(stage == "obj", fams), title = CASE(stage == "obj", title), otype = CASE(stage == "obj", otype) ' +
+  '| WHERE key IS NOT NULL ' +
+  '| STATS v = SUM(kev), reads = SUM(rev), fams = VALUES(fams), title = MAX(title), otype = MAX(otype) BY stage, key ' +
+  '| WHERE v > 0 OR (stage == "obj" AND reads > 0) ' +
+  `| EVAL step = CASE(${STAGES.map((s, i) => `stage == "${s}", ${i}`).join(', ')}), rank = CASE(stage == "obj", reads * 1000000 + v, v), ` +
+  'nfam = MV_COUNT(fams), famlist = MV_CONCAT(MV_SORT(fams), "|"), oid = CASE(stage == "obj" AND NOT key LIKE "app:*", key), ' +
+  'label = CASE(stage != "obj", null, title IS NOT NULL, title, key == "new", "Unsaved Discover session", key LIKE "app:*", CONCAT(REPLACE(key, "^app:", ""), " app"), key) ' +
+  '| DROP fams, title | SORT step, rank DESC | LIMIT 400';
 
 const vegaPanel = (ref, title) => (x, y, w, h) => vega(x, y, w, h, ref, title, specDescription(ref));
 
@@ -243,6 +301,10 @@ export function build() {
 
     row(2, [[48, (x, y, w, h) => section(x, y, w, h, '② What they did', 'follows the time picker · times in your time zone')]]),
     row(11, [[48, vegaPanel('11-actor-object-flow', 'How they reached what they touched in Kibana — credential → space → object → operation')]]),
+    // Custom panel prototype (1.0.7.2), beside the ribbon until the replace-or-keep decision; see IDENTITY_PATH.
+    row(15, [[48, (x, y, w, h) => custom(x, y, w, h, '11-identity-path', 'Step by step — credential → space → object → operation → the data behind it',
+      'Click through how this selection reached what it touched in Kibana, one stage at a time, then the objects and the Elasticsearch data Kibana read for each. Routine internals and this suite’s own dashboards are left out.',
+      IDENTITY_PATH)]]),
     // Deletes first, then newest. Newest-first alone showed ten creates from the latest burst and put
     // 1,859 deletes (24h) below the panel edge, so a reader concluded this person deleted nothing (round-3
     // review). A delete is the change an investigator looks for first and the one RISK weighs highest

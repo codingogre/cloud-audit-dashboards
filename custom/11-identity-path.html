@@ -1,0 +1,197 @@
+<style>
+.ip{--gap:var(--cc-space-s,8px);font-family:var(--cc-font-family);color:var(--cc-color-text);font-size:13px;line-height:1.35;padding:2px 4px 6px}
+.ip *{box-sizing:border-box}
+.ip .r{position:absolute;opacity:0;pointer-events:none}
+.ip svg.ic{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+/* step bar */
+.ip .nav{display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-bottom:var(--gap)}
+.ip .pill{cursor:pointer;display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:99px;border:1px solid var(--cc-color-border);background:var(--cc-color-surface);color:var(--cc-color-text);opacity:.75;white-space:nowrap;transition:background var(--cc-motion-fast) var(--cc-ease),opacity var(--cc-motion-fast)}
+.ip .pill:hover{opacity:1}
+.ip .pill b{font-weight:600;font-size:11px;display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;background:var(--cc-color-border)}
+.ip .arrow{opacity:.45}
+#ip0:checked~.nav .p0,#ip1:checked~.nav .p1,#ip2:checked~.nav .p2,#ip3:checked~.nav .p3,#ip4:checked~.nav .p4,#ip5:checked~.nav .p5{background:color-mix(in srgb,var(--cc-color-primary) 22%,transparent);border-color:var(--cc-color-primary);color:var(--cc-color-text);font-weight:600;opacity:1}
+#ip0:checked~.nav .p0 b,#ip1:checked~.nav .p1 b,#ip2:checked~.nav .p2 b,#ip3:checked~.nav .p3 b,#ip4:checked~.nav .p4 b,#ip5:checked~.nav .p5 b{background:var(--cc-color-primary);color:var(--cc-color-surface)}
+.ip .track{height:3px;border-radius:2px;background:var(--cc-color-border);margin:0 0 var(--gap);overflow:hidden}
+.ip .track i{display:block;height:100%;width:0;background:var(--cc-color-primary);transition:width var(--cc-motion-slow) var(--cc-ease)}
+#ip0:checked~.track i{width:8%}#ip1:checked~.track i{width:24%}#ip2:checked~.track i{width:42%}#ip3:checked~.track i{width:60%}#ip4:checked~.track i{width:78%}#ip5:checked~.track i{width:100%}
+/* panes */
+.ip .pane{display:none}
+#ip0:checked~.panes .k0,#ip1:checked~.panes .k1,#ip2:checked~.panes .k2,#ip3:checked~.panes .k3,#ip4:checked~.panes .k4,#ip5:checked~.panes .k5{display:block;animation:ipIn var(--cc-motion-slow) var(--cc-ease) both}
+@keyframes ipIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.ip .lede{margin:0 0 var(--gap);opacity:.8}
+.ip .lede strong{opacity:1}
+.ip .foot{display:flex;justify-content:space-between;margin-top:var(--gap)}
+.ip .btn{cursor:pointer;padding:3px 12px;border-radius:var(--cc-radius-s,4px);border:1px solid var(--cc-color-border);background:var(--cc-color-surface)}
+.ip .btn:hover{border-color:var(--cc-color-primary)}
+.ip .btn.next{background:color-mix(in srgb,var(--cc-color-primary) 22%,transparent);border-color:var(--cc-color-primary);font-weight:600}
+/* overview: one row per path */
+.ip .paths{display:grid;gap:4px}
+.ip .path{display:grid;grid-template-columns:minmax(0,1.25fr) 34px minmax(0,1fr) 34px minmax(0,1fr) 34px minmax(0,.8fr) 64px;align-items:center;transition:opacity var(--cc-motion-fast)}
+.ip .paths:has(.path:hover) .path:not(:hover){opacity:.3}
+.ip .chip{display:flex;align-items:center;gap:6px;min-width:0;padding:3px 8px;border-radius:var(--cc-radius-s,4px);background:var(--cc-color-surface);border:1px solid var(--cc-color-border);animation:ipIn var(--cc-motion-normal) var(--cc-ease) both;animation-delay:calc(var(--i,0) * 70ms)}
+.ip .chip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ip .c0{color:color-mix(in srgb,var(--cc-vis-0) 80%,var(--cc-color-text))}.ip .c1{color:color-mix(in srgb,var(--cc-vis-1) 70%,var(--cc-color-text))}.ip .c2{color:color-mix(in srgb,var(--cc-vis-2) 80%,var(--cc-color-text))}.ip .c3{color:color-mix(in srgb,var(--cc-vis-3) 80%,var(--cc-color-text))}
+.ip .chip span,.ip .num{color:var(--cc-color-text)}
+.ip .link{height:14px;width:100%}
+.ip .link line{stroke:var(--cc-color-border);stroke-linecap:round}
+.ip .link line.flow{stroke:var(--cc-vis-0);stroke-dasharray:3 7;animation:ipFlow var(--d,2s) linear infinite}
+@keyframes ipFlow{to{stroke-dashoffset:-20}}
+.ip .num{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+.ip .num small{display:block;font-weight:400;opacity:.65;font-size:11px}
+/* stage cards */
+.ip .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:var(--gap)}
+.ip .card{padding:8px 10px;border-radius:var(--cc-radius,6px);border:1px solid var(--cc-color-border);background:var(--cc-color-surface);animation:ipIn var(--cc-motion-normal) var(--cc-ease) both;animation-delay:calc(var(--i,0) * 60ms)}
+.ip .card .hd{display:flex;align-items:center;gap:8px}
+.ip .card .hd span{flex:1;min-width:0;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ip .card .sub{font-size:11px;opacity:.65;margin:2px 0 6px 24px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ip .bar{height:6px;border-radius:3px;background:var(--cc-color-border);overflow:hidden}
+.ip .bar i{display:block;height:100%;width:var(--w);background:var(--cc-vis-0);border-radius:3px;animation:ipGrow var(--cc-motion-slow) var(--cc-ease) both;animation-delay:calc(var(--i,0) * 60ms + 120ms)}
+@keyframes ipGrow{from{width:0}}
+.ip .card .ft{display:flex;justify-content:space-between;margin-top:4px;font-size:12px;font-variant-numeric:tabular-nums}
+.ip .card .ft em{font-style:normal;opacity:.65}
+.ip .card.other{border-style:dashed;background:transparent}
+.ip .warn{color:var(--cc-color-danger)}
+.ip .card.warn{border-color:var(--cc-color-danger)}
+.ip .card.warn .bar i{background:var(--cc-color-danger)}
+/* step 5: objects and the data behind them */
+.ip .objs{display:grid;gap:6px}
+.ip details{border:1px solid var(--cc-color-border);border-radius:var(--cc-radius,6px);background:var(--cc-color-surface);animation:ipIn var(--cc-motion-normal) var(--cc-ease) both;animation-delay:calc(var(--i,0) * 60ms)}
+.ip summary{cursor:pointer;list-style:none;display:grid;grid-template-columns:18px minmax(0,1fr) auto auto;gap:10px;align-items:center;padding:6px 10px}
+.ip summary::-webkit-details-marker{display:none}
+.ip summary .t{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.ip summary .t small{font-weight:400;opacity:.65;margin-left:6px}
+.ip summary .m{font-size:12px;opacity:.8;white-space:nowrap;font-variant-numeric:tabular-nums}
+.ip summary .chev{transition:transform var(--cc-motion-fast)}
+.ip details[open] summary .chev{transform:rotate(90deg)}
+.ip .data{padding:2px 10px 10px 38px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.ip .ds{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:99px;font-size:12px;border:1px solid var(--cc-color-border);background:var(--cc-color-background);animation:ipIn var(--cc-motion-normal) var(--cc-ease) both;animation-delay:calc(var(--j,0) * 40ms)}
+.ip .ds svg.ic{width:13px;height:13px;color:var(--cc-vis-2)}
+.ip .ds.sys{border-color:var(--cc-color-warning)}
+.ip .ds.sys svg.ic{color:var(--cc-color-warning)}
+.ip .none{font-size:12px;opacity:.6}
+.ip a{color:var(--cc-color-primary);text-decoration:none;font-size:12px}
+.ip a:hover{text-decoration:underline}
+.ip .empty{padding:24px;text-align:center;opacity:.7;border:1px dashed var(--cc-color-border);border-radius:var(--cc-radius,6px)}
+</style>
+{%- assign total = 0 -%}{%- assign nobj = 0 -%}
+{%- for r in rows -%}
+{%- if r["stage"].value == "total" -%}{%- assign total = r["v"].value | default: 0 -%}{%- endif -%}
+{%- if r["stage"].value == "obj" -%}{%- assign nobj = nobj | plus: 1 -%}{%- endif -%}
+{%- endfor -%}
+<div class="ip">
+{%- if total == 0 and nobj == 0 -%}
+<div class="empty">No Kibana object activity for this selection in the time range.<br>Pick another identity, or widen the time picker.</div>
+{%- else -%}
+<input class="r" type="radio" name="ip" id="ip0" checked><input class="r" type="radio" name="ip" id="ip1"><input class="r" type="radio" name="ip" id="ip2"><input class="r" type="radio" name="ip" id="ip3"><input class="r" type="radio" name="ip" id="ip4"><input class="r" type="radio" name="ip" id="ip5">
+<div class="nav">
+<label class="pill p0" for="ip0"><icon name="flow"/>Overview</label><span class="arrow">›</span>
+<label class="pill p1" for="ip1"><b>1</b>Credential</label><span class="arrow">›</span>
+<label class="pill p2" for="ip2"><b>2</b>Space</label><span class="arrow">›</span>
+<label class="pill p3" for="ip3"><b>3</b>Object type</label><span class="arrow">›</span>
+<label class="pill p4" for="ip4"><b>4</b>Operation</label><span class="arrow">›</span>
+<label class="pill p5" for="ip5"><b>5</b>Objects &amp; data</label>
+</div>
+<div class="track"><i></i></div>
+<div class="panes">
+
+<!-- Overview: the busiest paths, end to end -->
+<div class="pane k0">
+<p class="lede">The busiest routes from sign-in to action, across <strong>{{ total }}</strong> Kibana object events. Thicker, faster lines carry more events. Step through to see each stage on its own.</p>
+<div class="paths">
+{%- assign i = 0 -%}
+{%- for r in rows -%}{%- if r["stage"].value == "path" and i < 8 -%}
+{%- assign parts = r["key"].value | split: "|" -%}
+{%- assign v = r["v"].value -%}{%- assign sh = v | times: 100.0 | divided_by: total | round: 1 -%}
+{%- assign sw = sh | divided_by: 20.0 | plus: 1.5 | round: 1 -%}{%- assign d = 100 | minus: sh | divided_by: 40.0 | plus: 0.5 | round: 2 -%}
+{%- assign c = parts[0] -%}
+{%- case c -%}{%- when "cloud-saml-kibana" -%}{%- assign ci = "person" -%}{%- assign cl = "Browser sign-in (SAML)" -%}{%- when "_es_api_key" -%}{%- assign ci = "key" -%}{%- assign cl = "API key" -%}{%- when "_cloud_api_key" -%}{%- assign ci = "cloud" -%}{%- assign cl = "Cloud API key" -%}{%- when "api_key" -%}{%- assign ci = "key" -%}{%- assign cl = "API key" -%}{%- else -%}{%- assign ci = "q" -%}{%- assign cl = c -%}{%- endcase -%}
+{%- assign t = parts[2] -%}
+{%- case t -%}{%- when "dashboard" -%}{%- assign ti = "dash" -%}{%- when "search" -%}{%- assign ti = "search" -%}{%- when "lens", "visualization" -%}{%- assign ti = "lens" -%}{%- when "alert", "rule" -%}{%- assign ti = "bell" -%}{%- when "tag" -%}{%- assign ti = "tag" -%}{%- when "epm-packages", "epm-packages-assets" -%}{%- assign ti = "pkg" -%}{%- when "config", "config-global" -%}{%- assign ti = "gear" -%}{%- when "workflow", "workflow-execution" -%}{%- assign ti = "flow" -%}{%- else -%}{%- assign ti = "box" -%}{%- endcase -%}
+{%- assign o = parts[3] -%}
+{%- case o -%}{%- when "get", "resolve" -%}{%- assign oi = "eye" -%}{%- when "find" -%}{%- assign oi = "list" -%}{%- when "create" -%}{%- assign oi = "plus" -%}{%- when "update", "enable", "disable" -%}{%- assign oi = "pen" -%}{%- when "delete" -%}{%- assign oi = "trash" -%}{%- when "run", "test", "start", "open" -%}{%- assign oi = "play" -%}{%- else -%}{%- assign oi = "q" -%}{%- endcase -%}
+<div class="path">
+<div class="chip c0" style="--i:{{ i }}"><icon var="ci"/><span title="{{ c }}">{{ cl }}</span></div>
+<svg class="link" viewBox="0 0 34 14" preserveAspectRatio="none"><line x1="0" y1="7" x2="34" y2="7" stroke-width="{{ sw }}"/><line class="flow" x1="0" y1="7" x2="34" y2="7" stroke-width="{{ sw }}" style="--d:{{ d }}s"/></svg>
+<div class="chip c1" style="--i:{{ i | plus: 1 }}"><icon name="space"/><span>{{ parts[1] }}</span></div>
+<svg class="link" viewBox="0 0 34 14" preserveAspectRatio="none"><line x1="0" y1="7" x2="34" y2="7" stroke-width="{{ sw }}"/><line class="flow" x1="0" y1="7" x2="34" y2="7" stroke-width="{{ sw }}" style="--d:{{ d }}s"/></svg>
+<div class="chip c2" style="--i:{{ i | plus: 2 }}"><icon var="ti"/><span>{{ t }}</span></div>
+<svg class="link" viewBox="0 0 34 14" preserveAspectRatio="none"><line x1="0" y1="7" x2="34" y2="7" stroke-width="{{ sw }}"/><line class="flow" x1="0" y1="7" x2="34" y2="7" stroke-width="{{ sw }}" style="--d:{{ d }}s"/></svg>
+<div class="chip c3{% if o == "delete" %} warn{% endif %}" style="--i:{{ i | plus: 3 }}"><icon var="oi"/><span>{{ o }}</span></div>
+<div class="num">{{ v }}<small>{{ sh }}%</small></div>
+</div>
+{%- assign i = i | plus: 1 -%}
+{%- endif -%}{%- endfor -%}
+</div>
+<div class="foot"><span></span><label class="btn next" for="ip1">Start: credential →</label></div>
+</div>
+
+<!-- Steps 1-4: one stage at a time -->
+{%- assign stages = "cred,space,type,verb" | split: "," -%}
+{%- assign heads = "How they signed in|Which spaces they worked in|What kinds of object they touched|What they did to them" | split: "|" -%}
+{%- for st in stages -%}
+{%- assign n = forloop.index -%}{%- assign prev = n | minus: 1 -%}{%- assign next = n | plus: 1 -%}
+<div class="pane k{{ n }}">
+<p class="lede"><strong>{{ heads[forloop.index0] }}.</strong> Share of {{ total }} Kibana object events.</p>
+<div class="cards">
+{%- assign shown = 0 -%}{%- assign i = 0 -%}
+{%- for r in rows -%}{%- if r["stage"].value == st and i < 7 -%}
+{%- assign k = r["key"].value -%}{%- assign v = r["v"].value -%}{%- assign shown = shown | plus: v -%}
+{%- assign sh = v | times: 100.0 | divided_by: total | round: 1 -%}
+{%- assign lbl = k -%}{%- assign sub = "" -%}{%- assign ic = "box" -%}{%- assign cls = "" -%}
+{%- if st == "cred" -%}
+{%- case k -%}{%- when "cloud-saml-kibana" -%}{%- assign ic = "person" -%}{%- assign lbl = "Browser sign-in (SAML)" -%}{%- assign sub = "a person in a browser" -%}{%- when "_es_api_key" -%}{%- assign ic = "key" -%}{%- assign lbl = "API key" -%}{%- assign sub = "a script calling Kibana" -%}{%- when "_cloud_api_key" -%}{%- assign ic = "cloud" -%}{%- assign lbl = "Cloud API key" -%}{%- assign sub = "Elastic Cloud automation" -%}{%- when "api_key" -%}{%- assign ic = "key" -%}{%- assign lbl = "API key" -%}{%- else -%}{%- assign ic = "q" -%}{%- assign sub = "other realm" -%}{%- endcase -%}
+{%- elsif st == "space" -%}{%- assign ic = "space" -%}{%- if k == "default" -%}{%- assign sub = "Default space" -%}{%- else -%}{%- assign sub = "Kibana space" -%}{%- endif -%}
+{%- elsif st == "type" -%}
+{%- case k -%}{%- when "dashboard" -%}{%- assign ic = "dash" -%}{%- when "search" -%}{%- assign ic = "search" -%}{%- when "lens", "visualization" -%}{%- assign ic = "lens" -%}{%- when "alert", "rule" -%}{%- assign ic = "bell" -%}{%- when "tag" -%}{%- assign ic = "tag" -%}{%- when "epm-packages", "epm-packages-assets" -%}{%- assign ic = "pkg" -%}{%- when "config", "config-global" -%}{%- assign ic = "gear" -%}{%- when "workflow", "workflow-execution" -%}{%- assign ic = "flow" -%}{%- endcase -%}{%- assign sub = "saved object type" -%}
+{%- else -%}
+{%- case k -%}{%- when "get", "resolve" -%}{%- assign ic = "eye" -%}{%- assign sub = "opened one object" -%}{%- when "find" -%}{%- assign ic = "list" -%}{%- assign sub = "listed or searched" -%}{%- when "create" -%}{%- assign ic = "plus" -%}{%- assign sub = "made something new" -%}{%- when "update", "enable", "disable" -%}{%- assign ic = "pen" -%}{%- assign sub = "changed it" -%}{%- when "delete" -%}{%- assign ic = "trash" -%}{%- assign sub = "removed it" -%}{%- assign cls = " warn" -%}{%- when "run", "test", "start", "open" -%}{%- assign ic = "play" -%}{%- assign sub = "ran it" -%}{%- else -%}{%- assign ic = "q" -%}{%- assign sub = "other action" -%}{%- endcase -%}
+{%- endif -%}
+<div class="card{{ cls }}" style="--i:{{ i }}">
+<div class="hd"><icon var="ic" class="c{{ prev | modulo: 4 }}"/><span title="{{ k }}">{{ lbl }}</span></div>
+<div class="sub">{{ sub }}</div>
+<div class="bar"><i style="--w:{{ sh }}%"></i></div>
+<div class="ft"><strong>{{ v }}</strong><em>{{ sh }}%</em></div>
+</div>
+{%- assign i = i | plus: 1 -%}
+{%- endif -%}{%- endfor -%}
+{%- assign rest = total | minus: shown -%}
+{%- if rest > 0 -%}{%- assign sh = rest | times: 100.0 | divided_by: total | round: 1 -%}
+<div class="card other" style="--i:{{ i }}"><div class="hd"><icon name="q"/><span>Everything else</span></div><div class="sub">smaller values, folded</div><div class="bar"><i style="--w:{{ sh }}%"></i></div><div class="ft"><strong>{{ rest }}</strong><em>{{ sh }}%</em></div></div>
+{%- endif -%}
+</div>
+<div class="foot"><label class="btn" for="ip{{ prev }}">← Back</label><label class="btn next" for="ip{{ next }}">Next →</label></div>
+</div>
+{%- endfor -%}
+
+<!-- Step 5: the objects, and the data each one read -->
+<div class="pane k5">
+<p class="lede"><strong>What they touched, and the data behind it.</strong> Data sets are the Elasticsearch indices Kibana read on their behalf while that object was open (Kibana tags each request with the dashboard or app that sent it). Click a row to see them.</p>
+<div class="objs">
+{%- assign i = 0 -%}
+{%- for r in rows -%}{%- if r["stage"].value == "obj" and i < 12 -%}
+{%- assign k = r["key"].value -%}{%- assign t = r["otype"].value -%}{%- assign fl = r["famlist"].value -%}
+{%- case t -%}{%- when "dashboard" -%}{%- assign ic = "dash" -%}{%- when "search" -%}{%- assign ic = "search" -%}{%- when "lens", "visualization" -%}{%- assign ic = "lens" -%}{%- when "alert", "rule" -%}{%- assign ic = "bell" -%}{%- when "tag" -%}{%- assign ic = "tag" -%}{%- when "epm-packages", "epm-packages-assets" -%}{%- assign ic = "pkg" -%}{%- when "app" -%}{%- assign ic = "app" -%}{%- else -%}{%- assign ic = "box" -%}{%- endcase -%}
+<details style="--i:{{ i }}"{% if i == 0 and fl != blank %} open{% endif %}>
+<summary><icon var="ic" class="c2"/><span class="t" title="{{ k }}">{{ r["label"].value }}<small>{{ t }}</small></span><span class="m">{% if r["v"].value > 0 %}{{ r["v"].value }} object events{% endif %}{% if r["v"].value > 0 and r["reads"].value > 0 %} · {% endif %}{% if r["reads"].value > 0 %}{{ r["reads"].value }} data requests · {{ r["nfam"].value }} data sets{% endif %}</span><icon name="chev" class="chev"/></summary>
+<div class="data">
+{%- if fl != blank -%}
+{%- assign fams = fl | split: "|" -%}
+{%- assign j = 0 -%}
+{%- for pass in (1..2) -%}{%- for f in fams -%}{%- assign c0 = f | slice: 0 -%}
+{%- if pass == 1 and c0 != "." -%}<span class="ds" style="--j:{{ j }}"><icon name="db"/>{{ f }}</span>{%- assign j = j | plus: 1 -%}{%- endif -%}
+{%- if pass == 2 and c0 == "." -%}<span class="ds sys" style="--j:{{ j }}" title="system or hidden index"><icon name="lock"/>{{ f }}</span>{%- assign j = j | plus: 1 -%}{%- endif -%}
+{%- endfor -%}{%- endfor -%}
+{%- else -%}<span class="none">No data reads recorded for this object in the range.</span>{%- endif -%}
+{%- if t == "dashboard" and r["oid"].value != blank -%}<a href="/app/dashboards#/view/{{ r["oid"].value }}">Open dashboard ↗</a>{%- endif -%}
+</div>
+</details>
+{%- assign i = i | plus: 1 -%}
+{%- endif -%}{%- endfor -%}
+{%- if i == 0 -%}<div class="empty">No objects or data reads in range.</div>{%- endif -%}
+</div>
+<div class="foot"><label class="btn" for="ip4">← Back</label><label class="btn next" for="ip0">Back to overview ↺</label></div>
+</div>
+
+</div>
+{%- endif -%}
+</div>
