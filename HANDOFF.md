@@ -12,18 +12,17 @@ reviewer to the time picker. Copy only; measure nothing new unless a query chang
 picker (1.0.7.4), objects/spaces/index pivots (1.0.7.5), sign-ins and sessions (1.0.7.6), discovery against a baseline
 on 03 (1.0.7.7). No open user decisions.
 
-## Prototype: custom panels on Identity 360, 2026-11-06 (uncommitted, on branch 1.0.7.2)
+## Experiment: custom panels on Identity 360 (branch experiment/custom-panels), 2026-11-06
 
-Kibana 9.6's `custom_content` panel (tech preview), evaluated and prototyped; the full write-up, API facts and ranked
-candidates are in `docs/custom-panels.md`. The prototype is a click-through "Step by step" panel under the Vega ribbon
-on Identity 360 (`custom/11-identity-path.html`, `IDENTITY_PATH` in `07-actor-360.mjs`, builder `custom()` in
-`panels.mjs`, icons and template loading in `scripts/lib/custom.mjs`, tests in `test/unit/custom.test.mjs`). It adds a
-step the ribbon cannot: the objects and the Elasticsearch data sets Kibana read for each, joined through the
-`x-opaque-id` execution context. Rendered clean in light, dark and reduced motion on a private deploy
-(`AUDIT_ID_NS=cpx`, still installed; `AUDIT_ID_NS=cpx ./audit --clean dashboards` removes it). **Open user decisions:**
-replace the ribbon or keep both; whether and when the candidates go on the roadmap. **Known cost:** 917ms at 7 days on
-the perf replica, over the 0.7s per-query budget; the 07 page is 3.3–3.5s at 7 days. Spike scripts are in
-`.sessions/spike/` (local only).
+Kibana 9.6's `custom_content` panel (tech preview), evaluated and prototyped; the write-up, API and renderer facts
+and ranked candidates are in `docs/custom-panels.md`. The panel is a no-JavaScript **drill-down** under the Vega ribbon
+on Identity 360: credential › space › object type › operation › objects and the data Kibana read
+(`custom/11-identity-path.html`, `IDENTITY_PATH` in `07-actor-360.mjs`, `custom()` in `panels.mjs`, icons, labels
+and template loading in `scripts/lib/custom.mjs`, `READ_ACTIONS`/`LOOKUP_ACTIONS` in `panels.mjs`, tests in
+`test/unit/custom.test.mjs`). The branch history keeps the first "step by step" version. ~0.6s at 7d on the perf
+replica; 07 loads in 3.05s. Private deploy `AUDIT_ID_NS=cpx` is still installed (`AUDIT_ID_NS=cpx ./audit --clean
+dashboards` removes it). **Open user decisions:** replace the ribbon or keep both; whether and when the other
+candidates go on the roadmap. Spike scripts and the review spec are in `.sessions/` (local only).
 
 ## Release 1.0.7.2 — Open in Discover on every record panel; Back undoes a session zoom, 2026-10-27
 

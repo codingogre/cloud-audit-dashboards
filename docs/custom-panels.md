@@ -42,6 +42,8 @@ Stack "planned".
 - It survives the suite's `_export → _import` post-pass unchanged.
 - The query follows the time picker, filter pills and the four ES|QL controls. `SET unmapped_fields` and
   `FORK` work.
+- **`last` is a reserved word in ES|QL** (`NULLS LAST`), and `SPLIT` takes only a single-byte delimiter.
+- **Liquid runs inside `<style>`**, so a template can generate CSS rules from rows.
 - **A `FORK` branch re-runs everything above it.** Seven branches cost seven times the base query (4.8s against
   ~0.8s at 7 days on the perf replica). Use one pipeline that MV_EXPANDs each row into the stages it feeds,
   then `STATS … BY stage, key`.
@@ -56,37 +58,60 @@ Stack "planned".
 - Inside one ES|QL `EVAL`, a later assignment saw an earlier one's input, not its output
   (`opens = COALESCE(opens, 0), v = opens + reads` gave null). Split it into two `EVAL`s.
 
-## The prototype: Identity 360 step by step
+## The prototype: Identity 360 drill-down
 
 On Identity 360, directly below the Vega ribbon ("How they reached what they touched in Kibana"), so the two
 can be compared. Source: `custom/11-identity-path.html`; query `IDENTITY_PATH` in
-`scripts/lib/dashboards/07-actor-360.mjs`.
+`scripts/lib/dashboards/07-actor-360.mjs`; labels in `LABELS` in `scripts/lib/custom.mjs`.
 
-- **Overview:** the busiest credential → space → object type → operation routes as icon chips joined by animated
-  flow lines. Busier routes have thicker, faster lines, and hovering a route dims the rest.
-- **Steps ①–④:** one stage at a time as cards, each with an icon, a plain-language label ("Browser sign-in
-  (SAML) — a person in a browser"), a bar that grows to its share, and "Everything else" folded from the total.
-- **Step ⑤ (new; the ribbon cannot show it):** the objects themselves and the **Elasticsearch data sets Kibana
-  read for each**. Expanding a row shows its data-set families; system and hidden indices are marked with a
-  lock. The link is Kibana's execution context: every request Kibana sends to Elasticsearch carries
-  `x-opaque-id: <request id>;kibana:<kind>:<app>:<id>…`, which names the dashboard or app it came from. The
-  request id alone does not join them, because a dashboard `get` and its panels' searches are separate
-  requests.
+**Shape.** Five columns: Credential, Space, Object type, Operation, then Objects and the data Kibana read. Each
+column shows only what is under the pick to its left, and the panel opens already drilled down the busiest path.
+The breadcrumb steps back. A first version used separate summary steps that did not narrow; a four-lens review
+(SOC analyst, visual design, data semantics, ES|QL cost) replaced it with this drill-down. Both versions are on
+the branch history.
 
-**Measured:** ~0.13s over 24h live. On the 2.6M-event perf replica: 917ms at 7 days, which is **over the
-suite's 0.7s per-query budget**. Identity 360's page load was 3.3–3.5s at 7 days, at the 3.5s budget. The
-floor is the first grouping, which has to carry the request id.
+**Two measures, never added.**
+- Kibana **actions**: opened, changed, ran, and **listed**. A listing counts once per search request, not once
+  per object the search returned. One Fleet page load writes a find event for every tag on it, which is why a tag
+  used to show "80 object events" and no data.
+- Elasticsearch **data requests**: distinct requests Kibana sent that read documents (`READ_ACTIONS` in
+  `panels.mjs`). Name and field lookups (`LOOKUP_ACTIONS`) are kept apart and shown as "names looked up".
 
-**Dropdowns:** the panel follows all four, checked on 2026-11-06. Project, Identity type and Identity narrow every
-step. Client IP narrows steps ①–④ but empties step ⑤: Kibana's reads on a user's behalf carry Kibana's own internal
-address (100.64.x.x), not the browser's. This is accepted as is. A join through the browser's Kibana request id
-would fix it, at extra cost on a query that is already over budget.
+**Where data attaches.** Every request Kibana sends to Elasticsearch carries
+`x-opaque-id: <request id>;kibana:<kind>:<app>:<id>…`, naming the dashboard or app behind it. A read joins its
+object on (credential, type, id). It takes the space the object was opened in and sits under **Opened** when the
+object was opened in range. Otherwise it sits under **Read data** with "Not recorded" as the space: apps,
+unsaved Discover, and objects opened before the range. The request id alone does not join them, because a
+dashboard `get` and its panels' searches are separate requests.
+
+**Risk carries up.** Failures (red) and Elastic system data sets (lock) are counted at every level. A risky child
+is kept in the top 10 of its parent ahead of busier ones.
+
+**How the no-JavaScript drill-down works.** One radio group per parent node, so each hidden group remembers its
+own pick and choosing a different credential cascades to that credential's busiest path. Liquid writes one CSS
+rule per node into `<style>`: `.ip:has(#n<ancestor>:checked)…:has(#n<node>:checked) :is(.g<node>,.b<node>)`.
+That rule shows the node's children and its breadcrumb only while the node and all its ancestors are picked.
+Node ids are MD5 prefixes of the path, computed in ES|QL. Items are styled with `input:checked + .bx`, not
+`.it:has(:checked)`: with `:has()`, Chrome left a stale highlight on the item that had just been unchecked.
+
+**Query.** Count first by raw fields with the request id as a key. Join objects by pack, group and unpack (an
+`INLINE STATS` here cost about 450ms of 1.0s). Expand each fine row into the six levels it feeds, then take the
+`TOP` 10 children per parent over a packed string and unpack. No FORK.
+
+**Measured (2026-11-06):** about 0.15s over 24h live, and about 0.6s at 7 days on the 2.6M-event perf replica,
+under the 0.7s budget. Identity 360 loads in 3.05s at 7 days, with this query no longer its slowest. Rendered and
+inspected in dark and light, at 1440 and 1100px, and with reduced motion. Its animations are entrance-only and
+come to rest on the final frame.
+
+**Dropdowns:** the panel follows all four. Project, Identity type and Identity narrow every column. Client IP
+narrows the Kibana actions but leaves no data requests, because Kibana's reads on a user's behalf carry Kibana's
+own internal address (100.64.x.x), not the browser's. The panel says so when it happens. This is accepted as is.
 
 **Differences from the ribbon, on purpose:** routine internals and the suite's own reads are left out, as on
 Kibana Object Forensics, so the counts are lower than the ribbon's.
 
-**Open decision:** replace the ribbon, or keep both. The ribbon keeps click-to-pin; the custom panel reads
-better, explains each stage and adds the data step.
+**Open decision:** replace the ribbon, or keep both. The ribbon keeps click-to-pin; the drill-down narrows,
+explains each measure, and adds the data Kibana read.
 
 ## Where else they fit
 
