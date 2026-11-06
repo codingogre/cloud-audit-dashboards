@@ -70,8 +70,75 @@ export function expandIcons(src) {
 
 /** custom/<ref>.html with its icons expanded. Throws on a leftover <icon> tag or an oversized result. */
 export function loadTemplate(ref) {
-  const out = expandIcons(readFileSync(join(ROOT, 'custom', `${ref}.html`), 'utf8'));
+  const out = expandIcons(expandLabels(readFileSync(join(ROOT, 'custom', `${ref}.html`), 'utf8')));
   if (/<icon\b/.test(out)) throw new Error(`custom/${ref}.html: an <icon> tag did not expand (needs name="…" or var="…")`);
+  if (/<labels\b/.test(out)) throw new Error(`custom/${ref}.html: a <labels> tag did not expand (needs level="…" key="…")`);
   if (Buffer.byteLength(out) > TEMPLATE_LIMIT) throw new Error(`custom/${ref}.html expands to ${Buffer.byteLength(out)} bytes, over Kibana's ${TEMPLATE_LIMIT}`);
   return out;
+}
+
+/**
+ * Display words for the drill-down's levels, one table so the panel cannot drift from itself: [label, meaning, icon].
+ * Level 1 credential (user.domain, or authentication.type), 3 object type, 4 operation. Spaces (2) show their id.
+ */
+export const LABELS = {
+  1: {
+    'cloud-saml-kibana': ['SAML SSO', 'a person in a browser', 'person'],
+    _es_api_key: ['Elasticsearch API key', 'a script or integration', 'key'],
+    _cloud_api_key: ['Cloud API key', 'Elastic Cloud automation', 'cloud'],
+    api_key: ['API key', 'a script or integration', 'key'],
+    token: ['Session token', 'a signed-in session', 'person'],
+    _service_account: ['Service account', 'an Elastic service', 'gear'],
+  },
+  2: {
+    default: ['default', 'the Default space', 'space'],
+    '(space not recorded)': ['Not recorded', 'apps, unsaved Discover', 'space'],
+    '(several spaces)': ['Several', 'opened in more than one', 'space'],
+  },
+  3: {
+    dashboard: ['Dashboards', 'saved dashboards', 'dash'],
+    'index-pattern': ['Data views', 'index patterns', 'db'],
+    search: ['Discover sessions', 'saved or unsaved', 'search'],
+    visualization: ['Visualizations', 'legacy and Vega', 'lens'],
+    lens: ['Lens charts', 'saved visualizations', 'lens'],
+    alert: ['Rules', 'alerting rules', 'bell'],
+    rule: ['Rules', 'alerting rules', 'bell'],
+    action: ['Connectors', 'alert connectors', 'flow'],
+    tag: ['Tags', 'object tags', 'tag'],
+    'epm-packages': ['Fleet integrations', 'installed packages', 'pkg'],
+    'epm-packages-assets': ['Integration assets', 'package contents', 'pkg'],
+    config: ['Advanced settings', 'space settings', 'gear'],
+    'config-global': ['Global settings', 'Kibana-wide settings', 'gear'],
+    space: ['Spaces', 'Kibana spaces', 'space'],
+    app: ['Kibana apps', 'no saved object', 'app'],
+    workflow: ['Workflows', 'automation', 'flow'],
+  },
+  4: {
+    open: ['Opened', 'one object at a time', 'eye'],
+    list: ['Listed', 'in a list or search', 'list'],
+    create: ['Created', 'made something new', 'plus'],
+    change: ['Changed', 'edited or updated', 'pen'],
+    delete: ['Deleted', 'removed it', 'trash'],
+    run: ['Ran', 'executed or tested', 'play'],
+    read: ['Read data', 'an app, or opened earlier', 'db'],
+  },
+};
+/** Fallbacks when a key is not in the table: the raw key (hyphens as spaces), a generic meaning and icon. */
+const LABEL_FALLBACK = { 1: ['other realm', 'q'], 2: ['Kibana space', 'space'], 3: ['saved object type', 'box'], 4: ['other action', 'q'] };
+
+/**
+ * `<labels level="L" key="k"/>` → Liquid that assigns `lbl`, `sub` and `ic` for key `k` at level `L` (both Liquid
+ * variables), from LABELS. Expanded before the icons, so `ic` can feed an `<icon var="ic"/>`.
+ */
+export function expandLabels(src) {
+  return src.replace(/<labels\s+level="(\w+)"\s+key="(\w+)"\s*\/>/g, (m, lv, key) => {
+    const lit = (s) => `"${s.replace(/"/g, '\\"')}"`;
+    const set = ([l, s, i]) => `{%- assign lbl = ${lit(l)} -%}{%- assign sub = ${lit(s)} -%}{%- assign ic = ${lit(i)} -%}`;
+    const levels = Object.entries(LABELS).map(([n, table]) => {
+      const [fsub, fic] = LABEL_FALLBACK[n];
+      const whens = Object.entries(table).map(([k, v]) => `{%- when ${lit(k)} -%}${set(v)}`).join('');
+      return `{%- when ${n} -%}{%- case ${key} -%}${whens}{%- else -%}{%- assign lbl = ${key} | replace: "-", " " -%}{%- assign sub = ${lit(fsub)} -%}{%- assign ic = ${lit(fic)} -%}{%- endcase -%}`;
+    }).join('');
+    return `{%- case ${lv} -%}${levels}{%- endcase -%}`;
+  });
 }

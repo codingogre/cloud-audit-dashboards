@@ -186,6 +186,20 @@ export const KIBANA_REQUEST_FROM = 'WHERE service.name == "serverless-kibana" OR
   'OR `http.request.header.x-opaque-id` RLIKE "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"';
 export const KIBANA_REQUEST_KEY =
   'EVAL kibana_request = CASE(service.name == "serverless-kibana", http.request.id, MV_FIRST(SPLIT(`http.request.header.x-opaque-id`, ";")))';
+
+/**
+ * READ vs LOOKUP (custom panel, Identity 360 drill-down). Of the Elasticsearch actions Kibana sends on a user's behalf
+ * that name indices, these READ documents… (measured live and on the perf replica, 2026-11-06). The ES|QL documents are
+ * read under esql/data; its resolve_fields and resolve_views only look up names and fields. Shard and node copies
+ * (`*[n]`, `search[can_match]`, `esql/search_shards`) repeat a top-level request and are on neither list.
+ */
+export const READ_ACTIONS = ['indices:data/read/search', 'indices:data/read/msearch', 'indices:data/read/open_point_in_time',
+  'indices:data/read/eql', 'indices:data/read/sql', 'indices:data/read/esql/data'];
+/** …and these only look up names, fields or mappings, so they expose no documents. */
+export const LOOKUP_ACTIONS = ['indices:data/read/esql/resolve_fields', 'indices:data/read/esql/resolve_views', 'indices:data/read/field_caps',
+  'indices:admin/resolve/index', 'indices:admin/esql/view/get', 'indices:admin/data_stream/get'];
+export const inList = (field, list) => `${field} IN (${list.map((a) => `"${a}"`).join(', ')})`;
+
 const IDENTITY_EXPR =
   'CASE(user.email IS NOT NULL, user.email, api_key.name IS NOT NULL, api_key.name, ' +
   `user.domain == "_cloud_api_key", CONCAT(user.name, "${CLOUD_KEY_SUFFIX}"), ` +

@@ -5,8 +5,10 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { expandIcons, loadTemplate, ICONS, TEMPLATE_LIMIT } from '../../scripts/lib/custom.mjs';
-import { CONTROLS_WHERE } from '../../scripts/lib/panels.mjs';
+import { readFileSync } from 'node:fs';
+import { expandIcons, expandLabels, loadTemplate, ICONS, LABELS, TEMPLATE_LIMIT } from '../../scripts/lib/custom.mjs';
+import { CONTROLS_WHERE, READ_ACTIONS, LOOKUP_ACTIONS } from '../../scripts/lib/panels.mjs';
+import { IDENTITY_PATH } from '../../scripts/lib/dashboards/07-actor-360.mjs';
 import { buildAll } from '../../scripts/lib/definitions.mjs';
 
 const customPanels = () => Object.entries(buildAll()).flatMap(([name, d]) =>
@@ -27,8 +29,8 @@ test('a custom panel query obeys the suite guards: control bar, nullify, no FORK
     assert.ok(q.includes(CONTROLS_WHERE), 'follows the four dropdowns');
     assert.ok(q.startsWith('SET unmapped_fields="nullify";'), 'names api_key.* through TIME, so it must nullify');
     assert.ok(!/\| FORK /.test(q), 'a FORK branch re-runs the whole pipeline above it (4.8s at 7d on the perf replica)');
-    assert.match(q, /\| SORT step, rank DESC \| LIMIT \d+$/, 'stages in reading order, objects last, so the cap only trims objects');
-    assert.ok(!/indices:data\/read\/search/.test(q), 'the noise gate would remove the reads the last step shows');
+    assert.match(q, /\| SORT lvl, pid, acts DESC, k \| LIMIT \d+$/, 'levels in order and siblings contiguous, busiest first');
+    assert.ok(!q.includes('NOT (elasticsearch.audit.action LIKE "indices:data/read/search*"'), 'the noise gate would remove the reads the last step shows');
   }
 });
 
@@ -53,11 +55,33 @@ test('expandIcons(): a named icon becomes its SVG, a variable becomes a Liquid c
   assert.throws(() => expandIcons('<icon name="nope"/>'), /unknown icon/);
 });
 
-test('the identity-path template steps through six panes with one radio each', () => {
+test('the drill-down template: one radio group per parent, children revealed by a generated rule, no Liquid that fails on rows', () => {
+  const src = readFileSync('custom/11-identity-path.html', 'utf8');
   const t = loadTemplate('11-identity-path');
-  for (let i = 0; i <= 5; i++) {
-    assert.ok(t.includes(`id="ip${i}"`), `radio ip${i}`);
-    assert.ok(t.includes(`#ip${i}:checked~.panes .k${i}`), `pane ${i} is shown by its radio`);
+  assert.ok(src.includes('name="r{{ p }}"'), 'siblings share one radio group per parent');
+  assert.ok(src.includes(':has(#n{{ r["nid"].value }}:checked) :is(.g{{ r["nid"].value }},.b{{ r["nid"].value }})'), 'a node shows its children and crumb');
+  assert.ok(!/\|\s*(where|map|group_by|sum)\s*:/.test(src), 'where/map/group_by/sum do not work on rows');
+  assert.ok(!src.includes('.pct'), '.pct is relative to all rows, not a parent');
+  assert.ok(!/object events/i.test(src), '"object events" conflated two measures; retired');
+  for (const [, body] of t.matchAll(/@keyframes\s+\w+\s*\{([^}]*\{[^}]*\})*[^}]*\}/g)) assert.ok(!/\bto\s*\{/.test(body), 'keyframes define only `from`, so reduced motion shows the settled frame');
+  assert.ok(!/infinite/.test(t), 'nothing animates forever');
+});
+
+test('expandLabels(): every level resolves a known key and falls back to the raw key', () => {
+  const out = expandLabels('<labels level="L" key="k"/>');
+  for (const [lvl, table] of Object.entries(LABELS)) {
+    assert.ok(out.includes(`{%- when ${lvl} -%}`));
+    for (const [key, [lbl]] of Object.entries(table)) assert.ok(out.includes(`{%- when "${key}" -%}{%- assign lbl = "${lbl}"`), `${lvl}/${key}`);
   }
-  assert.ok(t.includes('class="pane k{{ n }}"'), 'steps 1-4 come from one loop');
+  assert.ok(out.includes('{%- assign lbl = k | replace: "-", " " -%}'));
+});
+
+test('the drill-down query: action lists from the fragments, a tree with ids, no FORK', () => {
+  const q = IDENTITY_PATH;
+  for (const a of [...READ_ACTIONS, ...LOOKUP_ACTIONS]) assert.ok(q.includes(`"${a}"`), a);
+  assert.equal(READ_ACTIONS.filter((a) => LOOKUP_ACTIONS.includes(a)).length, 0, 'read and lookup are disjoint');
+  assert.ok([...READ_ACTIONS, ...LOOKUP_ACTIONS].every((a) => !a.includes('[')), 'no shard or node copies');
+  assert.ok(q.includes('MV_EXPAND lvl') && q.includes('TOP(pack, 10, "desc")') && q.includes('MD5('));
+  assert.ok(q.includes('COUNT_DISTINCT(rq) WHERE op == "list"'), 'a listing counts once per request, not per object returned');
+  assert.ok(!q.includes('INLINE STATS'), 'an INLINE STATS join cost ~450ms at 7d');
 });

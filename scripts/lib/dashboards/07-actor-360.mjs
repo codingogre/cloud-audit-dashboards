@@ -2,7 +2,7 @@
 import {
   IDX, TIME, CONTROLS_WHERE, ACTOR_KEYS, ACTOR_RESOLVE, INDEX_FAMILY, IP_GEO, indexFamily, dash, kpi, table, vega, section, row, stack, resetIds,
   sized, filterable, grouped, SYS_INDEX, fitRows, IDENTITY_KEYS, KIND_GROUPED,
-  custom, KIBANA_INTERNALS, OBJ_PRESENT, CRED, VERB, OBJ_TYPE
+  custom, KIBANA_INTERNALS, OBJ_PRESENT, OBJ_TYPE, READ_ACTIONS, LOOKUP_ACTIONS, inList
 } from '../panels.mjs';
 import { rawId } from '../suite.mjs';
 import {
@@ -29,61 +29,94 @@ import {
  */
 
 /**
- * IDENTITY PATH (custom panel prototype, 1.0.7.2): the credential → space → object type → operation story of the
- * Vega ribbon beside it, told as steps the reader clicks through (custom/11-identity-path.html), plus a fifth step
- * the ribbon cannot show: the objects themselves and the Elasticsearch data sets read on their behalf.
+ * IDENTITY PATH (custom panel, experiment): a guided drill-down — credential › space › object type › operation ›
+ * the objects, and under each object the Elasticsearch data Kibana read for it (custom/11-identity-path.html).
+ * Each column shows only the children of what is picked to its left; it opens on the busiest path.
  *
- * The link from an object to its data is Kibana's execution context. Every Elasticsearch request Kibana sends
- * carries `x-opaque-id: <request id>;kibana:<kind>:<app>:<id>[;<child>…]` — `application:dashboards:<id>`,
- * `dashboard:dashboards:<id>;lens:…`, `application:discover:new` — so the reads of a dashboard's panels name the
- * dashboard. (The request id alone does not join them: a dashboard `get` and its panels' searches are separate
- * requests.) Kibana sends those reads as the signed-in user, so the control bar narrows both sides.
+ * TWO MEASURES, never added. Kibana-side ACTIONS: opened (get/resolve), created, changed, deleted, ran, and LISTED —
+ * counted once per list or search request (`http.request.id` of a *_find), not once per object it returned: one
+ * Fleet page load writes a find event for every tag on it. Elasticsearch-side DATA REQUESTS: distinct requests Kibana
+ * sent that READ documents (READ_ACTIONS); field and name lookups (LOOKUP_ACTIONS) are kept apart as "looked up".
  *
- * Kibana side: the Vega spec's population (OBJ_PRESENT) minus routine internals and the suite's own reads
- * (KIBANA_INTERNALS, as 02 does). Elasticsearch side: requests that carry a Kibana context, minus the suite's own
- * dashboards, for the same reason; no NOISE gate, which would remove the reads themselves. Patterns and date math
- * are not data sets (CONCRETE's test), and backing and dated indices fold into their family.
+ * WHERE DATA ATTACHES. Kibana names the dashboard or app behind every request it sends (`x-opaque-id:
+ * <request id>;kibana:<kind>:<app>:<id>…`). A read joins its object on (credential, type, object id): it takes the
+ * space the object was opened in (or "(several spaces)" / "(space not recorded)"), and sits under Opened when the
+ * object was opened in range, under "Read data" otherwise (opened earlier, or an app with no saved object).
  *
- * SHAPE. One query, as the panel allows. Count first by raw fields (the request id rides along inside `op`, the
- * one high-cardinality key), derive on the grouped rows, fold to one row per (path, object), then MV_EXPAND each
- * row into the seven stages it feeds and sum BY stage, key. The template takes the top of each stage and folds
- * the rest from the `total` row. NOT FORK: a FORK branch re-runs everything above it, so seven branches cost
- * seven times the ~0.8s base on the 7-day perf replica (4.8s measured); this shape is ~0.95s there and ~0.13s
- * over 24h live. Stages sort in reading order with `obj` last, so the row cap can only trim the long tail of
- * objects, never a stage. Indices ride as VALUES per request (a BY on the multivalued field fanned out first), and
- * `reads` counts the distinct Kibana requests that read a data set: after MV_EXPAND idx a summed event count
- * multiplied each request by the number of indices it named (872 against 113 for one app, measured).
+ * SHAPE. Count first by raw fields with the request id as a key, derive on grouped rows, one INLINE STATS for the
+ * object join, MV_EXPAND each fine row into the six levels it feeds, sum BY level and path, then TOP 10 children per
+ * parent over a packed string (keep-risky flag first, then actions) and unpack. Ids are MD5 prefixes of the path, so
+ * Liquid can emit one CSS rule per node that shows its children only while it and its ancestors are checked. No
+ * FORK (each branch re-runs the pipeline). Never SUM a count after MV_EXPAND of indices: per-index rows repeat it.
  */
 const K_SIDE = 'service.name == "serverless-kibana"';
 const OPAQUE = '`http.request.header.x-opaque-id`';
-const STAGES = ['total', 'cred', 'space', 'type', 'verb', 'path', 'obj'];
+const T_PATH = '\\t'; // an ES|QL tab escape: SPLIT takes a single-byte delimiter only
+const T_SEP = '␞';
+const T_PACKED = ['keep', 'acts', 'opens', 'creates', 'changes', 'deletes', 'runs', 'lists', 'fails', 'objs', 'dreq', 'dsets', 'sysn', 'lk',
+  'name', 'famlist', 'lklist', 'lastf', 'key'];
+const T_NUMS = T_PACKED.slice(2, 14);
+/** The fine row's columns that ride through the object join (cred, type and oid are its group keys). */
+const T_FINE = ['space', 'op', 'rq', 'fam', 'meta', 'es', 'n', 'nf', 'ts', 'nm'];
+const t_md5 = (x) => `SUBSTRING(MD5(${x}), 1, 10)`;
+const t_prefix = (n) => `MV_CONCAT(MV_SLICE(parts, 0, ${n - 1}), "${T_PATH}")`;
 export const IDENTITY_PATH =
   `FROM ${IDX} | ${TIME} ` +
   `| WHERE (${K_SIDE} AND ${OBJ_PRESENT} AND (event.action IS NULL OR NOT (${KIBANA_INTERNALS}))) ` +
-  `OR (service.name == "serverless-elasticsearch" AND ${OPAQUE} LIKE "*;kibana:*") ` +
-  `| STATS events = COUNT(*), idx = VALUES(elasticsearch.audit.indices) BY service.name, authentication.type, user.domain, kibana.space.id, kibana.saved_object.type, kibana.saved_object.id, kibana.saved_object.name, event.action, op = ${OPAQUE} ` +
+  `OR (service.name == "serverless-elasticsearch" AND elasticsearch.audit.indices IS NOT NULL AND ${OPAQUE} LIKE "*;kibana:*" ` +
+  `AND ${inList('elasticsearch.audit.action', [...READ_ACTIONS, ...LOOKUP_ACTIONS])}) ` +
+  `| EVAL rq = CASE(${K_SIDE}, CASE(event.action LIKE "*_find", http.request.id), ${OPAQUE}) ` +
+  '| STATS n = COUNT(*), nf = COUNT(*) WHERE event.outcome == "failure", ts = MAX(@timestamp), nm = MAX(kibana.saved_object.name), ' +
+  'idx = VALUES(elasticsearch.audit.indices) BY service.name, user.domain, authentication.type, kibana.space.id, kibana.saved_object.type, ' +
+  'kibana.saved_object.id, event.action, act = elasticsearch.audit.action, rq ' +
+  `| ${OBJ_TYPE} ` +
+  `| EVAL es = NOT ${K_SIDE}, ctx = REPLACE(rq, "^[^;]*;kibana:", "") ` +
+  '| EVAL c_app = CASE(es, REPLACE(ctx, "^[^:;]*:([^:;]*):.*$", "$1")), c_id = CASE(es, REPLACE(ctx, "^[^:;]*:[^:;]*:([^;]*).*$", "$1")), ' +
+  `meta = es AND ${inList('act', LOOKUP_ACTIONS)} ` +
+  '| EVAL cred = COALESCE(user.domain, authentication.type, "unknown"), space = CASE(es, null, COALESCE(kibana.space.id, "no space")), ' +
+  'type = CASE(es, CASE(c_app == "dashboards" AND c_id != "", "dashboard", c_app == "discover", "search", "app"), obj_type), ' +
+  'op = CASE(es, "read", event.action LIKE "*_find", "list", event.action LIKE "*_get" OR event.action LIKE "*_resolve" OR event.action LIKE "*bulk_get*", "open", ' +
+  'event.action LIKE "*_delete*", "delete", event.action LIKE "*_create*", "create", ' +
+  'event.action LIKE "*_run*" OR event.action LIKE "*_test" OR event.action LIKE "*_execute*" OR event.action LIKE "*_start*", "run", "change"), ' +
+  'oid = CASE(es, CASE(c_id IS NOT NULL AND c_id != "", c_id, CONCAT("app:", COALESCE(c_app, ""))), COALESCE(kibana.saved_object.id, obj_type)) ' +
+  '| WHERE NOT (oid LIKE "cloud-audit-*" OR oid LIKE "elastic_cloud-audit-*") ' +
   '| MV_EXPAND idx ' +
-  '| EVAL ctx = REPLACE(op, "^[^;]*;kibana:", "") ' +
-  '| EVAL c_app = REPLACE(ctx, "^[^:;]*:([^:;]*):.*$", "$1"), c_id = REPLACE(ctx, "^[^:;]*:[^:;]*:([^;]*).*$", "$1") ' +
-  `| EVAL fam = CASE(NOT ${K_SIDE} AND LOCATE(idx, "*") == 0 AND NOT idx LIKE "<*", ${indexFamily('idx')}) ` +
-  `| ${CRED} | ${VERB} | ${OBJ_TYPE} ` +
-  `| EVAL kev = CASE(${K_SIDE}, events, 0), verb = CASE(${K_SIDE}, verb), ` +
-  `space = CASE(${K_SIDE}, COALESCE(kibana.space.id, "no space")), obj_type = CASE(${K_SIDE}, obj_type), ` +
-  `oid = CASE(${K_SIDE}, COALESCE(kibana.saved_object.id, obj_type), c_id != "", c_id, CONCAT("app:", c_app)), ` +
-  `otype = CASE(${K_SIDE}, obj_type, c_app == "dashboards", "dashboard", c_app == "discover", "search", "app") ` +
-  `| WHERE ${K_SIDE} OR NOT (oid LIKE "cloud-audit-*" OR oid LIKE "elastic_cloud-audit-*") ` +
-  '| STATS kev = SUM(kev), rev = COUNT_DISTINCT(op) WHERE fam IS NOT NULL, fams = VALUES(fam), title = MAX(kibana.saved_object.name), otype = MAX(otype) BY credential, space, obj_type, verb, oid ' +
-  `| EVAL stage = [${STAGES.map((s) => `"${s}"`).join(', ')}] | MV_EXPAND stage ` +
-  '| EVAL key = CASE(stage == "total", "all", stage == "cred", credential, stage == "space", space, stage == "type", obj_type, stage == "verb", verb, ' +
-  'stage == "path", CONCAT(credential, "|", space, "|", obj_type, "|", verb), oid), ' +
-  'fams = CASE(stage == "obj", fams), title = CASE(stage == "obj", title), otype = CASE(stage == "obj", otype) ' +
-  '| WHERE key IS NOT NULL ' +
-  '| STATS v = SUM(kev), reads = SUM(rev), fams = VALUES(fams), title = MAX(title), otype = MAX(otype) BY stage, key ' +
-  '| WHERE v > 0 OR (stage == "obj" AND reads > 0) ' +
-  `| EVAL step = CASE(${STAGES.map((s, i) => `stage == "${s}", ${i}`).join(', ')}), rank = CASE(stage == "obj", reads * 1000000 + v, v), ` +
-  'nfam = MV_COUNT(fams), famlist = MV_CONCAT(MV_SORT(fams), "|"), oid = CASE(stage == "obj" AND NOT key LIKE "app:*", key), ' +
-  'label = CASE(stage != "obj", null, title IS NOT NULL, title, key == "new", "Unsaved Discover session", key LIKE "app:*", CONCAT(REPLACE(key, "^app:", ""), " app"), key) ' +
-  '| DROP fams, title | SORT step, rank DESC | LIMIT 400';
+  `| EVAL fam = CASE(es AND LOCATE(idx, "*") == 0 AND NOT idx LIKE "<*", ${indexFamily('idx')}) ` +
+  '| STATS n = SUM(n) WHERE NOT es, nf = SUM(nf), ts = MAX(ts), nm = MAX(nm) BY cred, space, type, op, oid, rq, fam, meta, es ' +
+  // the object join: a read takes its object's space, and sits under Opened when the object was opened in range.
+  // Pack, group by object, unpack: an INLINE STATS here cost ~450ms of 1.0s at 7d on the perf replica.
+  `| EVAL fp = CONCAT(${T_FINE.map((c) => `COALESCE(TO_STRING(${c}), "")`).join(`, "${T_SEP}", `)}) ` +
+  '| STATS rows = VALUES(fp), kspaces = VALUES(space) WHERE NOT es, opened = SUM(n) WHERE op == "open" BY cred, type, oid ' +
+  `| MV_EXPAND rows | DISSECT rows "${T_FINE.map((c) => `%{${c}_s}`).join(T_SEP)}" ` +
+  '| EVAL es = es_s == "true", meta = meta_s == "true", n = CASE(n_s == "", null, TO_LONG(n_s)), nf = CASE(nf_s == "", null, TO_LONG(nf_s)), ' +
+  'ts = TO_DATETIME(ts_s), space = CASE(space_s == "", null, space_s), rq = CASE(rq_s == "", null, rq_s), fam = CASE(fam_s == "", null, fam_s), ' +
+  'nm = CASE(nm_s == "", null, nm_s), op = op_s ' +
+  '| EVAL space = CASE(NOT es, space, MV_COUNT(kspaces) == 1, kspaces, kspaces IS NULL, "(space not recorded)", "(several spaces)") ' +
+  '| EVAL op = CASE(es AND opened > 0, "open", es, "read", op) ' +
+  '| EVAL lvl = [0, 1, 2, 3, 4, 5] | MV_EXPAND lvl ' +
+  `| EVAL key = CASE(lvl == 0, "all", lvl == 1, cred, lvl == 2, CONCAT(cred, "${T_PATH}", space), lvl == 3, CONCAT(cred, "${T_PATH}", space, "${T_PATH}", type), ` +
+  `lvl == 4, CONCAT(cred, "${T_PATH}", space, "${T_PATH}", type, "${T_PATH}", op), CONCAT(cred, "${T_PATH}", space, "${T_PATH}", type, "${T_PATH}", op, "${T_PATH}", oid)) ` +
+  '| STATS opens = SUM(n) WHERE op == "open", creates = SUM(n) WHERE op == "create", changes = SUM(n) WHERE op == "change", ' +
+  'deletes = SUM(n) WHERE op == "delete", runs = SUM(n) WHERE op == "run", lists = COUNT_DISTINCT(rq) WHERE op == "list", ' +
+  'kfails = SUM(nf) WHERE NOT es, rfails = COUNT_DISTINCT(rq) WHERE es AND nf > 0, objs = COUNT_DISTINCT(oid), ' +
+  'dreq = COUNT_DISTINCT(rq) WHERE es AND NOT meta AND fam IS NOT NULL, sysn = COUNT_DISTINCT(fam) WHERE es AND NOT meta AND fam LIKE ".*", ' +
+  'fams = VALUES(fam) WHERE es AND NOT meta, looked = VALUES(fam) WHERE es AND meta, seen = MAX(ts), name = MAX(nm) BY lvl, key ' +
+  `| EVAL ${T_NUMS.filter((c) => !['dsets', 'lk', 'fails'].includes(c)).map((c) => `${c} = COALESCE(${c}, 0)`).join(', ')}, fails = COALESCE(kfails, 0) + COALESCE(rfails, 0) ` +
+  '| EVAL acts = opens + creates + changes + deletes + runs + lists + dreq, dsets = COALESCE(MV_COUNT(fams), 0), lk = COALESCE(MV_COUNT(looked), 0), ' +
+  'keep = CASE(fails > 0 OR deletes > 0 OR sysn > 0, 1, 0), famlist = MV_CONCAT(MV_SORT(fams), "|"), lklist = MV_CONCAT(MV_SORT(looked), "|"), ' +
+  'lastf = DATE_FORMAT("MMM d HH:mm", seen), ' +
+  `parent = CASE(lvl <= 1, "all", REPLACE(key, "${T_PATH}[^${T_PATH}]*$", "")) ` +
+  `| EVAL pack = CONCAT(${T_PACKED.map((c) => (c === 'acts' ? 'TO_STRING(acts + 1000000000000)' : T_NUMS.includes(c) || c === 'keep' ? `TO_STRING(${c})` : `COALESCE(${c}, "")`)).join(`, "${T_SEP}", `)}) ` +
+  '| STATS kids = TOP(pack, 10, "desc"), sib_n = COUNT(*), sib_acts = SUM(acts), sib_opens = SUM(opens), sib_chg = SUM(creates + changes + deletes + runs), ' +
+  'sib_lists = SUM(lists), sib_dreq = SUM(dreq), sib_fails = SUM(fails) BY lvl, parent ' +
+  '| MV_EXPAND kids ' +
+  `| DISSECT kids "${T_PACKED.map((c) => `%{${c}}`).join(T_SEP)}" ` +
+  `| EVAL ${T_NUMS.map((c) => `${c} = TO_LONG(${c})`).join(', ')}, acts = TO_LONG(acts) - 1000000000000, keep = TO_LONG(keep) ` +
+  `| EVAL parts = SPLIT(key, "${T_PATH}") ` +
+  `| EVAL k = MV_LAST(parts), nid = ${t_md5('key')}, pid = CASE(lvl <= 1, null, ${t_md5('parent')}), ` +
+  `h1 = CASE(lvl >= 2, ${t_md5(t_prefix(1))}), h2 = CASE(lvl >= 3, ${t_md5(t_prefix(2))}), h3 = CASE(lvl >= 4, ${t_md5(t_prefix(3))}), h4 = CASE(lvl >= 5, ${t_md5(t_prefix(4))}), ` +
+  'oid = CASE(lvl == 5 AND NOT MV_LAST(parts) LIKE "app:*", MV_LAST(parts)), ty = CASE(lvl == 5, MV_SLICE(parts, 2, 2)), opn = CASE(lvl == 5, MV_SLICE(parts, 3, 3)) ' +
+  '| DROP kids, parts, parent | SORT lvl, pid, acts DESC, k | LIMIT 2000';
 
 const vegaPanel = (ref, title) => (x, y, w, h) => vega(x, y, w, h, ref, title, specDescription(ref));
 
@@ -301,9 +334,9 @@ export function build() {
 
     row(2, [[48, (x, y, w, h) => section(x, y, w, h, '② What they did', 'follows the time picker · times in your time zone')]]),
     row(11, [[48, vegaPanel('11-actor-object-flow', 'How they reached what they touched in Kibana — credential → space → object → operation')]]),
-    // Custom panel prototype (1.0.7.2), beside the ribbon until the replace-or-keep decision; see IDENTITY_PATH.
-    row(15, [[48, (x, y, w, h) => custom(x, y, w, h, '11-identity-path', 'Step by step — credential → space → object → operation → the data behind it',
-      'Click through how this selection reached what it touched in Kibana, one stage at a time, then the objects and the Elasticsearch data Kibana read for each. Routine internals and this suite’s own dashboards are left out.',
+    // Custom panel (experiment), under the ribbon until the replace-or-keep decision; see IDENTITY_PATH.
+    row(16, [[48, (x, y, w, h) => custom(x, y, w, h, '11-identity-path', 'Drill down — credential › space › object type › operation › the data Kibana read',
+      'Pick a credential, space, object type and operation; each column narrows to your pick, ending with the objects and the data Kibana read for each. Routine internals and this suite’s dashboards are left out.',
       IDENTITY_PATH)]]),
     // Deletes first, then newest. Newest-first alone showed ten creates from the latest burst and put
     // 1,859 deletes (24h) below the panel edge, so a reader concluded this person deleted nothing (round-3
