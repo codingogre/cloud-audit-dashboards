@@ -77,12 +77,24 @@ the branch history.
 - Elasticsearch **data requests**: distinct requests Kibana sent that read documents (`READ_ACTIONS` in
   `panels.mjs`). Name and field lookups (`LOOKUP_ACTIONS`) are kept apart and shown as "names looked up".
 
+Each item shows the two side by side: Kibana actions, then a database icon and the data requests. A first version
+showed their sum as one number, so a space with 583 actions and 16 data requests read 599.
+
 **Where data attaches.** Every request Kibana sends to Elasticsearch carries
 `x-opaque-id: <request id>;kibana:<kind>:<app>:<id>…`, naming the dashboard or app behind it. A read joins its
-object on (credential, type, id). It takes the space the object was opened in and sits under **Opened** when the
-object was opened in range. Otherwise it sits under **Read data** with "Not recorded" as the space: apps,
-unsaved Discover, and objects opened before the range. The request id alone does not join them, because a
-dashboard `get` and its panels' searches are separate requests.
+object on (credential, type, id) and sits under **Opened** when the object was opened in range, under **Read data**
+otherwise (apps, unsaved Discover, objects opened before the range). The request id alone does not join a read to
+its object, because a dashboard `get` and its panels' searches are separate requests.
+
+**Space and Client IP of a read.** Elasticsearch's events record neither: their client is Kibana (100.64.x.x) and
+they carry no space. Kibana writes an `http_request` event with the space, the browser's address and the request
+id, and a request joins it on that id. For a browser it writes none for the data searches themselves (none of 371
+SAML dashboard reads over 7 days), only for the lookups around them: field lists, time fields, sources. So a read
+with no event of its own takes the space and address of the same credential's other requests for the same object
+or app, when they all agree; otherwise "Several" or "Not recorded". Only a person's `http_request` events to the
+endpoints that look up or search data are read: all of them cost 1.0s at 7 days (239k events, 170k from API
+keys). An API key's reads still take their object's space. The first version took the space from the object only,
+so every unsaved Discover session and app showed "Not recorded".
 
 **Risk carries up.** Failures (red) and Elastic system data sets (lock) are counted at every level. A risky child
 is kept in the top 10 of its parent ahead of busier ones.
@@ -94,18 +106,18 @@ That rule shows the node's children and its breadcrumb only while the node and a
 Node ids are MD5 prefixes of the path, computed in ES|QL. Items are styled with `input:checked + .bx`, not
 `.it:has(:checked)`: with `:has()`, Chrome left a stale highlight on the item that had just been unchecked.
 
-**Query.** Count first by raw fields with the request id as a key. Join objects by pack, group and unpack (an
-`INLINE STATS` here cost about 450ms of 1.0s). Expand each fine row into the six levels it feeds, then take the
+**Query.** Count first by raw fields with the request id as a key. Join requests, then objects, each by pack, group
+and unpack in one pass: an `INLINE STATS` re-runs everything above it (2.4s at 7 days for the request join). Expand each fine row into the six levels it feeds, then take the
 `TOP` 10 children per parent over a packed string and unpack. No FORK.
 
-**Measured (2026-11-06):** about 0.15s over 24h live, and about 0.6s at 7 days on the 2.6M-event perf replica,
-under the 0.7s budget. Identity 360 loads in 3.05s at 7 days, with this query no longer its slowest. Rendered and
+**Measured (2026-11-06):** about 0.3s over 24h live, and 0.67 to 0.71s at 7 days on the 2.6M-event perf replica,
+at the 0.7s budget (0.6s before the request join). Identity 360 loads in 3.0s at 7 days. Rendered and
 inspected in dark and light, at 1440 and 1100px, and with reduced motion. Its animations are entrance-only and
 come to rest on the final frame.
 
-**Dropdowns:** the panel follows all four. Project, Identity type and Identity narrow every column. Client IP
-narrows the Kibana actions but leaves no data requests, because Kibana's reads on a user's behalf carry Kibana's
-own internal address (100.64.x.x), not the browser's. The panel says so when it happens. This is accepted as is.
+**Dropdowns:** the panel follows all four. Project, Identity type and Identity narrow the source. Client IP is
+tested after the joins, against the browser address a read inherited, so the reads stay. A read whose address
+could not be inferred drops out when Client IP is set.
 
 **Differences from the ribbon, on purpose:** routine internals and the suite's own reads are left out, as on
 Kibana Object Forensics, so the counts are lower than the ribbon's.

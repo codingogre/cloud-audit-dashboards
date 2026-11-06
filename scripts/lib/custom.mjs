@@ -92,7 +92,7 @@ export const LABELS = {
   },
   2: {
     default: ['default', 'the Default space', 'space'],
-    '(space not recorded)': ['Not recorded', 'apps, unsaved Discover', 'space'],
+    '(space not recorded)': ['Not recorded', 'Kibana logged no space', 'space'],
     '(several spaces)': ['Several', 'opened in more than one', 'space'],
   },
   3: {
@@ -109,6 +109,7 @@ export const LABELS = {
     'epm-packages-assets': ['Integration assets', 'package contents', 'pkg'],
     config: ['Advanced settings', 'space settings', 'gear'],
     'config-global': ['Global settings', 'Kibana-wide settings', 'gear'],
+    ingest_manager_settings: ['Fleet settings', 'Fleet configuration', 'gear'],
     space: ['Spaces', 'Kibana spaces', 'space'],
     app: ['Kibana apps', 'no saved object', 'app'],
     workflow: ['Workflows', 'automation', 'flow'],

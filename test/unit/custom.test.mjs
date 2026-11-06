@@ -7,8 +7,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { expandIcons, expandLabels, loadTemplate, ICONS, LABELS, TEMPLATE_LIMIT } from '../../scripts/lib/custom.mjs';
-import { CONTROLS_WHERE, READ_ACTIONS, LOOKUP_ACTIONS } from '../../scripts/lib/panels.mjs';
-import { IDENTITY_PATH } from '../../scripts/lib/dashboards/07-actor-360.mjs';
+import { PROJECT_WHERE, IDENTITY_WHERE, CLIENT_IP_WHERE, READ_ACTIONS, LOOKUP_ACTIONS } from '../../scripts/lib/panels.mjs';
+import { IDENTITY_PATH, T_CLIENT_IP } from '../../scripts/lib/dashboards/07-actor-360.mjs';
 import { buildAll } from '../../scripts/lib/definitions.mjs';
 
 const customPanels = () => Object.entries(buildAll()).flatMap(([name, d]) =>
@@ -26,7 +26,12 @@ test('Identity 360 carries the identity-path custom panel in the shape the 9.6 A
 test('a custom panel query obeys the suite guards: control bar, nullify, no FORK, no noise gate', () => {
   for (const { p } of customPanels()) {
     const q = p.config.esql_query[0];
-    assert.ok(q.includes(CONTROLS_WHERE), 'follows the four dropdowns');
+    // Client IP is tested after the request join: a read's own client is Kibana (100.64.x.x), never the browser.
+    assert.ok(q.includes(`${PROJECT_WHERE} AND ${IDENTITY_WHERE}`), 'follows Project, Identity type and Identity in the source filter');
+    assert.ok(!q.includes(CLIENT_IP_WHERE), 'not Client IP in the source filter, or every read is dropped when it is set');
+    assert.ok(T_CLIENT_IP !== CLIENT_IP_WHERE && T_CLIENT_IP.includes('cip == TO_IP('), 'Client IP against the joined address');
+    const at = (s) => q.indexOf(s);
+    assert.ok(at(`WHERE ${T_CLIENT_IP}`) > at('BY cred, type, oid'), 'Client IP after both joins');
     assert.ok(q.startsWith('SET unmapped_fields="nullify";'), 'names api_key.* through TIME, so it must nullify');
     assert.ok(!/\| FORK /.test(q), 'a FORK branch re-runs the whole pipeline above it (4.8s at 7d on the perf replica)');
     assert.match(q, /\| SORT lvl, pid, acts DESC, k \| LIMIT \d+$/, 'levels in order and siblings contiguous, busiest first');
@@ -83,5 +88,17 @@ test('the drill-down query: action lists from the fragments, a tree with ids, no
   assert.ok([...READ_ACTIONS, ...LOOKUP_ACTIONS].every((a) => !a.includes('[')), 'no shard or node copies');
   assert.ok(q.includes('MV_EXPAND lvl') && q.includes('TOP(pack, 10, "desc")') && q.includes('MD5('));
   assert.ok(q.includes('COUNT_DISTINCT(rq) WHERE op == "list"'), 'a listing counts once per request, not per object returned');
-  assert.ok(!q.includes('INLINE STATS'), 'an INLINE STATS join cost ~450ms at 7d');
+  assert.ok(!q.includes('INLINE STATS'), 'an INLINE STATS re-runs everything above it (2.4s at 7d for the request join)');
+  // the request join: space and browser address from Kibana's http_request event, people and data endpoints only
+  assert.ok(q.includes('event.action == "http_request" AND NOT user.domain IN ("_cloud_api_key", "_es_api_key") AND url.original RLIKE'),
+    'every http_request event took the query to 1.65s at 7d');
+  assert.ok(q.includes('BY rid ') && q.includes('kspaces = VALUES(space), kips = VALUES(cip)'), 'a read with no event of its own takes its object\'s space and address');
+});
+
+test('the drill-down never adds Kibana actions and data requests into one figure', () => {
+  const src = readFileSync('custom/11-identity-path.html', 'utf8');
+  assert.ok(!src.includes('<span class="ct">{{ a }}</span>'), 'one number summed two measures (599 = 583 actions + 16 data requests)');
+  assert.ok(src.includes('r["kacts"].value') && src.includes('class="dq"'), 'actions, then data requests, each its own figure');
+  assert.ok(!/\{\{ ra \}\} actions<\/div>/.test(src), 'the fold row counts actions and data requests apart');
+  assert.ok(IDENTITY_PATH.includes('kacts = opens + creates + changes + deletes + runs + lists,') && IDENTITY_PATH.includes('sib_k = SUM(kacts)'));
 });

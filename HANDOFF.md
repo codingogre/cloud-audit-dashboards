@@ -19,8 +19,9 @@ and ranked candidates are in `docs/custom-panels.md`. The panel is a no-JavaScri
 on Identity 360: credential › space › object type › operation › objects and the data Kibana read
 (`custom/11-identity-path.html`, `IDENTITY_PATH` in `07-actor-360.mjs`, `custom()` in `panels.mjs`, icons, labels
 and template loading in `scripts/lib/custom.mjs`, `READ_ACTIONS`/`LOOKUP_ACTIONS` in `panels.mjs`, tests in
-`test/unit/custom.test.mjs`). The branch history keeps the first "step by step" version. ~0.6s at 7d on the perf
-replica; 07 loads in 3.05s. Private deploy `AUDIT_ID_NS=cpx` is still installed (`AUDIT_ID_NS=cpx ./audit --clean
+`test/unit/custom.test.mjs`). The branch history keeps the first "step by step" version. A read's space and
+browser address come from Kibana's `http_request` events (joined on request id, or inferred from the same
+object's other requests). 0.67-0.71s at 7d on the perf replica, at the 0.7s budget; 07 loads in 3.0s. Private deploy `AUDIT_ID_NS=cpx` is still installed (`AUDIT_ID_NS=cpx ./audit --clean
 dashboards` removes it). **Open user decisions:** replace the ribbon or keep both; whether and when the other
 candidates go on the roadmap. Spike scripts and the review spec are in `.sessions/` (local only).
 

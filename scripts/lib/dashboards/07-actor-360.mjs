@@ -2,7 +2,7 @@
 import {
   IDX, TIME, CONTROLS_WHERE, ACTOR_KEYS, ACTOR_RESOLVE, INDEX_FAMILY, IP_GEO, indexFamily, dash, kpi, table, vega, section, row, stack, resetIds,
   sized, filterable, grouped, SYS_INDEX, fitRows, IDENTITY_KEYS, KIND_GROUPED,
-  custom, KIBANA_INTERNALS, OBJ_PRESENT, OBJ_TYPE, READ_ACTIONS, LOOKUP_ACTIONS, inList
+  custom, KIBANA_INTERNALS, OBJ_PRESENT, OBJ_TYPE, READ_ACTIONS, LOOKUP_ACTIONS, inList, TIME_ONLY, PROJECT_WHERE, IDENTITY_WHERE, CLIENT_IP_WHERE
 } from '../panels.mjs';
 import { rawId } from '../suite.mjs';
 import {
@@ -39,9 +39,18 @@ import {
  * sent that READ documents (READ_ACTIONS); field and name lookups (LOOKUP_ACTIONS) are kept apart as "looked up".
  *
  * WHERE DATA ATTACHES. Kibana names the dashboard or app behind every request it sends (`x-opaque-id:
- * <request id>;kibana:<kind>:<app>:<id>…`). A read joins its object on (credential, type, object id): it takes the
- * space the object was opened in (or "(several spaces)" / "(space not recorded)"), and sits under Opened when the
- * object was opened in range, under "Read data" otherwise (opened earlier, or an app with no saved object).
+ * <request id>;kibana:<kind>:<app>:<id>…`). A read joins its object on (credential, type, object id), and sits under
+ * Opened when the object was opened in range, under "Read data" otherwise (opened earlier, or an app with no saved
+ * object).
+ *
+ * SPACE AND CLIENT IP OF A READ. Elasticsearch's events record neither: their client is Kibana (100.64.x.x) and
+ * they carry no space. Kibana writes an `http_request` event, with the space, the browser's address and the request
+ * id, for most requests, and a request joins it on that id. For a browser it writes none for the data searches
+ * themselves (none of 371 SAML dashboard reads over 7 days matched one, 2026-11-06), only for the lookups around
+ * them (field lists, time fields, sources). So a read with no event of its own takes the space and address of the
+ * same credential's other requests for the same object or app (Kibana's own events for it, and the lookups that
+ * did join), when they agree on one; otherwise "(several spaces)" or "(space not recorded)", and no address.
+ * Client IP is tested after that, never in the source filter.
  *
  * SHAPE. Count first by raw fields with the request id as a key, derive on grouped rows, one INLINE STATS for the
  * object join, MV_EXPAND each fine row into the six levels it feeds, sum BY level and path, then TOP 10 children per
@@ -53,45 +62,70 @@ const K_SIDE = 'service.name == "serverless-kibana"';
 const OPAQUE = '`http.request.header.x-opaque-id`';
 const T_PATH = '\\t'; // an ES|QL tab escape: SPLIT takes a single-byte delimiter only
 const T_SEP = '␞';
-const T_PACKED = ['keep', 'acts', 'opens', 'creates', 'changes', 'deletes', 'runs', 'lists', 'fails', 'objs', 'dreq', 'dsets', 'sysn', 'lk',
+const T_PACKED = ['keep', 'acts', 'kacts', 'opens', 'creates', 'changes', 'deletes', 'runs', 'lists', 'fails', 'objs', 'dreq', 'dsets', 'sysn', 'lk',
   'name', 'famlist', 'lklist', 'lastf', 'key'];
-const T_NUMS = T_PACKED.slice(2, 14);
+const T_NUMS = T_PACKED.slice(2, 15);
 /** The fine row's columns that ride through the object join (cred, type and oid are its group keys). */
-const T_FINE = ['space', 'op', 'rq', 'fam', 'meta', 'es', 'n', 'nf', 'ts', 'nm'];
+/** The grouped row's columns that ride through the request join. */
+const T_JOIN = ['cred', 'space', 'cip', 'type', 'op', 'oid', 'rq', 'es', 'meta', 'n', 'nf', 'ts', 'nm', 'ix'];
+const T_FINE = ['space', 'cip', 'op', 'rq', 'fam', 'meta', 'es', 'n', 'nf', 'ts', 'nm'];
 const t_md5 = (x) => `SUBSTRING(MD5(${x}), 1, 10)`;
 const t_prefix = (n) => `MV_CONCAT(MV_SLICE(parts, 0, ${n - 1}), "${T_PATH}")`;
+const HTTP_REQ = `${K_SIDE} AND event.action == "http_request"`;
+/**
+ * Only a person's requests to the endpoints that look up or search data can join a read, so only those are read:
+ * all of them took the query from 0.6s to 1.65s at 7d on the perf replica (239k events, 170k from API keys), these
+ * 0.67s. An API key's reads still take their object's space; an endpoint missing here only loses the join.
+ */
+const HTTP_JOINABLE = `${HTTP_REQ} AND NOT user.domain IN ("_cloud_api_key", "_es_api_key") ` +
+  'AND url.original RLIKE "https?://[^/]*(/s/[^/]*)?/(internal/(data_views|controls|esql|esql_registry|index_management|index-pattern-management|apm|search)|api/(fleet|index_management|metrics))/.*"';
+/** Client IP against the browser's address a row carries after the request join (`cip`), not the event's own. */
+export const T_CLIENT_IP = CLIENT_IP_WHERE.replace('client.ip ==', 'cip ==');
 export const IDENTITY_PATH =
-  `FROM ${IDX} | ${TIME} ` +
-  `| WHERE (${K_SIDE} AND ${OBJ_PRESENT} AND (event.action IS NULL OR NOT (${KIBANA_INTERNALS}))) ` +
+  `FROM ${IDX} | ${TIME_ONLY} AND ${PROJECT_WHERE} AND ${IDENTITY_WHERE} ` +
+  `| WHERE (${K_SIDE} AND ${OBJ_PRESENT} AND (event.action IS NULL OR NOT (${KIBANA_INTERNALS}))) OR (${HTTP_JOINABLE}) ` +
   `OR (service.name == "serverless-elasticsearch" AND elasticsearch.audit.indices IS NOT NULL AND ${OPAQUE} LIKE "*;kibana:*" ` +
   `AND ${inList('elasticsearch.audit.action', [...READ_ACTIONS, ...LOOKUP_ACTIONS])}) ` +
-  `| EVAL rq = CASE(${K_SIDE}, CASE(event.action LIKE "*_find", http.request.id), ${OPAQUE}) ` +
+  `| EVAL rq = CASE(${K_SIDE}, CASE(event.action LIKE "*_find" OR event.action == "http_request", http.request.id), ${OPAQUE}) ` +
   '| STATS n = COUNT(*), nf = COUNT(*) WHERE event.outcome == "failure", ts = MAX(@timestamp), nm = MAX(kibana.saved_object.name), ' +
   'idx = VALUES(elasticsearch.audit.indices) BY service.name, user.domain, authentication.type, kibana.space.id, kibana.saved_object.type, ' +
-  'kibana.saved_object.id, event.action, act = elasticsearch.audit.action, rq ' +
-  `| ${OBJ_TYPE} ` +
+  'kibana.saved_object.id, event.action, act = elasticsearch.audit.action, rq, client.ip ' +
+  `| EVAL http = ${HTTP_REQ} | ${OBJ_TYPE} ` +
   `| EVAL es = NOT ${K_SIDE}, ctx = REPLACE(rq, "^[^;]*;kibana:", "") ` +
   '| EVAL c_app = CASE(es, REPLACE(ctx, "^[^:;]*:([^:;]*):.*$", "$1")), c_id = CASE(es, REPLACE(ctx, "^[^:;]*:[^:;]*:([^;]*).*$", "$1")), ' +
   `meta = es AND ${inList('act', LOOKUP_ACTIONS)} ` +
   '| EVAL cred = COALESCE(user.domain, authentication.type, "unknown"), space = CASE(es, null, COALESCE(kibana.space.id, "no space")), ' +
+  'cip = CASE(es, null, client.ip), rid = CASE(es, MV_FIRST(SPLIT(rq, ";")), rq), ' +
   'type = CASE(es, CASE(c_app == "dashboards" AND c_id != "", "dashboard", c_app == "discover", "search", "app"), obj_type), ' +
   'op = CASE(es, "read", event.action LIKE "*_find", "list", event.action LIKE "*_get" OR event.action LIKE "*_resolve" OR event.action LIKE "*bulk_get*", "open", ' +
   'event.action LIKE "*_delete*", "delete", event.action LIKE "*_create*", "create", ' +
   'event.action LIKE "*_run*" OR event.action LIKE "*_test" OR event.action LIKE "*_execute*" OR event.action LIKE "*_start*", "run", "change"), ' +
   'oid = CASE(es, CASE(c_id IS NOT NULL AND c_id != "", c_id, CONCAT("app:", COALESCE(c_app, ""))), COALESCE(kibana.saved_object.id, obj_type)) ' +
-  '| WHERE NOT (oid LIKE "cloud-audit-*" OR oid LIKE "elastic_cloud-audit-*") ' +
+  '| WHERE http OR NOT (oid LIKE "cloud-audit-*" OR oid LIKE "elastic_cloud-audit-*") ' +
+  // the request join: a request takes the space and browser address of Kibana's http_request event with its id.
+  // Pack, group by request id, unpack, in one pass: an INLINE STATS re-runs everything above it (2.4s at 7d).
+  `| EVAL ix = MV_CONCAT(idx, "|"), jp = CONCAT(${T_JOIN.map((c) => `COALESCE(TO_STRING(${c}), "")`).join(`, "${T_SEP}", `)}) ` +
+  '| STATS rows = VALUES(jp) WHERE NOT http, hsp = VALUES(space) WHERE http, hip = MIN(cip) WHERE http BY rid ' +
+  `| WHERE rows IS NOT NULL | MV_EXPAND rows | DISSECT rows "${T_JOIN.map((c) => `%{${c}_j}`).join(T_SEP)}" ` +
+  '| EVAL es = es_j == "true", meta = meta_j == "true", n = CASE(n_j == "", null, TO_LONG(n_j)), nf = CASE(nf_j == "", null, TO_LONG(nf_j)), ' +
+  'ts = TO_DATETIME(ts_j), nm = CASE(nm_j == "", null, nm_j), rq = CASE(rq_j == "", null, rq_j), cred = cred_j, type = type_j, op = op_j, oid = oid_j, ' +
+  'idx = CASE(ix_j == "", null, SPLIT(ix_j, "|")) ' +
+  '| EVAL space = CASE(es, CASE(MV_COUNT(hsp) == 1, hsp), space_j), cip = CASE(es, hip, cip_j == "", null, TO_IP(cip_j)) ' +
   '| MV_EXPAND idx ' +
   `| EVAL fam = CASE(es AND LOCATE(idx, "*") == 0 AND NOT idx LIKE "<*", ${indexFamily('idx')}) ` +
-  '| STATS n = SUM(n) WHERE NOT es, nf = SUM(nf), ts = MAX(ts), nm = MAX(nm) BY cred, space, type, op, oid, rq, fam, meta, es ' +
-  // the object join: a read takes its object's space, and sits under Opened when the object was opened in range.
+  '| STATS n = SUM(n) WHERE NOT es, nf = SUM(nf), ts = MAX(ts), nm = MAX(nm) BY cred, space, cip, type, op, oid, rq, fam, meta, es ' +
+  // the object join: a read with no space or address of its own takes its object's, and sits under Opened when the
+  // object was opened in range.
   // Pack, group by object, unpack: an INLINE STATS here cost ~450ms of 1.0s at 7d on the perf replica.
   `| EVAL fp = CONCAT(${T_FINE.map((c) => `COALESCE(TO_STRING(${c}), "")`).join(`, "${T_SEP}", `)}) ` +
-  '| STATS rows = VALUES(fp), kspaces = VALUES(space) WHERE NOT es, opened = SUM(n) WHERE op == "open" BY cred, type, oid ' +
+  '| STATS rows = VALUES(fp), kspaces = VALUES(space), kips = VALUES(cip), opened = SUM(n) WHERE op == "open" BY cred, type, oid ' +
   `| MV_EXPAND rows | DISSECT rows "${T_FINE.map((c) => `%{${c}_s}`).join(T_SEP)}" ` +
   '| EVAL es = es_s == "true", meta = meta_s == "true", n = CASE(n_s == "", null, TO_LONG(n_s)), nf = CASE(nf_s == "", null, TO_LONG(nf_s)), ' +
   'ts = TO_DATETIME(ts_s), space = CASE(space_s == "", null, space_s), rq = CASE(rq_s == "", null, rq_s), fam = CASE(fam_s == "", null, fam_s), ' +
-  'nm = CASE(nm_s == "", null, nm_s), op = op_s ' +
-  '| EVAL space = CASE(NOT es, space, MV_COUNT(kspaces) == 1, kspaces, kspaces IS NULL, "(space not recorded)", "(several spaces)") ' +
+  'nm = CASE(nm_s == "", null, nm_s), op = op_s, cip = CASE(cip_s == "", null, TO_IP(cip_s)) ' +
+  '| EVAL space = CASE(space IS NOT NULL, space, MV_COUNT(kspaces) == 1, kspaces, kspaces IS NULL, "(space not recorded)", "(several spaces)"), ' +
+  'cip = CASE(cip IS NOT NULL, cip, MV_COUNT(kips) == 1, kips) ' +
+  `| WHERE ${T_CLIENT_IP} ` +
   '| EVAL op = CASE(es AND opened > 0, "open", es, "read", op) ' +
   '| EVAL lvl = [0, 1, 2, 3, 4, 5] | MV_EXPAND lvl ' +
   `| EVAL key = CASE(lvl == 0, "all", lvl == 1, cred, lvl == 2, CONCAT(cred, "${T_PATH}", space), lvl == 3, CONCAT(cred, "${T_PATH}", space, "${T_PATH}", type), ` +
@@ -101,14 +135,14 @@ export const IDENTITY_PATH =
   'kfails = SUM(nf) WHERE NOT es, rfails = COUNT_DISTINCT(rq) WHERE es AND nf > 0, objs = COUNT_DISTINCT(oid), ' +
   'dreq = COUNT_DISTINCT(rq) WHERE es AND NOT meta AND fam IS NOT NULL, sysn = COUNT_DISTINCT(fam) WHERE es AND NOT meta AND fam LIKE ".*", ' +
   'fams = VALUES(fam) WHERE es AND NOT meta, looked = VALUES(fam) WHERE es AND meta, seen = MAX(ts), name = MAX(nm) BY lvl, key ' +
-  `| EVAL ${T_NUMS.filter((c) => !['dsets', 'lk', 'fails'].includes(c)).map((c) => `${c} = COALESCE(${c}, 0)`).join(', ')}, fails = COALESCE(kfails, 0) + COALESCE(rfails, 0) ` +
-  '| EVAL acts = opens + creates + changes + deletes + runs + lists + dreq, dsets = COALESCE(MV_COUNT(fams), 0), lk = COALESCE(MV_COUNT(looked), 0), ' +
+  `| EVAL ${T_NUMS.filter((c) => !['kacts', 'dsets', 'lk', 'fails'].includes(c)).map((c) => `${c} = COALESCE(${c}, 0)`).join(', ')}, fails = COALESCE(kfails, 0) + COALESCE(rfails, 0) ` +
+  '| EVAL kacts = opens + creates + changes + deletes + runs + lists, acts = opens + creates + changes + deletes + runs + lists + dreq, dsets = COALESCE(MV_COUNT(fams), 0), lk = COALESCE(MV_COUNT(looked), 0), ' +
   'keep = CASE(fails > 0 OR deletes > 0 OR sysn > 0, 1, 0), famlist = MV_CONCAT(MV_SORT(fams), "|"), lklist = MV_CONCAT(MV_SORT(looked), "|"), ' +
   'lastf = DATE_FORMAT("MMM d HH:mm", seen), ' +
   `parent = CASE(lvl <= 1, "all", REPLACE(key, "${T_PATH}[^${T_PATH}]*$", "")) ` +
   `| EVAL pack = CONCAT(${T_PACKED.map((c) => (c === 'acts' ? 'TO_STRING(acts + 1000000000000)' : T_NUMS.includes(c) || c === 'keep' ? `TO_STRING(${c})` : `COALESCE(${c}, "")`)).join(`, "${T_SEP}", `)}) ` +
   '| STATS kids = TOP(pack, 10, "desc"), sib_n = COUNT(*), sib_acts = SUM(acts), sib_opens = SUM(opens), sib_chg = SUM(creates + changes + deletes + runs), ' +
-  'sib_lists = SUM(lists), sib_dreq = SUM(dreq), sib_fails = SUM(fails) BY lvl, parent ' +
+  'sib_k = SUM(kacts), sib_lists = SUM(lists), sib_dreq = SUM(dreq), sib_fails = SUM(fails) BY lvl, parent ' +
   '| MV_EXPAND kids ' +
   `| DISSECT kids "${T_PACKED.map((c) => `%{${c}}`).join(T_SEP)}" ` +
   `| EVAL ${T_NUMS.map((c) => `${c} = TO_LONG(${c})`).join(', ')}, acts = TO_LONG(acts) - 1000000000000, keep = TO_LONG(keep) ` +
@@ -336,7 +370,7 @@ export function build() {
     row(11, [[48, vegaPanel('11-actor-object-flow', 'How they reached what they touched in Kibana — credential → space → object → operation')]]),
     // Custom panel (experiment), under the ribbon until the replace-or-keep decision; see IDENTITY_PATH.
     row(16, [[48, (x, y, w, h) => custom(x, y, w, h, '11-identity-path', 'Drill down — credential › space › object type › operation › the data Kibana read',
-      'Pick a credential, space, object type and operation; each column narrows to your pick, ending with the objects and the data Kibana read for each. Routine internals and this suite’s dashboards are left out.',
+      'Pick a credential, space, object type and operation; each column narrows, ending with the objects and the data Kibana read for each. A read with no logged space takes its object’s. Routine internals and this suite’s dashboards are left out.',
       IDENTITY_PATH)]]),
     // Deletes first, then newest. Newest-first alone showed ten creates from the latest burst and put
     // 1,859 deletes (24h) below the panel edge, so a reader concluded this person deleted nothing (round-3
