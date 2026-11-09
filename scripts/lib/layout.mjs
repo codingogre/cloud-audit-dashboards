@@ -63,7 +63,6 @@ const FRAGMENT_USES = {
   'vega/13-session-gantt.json': { TIME },
   // Groups on the real user.email (never the actor COALESCE); TIME pins the dropdowns' filter.
   'vega/10-actor-geography.json': { TIME },
-  'vega/11-actor-object-flow.json': { TIME, OBJ_PRESENT, CRED, VERB, OBJ_TYPE },
   // 00 is the unfiltered full data set: no noise gate by design, only the shared identity.
   'searches/00-all-events.json': { ACTOR_RESOLVE, KIND_EVENT, ACTOR_LABEL },
   'searches/01-all-mutations.json': { CHANGE_PRED, ACTOR_RESOLVE, KIND_EVENT, VERB, OBJ, ACTOR_LABEL },

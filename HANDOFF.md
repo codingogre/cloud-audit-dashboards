@@ -15,14 +15,14 @@ on 03 (1.0.7.7). No open user decisions.
 ## Experiment: custom panels on Identity 360 (branch experiment/custom-panels), 2026-11-06
 
 Kibana 9.6's `custom_content` panel (tech preview), evaluated and prototyped; the write-up, API and renderer facts
-and ranked candidates are in `docs/custom-panels.md`. The panel is a no-JavaScript **drill-down** under the Vega ribbon
+and ranked candidates are in `docs/custom-panels.md`. The panel is a no-JavaScript **drill-down** that replaced the Vega ribbon (removed 2026-11-09)
 on Identity 360: credential › space › object type › operation › objects and the data Kibana read
 (`custom/11-identity-path.html`, `IDENTITY_PATH` in `07-actor-360.mjs`, `custom()` in `panels.mjs`, icons, labels
 and template loading in `scripts/lib/custom.mjs`, `READ_ACTIONS`/`LOOKUP_ACTIONS` in `panels.mjs`, tests in
 `test/unit/custom.test.mjs`). The branch history keeps the first "step by step" version. A read's space and
 browser address come from Kibana's `http_request` events (joined on request id, or inferred from the same
 object's other requests). 0.67-0.71s at 7d on the perf replica, at the 0.7s budget; 07 loads in 3.0s. Private deploy `AUDIT_ID_NS=cpx` is still installed (`AUDIT_ID_NS=cpx ./audit --clean
-dashboards` removes it). **Open user decisions:** replace the ribbon or keep both; whether and when the other
+dashboards` removes it). Each data set opens a panel of its queries under the columns. **Open user decisions:** whether and when the other
 candidates go on the roadmap. Spike scripts and the review spec are in `.sessions/` (local only).
 
 ## Release 1.0.7.2 — Open in Discover on every record panel; Back undoes a session zoom, 2026-10-27

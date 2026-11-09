@@ -111,3 +111,20 @@ test('the drill-down never adds Kibana actions and data requests into one figure
   assert.ok(!/\{\{ ra \}\} actions<\/div>/.test(src), 'the fold row counts actions and data requests apart');
   assert.ok(IDENTITY_PATH.includes('kacts = opens + creates + changes + deletes + runs + lists,') && IDENTITY_PATH.includes('sib_k = SUM(kacts)'));
 });
+
+test('a data set opens its queries in a panel under the columns, lookups left out, no dropdown', () => {
+  const t = loadTemplate('11-identity-path');
+  assert.ok(IDENTITY_PATH.includes('EVAL lvl = [0, 1, 2, 3, 4, 5, 6]'), 'a level per request');
+  assert.ok(IDENTITY_PATH.includes('WHERE lvl < 6 OR (es AND fam IS NOT NULL AND (NOT meta OR (lang IN ("ES|QL", "search", "SQL", "EQL") AND rq LIKE "*;*;*")))'), 'bare lookups and background column discovery never listed');
+  assert.ok(IDENTITY_PATH.includes('acts = CASE(lvl == 6, TO_LONG(seen) / 1000'), 'requests rank newest first');
+  assert.match(t, /<label class="ds dl c\{\{ r\["nid"\]\.value \}\}-\{\{ fid \}\}/, 'a data-set chip is a link to its panel');
+  assert.match(t, /<input type="radio" name="dsel" id="d0" checked>/, 'nothing open by default');
+  assert.match(t, /<label class="x" for="d0"/, 'a close link');
+  assert.match(t, /\.dv\{display:none/, 'the panel is hidden until a data set is clicked');
+  assert.match(t, /:has\(#n\{\{ r\["h4"\]\.value \}\}:checked\):has\(#d\{\{ did \}\}:checked\) \.v\{\{ did \}\}\{display:flex\}/, 'it shows only while the path to its object is still picked');
+  assert.ok(t.includes('not the query text'), 'says the audit log has no query text');
+});
+
+test('the system badge sits from object type down, never on a credential or a space', () => {
+  assert.ok(loadTemplate('11-identity-path').includes('r["sysn"].value > 0 and L >= 3'));
+});

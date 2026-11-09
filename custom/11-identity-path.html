@@ -16,7 +16,7 @@ html,body{height:100%}
 .bc-0{font-weight:600;padding-right:4px}
 .bc .dot{width:6px;height:6px;border-radius:50%;background:var(--cc-color-danger);flex:none}
 /* ---- columns ---- */
-.mc{flex:1;min-height:0;display:grid;grid-template-columns:repeat(4,minmax(124px,184px)) minmax(300px,1fr);column-gap:var(--g)}
+.mc{flex:1;min-height:0;display:grid;grid-template-columns:minmax(170px,240px) minmax(170px,240px) minmax(140px,200px) minmax(140px,200px) minmax(300px,1fr);column-gap:var(--g)}
 .col{min-width:0;min-height:0;display:flex;flex-direction:column}
 .cs{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;margin-right:calc(-1 * var(--g));padding-right:var(--g);scrollbar-width:thin;mask-image:linear-gradient(to bottom,#000 calc(100% - 14px),transparent);padding-bottom:12px}
 .col h4{margin:0 0 4px;font-size:11px;font-weight:600;letter-spacing:.02em;text-transform:uppercase;color:color-mix(in srgb,var(--cc-color-text) 60%,transparent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -26,9 +26,9 @@ html,body{height:100%}
 .c2 .grp{--lv:40ms}.c3 .grp{--lv:80ms}.c4 .grp{--lv:120ms}.objs .grp{--lv:160ms}
 @keyframes colIn{from{opacity:0;transform:translateX(-6px)}}
 /* ---- an item (levels 1-4): the radio, then a sibling box styled by `input:checked + .bx` ---- */
-.it{position:relative;display:block;height:var(--row);cursor:pointer}
+.it{position:relative;display:block;min-height:var(--row);cursor:pointer}
 .it input{position:absolute;inset:0;opacity:0;margin:0;cursor:pointer;z-index:1}
-.bx{position:relative;display:grid;grid-template-columns:16px minmax(0,1fr) auto;column-gap:7px;align-items:center;height:100%;padding:5px 8px 7px;border-radius:var(--cc-radius-s,4px);border:1px solid var(--cc-color-border);background:var(--cc-color-surface);transition:background var(--cc-motion-fast) var(--cc-ease),border-color var(--cc-motion-fast)}
+.bx{position:relative;display:grid;grid-template-columns:16px minmax(0,1fr) auto;column-gap:7px;align-items:center;min-height:var(--row);padding:5px 8px 8px;border-radius:var(--cc-radius-s,4px);border:1px solid var(--cc-color-border);background:var(--cc-color-surface);transition:background var(--cc-motion-fast) var(--cc-ease),border-color var(--cc-motion-fast)}
 .it:hover .bx{background:color-mix(in srgb,var(--cc-color-text) 5%,var(--cc-color-surface))}
 .it input:checked+.bx{background:color-mix(in srgb,var(--cc-color-primary) 13%,var(--cc-color-surface));border-color:var(--cc-color-primary);box-shadow:inset 3px 0 0 var(--cc-color-primary)}
 .it input:focus-visible+.bx{outline:2px solid var(--cc-color-primary);outline-offset:1px}
@@ -38,7 +38,7 @@ html,body{height:100%}
 .bx .ct .dq svg.ic,.fold svg.ic{width:11px;height:11px}
 .fold .dq{display:inline-flex;align-items:center;gap:2px}
 .lede .dq{display:inline-flex;align-items:center;vertical-align:-2px}.lede .dq svg.ic{width:12px;height:12px}
-.bx .sb{grid-column:2/4;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:color-mix(in srgb,var(--cc-color-text) 62%,transparent)}
+.bx .sb{grid-column:2/4;font-size:11px;line-height:1.45;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;color:color-mix(in srgb,var(--cc-color-text) 62%,transparent)}
 .bx .bar{position:absolute;left:8px;right:8px;bottom:3px;height:2px;border-radius:1px;background:color-mix(in srgb,var(--cc-color-text) 9%,transparent);overflow:hidden}
 .bx .bar i{display:block;height:100%;width:var(--w);background:var(--cc-vis-0);animation:grow var(--cc-motion-slow) var(--cc-ease) both;animation-delay:calc(var(--lv,0ms) + var(--i,0) * 20ms)}
 @keyframes grow{from{width:0}}
@@ -74,16 +74,40 @@ html,body{height:100%}
 .ob a:hover{text-decoration:underline}
 .more{font-size:11.5px;padding:4px 2px 10px;color:color-mix(in srgb,var(--cc-color-text) 60%,transparent)}
 .empty{margin:auto;padding:28px;text-align:center;border:1px dashed var(--cc-color-border);border-radius:var(--cc-radius,6px);color:color-mix(in srgb,var(--cc-color-text) 70%,transparent)}
-@media (max-width:1200px){.mc{--g:14px;grid-template-columns:repeat(4,minmax(0,1fr)) minmax(240px,1fr)}.bx{padding:5px 7px 7px;column-gap:6px}}
+/* ---- a data set's requests: a panel that opens under the columns ---- */
+.dsel{display:none}
+label.ds.dl{cursor:pointer;transition:border-color var(--cc-motion-fast),background var(--cc-motion-fast)}
+label.ds.dl:hover{border-color:var(--cc-color-primary)}
+label.ds.dl::after{content:"›";margin-left:2px;opacity:.6}
+.dv{display:none;flex:0 0 46%;min-height:0;flex-direction:column;gap:4px;border:1px solid var(--cc-color-primary);border-radius:var(--cc-radius,6px);background:var(--cc-color-surface);padding:8px 12px 6px;margin-bottom:4px;animation:dvIn var(--cc-motion-normal) var(--cc-ease) both}
+@keyframes dvIn{from{opacity:0;transform:translateY(10px)}}
+.dv .dh{display:flex;align-items:center;gap:6px 8px;flex-wrap:wrap}
+.dv .t{font-weight:600;font-size:13.5px}
+.dv .sum{font-size:12px;font-variant-numeric:tabular-nums}
+.dv .x{margin-left:auto;cursor:pointer;font-size:12px;padding:2px 8px;border:1px solid var(--cc-color-border);border-radius:var(--cc-radius-s,4px)}
+.dv .x:hover{border-color:var(--cc-color-primary);color:var(--cc-color-primary)}
+.dv .note{font-size:11.5px}
+.dv .tbw{flex:1;min-height:0;overflow:auto;scrollbar-width:thin}
+.dv table{width:auto;min-width:min(100%,720px);border-collapse:collapse;font-size:12px;font-variant-numeric:tabular-nums}
+.dv th{position:sticky;top:0;z-index:1;text-align:left;font-size:11px;font-weight:600;letter-spacing:.02em;text-transform:uppercase;padding:4px 14px 4px 0;background:var(--cc-color-surface);border-bottom:1px solid var(--cc-color-border);color:color-mix(in srgb,var(--cc-color-text) 60%,transparent)}
+.dv td{padding:3px 14px 3px 0;white-space:nowrap;border-bottom:1px solid color-mix(in srgb,var(--cc-color-border) 55%,transparent)}
+.dv td.pp{white-space:normal;min-width:180px}
+.dv td .docs{font-weight:600}
+@media (max-width:1200px){.mc{--g:14px;grid-template-columns:minmax(0,1.15fr) minmax(0,1.15fr) minmax(0,1fr) minmax(0,1fr) minmax(240px,1.3fr)}.bx{padding:5px 7px 7px;column-gap:6px}}
 @media (max-width:980px){.mc{grid-template-columns:repeat(4,minmax(0,1fr));grid-template-rows:auto minmax(0,1fr);row-gap:10px}.col.objs{grid-column:1/-1}.bx::after{display:none!important}}
 /* ---- generated: a node's children and crumb show only while it and every ancestor are picked ---- */
 {%- for r in rows -%}{%- assign L = r["lvl"].value -%}{%- if L >= 1 and L <= 4 -%}
 .ip{%- if L >= 2 -%}:has(#n{{ r["h1"].value }}:checked){%- endif -%}{%- if L >= 3 -%}:has(#n{{ r["h2"].value }}:checked){%- endif -%}{%- if L >= 4 -%}:has(#n{{ r["h3"].value }}:checked){%- endif -%}:has(#n{{ r["nid"].value }}:checked) :is(.g{{ r["nid"].value }},.b{{ r["nid"].value }}){display:flex}
 {%- endif -%}{%- endfor %}
+{%- assign gp = "" -%}{%- for r in rows -%}{%- if r["lvl"].value == 6 and r["pid"].value != gp -%}{%- assign gp = r["pid"].value -%}{%- assign fid = r["fm"].value | replace: ".", "_" | replace: ":", "_" | replace: "*", "_" | replace: " ", "_" | replace: "/", "_" -%}{%- assign did = r["h5"].value | append: "-" | append: fid -%}
+.ip:has(#n{{ r["h1"].value }}:checked):has(#n{{ r["h2"].value }}:checked):has(#n{{ r["h3"].value }}:checked):has(#n{{ r["h4"].value }}:checked):has(#d{{ did }}:checked) .v{{ did }}{display:flex}
+.ip:has(#d{{ did }}:checked) .c{{ did }}{border-color:var(--cc-color-primary);background:color-mix(in srgb,var(--cc-color-primary) 16%,transparent)}
+{%- endif -%}{%- endfor %}
 </style>
 {%- assign tot = nil -%}
 {%- for r in rows -%}{%- if r["lvl"].value == 0 -%}{%- assign tot = r -%}{%- endif -%}{%- endfor -%}
 <div class="ip">
+<div class="dsel"><input type="radio" name="dsel" id="d0" checked>{%- assign gp = "" -%}{%- for r in rows -%}{%- if r["lvl"].value == 6 and r["pid"].value != gp -%}{%- assign gp = r["pid"].value -%}{%- assign fid = r["fm"].value | replace: ".", "_" | replace: ":", "_" | replace: "*", "_" | replace: " ", "_" | replace: "/", "_" -%}<input type="radio" name="dsel" id="d{{ r["h5"].value }}-{{ fid }}">{%- endif -%}{%- endfor -%}</div>
 {%- if tot == nil or tot["acts"].value == 0 -%}
 <div class="empty"><icon name="db"/><br>No Kibana activity in this selection.<br>Widen the time range or clear a control.</div>
 {%- else -%}
@@ -96,7 +120,7 @@ html,body{height:100%}
 {%- if ls > 0 -%}{% if first %}Listed{% else %}listed{% endif %} in <b>{{ ls }}</b> {% if ls == 1 %}search{% else %}searches{% endif %} · {% assign first = false %}{% endif -%}
 {%- if f > 0 -%}<span class="warn">{{ f }} failed</span> · {% assign first = false %}{% endif -%}
 {%- if dq > 0 -%}<b>{{ dq }}</b> data {% if dq == 1 %}request{% else %}requests{% endif %} read <b>{{ tot["dsets"].value }}</b> data {% if tot["dsets"].value == 1 %}set{% else %}sets{% endif %}{% if tot["sysn"].value > 0 %} ({{ tot["sysn"].value }} Elastic system){% endif %}{%- else -%}{% if first %}No{% else %}no{% endif %} data read{%- endif -%}
-<span class="mute">. Each item shows Kibana actions, then <span class="dq"><icon name="db"/></span> data requests. Opening a dashboard makes Kibana read data; listing objects does not. Routine internals and this suite’s own dashboards are left out.</span>
+<span class="mute">. Each item shows Kibana actions, then <span class="dq"><icon name="db"/></span> data requests. Click a data set to see each request. Opening a dashboard makes Kibana read data; listing objects does not. Routine internals and this suite’s own dashboards are left out.</span>
 </p>
 
 <nav class="bc" aria-label="Selected path"><span class="bc-0">Path</span>
@@ -132,7 +156,7 @@ html,body{height:100%}
 <label class="it{% if r["fails"].value > 0 %} bad{% endif %}" style="--i:{{ c }}" title="{{ lbl }}"><input type="radio" name="r{{ p }}" id="n{{ r["nid"].value }}"{% if c == 0 %} checked{% endif %}><span class="bx">
 {%- assign ka = r["kacts"].value -%}
 <icon var="ic"/><span class="lb">{{ lbl }}</span><span class="ct">{%- if ka > 0 -%}<span title="{{ ka }} Kibana {% if ka == 1 %}action{% else %}actions{% endif %}">{{ ka }}</span>{%- endif -%}{%- if dd > 0 -%}<span class="dq" title="{{ dd }} data {% if dd == 1 %}request{% else %}requests{% endif %} to Elasticsearch"><icon name="db"/>{{ dd }}</span>{%- endif -%}</span>
-<span class="sb">{%- if r["fails"].value > 0 -%}<span class="badge fail">{{ r["fails"].value }} failed</span> {% endif -%}{%- if r["sysn"].value > 0 -%}<span class="badge sys" title="Kibana read {{ r["sysn"].value }} Elastic system data {% if r["sysn"].value == 1 %}set{% else %}sets{% endif %} (names starting with a dot) under this"><icon name="db"/>{{ r["sysn"].value }} system</span> {% endif -%}{%- if L == 1 or L == 4 or parts == blank -%}{{ sub }}{%- else -%}{{ parts }}{%- endif -%}</span>
+<span class="sb">{%- if r["fails"].value > 0 -%}<span class="badge fail">{{ r["fails"].value }} failed</span> {% endif -%}{%- if r["sysn"].value > 0 and L >= 3 -%}<span class="badge sys" title="Kibana read {{ r["sysn"].value }} Elastic system data {% if r["sysn"].value == 1 %}set{% else %}sets{% endif %} (names starting with a dot) under this"><icon name="db"/>{{ r["sysn"].value }} system</span> {% endif -%}{%- if L == 1 or L == 4 or parts == blank -%}{{ sub }}{%- else -%}{{ parts }}{%- endif -%}</span>
 <span class="bar"><i style="--w:{{ sh }}%"></i></span></span></label>
 {%- assign xa = xa | plus: ka -%}{%- assign xd = xd | plus: dd -%}{%- assign xf = xf | plus: r["fails"].value -%}
 {%- endif -%}
@@ -183,7 +207,7 @@ html,body{height:100%}
 {%- assign take = false -%}{%- if pass == 1 and c0 == "." -%}{%- assign take = true -%}{%- endif -%}{%- if pass == 2 and c0 != "." -%}{%- assign take = true -%}{%- endif -%}
 {%- if take and shown < 3 -%}
 {%- assign lab = fm | replace: "logs-elastic_cloud.serverless_audit.", "audit log · " -%}
-<span class="ds{% if c0 == "." %} sys{% endif %}" title="{{ fm }}">{%- if c0 == "." -%}<icon name="db"/>{%- else -%}<icon name="db"/>{%- endif -%}{{ lab }}</span>{%- assign shown = shown | plus: 1 -%}
+{%- assign fid = fm | replace: ".", "_" | replace: ":", "_" | replace: "*", "_" | replace: " ", "_" | replace: "/", "_" -%}<label class="ds dl c{{ r["nid"].value }}-{{ fid }}{% if c0 == "." %} sys{% endif %}" for="d{{ r["nid"].value }}-{{ fid }}" title="{{ fm }}: see each request"><icon name="db"/>{{ lab }}</label>{%- assign shown = shown | plus: 1 -%}
 {%- endif -%}
 {%- endfor -%}{%- endfor -%}
 {%- assign extra = ds | minus: shown -%}{%- if extra > 0 -%}<span class="ds mute">+{{ extra }}</span>{%- endif -%}
@@ -193,10 +217,11 @@ html,body{height:100%}
 <details><summary>{%- if ds > 3 -%}All {{ ds }} data sets{%- else -%}Names looked up{%- endif -%}</summary>
 {%- if ds > 3 -%}
 {%- assign nsys = r["sysn"].value -%}{%- assign nyour = ds | minus: nsys -%}
-{%- if nyour > 0 -%}<div class="grpt">Your data ({{ nyour }})</div><div class="chips" style="margin-left:0">{%- for fm in fams -%}{%- assign c0 = fm | slice: 0 -%}{%- if c0 != "." -%}<span class="ds" title="{{ fm }}"><icon name="db"/>{{ fm }}</span>{%- endif -%}{%- endfor -%}</div>{%- endif -%}
-{%- if nsys > 0 -%}<div class="grpt">Elastic system ({{ nsys }})</div><div class="chips" style="margin-left:0">{%- for fm in fams -%}{%- assign c0 = fm | slice: 0 -%}{%- if c0 == "." -%}<span class="ds sys" title="{{ fm }}"><icon name="db"/>{{ fm }}</span>{%- endif -%}{%- endfor -%}</div>{%- endif -%}
+{%- if nyour > 0 -%}<div class="grpt">Your data ({{ nyour }})</div><div class="chips" style="margin-left:0">{%- for fm in fams -%}{%- assign c0 = fm | slice: 0 -%}{%- if c0 != "." -%}{%- assign fid = fm | replace: ".", "_" | replace: ":", "_" | replace: "*", "_" | replace: " ", "_" | replace: "/", "_" -%}<label class="ds dl c{{ r["nid"].value }}-{{ fid }}" for="d{{ r["nid"].value }}-{{ fid }}" title="{{ fm }}: see each request"><icon name="db"/>{{ fm }}</label>{%- endif -%}{%- endfor -%}</div>{%- endif -%}
+{%- if nsys > 0 -%}<div class="grpt">Elastic system ({{ nsys }})</div><div class="chips" style="margin-left:0">{%- for fm in fams -%}{%- assign c0 = fm | slice: 0 -%}{%- if c0 == "." -%}{%- assign fid = fm | replace: ".", "_" | replace: ":", "_" | replace: "*", "_" | replace: " ", "_" | replace: "/", "_" -%}<label class="ds dl sys c{{ r["nid"].value }}-{{ fid }}" for="d{{ r["nid"].value }}-{{ fid }}" title="{{ fm }}: see each request"><icon name="db"/>{{ fm }}</label>{%- endif -%}{%- endfor -%}</div>{%- endif -%}
 {%- endif -%}
-{%- if r["lk"].value > 0 -%}<div class="lk">Also looked up the names or fields of {{ r["lk"].value }} data {% if r["lk"].value == 1 %}set{% else %}sets{% endif %}; no documents read from those lookups.</div>{%- endif -%}
+{%- if r["lk"].value > 0 -%}<div class="lk">Also looked up the names or fields of {{ r["lk"].value }} data {% if r["lk"].value == 1 %}set{% else %}sets{% endif %}; no documents read from those lookups.</div>
+{%- assign lks = r["lklist"].value | split: "|" -%}<div class="chips" style="margin-left:0">{%- for fm in lks -%}{%- assign c0 = fm | slice: 0 -%}{%- assign fid = fm | replace: ".", "_" | replace: ":", "_" | replace: "*", "_" | replace: " ", "_" | replace: "/", "_" -%}<label class="ds dl c{{ r["nid"].value }}-{{ fid }}{% if c0 == "." %} sys{% endif %}" for="d{{ r["nid"].value }}-{{ fid }}" title="{{ fm }}: see each request"><icon name="db"/>{{ fm }}</label>{%- endfor -%}</div>{%- endif -%}
 </details>
 {%- endif -%}
 </div>
@@ -205,5 +230,39 @@ html,body{height:100%}
 {%- if isopen -%}{%- assign rest = sn | minus: c -%}{%- if rest > 0 -%}<div class="more">and {{ rest }} more {% if rest == 1 %}object{% else %}objects{% endif %} on this path</div>{%- endif -%}</div>{%- endif -%}
 </div></section>
 </div>
+{%- assign gp = "" -%}{%- assign isopen = false -%}
+{%- for r in rows -%}{%- if r["lvl"].value == 6 -%}
+{%- if r["pid"].value != gp -%}
+{%- if isopen -%}</tbody></table></div></section>{%- endif -%}
+{%- assign gp = r["pid"].value -%}{%- assign isopen = true -%}{%- assign fid = r["fm"].value | replace: ".", "_" | replace: ":", "_" | replace: "*", "_" | replace: " ", "_" | replace: "/", "_" -%}{%- assign did = r["h5"].value | append: "-" | append: fid -%}
+{%- assign k = r["ok"].value -%}{%- assign t = r["ty"].value -%}{%- assign L3 = 3 -%}<labels level="L3" key="t"/>
+{%- assign nm = r["name"].value -%}
+{%- if nm == blank -%}
+{%- if k == "new" -%}{%- assign nm = "Unsaved Discover session" -%}
+{%- elsif k contains "app:" -%}{%- assign app = k | remove_first: "app:" -%}{%- if app == blank -%}{%- assign nm = "Kibana (no app recorded)" -%}{%- else -%}{%- assign nm = app | replace: "-", " " | capitalize | append: " app" -%}{%- endif -%}
+{%- elsif k.size > 36 -%}{%- assign head = k | slice: 0, 20 -%}{%- assign tail = k | slice: -12, 12 -%}{%- assign nm = head | append: "…" | append: tail -%}
+{%- else -%}{%- assign nm = k -%}{%- endif -%}
+{%- endif -%}
+{%- assign sn = r["sib_n"].value -%}{%- assign sd = r["sib_dreq"].value -%}
+<section class="dv v{{ did }}" aria-label="Requests for {{ r["fm"].value }}">
+<div class="dh"><icon name="db"/><span class="t">{{ r["fm"].value }}</span><span class="mute">read for</span><icon var="ic"/><span class="t">{{ nm }}</span><span class="mute">· {{ lbl }}</span>
+<span class="sum">· <b>{{ sn }}</b> {% if sn == 1 %}query{% else %}queries{% endif %} · <b>{{ sd }}</b> returned documents{% if r["sib_fails"].value > 0 %} · <span class="badge fail">{{ r["sib_fails"].value }} failed</span>{% endif %}</span>
+<label class="x" for="d0" title="Close">✕ Close</label></div>
+<div class="note mute">Each query Kibana ran on this data set for this object, newest first{% if sn > 25 %}; the latest 25 of {{ sn }}{% endif %}. Name and field lookups, and Kibana’s own column discovery, are left out. The audit log records who ran what and when, not the query text.</div>
+<div class="tbw"><table><thead><tr><th>Time (UTC)</th><th>Part of the page</th><th>Language</th><th>Result</th></tr></thead><tbody>
+{%- endif -%}
+{%- assign comp = r["k"].value | split: ";" | last -%}{%- assign pid8 = comp | split: ":" | last -%}{%- if pid8.size > 14 -%}{%- assign pid8 = pid8 | slice: 0, 8 | append: "…" -%}{%- endif -%}
+{%- if comp contains "unifiedHistogram" -%}{%- assign part = "Histogram" -%}
+{%- elsif comp contains "application:discover:" and comp != r["k"].value -%}{%- assign c6 = comp | slice: 0, 7 -%}{%- if c6 == "kibana:" -%}{%- assign part = "Page setup (fields, data view)" -%}{%- else -%}{%- assign part = "Results table" -%}{%- endif -%}
+{%- elsif comp contains "lens:lnsDatatable:" -%}{%- assign part = "Table panel " | append: pid8 -%}
+{%- elsif comp contains "lens:lnsMetric:" -%}{%- assign part = "Metric panel " | append: pid8 -%}
+{%- elsif comp contains "lens:lnsXY:" -%}{%- assign part = "Chart panel " | append: pid8 -%}
+{%- elsif comp contains "lens:" -%}{%- assign part = "Lens panel " | append: pid8 -%}
+{%- elsif comp contains "vega:" -%}{%- assign part = "Vega panel " | append: pid8 -%}
+{%- elsif comp contains "kibana:" or comp contains "application:" -%}{%- assign part = "Page itself (no panel named)" -%}
+{%- else -%}{%- assign part = comp -%}{%- endif -%}
+<tr><td>{{ r["lastf"].value }}</td><td class="pp">{{ part }}</td><td>{{ r["famlist"].value }}</td><td>{%- if r["fails"].value > 0 -%}<span class="badge fail">failed</span>{%- elsif r["dreq"].value > 0 -%}<span class="docs">returned documents</span>{%- elsif r["famlist"].value contains "ES|QL" -%}<span class="mute">no documents read</span>{%- else -%}<span class="mute">names or fields only</span>{%- endif -%}</td></tr>
+{%- endif -%}{%- endfor -%}
+{%- if isopen -%}</tbody></table></div></section>{%- endif -%}
 {%- endif -%}
 </div>

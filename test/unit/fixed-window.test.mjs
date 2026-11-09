@@ -65,7 +65,7 @@ test('the layout check fails a stray panel range and a range that differs from V
   const all = buildAll();
   const a360 = flatPanels(all['07-actor-360'].panels);
   a360.find((p) => p.config?.ref_id === objId('vega', '13-session-gantt')).config.time_range = { from: 'now-48h', to: 'now' };
-  a360.find((p) => p.config?.ref_id === objId('vega', '11-actor-object-flow')).config.time_range = { from: 'now-7d', to: 'now' };
+  a360.find((p) => p.config?.ref_id === objId('vega', '10-actor-geography')).config.time_range = { from: 'now-7d', to: 'now' };
   const problems = checkLayout(all).problems.join('\n');
   assert.match(problems, /shows vega\/13-session-gantt with time range \{"from":"now-48h"/);
   assert.match(problems, /has its own time range but is not a VEGA_WINDOWS spec/);

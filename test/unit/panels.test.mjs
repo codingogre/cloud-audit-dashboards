@@ -795,7 +795,6 @@ test('vega/01 treemap (1.0.7): a tile click pins the identity by its prefix, a f
   const lt = tm.data.find((d) => d.name === 'leaves').transform;
   for (const t of lt.filter((x) => /^[abc]_lines$|^lines$/.test(x.as))) assert.ok(!t.expr.includes("format(datum.events, ',')"), `${t.as} prints a bare number`);
   for (const x of ['a', 'b', 'c']) assert.match(lt.find((t) => t.as === `${x}_cnt`).expr, /length\(datum\.count\) <=/);
-  assert.ok(!read('11-actor-object-flow.json').signals.some((s) => s.on?.some((o) => /dblclick/.test(JSON.stringify(o.events)))), 'no double-click clear-all');
 });
 
 test('drillTargets()/repointVega() (1.0.7): a pinning Vega panel gets the drilldown and the scoped savedObjectRef', async () => {

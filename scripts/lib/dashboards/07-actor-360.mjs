@@ -67,8 +67,8 @@ const T_PACKED = ['keep', 'acts', 'kacts', 'opens', 'creates', 'changes', 'delet
 const T_NUMS = T_PACKED.slice(2, 15);
 /** The fine row's columns that ride through the object join (cred, type and oid are its group keys). */
 /** The grouped row's columns that ride through the request join. */
-const T_JOIN = ['cred', 'space', 'cip', 'type', 'op', 'oid', 'rq', 'es', 'meta', 'n', 'nf', 'ts', 'nm', 'ix'];
-const T_FINE = ['space', 'cip', 'op', 'rq', 'fam', 'meta', 'es', 'n', 'nf', 'ts', 'nm'];
+const T_JOIN = ['cred', 'space', 'cip', 'type', 'op', 'oid', 'rq', 'es', 'meta', 'lang', 'n', 'nf', 'ts', 'nm', 'ix'];
+const T_FINE = ['space', 'cip', 'op', 'rq', 'fam', 'meta', 'lang', 'es', 'n', 'nf', 'ts', 'nm'];
 const t_md5 = (x) => `SUBSTRING(MD5(${x}), 1, 10)`;
 const t_prefix = (n) => `MV_CONCAT(MV_SLICE(parts, 0, ${n - 1}), "${T_PATH}")`;
 const HTTP_REQ = `${K_SIDE} AND event.action == "http_request"`;
@@ -93,7 +93,9 @@ export const IDENTITY_PATH =
   `| EVAL http = ${HTTP_REQ} | ${OBJ_TYPE} ` +
   `| EVAL es = NOT ${K_SIDE}, ctx = REPLACE(rq, "^[^;]*;kibana:", "") ` +
   '| EVAL c_app = CASE(es, REPLACE(ctx, "^[^:;]*:([^:;]*):.*$", "$1")), c_id = CASE(es, REPLACE(ctx, "^[^:;]*:[^:;]*:([^;]*).*$", "$1")), ' +
-  `meta = es AND ${inList('act', LOOKUP_ACTIONS)} ` +
+  `meta = es AND ${inList('act', LOOKUP_ACTIONS)}, ` +
+  // the request's language, for the per-request detail; ES|QL's own field lookups count as ES|QL
+  'lang = CASE(es, CASE(act LIKE "*esql*", "ES|QL", act LIKE "*field_caps*", "field list", act LIKE "indices:admin/*", "name lookup", act LIKE "*/sql*", "SQL", act LIKE "*/eql*", "EQL", "search")) ' +
   '| EVAL cred = COALESCE(user.domain, authentication.type, "unknown"), space = CASE(es, null, COALESCE(kibana.space.id, "no space")), ' +
   'cip = CASE(es, null, client.ip), rid = CASE(es, MV_FIRST(SPLIT(rq, ";")), rq), ' +
   'type = CASE(es, CASE(c_app == "dashboards" AND c_id != "", "dashboard", c_app == "discover", "search", CONCAT("app:", COALESCE(c_app, ""))), obj_type), ' +
@@ -109,36 +111,43 @@ export const IDENTITY_PATH =
   `| WHERE rows IS NOT NULL | MV_EXPAND rows | DISSECT rows "${T_JOIN.map((c) => `%{${c}_j}`).join(T_SEP)}" ` +
   '| EVAL es = es_j == "true", meta = meta_j == "true", n = CASE(n_j == "", null, TO_LONG(n_j)), nf = CASE(nf_j == "", null, TO_LONG(nf_j)), ' +
   'ts = TO_DATETIME(ts_j), nm = CASE(nm_j == "", null, nm_j), rq = CASE(rq_j == "", null, rq_j), cred = cred_j, type = type_j, op = op_j, oid = oid_j, ' +
+  'lang = CASE(lang_j == "", null, lang_j), ' +
   'idx = CASE(ix_j == "", null, SPLIT(ix_j, "|")) ' +
   '| EVAL space = CASE(es, CASE(MV_COUNT(hsp) == 1, hsp), space_j), cip = CASE(es, hip, cip_j == "", null, TO_IP(cip_j)) ' +
   '| MV_EXPAND idx ' +
   `| EVAL fam = CASE(es AND LOCATE(idx, "*") == 0 AND NOT idx LIKE "<*", ${indexFamily('idx')}) ` +
-  '| STATS n = SUM(n) WHERE NOT es, nf = SUM(nf), ts = MAX(ts), nm = MAX(nm) BY cred, space, cip, type, op, oid, rq, fam, meta, es ' +
+  '| STATS n = SUM(n) WHERE NOT es, nf = SUM(nf), ts = MAX(ts), nm = MAX(nm) BY cred, space, cip, type, op, oid, rq, fam, meta, lang, es ' +
   // the object join: a read with no space or address of its own takes its object's, and sits under Opened when the
   // object was opened in range.
   // Pack, group by object, unpack: an INLINE STATS here cost ~450ms of 1.0s at 7d on the perf replica.
   `| EVAL fp = CONCAT(${T_FINE.map((c) => `COALESCE(TO_STRING(${c}), "")`).join(`, "${T_SEP}", `)}) ` +
-  '| STATS rows = VALUES(fp), kspaces = VALUES(space), kips = VALUES(cip), opened = SUM(n) WHERE op == "open" BY cred, type, oid ' +
+  '| STATS rows = VALUES(fp), kspaces = VALUES(space), kips = VALUES(cip), opened = SUM(n) WHERE op == "open", onm = MAX(nm) BY cred, type, oid ' +
   `| MV_EXPAND rows | DISSECT rows "${T_FINE.map((c) => `%{${c}_s}`).join(T_SEP)}" ` +
   '| EVAL es = es_s == "true", meta = meta_s == "true", n = CASE(n_s == "", null, TO_LONG(n_s)), nf = CASE(nf_s == "", null, TO_LONG(nf_s)), ' +
   'ts = TO_DATETIME(ts_s), space = CASE(space_s == "", null, space_s), rq = CASE(rq_s == "", null, rq_s), fam = CASE(fam_s == "", null, fam_s), ' +
-  'nm = CASE(nm_s == "", null, nm_s), op = op_s, cip = CASE(cip_s == "", null, TO_IP(cip_s)) ' +
+  'nm = CASE(nm_s == "", null, nm_s), op = op_s, cip = CASE(cip_s == "", null, TO_IP(cip_s)), lang = CASE(lang_s == "", null, lang_s) ' +
   '| EVAL space = CASE(space IS NOT NULL, space, MV_COUNT(kspaces) == 1, kspaces, kspaces IS NULL, "(space not recorded)", "(several spaces)"), ' +
-  'cip = CASE(cip IS NOT NULL, cip, MV_COUNT(kips) == 1, kips) ' +
+  'cip = CASE(cip IS NOT NULL, cip, MV_COUNT(kips) == 1, kips), nm = COALESCE(nm, onm) ' +
   `| WHERE ${T_CLIENT_IP} ` +
   '| EVAL op = CASE(es AND opened > 0, "open", es, "read", op) ' +
-  '| EVAL lvl = [0, 1, 2, 3, 4, 5] | MV_EXPAND lvl ' +
+  // level 6 lists the requests that ran a query (with or without documents back), never a bare name or field lookup:
+  // Discover lists every index name on each refresh, and those buried the queries in the latest 25 (rendered 2026-11-09).
+  // A query that read nothing is kept only when a named part of the page sent it (x-opaque-id carries a third part,
+  // e.g. the histogram or a panel id): with none it is the page's own column and field discovery, not a run.
+  '| EVAL lvl = [0, 1, 2, 3, 4, 5, 6] | MV_EXPAND lvl | WHERE lvl < 6 OR (es AND fam IS NOT NULL AND (NOT meta OR (lang IN ("ES|QL", "search", "SQL", "EQL") AND rq LIKE "*;*;*"))) ' +
   `| EVAL key = CASE(lvl == 0, "all", lvl == 1, cred, lvl == 2, CONCAT(cred, "${T_PATH}", space), lvl == 3, CONCAT(cred, "${T_PATH}", space, "${T_PATH}", type), ` +
-  `lvl == 4, CONCAT(cred, "${T_PATH}", space, "${T_PATH}", type, "${T_PATH}", op), CONCAT(cred, "${T_PATH}", space, "${T_PATH}", type, "${T_PATH}", op, "${T_PATH}", oid)) ` +
+  `lvl == 4, CONCAT(cred, "${T_PATH}", space, "${T_PATH}", type, "${T_PATH}", op), lvl == 5, CONCAT(cred, "${T_PATH}", space, "${T_PATH}", type, "${T_PATH}", op, "${T_PATH}", oid), ` +
+  `CONCAT(cred, "${T_PATH}", space, "${T_PATH}", type, "${T_PATH}", op, "${T_PATH}", oid, "${T_PATH}", fam, "${T_PATH}", rq)) ` +
   '| STATS opens = SUM(n) WHERE op == "open", creates = SUM(n) WHERE op == "create", changes = SUM(n) WHERE op == "change", ' +
   'deletes = SUM(n) WHERE op == "delete", runs = SUM(n) WHERE op == "run", lists = COUNT_DISTINCT(rq) WHERE op == "list", ' +
   'kfails = SUM(nf) WHERE NOT es, rfails = COUNT_DISTINCT(rq) WHERE es AND nf > 0, objs = COUNT_DISTINCT(oid), ' +
   'dreq = COUNT_DISTINCT(rq) WHERE es AND NOT meta AND fam IS NOT NULL, sysn = COUNT_DISTINCT(fam) WHERE es AND NOT meta AND fam LIKE ".*", ' +
-  'fams = VALUES(fam) WHERE es AND NOT meta, looked = VALUES(fam) WHERE es AND meta, seen = MAX(ts), name = MAX(nm) BY lvl, key ' +
+  'fams = VALUES(fam) WHERE es AND NOT meta, looked = VALUES(fam) WHERE es AND meta, langs = VALUES(lang) WHERE es, seen = MAX(ts), name = MAX(nm) BY lvl, key ' +
   `| EVAL ${T_NUMS.filter((c) => !['kacts', 'dsets', 'lk', 'fails'].includes(c)).map((c) => `${c} = COALESCE(${c}, 0)`).join(', ')}, fails = COALESCE(kfails, 0) + COALESCE(rfails, 0) ` +
-  '| EVAL kacts = opens + creates + changes + deletes + runs + lists, acts = opens + creates + changes + deletes + runs + lists + dreq, dsets = COALESCE(MV_COUNT(fams), 0), lk = COALESCE(MV_COUNT(looked), 0), ' +
-  'keep = CASE(fails > 0 OR deletes > 0 OR sysn > 0, 1, 0), famlist = MV_CONCAT(MV_SORT(fams), "|"), lklist = MV_CONCAT(MV_SORT(looked), "|"), ' +
-  'lastf = DATE_FORMAT("MMM d HH:mm", seen), ' +
+  // a request (level 6) ranks by time, newest first, so its parent keeps the latest 25
+  '| EVAL kacts = opens + creates + changes + deletes + runs + lists, acts = CASE(lvl == 6, TO_LONG(seen) / 1000, opens + creates + changes + deletes + runs + lists + dreq), dsets = COALESCE(MV_COUNT(fams), 0), lk = COALESCE(MV_COUNT(looked), 0), ' +
+  'keep = CASE(lvl < 6 AND (fails > 0 OR deletes > 0 OR sysn > 0), 1, 0), famlist = CASE(lvl == 6, MV_CONCAT(MV_SORT(langs), ", "), MV_CONCAT(MV_SORT(fams), "|")), lklist = MV_CONCAT(MV_SORT(looked), "|"), ' +
+  'lastf = CASE(lvl == 6, DATE_FORMAT("MMM d HH:mm:ss", seen), DATE_FORMAT("MMM d HH:mm", seen)), ' +
   `parent = CASE(lvl <= 1, "all", REPLACE(key, "${T_PATH}[^${T_PATH}]*$", "")) ` +
   `| EVAL pack = CONCAT(${T_PACKED.map((c) => (c === 'acts' ? 'TO_STRING(acts + 1000000000000)' : T_NUMS.includes(c) || c === 'keep' ? `TO_STRING(${c})` : `COALESCE(${c}, "")`)).join(`, "${T_SEP}", `)}) ` +
   '| STATS kids = TOP(pack, 25, "desc"), sib_n = COUNT(*), sib_acts = SUM(acts), sib_opens = SUM(opens), sib_chg = SUM(creates + changes + deletes + runs), ' +
@@ -149,8 +158,10 @@ export const IDENTITY_PATH =
   `| EVAL parts = SPLIT(key, "${T_PATH}") ` +
   `| EVAL k = MV_LAST(parts), nid = ${t_md5('key')}, pid = CASE(lvl <= 1, null, ${t_md5('parent')}), ` +
   `h1 = CASE(lvl >= 2, ${t_md5(t_prefix(1))}), h2 = CASE(lvl >= 3, ${t_md5(t_prefix(2))}), h3 = CASE(lvl >= 4, ${t_md5(t_prefix(3))}), h4 = CASE(lvl >= 5, ${t_md5(t_prefix(4))}), ` +
-  'oid = CASE(lvl == 5 AND NOT MV_LAST(parts) LIKE "app:*", MV_LAST(parts)), ty = CASE(lvl == 5, MV_SLICE(parts, 2, 2)), opn = CASE(lvl == 5, MV_SLICE(parts, 3, 3)) ' +
-  '| DROP kids, parts, parent | SORT lvl, pid, acts DESC, k | LIMIT 2000';
+  `h5 = CASE(lvl >= 6, ${t_md5(t_prefix(5))}), ` +
+  'oid = CASE(lvl == 5 AND NOT MV_LAST(parts) LIKE "app:*", MV_LAST(parts)), ty = CASE(lvl >= 5, MV_SLICE(parts, 2, 2)), opn = CASE(lvl >= 5, MV_SLICE(parts, 3, 3)), ' +
+  'ok = CASE(lvl == 6, MV_SLICE(parts, 4, 4)), fm = CASE(lvl == 6, MV_SLICE(parts, 5, 5)) ' +
+  '| DROP kids, parts, parent | SORT lvl, pid, acts DESC, k | LIMIT 6000';
 
 const vegaPanel = (ref, title) => (x, y, w, h) => vega(x, y, w, h, ref, title, specDescription(ref));
 
@@ -367,10 +378,11 @@ export function build() {
     ]),
 
     row(2, [[48, (x, y, w, h) => section(x, y, w, h, '② What they did', 'follows the time picker · times in your time zone')]]),
-    row(11, [[48, vegaPanel('11-actor-object-flow', 'How they reached what they touched in Kibana — credential → space → object → operation')]]),
-    // Custom panel (experiment), under the ribbon until the replace-or-keep decision; see IDENTITY_PATH.
-    row(16, [[48, (x, y, w, h) => custom(x, y, w, h, '11-identity-path', 'Drill down — credential › space › object type › operation › the data Kibana read',
-      'Pick a credential, space, object type and operation; each column narrows, ending with the objects and the data Kibana read for each. A read with no logged space takes its object’s. Routine internals and this suite’s dashboards are left out.',
+    // Custom panel (experiment): replaced the Vega ribbon "How they reached what they touched in Kibana"
+    // (vega/11-actor-object-flow, removed 2026-11-09 at the user's call); see IDENTITY_PATH.
+    // Taller than the 16 rows it had beside the ribbon: a data set's requests open in a panel under the columns.
+    row(22, [[48, (x, y, w, h) => custom(x, y, w, h, '11-identity-path', 'Drill down — credential › space › object type › operation › the data Kibana read',
+      'Pick a credential, space, object type and operation; each column narrows to the objects and the data Kibana read. Click a data set to list each request. Routine internals and this suite’s dashboards are left out.',
       IDENTITY_PATH)]]),
     // Deletes first, then newest. Newest-first alone showed ten creates from the latest burst and put
     // 1,859 deletes (24h) below the panel edge, so a reader concluded this person deleted nothing (round-3

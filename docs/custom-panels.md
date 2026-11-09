@@ -60,8 +60,8 @@ Stack "planned".
 
 ## The prototype: Identity 360 drill-down
 
-On Identity 360, directly below the Vega ribbon ("How they reached what they touched in Kibana"), so the two
-can be compared. Source: `custom/11-identity-path.html`; query `IDENTITY_PATH` in
+On Identity 360, in place of the Vega ribbon ("How they reached what they touched in Kibana"), which was
+removed on 2026-11-09 at the user's call. Source: `custom/11-identity-path.html`; query `IDENTITY_PATH` in
 `scripts/lib/dashboards/07-actor-360.mjs`; labels in `LABELS` in `scripts/lib/custom.mjs`.
 
 **Shape.** Five columns: Credential, Space, Object type, Operation, then Objects and the data Kibana read. Each
@@ -128,8 +128,17 @@ could not be inferred drops out when Client IP is set.
 **Differences from the ribbon, on purpose:** routine internals and the suite's own reads are left out, as on
 Kibana Object Forensics, so the counts are lower than the ribbon's.
 
-**Open decision:** replace the ribbon, or keep both. The ribbon keeps click-to-pin; the drill-down narrows,
-explains each measure, and adds the data Kibana read.
+**Decided (2026-11-09):** the ribbon is removed. Click-to-pin went with it.
+
+**A data set's queries.** Every data set under an object is a link. Clicking it opens a panel under the columns
+listing each query Kibana ran on that data set for that object, newest first (the latest 25): its time, the part
+of the page that sent it (results table, histogram, or a panel id, from the last part of `x-opaque-id`), the
+language, and whether documents came back. Name and field lookups are left out, and so is a query that read
+nothing and came from no named part of the page: that is Kibana's own column discovery, which buried the user's
+runs. The audit log has no query text, so the panel says so. The panel lives inside the same custom panel:
+a separate dashboard panel cannot be hidden, and could only learn the click through a visible control or pill
+(a link CAN set an ES|QL control without a reload, verified, but it needs a dropdown in the control bar).
+Cost: the drill-down went from about 0.71s to 0.77s at 7 days on the perf replica.
 
 ## Where else they fit
 
