@@ -1151,6 +1151,13 @@ as two types is two rows, 33 → 36), the rest within ±5ms or noise; the new
 *Filter for value* (~16ms with the pushable `WHERE` in *Drill-down*). The KQL pills *Open in Discover* writes push down
 to Lucene: they make a session cheaper, never dearer (06 at 7d on the replica 502 → 91ms with one).
 
+1.0.8.2 (Identity 360's ① row and the session timeline read the events view, back from the picker's end): replica
+medians, 1.0.8.1 → 1.0.8.2, the 7-day queries 08 54 → 290ms, 09 59 → 281ms, 12 scope 99 → 292ms, 13 ~50 → 61ms;
+Identity 360's page load 1.2 → 2.1s at 24h and 3.1 → 3.8s at 7d; Kibana Objects unchanged. **Five viewers at once**
+(`--users 5`, Identity 360, one run each, 2026-11-10): 1.0.8.1 4.7s at 24h and 12.6s at 7d, 1.0.8.2 9.0s and 17.9s,
+nothing failed. Each viewer waits about four times as long as one alone on both releases: the test project's search
+capacity is shared, so concurrent page loads queue rather than run side by side.
+
 Before the query-shape rewrites in [`esql/fragments.md`](esql/fragments.md), the 7-day Command
 Center, Kibana Objects, Security Anomalies and Platform Volume loads each hit the 30s budget, and the
 treemap alone took 30s at 24 hours. No query fails or is cancelled now. A new panel should be checked
