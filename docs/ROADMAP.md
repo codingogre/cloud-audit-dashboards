@@ -32,6 +32,7 @@ Every intro says which time window the page opens on; 24 hours stays the default
 
 - The default window (24 hours) stated in each intro
 - How to read points weekly reviewers to the time picker
+- Deploys and --clean delete removed charts (REMOVED_SPECS); 1.0.8's Vega ribbon is gone from the Default space (done, on main since 7431542)
 
 1 design holes · 0 use cases
 

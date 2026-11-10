@@ -12,12 +12,18 @@ reviewer to the time picker. Copy only; measure nothing new unless a query chang
 picker (1.0.8.2), objects/spaces/index pivots (1.0.8.3), sign-ins and sessions (1.0.8.4), discovery against a baseline
 on 03 (1.0.8.5). No open user decisions.
 
+**Already in 1.0.8.1 (user, 2026-11-10):** the retired-chart clean-up, commit 7431542 on main. `REMOVED_SPECS`
+(`scripts/lib/env.mjs`) lists specs deleted from `vega/` or `searches/`; `RETIRED_OBJECTS` retires their current and
+numbered ids, so `--dashboards` deletes them after re-pointing and `--clean` removes them too. It deleted 1.0.8's
+`cloud-audit-vega-actor-object-flow` from the Default space on 2026-11-10 (deployed with 1.0.8). Put it in the
+1.0.8.1 release notes; the 1.0.8.1 tag goes on the commit that finishes "State the window".
+
 ## Release 1.0.8 — Identity 360 drill-down replaces the Vega ribbon, 2026-11-10
 
 Kibana 9.6's `custom_content` panel (tech preview), evaluated and adopted on Identity 360; the write-up, API and
 renderer facts and ranked candidates for other pages are in `docs/custom-panels.md`. **The Vega ribbon "How they
-reached what they touched in Kibana" is removed** (`vega/11-actor-object-flow.json` deleted, so its saved object
-`cloud-audit-vega-actor-object-flow` stays behind in any deployed space until removed by hand; deploys never delete).
+reached what they touched in Kibana" is removed** (`vega/11-actor-object-flow.json` deleted; its saved object is deleted by the deploy
+since the 1.0.8.1 clean-up fix, `REMOVED_SPECS`).
 In its place, a no-JavaScript **drill-down**: credential › space › object type › operation › the objects and the
 data Kibana read (`custom/11-identity-path.html`, `IDENTITY_PATH` in `07-actor-360.mjs`, `custom()` in
 `panels.mjs`, icons and labels in `scripts/lib/custom.mjs`, tests in `test/unit/custom.test.mjs`).
