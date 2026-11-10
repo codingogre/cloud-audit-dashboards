@@ -250,7 +250,7 @@ const RUNBOOK_UNUSUAL_HOUR_SECURITY_CHANGE = `**What it means.** An identity cha
 
 **Triage**
 1. Open **[Audit] 👤 Identity 360**. In **Identity type** and **Identity**, pick the alert's values, then set the time to cover the change.
-2. Compare **Working rhythm — by hour (UTC)** and **Is this normal for them? — hourly (UTC)**. Both always show the last 7 days and include the change itself. The alert compared the 30 days before the last 24 hours, so trust its count of the hours this identity normally works.
+2. Compare **Working rhythm — by hour** and **Is this normal for them? — hourly**. Both show the 7 days to the end of the time range, in your time zone; the alert's hour is in UTC. The alert compared the 30 days before the last 24 hours, so trust its count of the hours this identity normally works.
 3. Check **Busiest addresses they used** and **Who this is — by identity and principal id** for an address or principal you do not recognise.
 4. Open **[Audit] 🚨 Security & Anomalies** and read **Config-change event feed** for the full change record, including what a new key or role grants.
 5. If the owner cannot explain it, invalidate the new keys, revert the role change, and review what the identity did next.

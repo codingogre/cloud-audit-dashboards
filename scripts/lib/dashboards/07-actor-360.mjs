@@ -18,12 +18,12 @@ import {
  * The page is organised around TIME BINDING (see panels.mjs), because it mixes both kinds and a
  * reader has to know which window each panel shows:
  *
- *   ① Is this normal?   fixed 7 days — ES|QL Vega on a panel range (VEGA_WINDOWS), which keeps the control
- *                        bar and the identity dropdowns but ignores the picker, so a baseline and a weekly
- *                        rhythm are possible whatever the picker reads. Kibana badges each panel "Last 7 days",
- *                        so the titles do not repeat it (at 1440px the repeat cut "Where they rank — last 7 d")
+ *   ① Is this normal?   the 7 days to the picker's end — ES|QL Vega on the events view (END_WINDOWS), which keeps
+ *                        the control bar and the identity dropdowns, so a baseline and a weekly rhythm are
+ *                        possible whatever the picker's range. No panel badge says so (no panel range): the
+ *                        section header does (at 1440px a title repeat cut "Where they rank — last 7 d")
  *   ② What they did     follows the time picker
- *   ③ Evidence          a 24-hour session timeline (badged "Last 24 hours") over the raw records
+ *   ③ Evidence          the 24 hours to the picker's end as a session timeline, over the raw records
  *
  * Who this is shows the identity as the Identity dropdown names it (ACTOR_RESOLVE, counted first by ACTOR_KEYS)
  * beside the raw Principal id it ran as, which is what a filter pill can match.
@@ -272,9 +272,7 @@ const weightWords = (col) => `CASE(${WEIGHT_WORDS.map(([w, words]) => `${col} ==
 
 /**
  * The intro (draft 2 of the 1.0.3 customer copy, INTRO TEXT in panels.mjs): why you would open the page,
- * then how. It names the clock because the page mixes two: section ① is computed in UTC (a weekly rhythm
- * has to read the same for every viewer), while every table timestamp and the session timeline are in the
- * browser's zone like the rest of Kibana, and side by side they disagree by the viewer's UTC offset. The
+ * then how. Since 1.0.8.2 the whole page is in the viewer's time zone (section ① was UTC until then). The
  * section bands below carry the section headings.
  */
 const INTRO = {
@@ -404,9 +402,9 @@ export function build() {
 
     row(2, [[48, (x, y, w, h) => section(x, y, w, h, '① Is this normal?', 'the 7 days up to the end of the time picker')]]),
     row(14, [
-      [20, vegaPanel('08-actor-baseline-band', 'Is this normal for them? — hourly (UTC)')],
+      [20, vegaPanel('08-actor-baseline-band', 'Is this normal for them? — hourly')],
       [12, vegaPanel('12-actor-cohort', 'Where they rank')],
-      [16, vegaPanel('09-activity-punchcard', 'Working rhythm — by hour (UTC)')],
+      [16, vegaPanel('09-activity-punchcard', 'Working rhythm — by hour')],
     ]),
 
     row(2, [[48, (x, y, w, h) => section(x, y, w, h, '② What they did', 'follows the time picker')]]),

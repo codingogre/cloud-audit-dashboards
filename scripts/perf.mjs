@@ -346,7 +346,7 @@ async function cmdSeed(args) {
  * the picker changes nothing (see the TIME BINDING table in panels.mjs). Every DSL spec in the repo
  * today is in the second group — the coverage tile reads the whole stream on purpose — though the
  * previous-period tiles read the picker's min/max through %timefilter% placeholders, bound to `win` here.
- * (The 7-day and 24-hour charts are ES|QL on a panel range since 1.0.5.1: fixedMsOf below.)
+ * (The 7-day and 24-hour charts are ES|QL on the events view since 1.0.8.2: END_WINDOWS in panels.mjs.)
  */
 export function bindDsl(body, timefield, stripContext, win, now = Date.now()) {
   // A {"%timefilter%": "min"|"max"} (the previous-period tiles) is the picker's window, as in Kibana.
@@ -356,16 +356,9 @@ export function bindDsl(body, timefield, stripContext, win, now = Date.now()) {
   return { ...b, query: { bool: { filter: [range, ...(b.query ? [b.query] : [])] } } };
 }
 
-/**
- * A fixed-window ES|QL spec (VEGA_WINDOWS in panels.mjs) gets its panel's range as ?_tstart/?_tend whatever the
- * picker reads, so it is timed over that window in every --windows pass (and ends at the anchor like the rest).
- * Set in cmdRun(), once panels.mjs can be loaded against the replica.
- */
-let fixedMsOf = () => undefined;
-
 async function timeOne(item, win, budgetMs, lib, anchor) {
   const r = item.kind === 'esql'
-    ? await es.esqlRun(lib.bounded(item.q), windowParams(fixedMsOf(item.src) ?? win.ms, anchor), { budgetMs })
+    ? await es.esqlRun(lib.bounded(item.q), windowParams(win.ms, anchor), { budgetMs })
     : await es.searchRun(item.index, bindDsl(item.body, item.timefield, lib.stripContext, win, anchor), { budgetMs });
   return { ms: r.ms, ok: r.ok, cancelled: !!r.cancelled, error: r.ok ? undefined : reasonOf(r).slice(0, 200) };
 }
@@ -398,8 +391,8 @@ async function cmdRun(args) {
   process.env.AUDIT_STREAM = perf;
   const lib = await import('./esql.mjs');
   const { buildAll } = await import('./lib/definitions.mjs');
-  const { fixedWindow, windowMs } = await import('./lib/panels.mjs');
-  fixedMsOf = (src) => (fixedWindow(src) ? windowMs(fixedWindow(src)) : undefined);
+  // An END_WINDOWS spec reads only ?_tend (the anchor here), so it times the same 7 days or 24 hours in every pass.
+  const { endWindowOf } = await import('./lib/panels.mjs');
   // The prior-period tiles read the events view, which is over the live stream, so they are timed on a view of the
   // same definition over the replica (perfView). Not on the view's text written in: measured live in 1.0.5.1, a
   // query through the view took 0.2–0.37s over 7–30 days where the same text inlined took 0.04s.
@@ -412,16 +405,17 @@ async function cmdRun(args) {
   const esqlItems = lib.gatherQueries().map((x) => ({ ...x, q: atAnchor(x.q.replaceAll(cfg.view, view)) }));
   const dslItems = lib.gatherDsl();
   // If anything still names the live stream the replica is not what is being measured; refuse.
-  const stray = [...esqlItems.map((x) => x.q), ...dslItems.map((x) => x.index)].filter((t) => t.includes(live) || (!t.includes(perf) && !t.includes(view)));
+  // A ROW (the END_WINDOWS anchor) reads no data.
+  const stray = [...esqlItems.map((x) => x.q).filter((q) => !/^\s*ROW\s/.test(q)), ...dslItems.map((x) => x.index)].filter((t) => t.includes(live) || (!t.includes(perf) && !t.includes(view)));
   if (stray.length) throw new Error(`${stray.length} queries do not target ${perf} (e.g. ${stray[0].slice(0, 120)}) — refusing to time them`);
 
   let groups = groupByDashboard(buildAll(), esqlItems, dslItems);
   if (only) { const want = only.split(','); groups = groups.filter((g) => want.some((w) => g.name.includes(w))); }
   const unique = new Map(groups.flatMap((g) => g.items).map((x) => [x.key, x]));
-  const followsPicker = (x) => (x.kind === 'esql' && fixedMsOf(x.src) === undefined) || !!x.timefield;
+  const followsPicker = (x) => (x.kind === 'esql' && endWindowOf(x.src) === undefined) || !!x.timefield;
   const fixed = [...unique.values()].filter((x) => !followsPicker(x));
   info(`${esqlItems.length} ES|QL + ${dslItems.length} DSL queries in ${groups.length} groups; budget ${fmtMs(budgetMs)}/query; windows ${windows.map((w) => w.label).join(', ')}`);
-  if (fixed.length) detail(`fixed window (picker ignored, same query in every window): ${fixed.map((x) => x.key).join(', ')}`);
+  if (fixed.length) detail(`window of its own, ending at the picker's end (same query in every window): ${fixed.map((x) => x.key).join(', ')}`);
 
   const resident = await residentQueries(parseStream(live).dataset);
   if (resident.length) {
@@ -480,7 +474,7 @@ async function cmdRun(args) {
   }
   const top = [...seq].sort((a, b) => b.ms - a.ms).slice(0, 15);
   console.log('\nslowest 15 (sequential):');
-  for (const t of top) console.log(`  ${fmtMs(t.ms).padStart(8)}  ${t.window.padEnd(5)} ${t.key}${t.follows ? '' : '  [fixed window]'}${t.ok ? '' : t.cancelled ? '  CANCELLED' : '  FAILED'}`);
+  for (const t of top) console.log(`  ${fmtMs(t.ms).padStart(8)}  ${t.window.padEnd(5)} ${t.key}${t.follows ? '' : '  [own window]'}${t.ok ? '' : t.cancelled ? '  CANCELLED' : '  FAILED'}`);
 
   const out = join(ROOT, 'build', `perf-${stamp()}`);
   mkdirSync(out, { recursive: true });

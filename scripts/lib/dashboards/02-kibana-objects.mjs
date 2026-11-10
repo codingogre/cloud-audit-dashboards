@@ -253,8 +253,8 @@ export function build() {
       { scroll: true }),
     // The session timeline from Identity 360 (vega/13, one spec, so the two pages cannot disagree), directly
     // above the records it indexes: a click on a bar pins that session and zooms the picker to it, which
-    // narrows Session reconstruction beneath. On its own fixed 24 hours (VEGA_WINDOWS) on a page where every
-    // other panel follows the picker: Kibana badges the panel "Last 24 hours", so the title does not repeat it.
+    // narrows Session reconstruction beneath. It shows the 24 hours to the picker's end (END_WINDOWS), so a zoom
+    // re-anchors it on the zoomed session.
     vega(0, 82, 48, 7, '13-session-gantt', 'Kibana browser sessions · your time zone', specDescription('13-session-gantt')),
     sessionRecords(0, 89, 48, 14, 'Session reconstruction',
       'One person’s Kibana session, event by event, newest first: each object they opened or changed, in Kibana’s own words. Click a session bar above, or a Session cell, to narrow it to one session.',

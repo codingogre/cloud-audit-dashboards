@@ -5,7 +5,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { rangeFields, readRequest, readRow, judge, tilesOn, canaryQueries, ESQL_ASYNC } from '../../scripts/lib/canary.mjs';
+import { rangeFields, readRequest, readRow, judge, tilesOn, windowsOn, canaryQueries, ESQL_ASYNC } from '../../scripts/lib/canary.mjs';
 import { cfg, withStream, DEFAULT_VIEW, DEFAULT_STREAM } from '../../scripts/lib/env.mjs';
 import { prevQuery, PREV_TILES, prevEsql } from '../../scripts/lib/panels.mjs';
 import { buildAll } from '../../scripts/lib/definitions.mjs';
@@ -106,4 +106,17 @@ test('the canary covers every tile', () => {
   for (const k of Object.keys(PREV_TILES)) assert.ok(keys.has(k), k);
   assert.ok(keys.has('stream'));
   assert.ok(DEFAULT_STREAM);
+});
+
+test('the END_WINDOWS charts (1.0.8.2): each page that shows one must send its view queries, with no range filter', async () => {
+  const all = buildAll();
+  assert.deepEqual(windowsOn(all['07-actor-360']), ['08-actor-baseline-band', '09-activity-punchcard', '12-actor-cohort', '13-session-gantt']);
+  assert.deepEqual(windowsOn(all['02-kibana-objects']), ['13-session-gantt']);
+  assert.deepEqual(windowsOn(all['00-command-center']), []);
+  const keys = [...canaryQueries().values()].filter((k) => k.startsWith('window '));
+  assert.deepEqual([...new Set(keys)].sort(), ['window 08-actor-baseline-band', 'window 09-activity-punchcard', 'window 12-actor-cohort', 'window 13-session-gantt']);
+  const req = (ranges = []) => ({ requests: [{ key: 'window 13-session-gantt', ranges, params: [] }], rows: [], unread: [] });
+  assert.deepEqual((await judge(req(), [], { windows: ['13-session-gantt'] })).problems, []);
+  assert.match((await judge(req(['event_time']), [], { windows: ['13-session-gantt'] })).problems.join('\n'), /window 13-session-gantt: Kibana attached a range filter on event_time/);
+  assert.match((await judge({ requests: [], rows: [], unread: [] }, [], { windows: ['13-session-gantt'] })).problems.join('\n'), /window 13-session-gantt: the chart sent no request/);
 });

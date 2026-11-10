@@ -1,6 +1,6 @@
 {
   "$schema": "https://vega.github.io/schema/vega/v5.json",
-  "description": "The 12 latest Kibana browser sessions in the last 24 hours: length is how long, shade is how much was done. Click a bar for that session’s records; the browser’s Back button undoes the zoom. API-key work has no session.",
+  "description": "The 12 latest Kibana browser sessions in the 24 hours to the time picker’s end: length is how long, shade is how much was done. Click a bar for that session’s records; the browser’s Back button undoes the zoom.",
   "autosize": {
     "type": "fit",
     "contains": "padding"
@@ -14,6 +14,10 @@
   },
   "signals": [
     {
+      "name": "e",
+      "update": "length(data('anchor')) ? data('anchor')[0].e : 0"
+    },
+    {
       "name": "lane",
       "update": "length(data('sessions')) ? max(10, min(44, height / max(3, length(data('sessions'))))) : 12"
     },
@@ -23,14 +27,14 @@
       "on": [
         {
           "events": "@ribbon:click[!event.shiftKey]",
-          "update": "{s: datum.start - 60000, e: datum.end + 60000, t: now(), n: 0}"
+          "update": "{s: datum.start - 60000, e: datum.end + 60000, k: 0}"
         },
         {
           "events": {
             "type": "timer",
             "throttle": 100
           },
-          "update": "!zoomTo ? null : zoomTo.n === 0 && now() - zoomTo.t > 700 ? (kibanaSetTimeFilter(zoomTo.s, zoomTo.e) ? null : {s: zoomTo.s, e: zoomTo.e, t: zoomTo.t, n: 1}) : zoomTo.n === 1 && now() - zoomTo.t > 1400 ? (kibanaSetTimeFilter(zoomTo.s, zoomTo.e) ? null : null) : zoomTo"
+          "update": "!zoomTo ? null : zoomTo.k === 7 ? (kibanaSetTimeFilter(zoomTo.s, zoomTo.e) ? null : {s: zoomTo.s, e: zoomTo.e, k: 8}) : zoomTo.k >= 14 ? (kibanaSetTimeFilter(zoomTo.s, zoomTo.e) ? null : null) : {s: zoomTo.s, e: zoomTo.e, k: zoomTo.k + 1}"
         }
       ]
     },
@@ -61,12 +65,18 @@
   ],
   "data": [
     {
+      "name": "anchor",
+      "url": {
+        "%type%": "esql",
+        "query": "ROW e = TO_LONG(TO_DATETIME(?_tend))"
+      }
+    },
+    {
       "name": "sessions",
       "url": {
         "%type%": "esql",
-        "%timefield%": "@timestamp",
         "%context%": true,
-        "query": "SET unmapped_fields=\"nullify\"; FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart AND ((?project == \"\" OR ?project == \"Any\") OR project.name == ?project) AND ((?identity == \"\" OR ?identity == \"Any\") OR user.email == ?identity OR api_key.name == ?identity OR user.name == ?identity OR user.name == REPLACE(REPLACE(?identity, \" · Cloud API key$\", \"\"), \"^Unnamed key of \", \"\") OR (?identity == \"(unattributed)\" AND user.name IS NULL)) AND ((?identity_kind == \"\" OR ?identity_kind == \"Any\") OR (?identity_kind == \"Person\" AND user.email IS NOT NULL) OR (?identity_kind == \"Elasticsearch API key\" AND user.email IS NULL AND api_key.name IS NOT NULL) OR (?identity_kind == \"Unnamed API key\" AND user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_es_api_key\") OR (?identity_kind == \"Cloud API key\" AND user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_cloud_api_key\") OR (?identity_kind == \"Service account\" AND user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_service_account\") OR (?identity_kind == \"Failed sign-in\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\",\"_service_account\")) AND event.action IN (\"authentication_failed\",\"anonymous_access_denied\")) OR (?identity_kind == \"Unattributed\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\",\"_service_account\")) AND (event.action IS NULL OR NOT event.action IN (\"authentication_failed\",\"anonymous_access_denied\")) AND user.name IS NULL) OR (?identity_kind == \"Other\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\",\"_service_account\")) AND (event.action IS NULL OR NOT event.action IN (\"authentication_failed\",\"anonymous_access_denied\")) AND user.name IS NOT NULL)) AND ((?identity == \"\" OR ?identity == \"Any\") OR user.email == ?identity OR (user.email IS NULL AND api_key.name == ?identity) OR (user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_cloud_api_key\" AND ENDS_WITH(?identity, \" · Cloud API key\") AND user.name == REPLACE(?identity, \" · Cloud API key$\", \"\")) OR (user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_es_api_key\" AND STARTS_WITH(?identity, \"Unnamed key of \") AND user.name == REPLACE(?identity, \"^Unnamed key of \", \"\")) OR (user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\")) AND user.name == ?identity) OR (?identity == \"(unattributed)\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\")) AND user.name IS NULL)) AND ((?client_ip == \"\" OR ?client_ip == \"Any\") OR client.ip == TO_IP(CASE((?client_ip == \"\" OR ?client_ip == \"Any\"), null, ?client_ip))) | WHERE kibana.session.id IS NOT NULL | WHERE event.action IS NULL OR NOT (event.action IN (\"saved_object_open_point_in_time\", \"saved_object_close_point_in_time\", \"space_get\", \"space_find\") OR (event.action == \"http_request\" AND (url.original IS NULL OR NOT url.original LIKE \"*/api/*\" OR url.original LIKE \"*/api/ui_counters/*\" OR url.original LIKE \"*/api/content_management/*\"))) | STATS events = COUNT(*), started = MIN(@timestamp), ended = MAX(@timestamp), nActions = COUNT_DISTINCT(event.action), actor = MIN(user.email), spaces = VALUES(kibana.space.id) BY key = kibana.session.id | SORT ended DESC, key | LIMIT 12 | EVAL start = TO_LONG(started), end = TO_LONG(ended) | DROP started, ended"
+        "query": "SET unmapped_fields=\"nullify\"; FROM logs-cloud-audit-events-view | WHERE event_time <= TO_DATETIME(?_tend) AND event_time > TO_DATETIME(?_tend) - 24 hours AND ((?project == \"\" OR ?project == \"Any\") OR project.name == ?project) AND ((?identity == \"\" OR ?identity == \"Any\") OR user.email == ?identity OR api_key.name == ?identity OR user.name == ?identity OR user.name == REPLACE(REPLACE(?identity, \" · Cloud API key$\", \"\"), \"^Unnamed key of \", \"\") OR (?identity == \"(unattributed)\" AND user.name IS NULL)) AND ((?identity_kind == \"\" OR ?identity_kind == \"Any\") OR (?identity_kind == \"Person\" AND user.email IS NOT NULL) OR (?identity_kind == \"Elasticsearch API key\" AND user.email IS NULL AND api_key.name IS NOT NULL) OR (?identity_kind == \"Unnamed API key\" AND user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_es_api_key\") OR (?identity_kind == \"Cloud API key\" AND user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_cloud_api_key\") OR (?identity_kind == \"Service account\" AND user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_service_account\") OR (?identity_kind == \"Failed sign-in\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\",\"_service_account\")) AND event.action IN (\"authentication_failed\",\"anonymous_access_denied\")) OR (?identity_kind == \"Unattributed\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\",\"_service_account\")) AND (event.action IS NULL OR NOT event.action IN (\"authentication_failed\",\"anonymous_access_denied\")) AND user.name IS NULL) OR (?identity_kind == \"Other\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\",\"_service_account\")) AND (event.action IS NULL OR NOT event.action IN (\"authentication_failed\",\"anonymous_access_denied\")) AND user.name IS NOT NULL)) AND ((?identity == \"\" OR ?identity == \"Any\") OR user.email == ?identity OR (user.email IS NULL AND api_key.name == ?identity) OR (user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_cloud_api_key\" AND ENDS_WITH(?identity, \" · Cloud API key\") AND user.name == REPLACE(?identity, \" · Cloud API key$\", \"\")) OR (user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_es_api_key\" AND STARTS_WITH(?identity, \"Unnamed key of \") AND user.name == REPLACE(?identity, \"^Unnamed key of \", \"\")) OR (user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\")) AND user.name == ?identity) OR (?identity == \"(unattributed)\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\")) AND user.name IS NULL)) AND ((?client_ip == \"\" OR ?client_ip == \"Any\") OR client.ip == TO_IP(CASE((?client_ip == \"\" OR ?client_ip == \"Any\"), null, ?client_ip))) | WHERE kibana.session.id IS NOT NULL | WHERE event.action IS NULL OR NOT (event.action IN (\"saved_object_open_point_in_time\", \"saved_object_close_point_in_time\", \"space_get\", \"space_find\") OR (event.action == \"http_request\" AND (url.original IS NULL OR NOT url.original LIKE \"*/api/*\" OR url.original LIKE \"*/api/ui_counters/*\" OR url.original LIKE \"*/api/content_management/*\"))) | STATS events = COUNT(*), started = MIN(event_time), ended = MAX(event_time), nActions = COUNT_DISTINCT(event.action), actor = MIN(user.email), spaces = VALUES(kibana.space.id) BY key = kibana.session.id | SORT ended DESC, key | LIMIT 12 | EVAL start = TO_LONG(started), end = TO_LONG(ended) | DROP started, ended"
       },
       "transform": [
         {
@@ -77,7 +87,7 @@
         {
           "type": "formula",
           "as": "base",
-          "expr": "datum.actor + ' · from ' + timeFormat(datum.start, timeFormat(datum.start, '%a') === timeFormat(now(), '%a') ? '%H:%M' : '%a %H:%M') + (datum.start < now() - 86400000 + 600000 ? ' or earlier' : '')"
+          "expr": "datum.actor + ' · from ' + timeFormat(datum.start, timeFormat(datum.start, '%a') === timeFormat(e, '%a') ? '%H:%M' : '%a %H:%M') + (datum.start < e - 86400000 + 600000 ? ' or earlier' : '')"
         },
         {
           "type": "window",
@@ -127,14 +137,13 @@
       "name": "nosession",
       "url": {
         "%type%": "esql",
-        "%timefield%": "@timestamp",
         "%context%": true,
-        "query": "SET unmapped_fields=\"nullify\"; FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart AND ((?project == \"\" OR ?project == \"Any\") OR project.name == ?project) AND ((?identity == \"\" OR ?identity == \"Any\") OR user.email == ?identity OR api_key.name == ?identity OR user.name == ?identity OR user.name == REPLACE(REPLACE(?identity, \" · Cloud API key$\", \"\"), \"^Unnamed key of \", \"\") OR (?identity == \"(unattributed)\" AND user.name IS NULL)) AND ((?identity_kind == \"\" OR ?identity_kind == \"Any\") OR (?identity_kind == \"Person\" AND user.email IS NOT NULL) OR (?identity_kind == \"Elasticsearch API key\" AND user.email IS NULL AND api_key.name IS NOT NULL) OR (?identity_kind == \"Unnamed API key\" AND user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_es_api_key\") OR (?identity_kind == \"Cloud API key\" AND user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_cloud_api_key\") OR (?identity_kind == \"Service account\" AND user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_service_account\") OR (?identity_kind == \"Failed sign-in\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\",\"_service_account\")) AND event.action IN (\"authentication_failed\",\"anonymous_access_denied\")) OR (?identity_kind == \"Unattributed\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\",\"_service_account\")) AND (event.action IS NULL OR NOT event.action IN (\"authentication_failed\",\"anonymous_access_denied\")) AND user.name IS NULL) OR (?identity_kind == \"Other\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\",\"_service_account\")) AND (event.action IS NULL OR NOT event.action IN (\"authentication_failed\",\"anonymous_access_denied\")) AND user.name IS NOT NULL)) AND ((?identity == \"\" OR ?identity == \"Any\") OR user.email == ?identity OR (user.email IS NULL AND api_key.name == ?identity) OR (user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_cloud_api_key\" AND ENDS_WITH(?identity, \" · Cloud API key\") AND user.name == REPLACE(?identity, \" · Cloud API key$\", \"\")) OR (user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_es_api_key\" AND STARTS_WITH(?identity, \"Unnamed key of \") AND user.name == REPLACE(?identity, \"^Unnamed key of \", \"\")) OR (user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\")) AND user.name == ?identity) OR (?identity == \"(unattributed)\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\")) AND user.name IS NULL)) AND ((?client_ip == \"\" OR ?client_ip == \"Any\") OR client.ip == TO_IP(CASE((?client_ip == \"\" OR ?client_ip == \"Any\"), null, ?client_ip))) | WHERE kibana.session.id IS NULL | STATS t = MAX(@timestamp) | EVAL t = TO_LONG(t)"
+        "query": "SET unmapped_fields=\"nullify\"; FROM logs-cloud-audit-events-view | WHERE event_time <= TO_DATETIME(?_tend) AND event_time > TO_DATETIME(?_tend) - 24 hours AND ((?project == \"\" OR ?project == \"Any\") OR project.name == ?project) AND ((?identity == \"\" OR ?identity == \"Any\") OR user.email == ?identity OR api_key.name == ?identity OR user.name == ?identity OR user.name == REPLACE(REPLACE(?identity, \" · Cloud API key$\", \"\"), \"^Unnamed key of \", \"\") OR (?identity == \"(unattributed)\" AND user.name IS NULL)) AND ((?identity_kind == \"\" OR ?identity_kind == \"Any\") OR (?identity_kind == \"Person\" AND user.email IS NOT NULL) OR (?identity_kind == \"Elasticsearch API key\" AND user.email IS NULL AND api_key.name IS NOT NULL) OR (?identity_kind == \"Unnamed API key\" AND user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_es_api_key\") OR (?identity_kind == \"Cloud API key\" AND user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_cloud_api_key\") OR (?identity_kind == \"Service account\" AND user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_service_account\") OR (?identity_kind == \"Failed sign-in\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\",\"_service_account\")) AND event.action IN (\"authentication_failed\",\"anonymous_access_denied\")) OR (?identity_kind == \"Unattributed\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\",\"_service_account\")) AND (event.action IS NULL OR NOT event.action IN (\"authentication_failed\",\"anonymous_access_denied\")) AND user.name IS NULL) OR (?identity_kind == \"Other\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\",\"_service_account\")) AND (event.action IS NULL OR NOT event.action IN (\"authentication_failed\",\"anonymous_access_denied\")) AND user.name IS NOT NULL)) AND ((?identity == \"\" OR ?identity == \"Any\") OR user.email == ?identity OR (user.email IS NULL AND api_key.name == ?identity) OR (user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_cloud_api_key\" AND ENDS_WITH(?identity, \" · Cloud API key\") AND user.name == REPLACE(?identity, \" · Cloud API key$\", \"\")) OR (user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_es_api_key\" AND STARTS_WITH(?identity, \"Unnamed key of \") AND user.name == REPLACE(?identity, \"^Unnamed key of \", \"\")) OR (user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\")) AND user.name == ?identity) OR (?identity == \"(unattributed)\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\")) AND user.name IS NULL)) AND ((?client_ip == \"\" OR ?client_ip == \"Any\") OR client.ip == TO_IP(CASE((?client_ip == \"\" OR ?client_ip == \"Any\"), null, ?client_ip))) | WHERE kibana.session.id IS NULL | STATS t = MAX(event_time) | EVAL t = TO_LONG(t)"
       },
       "transform": [
         {
           "type": "filter",
-          "expr": "isValid(datum.t) && datum.t > now() - 86400000"
+          "expr": "isValid(datum.t) && datum.t > e - 86400000"
         }
       ]
     }
@@ -144,7 +153,7 @@
       "name": "x",
       "type": "time",
       "domain": {
-        "signal": "[now() - 86400000, now()]"
+        "signal": "[e - 86400000, e]"
       },
       "range": "width"
     },
@@ -270,7 +279,7 @@
             "value": 12
           },
           "text": {
-            "value": "No Kibana browser sessions for this selection in the last 24 hours — Elasticsearch API calls carry no session id."
+            "signal": "'No Kibana browser sessions for this selection in the 24 hours to ' + timeFormat(e, '%a %d %b %H:%M') + ' — Elasticsearch API calls carry no session id.'"
           },
           "opacity": {
             "signal": "length(data('sessions')) === 0 ? 1 : 0"

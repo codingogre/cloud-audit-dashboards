@@ -8,24 +8,48 @@
  *   - a tile on the page sent no request, or its answer could not be read, or
  *   - a tile's prior count differs from TIME on the stream over the same prior window (prevEsql, with the request's
  *     own dropdown values), which includes reading 0 where the stream has events.
+ * The END_WINDOWS charts (Identity 360's ① row, the session timeline) read the same view, so their requests are held
+ * to the same no-range-filter rule, and a page that shows one must send its view queries (1.0.8.2).
  * Exported pieces are pure, so the unit tests can feed them captured bodies.
  */
-import { cfg, withStream, objId, CONTROL_VARS } from './env.mjs';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { cfg, withStream, objId, CONTROL_VARS, ROOT, DEFAULT_VIEW } from './env.mjs';
 import { es } from './http.mjs';
-import { PREV_TILES, prevQuery, prevStreamQuery, prevEsql, prevRef, flatPanels } from './panels.mjs';
+import { PREV_TILES, prevQuery, prevStreamQuery, prevEsql, prevRef, flatPanels, END_WINDOWS } from './panels.mjs';
 
 export const ESQL_ASYNC = /\/internal\/search\/esql_async(\/|\?|$)/;
 
-/** The tile keys (and 'stream') each deployed query text belongs to. */
+/** Every view query of an END_WINDOWS spec, keyed `window <ref>`. */
+export const windowQueries = () => {
+  const out = [];
+  const walk = (n, ref) => {
+    if (Array.isArray(n)) return n.forEach((x) => walk(x, ref));
+    if (!n || typeof n !== 'object') return;
+    if (n.url?.['%type%'] === 'esql' && String(n.url.query).includes(DEFAULT_VIEW)) out.push([withStream(n.url.query), `window ${ref}`]);
+    Object.values(n).forEach((x) => walk(x, ref));
+  };
+  for (const ref of Object.keys(END_WINDOWS)) walk(JSON.parse(readFileSync(join(ROOT, 'vega', `${ref}.json`), 'utf8')), ref);
+  return out;
+};
+
+/** The tile keys (and 'stream', and `window <ref>`) each deployed query text belongs to. */
 export const canaryQueries = () => new Map([
   ...Object.keys(PREV_TILES).map((k) => [withStream(prevQuery(k)), k]),
   [withStream(prevStreamQuery()), 'stream'],
+  ...windowQueries(),
 ]);
 
 /** The prior-period tiles a dashboard definition places, by key. */
 export const tilesOn = (def) => {
   const refs = new Set(flatPanels(def.panels).map((p) => p.config?.ref_id).filter(Boolean));
   return Object.keys(PREV_TILES).filter((k) => refs.has(objId('vega', prevRef(k))));
+};
+
+/** The END_WINDOWS specs a dashboard definition places, by ref. */
+export const windowsOn = (def) => {
+  const refs = new Set(flatPanels(def.panels).map((p) => p.config?.ref_id).filter(Boolean));
+  return Object.keys(END_WINDOWS).filter((r) => refs.has(objId('vega', r)));
 };
 
 /** Every range clause anywhere in a request's filter, as `field` names. */
@@ -84,15 +108,21 @@ export function watch(page) {
 }
 
 /**
- * The verdict for one page: `problems` fail the run, `tiles` go in report.json. `expected` is tilesOn(def).
- * The ground truth is TIME on the stream over each tile's prior window, so it costs one small query per tile.
+ * The verdict for one page: `problems` fail the run, `tiles` go in report.json. `expected` is tilesOn(def), `windows`
+ * windowsOn(def). The ground truth is TIME on the stream over each tile's prior window, so it costs one small query per tile.
  */
-export async function judge(state, expected, { budgetMs = 30e3, esqlRun = es.esqlRun } = {}) {
+export async function judge(state, expected, { budgetMs = 30e3, esqlRun = es.esqlRun, windows = [] } = {}) {
   const problems = [], tiles = [];
   const stream = state.rows.filter((r) => r.key === 'stream').at(-1);
   const firstEvent = stream?.row?.t0 ?? null;
   for (const r of state.requests) {
-    if (r.ranges.length) problems.push(`prior-period ${r.key}: Kibana attached a range filter on ${[...new Set(r.ranges)].join(', ')} — the hidden time filter is back, so prior counts read 0`);
+    if (!r.ranges.length) continue;
+    problems.push(r.key.startsWith('window ')
+      ? `${r.key}: Kibana attached a range filter on ${[...new Set(r.ranges)].join(', ')} — the chart is cut to the picker's range instead of its own window`
+      : `prior-period ${r.key}: Kibana attached a range filter on ${[...new Set(r.ranges)].join(', ')} — the hidden time filter is back, so prior counts read 0`);
+  }
+  for (const ref of windows) {
+    if (!state.requests.some((r) => r.key === `window ${ref}`)) problems.push(`window ${ref}: the chart sent no request on ${cfg.view}`);
   }
   for (const key of expected) {
     if (!state.requests.some((r) => r.key === key)) { problems.push(`prior-period ${key}: the tile sent no request on ${cfg.view}`); continue; }

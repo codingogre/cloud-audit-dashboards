@@ -37,7 +37,8 @@ const HELP = `Usage: ./audit <command>
     --verify           Render every dashboard in Chromium and inspect for broken panels
                        (AUDIT_VERIFY_THEME=light renders light mode; default dark.
                        AUDIT_VERIFY_RANGE=now-1h sets the window; default now-24h, the
-                       dashboards' saved range; every range ends at now-1m, as theirs does.
+                       dashboards' saved range; every range ends at now-1m, as theirs does,
+                       unless AUDIT_VERIFY_TO=now-3d ends it earlier.
                        AUDIT_VERIFY_WIDTH=1440 narrows the viewport; default 1920)
     --queries          List the ES|QL queries running on the project right now. Check this before
                        trusting any timing: an abandoned query cannot be cancelled on serverless
