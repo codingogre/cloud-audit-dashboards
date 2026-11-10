@@ -4,7 +4,7 @@
 
 How well the seven dashboards and eleven Discover sessions serve SOC analysts, compliance auditors, platform admins and security managers: where the design gets in their way, which of their questions it answers, and what comes next.
 
-Reviewed **2026-10-26** against release **1.0.7**, updated for **1.0.7.2** · 136 use cases · 23 open design holes. The full page, with filters and every
+Reviewed **2026-10-26** against release **1.0.7**, updated for **1.0.8** · 136 use cases · 23 open design holes. The full page, with filters and every
 use case's detail, is [`docs/roadmap.html`](roadmap.html): download it and open it in a browser.
 
 ## Investigation works; evidence and reporting lag
@@ -24,9 +24,9 @@ use case's detail, is [`docs/roadmap.html`](roadmap.html): download it and open 
 
 ## Roadmap
 
-Every open design hole and every use case not answered today, placed in the release that closes it. Patch releases add to the dashboards, and 1.0.7 continues as a run of small ones, 1.0.7.3 to 1.0.7.7; 1.1.0 adds a dashboard; 2.0.0 brings in data from outside the audit stream.
+Every open design hole and every use case not answered today, placed in the release that closes it. Patch releases add to the dashboards, and the work continues from 1.0.8 as a run of small ones, 1.0.8.1 to 1.0.8.5; 1.1.0 adds a dashboard; 2.0.0 brings in data from outside the audit stream.
 
-### 1.0.7.3 — State the window
+### 1.0.8.1 — State the window
 
 Every intro says which time window the page opens on; 24 hours stays the default everywhere.
 
@@ -39,7 +39,7 @@ Design holes:
 
 - **low** — No page says which time window it opens on, and the overview pages have no weekly view
 
-### 1.0.7.4 — Identity 360 on the time picker
+### 1.0.8.2 — Identity 360 on the time picker
 
 Identity 360 covers the time picked, and says when it is showing everyone.
 
@@ -53,7 +53,7 @@ Design holes:
 - **medium** — Identity 360's 7-day and 24-hour windows end at the current moment, not at the time picker, and the page mixes UTC with local time
 - **low** — With nobody selected, Identity 360 shows project-wide totals under the heading 'Everything one person did, on one page', and nothing labels them as covering all identities.
 
-### 1.0.7.5 — Object, space and index family pivots
+### 1.0.8.3 — Object, space and index family pivots
 
 "Who else touched this?" is one click for a saved object, a space or an index family.
 
@@ -72,7 +72,7 @@ Use cases:
 - UC-064 — What is our failed-change rate: what share of create and update attempts on saved objects and spaces failed?
 - UC-113 — Which teams and spaces actually use Kibana: active users, object edits and risk per space, week over week?
 
-### 1.0.7.6 — Sign-in and session panels
+### 1.0.8.4 — Sign-in and session panels
 
 How people sign in and how long their sessions last, on Identity & Access.
 
@@ -93,7 +93,7 @@ Use cases:
 - UC-015 — How many distinct humans logged into Kibana each day this month?
 - UC-066 — Were any requests made with run_as or impersonation, and on whose behalf?
 
-### 1.0.7.7 — Discovery against a baseline
+### 1.0.8.5 — Discovery against a baseline
 
 Elasticsearch Data Access flags enumeration and index discovery that an identity does not normally do.
 
@@ -332,7 +332,7 @@ Severity **high** · capability · Compliance auditor, SOC analyst · effort M �
 
 ### 4. Identity 360's 7-day and 24-hour windows end at the current moment, not at the time picker, and the page mixes UTC with local time
 
-Severity **medium** · navigation · SOC analyst, Compliance auditor · effort M · planned for 1.0.7.4
+Severity **medium** · navigation · SOC analyst, Compliance auditor · effort M · planned for 1.0.8.2
 
 - **Impact:** Investigating an incident from 10 days ago, the baseline, rhythm, cohort and session timeline show the last 7 days or 24 hours, not the period around the incident. Comparing a UTC hour on the baseline with a local-time row in a table invites off-by-hours mistakes in a report.
 - **Fix:** Anchor the windows to the picker's end: bound the ES|QL by ?_tend - 7 days / 24 hours instead of a panel range ending at now. Show the baseline and rhythm hours in the viewer's zone, or put the UTC offset on every time axis on the page.
@@ -340,7 +340,7 @@ Severity **medium** · navigation · SOC analyst, Compliance auditor · effort M
 
 ### 5. No page says which time window it opens on, and the overview pages have no weekly view
 
-Severity **low** · navigation · CISO, SOC analyst, Cloud/platform admin · effort S · planned for 1.0.7.3
+Severity **low** · navigation · CISO, SOC analyst, Cloud/platform admin · effort S · planned for 1.0.8.1
 
 - **Impact:** A manager doing a weekly review on Command Center or Security & Anomalies has to set 7 days by hand each time, and no intro says the page opened on 24 hours. Panels that read empty over a quiet day give no hint that a wider range would help.
 - **Fix:** Keep 24 hours as the default on every page: a 7-day default would make every Command Center query scan a week (the prior-period tiles two), which is too much load to impose on every viewer. Say the default window in each intro, and point weekly reviewers to the time picker.
@@ -420,7 +420,7 @@ Severity **medium** · other · SOC analyst, CISO, Compliance auditor · effort 
 
 ### 15. With nobody selected, Identity 360 shows project-wide totals under the heading 'Everything one person did, on one page', and nothing labels them as covering all identities.
 
-Severity **low** · other · SOC analyst, CISO · effort S · planned for 1.0.7.4
+Severity **low** · other · SOC analyst, CISO · effort S · planned for 1.0.8.2
 
 - **Impact:** A reader who opens Identity 360 without picking an identity can take the Events, Risk, Index families and Client IPs tiles for one person's footprint. The only hint that the page covers everyone is one clause in the intro.
 - **Fix:** Add a short 'Pick an identity in the Identity dropdown, or click a Principal id in Who this is' prompt that appears when nothing is selected, and add 'all identities' to the tile secondary lines (or titles) when the Identity dropdown and pills are empty.  'Who this is' already serves as the pick list, so it needs no change.
@@ -444,7 +444,7 @@ Severity **medium** · investigation · Cloud/platform admin, Compliance auditor
 
 ### 18. Object names and computed index families cannot be clicked, and there is no Object or Space dropdown, so 'who else touched this object or index family' means typing a filter by hand.
 
-Severity **medium** · investigation · SOC analyst, Compliance auditor · effort M · planned for 1.0.7.5
+Severity **medium** · investigation · SOC analyst, Compliance auditor · effort M · planned for 1.0.8.3
 
 - **Impact:** An analyst who finds a suspicious dashboard, rule or index family cannot pivot to everyone who touched it in one click. On Identity 360, the Space in 'What they changed' is not clickable either.
 - **Fix:** Add a filterable Object id (kibana.saved_object.id) column next to Object on the Kibana Objects tables and on 'What they changed', and make Space filterable there (kibana.space.id). Give 'Top index families by events' and 'What they read, by index family' a filterable representative index, as 'System and hidden index reads' does. Optionally add a Space dropdown to Kibana Object Forensics.
@@ -498,17 +498,17 @@ Severity **low** · capability · SOC analyst, Compliance auditor · effort M ·
 | UC-002 | Admin, Analyst, Auditor, Manager | Alert when any IP or identity goes over N failed authentications in a short window (10 in 5 or 15 min, 6 in 30 min), including password spraying across many principals. | Answered |  |
 | UC-003 | Admin, Analyst, Auditor | Did a successful login follow a burst of failures from the same IP or account (brute-force success)? | Answered |  |
 | UC-004 | Admin, Analyst | Is one public IP failing authentication against many different usernames or API keys (spraying), not one account repeatedly? | Partly | Out of reach |
-| UC-005 | Auditor, Manager | What is the failed-authentication rate (failed / all attempts), and how does it trend week over week? | Partly | 1.0.7.6 |
+| UC-005 | Auditor, Manager | What is the failed-authentication rate (failed / all attempts), and how does it trend week over week? | Partly | 1.0.8.4 |
 | UC-006 | Admin | Is a client hammering /_security/_authenticate or another endpoint with bad credentials, such as an integration holding a stale key? | Answered |  |
-| UC-007 | Admin | Which internal or platform principals (autoscaling, elasticsearch-controller) fail realm authentication, and is that noise I should exclude? | Partly | 1.0.7.6 |
+| UC-007 | Admin | Which internal or platform principals (autoscaling, elasticsearch-controller) fail realm authentication, and is that noise I should exclude? | Partly | 1.0.8.4 |
 | UC-008 | Admin | Are any user accounts locked out after repeated failed logins? | Not in the data | 2.0.0 |
 | UC-009 | Analyst, Manager | Who is generating anonymous_access_denied (scanners on the public endpoint): how many, from where, which paths, and is it rising? | Answered |  |
-| UC-010 | Analyst, Auditor, Manager | Which authentication methods are used (SAML SSO, API key, token, native realm), what share each has, and did any human authenticate other than through SSO? | Partly | 1.0.7.6 |
+| UC-010 | Analyst, Auditor, Manager | Which authentication methods are used (SAML SSO, API key, token, native realm), what share each has, and did any human authenticate other than through SSO? | Partly | 1.0.8.4 |
 | UC-011 | Analyst, Auditor, Manager | Can we prove MFA was used for every interactive (admin) login, and what share of human logins were MFA-protected? | Not in the data | 2.0.0 |
 | UC-012 | Analyst, Auditor | Reconstruct a Kibana session, or list a user's sessions: when it started, from which IP, which spaces and objects it touched, and when it ended. | Answered |  |
-| UC-013 | Admin, Analyst, Auditor | Was the same Kibana session id used from more than one public IP or country mid-session (possible cookie theft)? | Partly | 1.0.7.6 |
-| UC-014 | Admin, Auditor, Manager | How many Kibana sessions were there, how long did they last on average, and which were long-lived (>12h), suggesting idle timeouts are not enforced? | Partly | 1.0.7.6 |
-| UC-015 | Admin | How many distinct humans logged into Kibana each day this month? | Partly | 1.0.7.6 |
+| UC-013 | Admin, Analyst, Auditor | Was the same Kibana session id used from more than one public IP or country mid-session (possible cookie theft)? | Partly | 1.0.8.4 |
+| UC-014 | Admin, Auditor, Manager | How many Kibana sessions were there, how long did they last on average, and which were long-lived (>12h), suggesting idle timeouts are not enforced? | Partly | 1.0.8.4 |
+| UC-015 | Admin | How many distinct humans logged into Kibana each day this month? | Partly | 1.0.8.4 |
 | UC-016 | Admin, Analyst, Auditor | Did any human identity authenticate from two locations too far apart for the elapsed time (impossible travel)? | Partly | 1.1.0 |
 | UC-017 | Manager | Alert me on impossible travel: the same human identity seen from two countries within an hour. | Needs alerting or retention | 1.2.0 |
 | UC-018 | Admin, Analyst, Manager | Which users logged in from a country, city or ASN they had not used in the previous 30 days (new country this week or month)? | Needs alerting or retention | 2.0.0 |
@@ -557,9 +557,9 @@ Severity **low** · capability · SOC analyst, Compliance auditor · effort M ·
 | UC-061 | Manager | Did Elastic staff or any third-party or vendor identity access our project this quarter? | Partly | Out of reach |
 | UC-062 | Admin, Analyst, Auditor, Manager | Which identities are hitting access_denied, on which actions and indices, how often, and is anyone probing for access they do not have? | Answered |  |
 | UC-063 | Admin, Analyst | Which Kibana saved-object or space operations failed (outcome failure), and who tried them, for example repeated forbidden writes? | Answered |  |
-| UC-064 | Manager | What is our failed-change rate: what share of create and update attempts on saved objects and spaces failed? | Partly | 1.0.7.5 |
+| UC-064 | Manager | What is our failed-change rate: what share of create and update attempts on saved objects and spaces failed? | Partly | 1.0.8.3 |
 | UC-065 | Admin | Has a newly onboarded user actually logged in and reached the spaces they need, or are they hitting access_denied? | Answered |  |
-| UC-066 | Analyst, Auditor | Were any requests made with run_as or impersonation, and on whose behalf? | Not in the data | 1.0.7.6 |
+| UC-066 | Analyst, Auditor | Were any requests made with run_as or impersonation, and on whose behalf? | Not in the data | 1.0.8.4 |
 | UC-067 | Admin, Auditor | Access review: list every identity with its roles, authentication type, first and last seen, event count and distinct IPs, and whether it was active in the last 90 days. | Partly | 2.0.0 |
 | UC-068 | Admin, Manager | Who actually accessed this project in the last 30 days, humans and machines, and how did each authenticate? | Answered |  |
 | UC-069 | Auditor, Manager | Which users with access, privileged ones especially, have not logged in for 30, 60 or 90 days, so we can deprovision them? | Not in the data | 2.0.0 |
@@ -576,8 +576,8 @@ Severity **low** · capability · SOC analyst, Compliance auditor · effort M ·
 | UC-080 | Admin | Which clients poll health or monitor endpoints (cluster:monitor/main, _security/_authenticate) far more often than needed? | Answered |  |
 | UC-081 | Manager | Who are the top 10 riskiest identities this month, and what share of total risk do they account for? | Partly | 1.1.0 |
 | UC-082 | Manager | What was our average event severity or risk per day this month, and what were the three worst days and why? | Partly | 1.1.0 |
-| UC-083 | Analyst | Who enumerated security configuration (roles, users, API keys, privileges), and how often compared with their baseline? | Partly | 1.0.7.7 |
-| UC-084 | Analyst | Which identities listed indices, mappings, cluster state or field caps across many indices they do not normally touch? | Partly | 1.0.7.7 |
+| UC-083 | Analyst | Who enumerated security configuration (roles, users, API keys, privileges), and how often compared with their baseline? | Partly | 1.0.8.5 |
+| UC-084 | Analyst | Which identities listed indices, mappings, cluster state or field caps across many indices they do not normally touch? | Partly | 1.0.8.5 |
 | UC-085 | Admin, Analyst, Auditor, Manager | Who read indices matching my sensitive patterns (pii*, customers-*, hr-*, .security*), how many times, through which API, and was it a human or an API key? | Partly | 1.0.9 |
 | UC-086 | Admin | Who read sensitive indices this month through an API key whose owner has left or which has since been invalidated? | Partly | 2.0.0 |
 | UC-087 | Admin, Analyst | Which identity read the most distinct indices, or ran unusually many search, scroll or PIT requests, in the last 24h, and which carries the most read and write load per index pattern (chargeback)? | Partly | 1.0.9 |
@@ -606,7 +606,7 @@ Severity **low** · capability · SOC analyst, Compliance auditor · effort M ·
 | UC-110 | Admin, Analyst, Auditor, Manager | Who created or deleted Kibana spaces, and when? | Answered |  |
 | UC-111 | Auditor | Which users accessed which spaces, to confirm segregation (for example, only the finance team used the 'finance' space)? | Answered |  |
 | UC-112 | Analyst | Did anyone access a Kibana space they had never used before? | Needs alerting or retention | 1.0.8 |
-| UC-113 | Admin, Manager | Which teams and spaces actually use Kibana: active users, object edits and risk per space, week over week? | Partly | 1.0.7.5 |
+| UC-113 | Admin, Manager | Which teams and spaces actually use Kibana: active users, object edits and risk per space, week over week? | Partly | 1.0.8.3 |
 | UC-114 | Admin | Are any spaces unused (no access in 60 days), so I can archive them? | Needs alerting or retention | 1.0.9 |
 | UC-115 | Analyst | An alert fired on identity X: show everything it did in the hour before and after, across Elasticsearch and Kibana, in one timeline. | Answered |  |
 | UC-116 | Analyst | Pivot from a suspicious IP: every identity, project and action seen from it in the last 30 days. | Partly | 1.0.9 |

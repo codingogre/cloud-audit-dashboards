@@ -3,27 +3,41 @@
 `CLAUDE.md`-style durable context lives in `README.md` and `esql/fragments.md` and wins on
 conflict. This file is "where we are right now" and should be assumed stale.
 
-## Next: 1.0.7.3 "State the window"
+## Next: 1.0.8.1 "State the window"
 
-Step 4 of the 1.0.7 plan, as the user decided on 2026-10-26: **the 24h default stays** (no 7-day default: it would make
+Built on the 1.0.8 code (the user, 2026-11-10: every later step starts from 1.0.8). Step 4 of the 1.0.7 plan, as the user decided on 2026-10-26: **the 24h default stays** (no 7-day default: it would make
 every panel scan 7 days and the prior-period tiles 14, on streams far bigger than the test project). Each intro states
 the window the page opens on (24 hours; Identity 360's fixed 7-day panels say theirs), and How to read points a weekly
 reviewer to the time picker. Copy only; measure nothing new unless a query changes. Then Identity 360 anchored to the
-picker (1.0.7.4), objects/spaces/index pivots (1.0.7.5), sign-ins and sessions (1.0.7.6), discovery against a baseline
-on 03 (1.0.7.7). No open user decisions.
+picker (1.0.8.2), objects/spaces/index pivots (1.0.8.3), sign-ins and sessions (1.0.8.4), discovery against a baseline
+on 03 (1.0.8.5). No open user decisions.
 
-## Experiment: custom panels on Identity 360 (branch experiment/custom-panels), 2026-11-06
+## Release 1.0.8 — Identity 360 drill-down replaces the Vega ribbon, 2026-11-10
 
-Kibana 9.6's `custom_content` panel (tech preview), evaluated and prototyped; the write-up, API and renderer facts
-and ranked candidates are in `docs/custom-panels.md`. The panel is a no-JavaScript **drill-down** that replaced the Vega ribbon (removed 2026-11-09)
-on Identity 360: credential › space › object type › operation › objects and the data Kibana read
-(`custom/11-identity-path.html`, `IDENTITY_PATH` in `07-actor-360.mjs`, `custom()` in `panels.mjs`, icons, labels
-and template loading in `scripts/lib/custom.mjs`, `READ_ACTIONS`/`LOOKUP_ACTIONS` in `panels.mjs`, tests in
-`test/unit/custom.test.mjs`). The branch history keeps the first "step by step" version. A read's space and
-browser address come from Kibana's `http_request` events (joined on request id, or inferred from the same
-object's other requests). 0.67-0.71s at 7d on the perf replica, at the 0.7s budget; 07 loads in 3.0s. Private deploy `AUDIT_ID_NS=cpx` is still installed (`AUDIT_ID_NS=cpx ./audit --clean
-dashboards` removes it). Each data set opens a panel of its queries under the columns. **Open user decisions:** whether and when the other
-candidates go on the roadmap. Spike scripts and the review spec are in `.sessions/` (local only).
+Kibana 9.6's `custom_content` panel (tech preview), evaluated and adopted on Identity 360; the write-up, API and
+renderer facts and ranked candidates for other pages are in `docs/custom-panels.md`. **The Vega ribbon "How they
+reached what they touched in Kibana" is removed** (`vega/11-actor-object-flow.json` deleted, so its saved object
+`cloud-audit-vega-actor-object-flow` stays behind in any deployed space until removed by hand; deploys never delete).
+In its place, a no-JavaScript **drill-down**: credential › space › object type › operation › the objects and the
+data Kibana read (`custom/11-identity-path.html`, `IDENTITY_PATH` in `07-actor-360.mjs`, `custom()` in
+`panels.mjs`, icons and labels in `scripts/lib/custom.mjs`, tests in `test/unit/custom.test.mjs`).
+
+- Every item is pickable; Kibana actions and Elasticsearch data requests are shown apart, never added; each Kibana
+  app is its own object type; a read's space and browser address come from Kibana's `http_request` events.
+- **Each data set is a link** that opens a panel under the columns listing every query Kibana ran on it for that
+  object: time, part of the page (results table, histogram, panel id), language, documents or not; latest 25.
+  Name and field lookups and Kibana's own column discovery are left out. The audit log holds no query text.
+  A separate dashboard panel was ruled out: it cannot be hidden, and could only receive the click through a
+  visible control (a link CAN set an ES|QL control without reloading; verified 2026-11-09).
+- The system-read badge starts at Object type; Credential and Space columns are wide enough to read in full.
+- **Cost, over the 0.7s design budget:** the drill-down runs ~0.79-0.81s at 7d on the perf replica (interleaved,
+  2026-11-10), against ~0.76s for the version before the request rows on the same run. ~475ms of it is the scan
+  and first STATS. Tried and measured, no gain: moving the `x-opaque-id` wildcard after the first STATS (+240ms),
+  merging per-action rows before the request join (no change), fewer request rows (only 34 request groups at 7d).
+  Accepted by the user. Page load 3.5-3.7s at 7d on a day the cluster ran ~7% slow; re-measure on a quiet run.
+- Tag `1.0.7.2` is on its own commit (6cf5cb2, Open in Discover); 1.0.8 sits on top of it.
+- Private deploy `AUDIT_ID_NS=cpx` may still be installed (`AUDIT_ID_NS=cpx ./audit --clean dashboards`). Not
+  deployed to the Default space by this release. Spike scripts are in `.sessions/` (local only).
 
 ## Release 1.0.7.2 — Open in Discover on every record panel; Back undoes a session zoom, 2026-10-27
 
