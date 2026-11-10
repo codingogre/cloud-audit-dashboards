@@ -20,7 +20,7 @@ import { buildAll } from './lib/definitions.mjs';
 import { CONTROLS } from './lib/controls.mjs';
 import { TIME_TO, DEFAULT_FROM } from './lib/panels.mjs';
 import { requireView } from './lib/view.mjs';
-import { watch, judge, tilesOn } from './lib/canary.mjs';
+import { watch, judge, tilesOn, windowsOn } from './lib/canary.mjs';
 
 /**
  * Kibana emits exactly six console errors on every FULL page load of any dashboard.
@@ -135,9 +135,12 @@ export async function run(argv = []) {
    * pixels, so truncation that a 1920px pass never sees appears at AUDIT_VERIFY_WIDTH=1440.
    * The range ends where every dashboard's saved range ends (TIME_TO, now-1m), so a render shows what a
    * viewer opening the dashboard sees, and two panels side by side reconcile the way they do for them.
+   * AUDIT_VERIFY_TO=now-3d ends it earlier, to check that the END_WINDOWS charts follow the picker's end.
    */
   const range = process.env.AUDIT_VERIFY_RANGE || DEFAULT_FROM;
   if (!/^now-\d+[smhdwMy]$/.test(range)) throw new Error(`AUDIT_VERIFY_RANGE "${range}" is not a relative range like now-24h`);
+  const to = process.env.AUDIT_VERIFY_TO || TIME_TO;
+  if (!/^now(-\d+[smhdwMy])?$/.test(to)) throw new Error(`AUDIT_VERIFY_TO "${to}" is not now or a relative time like now-3d`);
   const width = Number(process.env.AUDIT_VERIFY_WIDTH || 1920);
   if (!Number.isInteger(width) || width < 800 || width > 3840) throw new Error(`AUDIT_VERIFY_WIDTH "${process.env.AUDIT_VERIFY_WIDTH}" is not a pixel width between 800 and 3840`);
   const out = argv[0] || join(ROOT, 'build', `render-${stamp}-${theme}`);
@@ -153,11 +156,12 @@ export async function run(argv = []) {
   const defs = Object.fromEntries(Object.entries(all).map(([n, d]) => [dashId(n), d.panels.filter((p) => p.section)]));
   // The prior-period tiles on each page (lib/canary.mjs), and the view they read, without which they show an error.
   const prevOn = Object.fromEntries(Object.entries(all).map(([n, d]) => [dashId(n), tilesOn(d)]));
+  const windowsAt = Object.fromEntries(Object.entries(all).map(([n, d]) => [dashId(n), windowsOn(d)]));
   await requireView();
   if (!ids.length) throw new Error(`AUDIT_VERIFY_ONLY "${process.env.AUDIT_VERIFY_ONLY}" matches no dashboard`);
   const browser = await chromium.launch({ args: ['--no-sandbox', '--disable-dev-shm-usage'] });
   const ctx = await browser.newContext({ viewport: { width, height: 1400 }, colorScheme: theme });
-  info(`colour scheme: ${theme} · window: ${range} → ${TIME_TO} · viewport: ${width}px`);
+  info(`colour scheme: ${theme} · window: ${range} → ${to} · viewport: ${width}px`);
 
   const origin = new URL(cfg.kibana).origin;
   await ctx.route('**/*', async (route) => {
@@ -180,7 +184,7 @@ export async function run(argv = []) {
     page.on('pageerror', (e) => errs.push({ text: `uncaught: ${String(e).slice(0, 300)}`, url: '' }));
     const canary = watch(page);
     try {
-      await page.goto(`${cfg.kbs}/app/dashboards#/view/${id}?_g=(time:(from:${range},to:${TIME_TO}))`,
+      await page.goto(`${cfg.kbs}/app/dashboards#/view/${id}?_g=(time:(from:${range},to:${to}))`,
         { waitUntil: 'domcontentloaded', timeout: 90000 });
       await page.waitForTimeout(20000);
       // The inner scroller, walked and grown to the content (walkAndGrow).
@@ -215,7 +219,8 @@ export async function run(argv = []) {
         stats.openPx = grown.shot;
       }
       // THE PRIOR-PERIOD CANARY (lib/canary.mjs): the tiles' requests carry no time filter and their prior counts are true.
-      const prior = await judge(canary, prevOn[id] || []);
+      // The END_WINDOWS charts on the page must send their view queries, with no range filter either.
+      const prior = await judge(canary, prevOn[id] || [], { windows: windowsAt[id] || [] });
       stats.priorTiles = prior.tiles;
       stats.priorProblems = prior.problems;
       // Keep the text, not just a count: an unexplained number nobody can act on is how the

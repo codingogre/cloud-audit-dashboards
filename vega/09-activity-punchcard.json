@@ -1,9 +1,9 @@
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
-  "description": "Every event for this selection by hour of day and day of week, last 7 days in UTC. Each cell is one real hour; stronger color means more. Grey means no activity; the current hour is outlined while it fills.",
+  "description": "This selection’s events by weekday and hour in your time zone, over the 7 days to the time picker’s end. Each cell is one hour; stronger color means more, grey means none. A dashed outline marks an unfinished hour.",
   "title": {
     "text": {
-      "expr": "extent(pluck(data('hours'), 'doc_count'))[1] > 0 ? '' : 'No activity for this selection in the last 7 days'"
+      "expr": "extent(pluck(data('hours'), 'doc_count'))[1] > 0 ? '' : 'No activity for this selection in these 7 days'"
     }
   },
   "autosize": {
@@ -32,9 +32,8 @@
     "name": "hours",
     "url": {
       "%type%": "esql",
-      "%timefield%": "@timestamp",
       "%context%": true,
-      "query": "SET unmapped_fields=\"nullify\"; FROM logs-elastic_cloud.serverless_audit.otel-default | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart AND ((?project == \"\" OR ?project == \"Any\") OR project.name == ?project) AND ((?identity == \"\" OR ?identity == \"Any\") OR user.email == ?identity OR api_key.name == ?identity OR user.name == ?identity OR user.name == REPLACE(REPLACE(?identity, \" · Cloud API key$\", \"\"), \"^Unnamed key of \", \"\") OR (?identity == \"(unattributed)\" AND user.name IS NULL)) AND ((?identity_kind == \"\" OR ?identity_kind == \"Any\") OR (?identity_kind == \"Person\" AND user.email IS NOT NULL) OR (?identity_kind == \"Elasticsearch API key\" AND user.email IS NULL AND api_key.name IS NOT NULL) OR (?identity_kind == \"Unnamed API key\" AND user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_es_api_key\") OR (?identity_kind == \"Cloud API key\" AND user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_cloud_api_key\") OR (?identity_kind == \"Service account\" AND user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_service_account\") OR (?identity_kind == \"Failed sign-in\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\",\"_service_account\")) AND event.action IN (\"authentication_failed\",\"anonymous_access_denied\")) OR (?identity_kind == \"Unattributed\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\",\"_service_account\")) AND (event.action IS NULL OR NOT event.action IN (\"authentication_failed\",\"anonymous_access_denied\")) AND user.name IS NULL) OR (?identity_kind == \"Other\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\",\"_service_account\")) AND (event.action IS NULL OR NOT event.action IN (\"authentication_failed\",\"anonymous_access_denied\")) AND user.name IS NOT NULL)) AND ((?identity == \"\" OR ?identity == \"Any\") OR user.email == ?identity OR (user.email IS NULL AND api_key.name == ?identity) OR (user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_cloud_api_key\" AND ENDS_WITH(?identity, \" · Cloud API key\") AND user.name == REPLACE(?identity, \" · Cloud API key$\", \"\")) OR (user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_es_api_key\" AND STARTS_WITH(?identity, \"Unnamed key of \") AND user.name == REPLACE(?identity, \"^Unnamed key of \", \"\")) OR (user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\")) AND user.name == ?identity) OR (?identity == \"(unattributed)\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\")) AND user.name IS NULL)) AND ((?client_ip == \"\" OR ?client_ip == \"Any\") OR client.ip == TO_IP(CASE((?client_ip == \"\" OR ?client_ip == \"Any\"), null, ?client_ip))) | STATS doc_count = COUNT(*) BY hour = DATE_TRUNC(1 hour, @timestamp) | EVAL ago = DATE_DIFF(\"hour\", hour, DATE_TRUNC(1 hour, TO_DATETIME(?_tend))) | WHERE ago <= 167 | KEEP ago, doc_count"
+      "query": "SET unmapped_fields=\"nullify\"; FROM logs-cloud-audit-events-view | WHERE event_time <= TO_DATETIME(?_tend) AND event_time > TO_DATETIME(?_tend) - 7 days AND ((?project == \"\" OR ?project == \"Any\") OR project.name == ?project) AND ((?identity == \"\" OR ?identity == \"Any\") OR user.email == ?identity OR api_key.name == ?identity OR user.name == ?identity OR user.name == REPLACE(REPLACE(?identity, \" · Cloud API key$\", \"\"), \"^Unnamed key of \", \"\") OR (?identity == \"(unattributed)\" AND user.name IS NULL)) AND ((?identity_kind == \"\" OR ?identity_kind == \"Any\") OR (?identity_kind == \"Person\" AND user.email IS NOT NULL) OR (?identity_kind == \"Elasticsearch API key\" AND user.email IS NULL AND api_key.name IS NOT NULL) OR (?identity_kind == \"Unnamed API key\" AND user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_es_api_key\") OR (?identity_kind == \"Cloud API key\" AND user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_cloud_api_key\") OR (?identity_kind == \"Service account\" AND user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_service_account\") OR (?identity_kind == \"Failed sign-in\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\",\"_service_account\")) AND event.action IN (\"authentication_failed\",\"anonymous_access_denied\")) OR (?identity_kind == \"Unattributed\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\",\"_service_account\")) AND (event.action IS NULL OR NOT event.action IN (\"authentication_failed\",\"anonymous_access_denied\")) AND user.name IS NULL) OR (?identity_kind == \"Other\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\",\"_service_account\")) AND (event.action IS NULL OR NOT event.action IN (\"authentication_failed\",\"anonymous_access_denied\")) AND user.name IS NOT NULL)) AND ((?identity == \"\" OR ?identity == \"Any\") OR user.email == ?identity OR (user.email IS NULL AND api_key.name == ?identity) OR (user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_cloud_api_key\" AND ENDS_WITH(?identity, \" · Cloud API key\") AND user.name == REPLACE(?identity, \" · Cloud API key$\", \"\")) OR (user.email IS NULL AND api_key.name IS NULL AND user.domain == \"_es_api_key\" AND STARTS_WITH(?identity, \"Unnamed key of \") AND user.name == REPLACE(?identity, \"^Unnamed key of \", \"\")) OR (user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\")) AND user.name == ?identity) OR (?identity == \"(unattributed)\" AND user.email IS NULL AND api_key.name IS NULL AND (user.domain IS NULL OR NOT user.domain IN (\"_cloud_api_key\",\"_es_api_key\")) AND user.name IS NULL)) AND ((?client_ip == \"\" OR ?client_ip == \"Any\") OR client.ip == TO_IP(CASE((?client_ip == \"\" OR ?client_ip == \"Any\"), null, ?client_ip))) | STATS doc_count = COUNT(*) BY hour = DATE_TRUNC(1 hour, event_time) | EVAL ago = DATE_DIFF(\"hour\", hour, DATE_TRUNC(1 hour, TO_DATETIME(?_tend))) | WHERE ago <= 167 | EVAL e = TO_LONG(TO_DATETIME(?_tend)) | KEEP ago, doc_count, e"
     }
   },
   "transform": [
@@ -48,23 +47,32 @@
       "value": 0
     },
     {
-      "calculate": "(floor(now() / 3600000) - datum.ago) * 3600000",
+      "joinaggregate": [
+        {
+          "op": "max",
+          "field": "e",
+          "as": "end"
+        }
+      ]
+    },
+    {
+      "calculate": "(floor(datum.end / 3600000) - datum.ago) * 3600000",
       "as": "key"
     },
     {
-      "calculate": "utchours(datum.key)",
+      "calculate": "hours(datum.key)",
       "as": "hour"
     },
     {
-      "calculate": "['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][(utcday(datum.key) + 6) % 7]",
+      "calculate": "['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][(day(datum.key) + 6) % 7]",
       "as": "day"
     },
     {
-      "calculate": "utcFormat(datum.key, '%a %d %b, %H:00') + '–' + utcFormat(datum.key + 3600000, '%H:00') + ' UTC'",
+      "calculate": "timeFormat(datum.key, '%a %d %b, %H:%M') + '–' + timeFormat(datum.key + 3600000, '%H:%M')",
       "as": "when"
     },
     {
-      "calculate": "datum.key + 3600000 > now()",
+      "calculate": "datum.key + 3600000 > datum.end",
       "as": "partial"
     },
     {
@@ -80,7 +88,7 @@
         "paddingInner": 0.1
       },
       "axis": {
-        "title": "Hour of day (UTC)",
+        "title": "Hour of day",
         "orient": "top",
         "labelAngle": 0,
         "ticks": false,

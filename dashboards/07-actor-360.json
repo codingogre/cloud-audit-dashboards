@@ -489,12 +489,8 @@
       },
       "config": {
         "ref_id": "cloud-audit-vega-actor-baseline-band",
-        "title": "Is this normal for them? — hourly (UTC)",
-        "description": "Hourly activity over the last 7 days against this selection’s own usual range for each hour of day (the shaded band). A marked point is an hour well outside their usual range. A sanity check, not a detector. UTC.",
-        "time_range": {
-          "from": "now-7d",
-          "to": "now"
-        }
+        "title": "Is this normal for them? — hourly",
+        "description": "Hourly activity over the 7 days to the time picker’s end, against this selection’s usual range for each hour of day (the shaded band). A marked point is an hour well outside it. A sanity check, not a detector."
       }
     },
     {
@@ -509,11 +505,7 @@
       "config": {
         "ref_id": "cloud-audit-vega-actor-cohort",
         "title": "Where they rank",
-        "description": "Up to 40 busiest people over the last 7 days, ranked by percentile on three measures: how much they did, how many different things, and kinds of Kibana object. The selected person is an orange diamond; hover for raw numbers.",
-        "time_range": {
-          "from": "now-7d",
-          "to": "now"
-        }
+        "description": "The 40 busiest people over the 7 days to the time picker’s end, ranked by percentile on how much they did, how many different things and kinds of Kibana object. The selected person is an orange diamond; hover for numbers."
       }
     },
     {
@@ -527,12 +519,8 @@
       },
       "config": {
         "ref_id": "cloud-audit-vega-activity-punchcard",
-        "title": "Working rhythm — by hour (UTC)",
-        "description": "Every event for this selection by hour of day and day of week, last 7 days in UTC. Each cell is one real hour; stronger color means more. Grey means no activity; the current hour is outlined while it fills.",
-        "time_range": {
-          "from": "now-7d",
-          "to": "now"
-        }
+        "title": "Working rhythm — by hour",
+        "description": "This selection’s events by weekday and hour in your time zone, over the 7 days to the time picker’s end. Each cell is one hour; stronger color means more, grey means none. A dashed outline marks an unfinished hour."
       }
     },
     {
@@ -835,11 +823,7 @@
       "config": {
         "ref_id": "cloud-audit-vega-session-gantt",
         "title": "Kibana browser sessions · your time zone",
-        "description": "The 12 latest Kibana browser sessions in the last 24 hours: length is how long, shade is how much was done. Click a bar for that session’s records; the browser’s Back button undoes the zoom. API-key work has no session.",
-        "time_range": {
-          "from": "now-24h",
-          "to": "now"
-        }
+        "description": "The 12 latest Kibana browser sessions in the 24 hours to the time picker’s end: length is how long, shade is how much was done. Click a bar for that session’s records; the browser’s Back button undoes the zoom."
       }
     },
     {

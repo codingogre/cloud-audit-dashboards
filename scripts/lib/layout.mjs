@@ -21,7 +21,7 @@ import {
   NAV_H, NOISE, BAND, BAND_KEYS, RISK, RISK_KEYS, RISK_RESTORE, VERB, ACTOR_RESOLVE, ACTOR_KEYS, OBJ, OBJ_ID, OBJ_TYPE, CHANGE_PRED, CRED, OBJ_PRESENT,
   CRED_TYPE_LABEL, INDEX_FAMILY, CONCRETE, SYS_INDEX, ACTOR_LABEL, MAGNITUDE_RAMP, SEVERITY_RAMP, fitRows, tableLimit,
   KIBANA_INTERNALS, BOUNDED, BARE_COUNT, grouped, FAILED_OR_DENIED, PREV_TILES, prevRef, COVERAGE_REF, flatPanels,
-  HOW_TO_LABEL, TIME, TIME_ONLY, IDENTITY_WHERE, PROJECT_WHERE, CONTROLS_WHERE, HOUR_AGO, VEGA_WINDOWS, windowMs, NULL_SAFE, VIEW_TIME,
+  HOW_TO_LABEL, TIME, TIME_ONLY, IDENTITY_WHERE, PROJECT_WHERE, CONTROLS_WHERE, HOUR_AGO, END_WINDOWS, endWindowOf, endWindow, endWindowOnly, ANCHOR_QUERY, NULL_SAFE, VIEW_TIME,
   IDENTITY_KEYS, KIND_GROUPED, KIND_EVENT, KIBANA_REQUEST_FROM, KIBANA_REQUEST_KEY,
 } from './panels.mjs';
 import { DEFAULT_VIEW } from './env.mjs';
@@ -55,12 +55,12 @@ const FRAGMENT_USES = {
   'vega/05-rare-event-scatter.json': { TIME, RISK, RISK_KEYS, RISK_RESTORE, ACTOR_KEYS, ACTOR_RESOLVE },
   'vega/06-geo-origin.json': { TIME, ACTOR_KEYS, ACTOR_RESOLVE },
   'vega/07-noise-ratio-stream.json': { TIME, BAND_KEYS, BAND },
-  // Fixed-window specs (VEGA_WINDOWS, panels.mjs): their panel carries the window, TIME still the dropdowns.
-  'vega/08-actor-baseline-band.json': { TIME, HOUR_AGO },
-  'vega/09-activity-punchcard.json': { TIME, HOUR_AGO },
-  // TIME on the selection, TIME_ONLY and the Project dropdown on the estate it is ranked against (TWO_DATASET_SPECS below).
-  'vega/12-actor-cohort.json': { TIME, TIME_ONLY, PROJECT_WHERE },
-  'vega/13-session-gantt.json': { TIME },
+  // Windows ending at the picker's end (END_WINDOWS, panels.mjs): on the events view, endWindow carries the dropdowns.
+  'vega/08-actor-baseline-band.json': { 'endWindow(7 days)': endWindow('7 days'), HOUR_AGO, ANCHOR_QUERY },
+  'vega/09-activity-punchcard.json': { 'endWindow(7 days)': endWindow('7 days'), HOUR_AGO },
+  // endWindow on the selection, endWindowOnly and the Project dropdown on the estate it is ranked against (TWO_DATASET_SPECS below).
+  'vega/12-actor-cohort.json': { 'endWindow(7 days)': endWindow('7 days'), 'endWindowOnly(7 days)': endWindowOnly('7 days'), PROJECT_WHERE, ANCHOR_QUERY },
+  'vega/13-session-gantt.json': { 'endWindow(24 hours)': endWindow('24 hours'), ANCHOR_QUERY },
   // Groups on the real user.email (never the actor COALESCE); TIME pins the dropdowns' filter.
   'vega/10-actor-geography.json': { TIME },
   // 00 is the unfiltered full data set: no noise gate by design, only the shared identity.
@@ -183,8 +183,8 @@ function checkFragmentDrift(problems) {
  * spec nothing checks, and that is how drift went unnoticed before FRAGMENT_USES existed.
  */
 const DSL_SPECS = new Set([
-  // 08, 09, 12 and 13 were DSL through 1.0.5 for their fixed windows; they are ES|QL on a panel range now
-  // (VEGA_WINDOWS), so they follow the identity dropdowns.
+  // 08, 09, 12 and 13 were DSL through 1.0.5 for their fixed windows; they are ES|QL on the events view now
+  // (END_WINDOWS), so they follow the identity dropdowns and the picker's end.
   `vega/${COVERAGE_REF}.json`,
 ]);
 
@@ -231,9 +231,11 @@ const WHOLE_STREAM_SPECS = new Set([`vega/${COVERAGE_REF}.json`]);
  * it, so a person can be drawn against everyone else. The estate-wide half looks like a forgotten filter,
  * which is exactly why its shape is asserted rather than trusted.
  *
- *   selection  exactly one dataset with "%context%": true (pills and KQL) bounded by TIME (all four dropdowns)
- *   estate     the rest: no %context%, bounded by TIME_ONLY AND PROJECT_WHERE, so the Project dropdown narrows
- *              it and nothing else does: no pill, no KQL, no identity, no client IP
+ *   selection  exactly one dataset with "%context%": true (pills and KQL) bounded by TIME (all four dropdowns),
+ *              or by endWindow() for a spec on the events view (END_WINDOWS)
+ *   estate     the rest: no %context%, bounded by TIME_ONLY AND PROJECT_WHERE (endWindowOnly() AND PROJECT_WHERE),
+ *              so the Project dropdown narrows it and nothing else does: no pill, no KQL, no identity, no client IP
+ * An END_WINDOWS spec's anchor row (ANCHOR_QUERY) is neither and is not counted.
  *
  * A Vega ES|QL dataset gets the dashboard's filters only through %context% (esql_query_parser.ts), and it is all
  * of them or none. Until 1.0.5.2 Project was a classic control, a pill, so the estate could not take it alone: the
@@ -245,6 +247,11 @@ const TWO_DATASET_SPECS = new Set(['vega/12-actor-cohort.json']);
 const CONTEXT_CLAUSES = ['%dashboard_context-must_clause%', '%dashboard_context-must_not_clause%', '%dashboard_context-filter_clause%'];
 const PROJECT_FIELD = 'project.name';
 const ESTATE_TIME = `${TIME_ONLY} AND ${PROJECT_WHERE}`;
+/** The selection and estate bounds for a spec: TIME on the stream, or its END_WINDOWS span on the events view. */
+const halves = (file) => {
+  const span = endWindowOf(file);
+  return span ? { sel: endWindow(span), estate: `${endWindowOnly(span)} AND ${PROJECT_WHERE}` } : { sel: TIME, estate: ESTATE_TIME };
+};
 
 function dataEntries(node, out = []) {
   if (Array.isArray(node)) { node.forEach((n) => dataEntries(n, out)); return out; }
@@ -258,11 +265,12 @@ function dataEntries(node, out = []) {
 const groupsBy = (q, field) => new RegExp(`\\bBY\\b[^|]*?(?:=\\s*)?${field.replace(/\./g, '\\.')}\\b`).test(q);
 
 export function checkTwoDatasets(file, spec, problems) {
-  const ds = esqlEntries(spec);
-  const sel = ds.filter((d) => d.url['%context%'] === true && d.url.query.includes(TIME));
-  const estate = ds.filter((d) => d.url['%context%'] === undefined && d.url.query.includes(ESTATE_TIME) && !d.url.query.includes(IDENTITY_WHERE));
+  const ds = esqlEntries(spec).filter((d) => d.url.query !== ANCHOR_QUERY);
+  const want = halves(file);
+  const sel = ds.filter((d) => d.url['%context%'] === true && d.url.query.includes(want.sel));
+  const estate = ds.filter((d) => d.url['%context%'] === undefined && d.url.query.includes(want.estate) && !d.url.query.includes(IDENTITY_WHERE));
   if (sel.length !== 1 || !estate.length || sel.length + estate.length !== ds.length) {
-    problems.push(`vega: ${file} must hold exactly one ES|QL dataset with "%context%": true bounded by TIME, and estate datasets with no %context% bounded by TIME_ONLY AND PROJECT_WHERE `
+    problems.push(`vega: ${file} must hold exactly one ES|QL dataset with "%context%": true bounded by TIME (endWindow), and estate datasets with no %context% bounded by TIME_ONLY (endWindowOnly) AND PROJECT_WHERE `
       + `(found ${ds.length}: ${sel.length} selection, ${estate.length} estate, ${ds.length - sel.length - estate.length} neither)`);
   }
   if (sel.length === 1 && !groupsBy(sel[0].url.query, PROJECT_FIELD)) {
@@ -274,34 +282,44 @@ export function checkTwoDatasets(file, spec, problems) {
 }
 
 /**
- * FIXED-WINDOW SPECS (VEGA_WINDOWS, panels.mjs). The window rides on the panel, so the spec has to be ES|QL
- * (a DSL spec ignores a panel range) and bounded by TIME — or its panel would follow the window and not the
- * identity dropdowns. Every panel showing one carries exactly the declared window, and no other panel carries
- * a range of its own: a stray time_range silently detaches a panel from the picker.
+ * NO PANEL RANGES (1.0.8.2). A panel's own config.time_range detaches it from the picker; none is wanted since
+ * the fixed windows moved to the events view (END_WINDOWS).
  */
-function checkFixedWindows(name, panels, problems) {
+function checkNoPanelRange(name, panels, problems) {
   for (const p of panels) {
-    const tr = p.config?.time_range;
-    const ref = p.config?.ref_id ? objFile(p.config.ref_id)?.replace(/^vega\/|\.json$/g, '') : undefined;
-    const want = ref ? VEGA_WINDOWS[ref] : undefined;
-    if (tr && !want) problems.push(`${name}: panel ${p.id} "${p.config.title}" has its own time range but is not a VEGA_WINDOWS spec — it would silently ignore the time picker`);
-    if (want && JSON.stringify(tr) !== JSON.stringify(want)) problems.push(`${name}: panel ${p.id} shows vega/${ref} with time range ${JSON.stringify(tr)}, VEGA_WINDOWS says ${JSON.stringify(want)} — build it with vega()`);
+    if (p.config?.time_range) problems.push(`${name}: panel ${p.id} "${p.config.title}" has its own time range — it would silently ignore the time picker`);
   }
 }
 
-function checkFixedWindowSpecs(problems) {
-  for (const [ref, win] of Object.entries(VEGA_WINDOWS)) {
+/**
+ * WINDOWS ENDING AT THE PICKER'S END (END_WINDOWS, panels.mjs). Each listed spec reads only the events view, every
+ * dataset bounded by its span back from ?_tend (or is the anchor row), and shows no wall-clock time: a now() would
+ * put a key or an axis end at the wall clock while the data ends at the picker. checkEscape covers the view rules.
+ */
+export function checkEndWindowSpec(file, spec, problems) {
+  const span = endWindowOf(file);
+  if (dataEntries(spec).length) problems.push(`vega: ${file} ends at the picker's end (END_WINDOWS) but has a DSL data source`);
+  const ds = esqlEntries(spec);
+  const view = new RegExp(`^\\s*(SET\\s[^;]*;\\s*)*FROM\\s+${DEFAULT_VIEW}\\s*\\|`);
+  if (!ds.some((d) => view.test(d.url.query))) problems.push(`vega: ${file} ends at the picker's end (END_WINDOWS) but reads nothing from the events view`);
+  for (const d of ds) {
+    const q = d.url.query, label = `${file} dataset ${d.name || '(unnamed)'}`;
+    if (q === ANCHOR_QUERY) continue;
+    if (!view.test(q)) { problems.push(`vega: ${label} does not read the events view — on the stream Kibana filters it to the picker's whole range`); continue; }
+    if (!q.includes(endWindowOnly(span))) problems.push(`vega: ${label} is not bounded by endWindowOnly('${span}') — it would scan past its window, or not end at the picker's end`);
+    if (/\?_tstart/.test(q)) problems.push(`vega: ${label} reads ?_tstart — its window ends at the picker's end and does not follow its start`);
+  }
+  const text = JSON.stringify(spec);
+  if (/\bnow\s*\(\s*\)/i.test(text)) problems.push(`vega: ${file} calls now() — key times and axis ends on the picker's end (the anchor e), not the wall clock`);
+  if (/\butc(hours|day|date|month|year|minutes|Format|Parse)\b|"utc"/.test(text)) problems.push(`vega: ${file} draws in UTC — Identity 360 shows the viewer's time zone`);
+}
+
+function checkEndWindowSpecs(problems) {
+  for (const ref of Object.keys(END_WINDOWS)) {
     const file = `vega/${ref}.json`;
-    try { windowMs(win); } catch (e) { problems.push(`VEGA_WINDOWS ${ref}: ${e.message}`); }
-    if (!existsSync(join(ROOT, file))) { problems.push(`VEGA_WINDOWS ${ref}: ${file} is missing`); continue; }
-    const spec = JSON.parse(readFileSync(join(ROOT, file), 'utf8'));
-    if (dataEntries(spec).length) problems.push(`vega: ${file} has a fixed window (VEGA_WINDOWS) but a DSL data source — a DSL spec ignores the panel's range`);
-    const ds = esqlEntries(spec);
-    if (!ds.length) problems.push(`vega: ${file} has a fixed window (VEGA_WINDOWS) but no ES|QL data source`);
-    for (const d of ds) {
-      if (!d.url.query.includes(TIME_ONLY)) problems.push(`vega: ${file} dataset ${d.name || '(unnamed)'} is not bounded by TIME/TIME_ONLY — it would scan past the panel's window`);
-    }
-    if (!FRAGMENT_USES[file]?.TIME) problems.push(`vega: ${file} has a fixed window but FRAGMENT_USES does not pin TIME — it would stop following the identity dropdowns unnoticed`);
+    if (!existsSync(join(ROOT, file))) { problems.push(`END_WINDOWS ${ref}: ${file} is missing`); continue; }
+    checkEndWindowSpec(file, JSON.parse(readFileSync(join(ROOT, file), 'utf8')), problems);
+    if (!Object.keys(FRAGMENT_USES[file] || {}).some((k) => k.startsWith('endWindow('))) problems.push(`vega: ${file} ends at the picker's end but FRAGMENT_USES does not pin endWindow() — it would stop following the identity dropdowns unnoticed`);
   }
 }
 
@@ -773,7 +791,7 @@ export function checkLayout(all) {
     checkDiscoverLinks(name, panels, problems);
     checkTitles(name, panels, problems);
     checkEmptyWording(name, panels, problems);
-    checkFixedWindows(name, panels, problems);
+    checkNoPanelRange(name, panels, problems);
     rows.push(`${name}: panels=${panels.length} rows=${maxY}`);
     // Advisory, not a failure: a table whose columns cannot fit a 1440px viewport needs a layout
     // decision (a wider panel or fewer columns), which no width arithmetic can make. See fitWidths().
@@ -782,7 +800,7 @@ export function checkLayout(all) {
   }
   checkFragmentDrift(problems);
   checkVega(problems);
-  checkFixedWindowSpecs(problems);
+  checkEndWindowSpecs(problems);
   checkSessions(problems);
   checkSearchTips(problems);
   return { problems, panelCount, dashboards: Object.keys(all).length, rows };

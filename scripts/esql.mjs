@@ -15,7 +15,7 @@ import { success, fail, detail, warn } from './lib/log.mjs';
 import { buildAll } from './lib/definitions.mjs';
 import { checkLayout } from './lib/layout.mjs';
 import { requireView } from './lib/view.mjs';
-import { PREV_TILES, PREV_LOOKBACK_DAYS, prevSpec, prevEsql, fixedWindow, windowMs, prevQuery, prevStreamQuery, VIEW_TIME, ANY, flatPanels, TIME_ONLY } from './lib/panels.mjs';
+import { PREV_TILES, PREV_LOOKBACK_DAYS, prevSpec, prevEsql, prevQuery, prevStreamQuery, VIEW_TIME, ANY, flatPanels, TIME_ONLY } from './lib/panels.mjs';
 import { ruleQueries, durationMs } from './lib/rules.mjs';
 
 /**
@@ -28,13 +28,11 @@ const BUDGET_MS = Number(process.env.AUDIT_LINT_BUDGET_MS) || 30e3;
 const SLOW_MS = 5e3;
 
 /**
- * The params Kibana would send for a query from `src`: the last hour, as the picker's shortest preset, or the
- * spec's own window when its panel carries one (VEGA_WINDOWS in panels.mjs) — a fixed-window spec never runs
- * over the picker's range, so linting it there would time and validate a query no viewer runs.
+ * The params Kibana would send: the last hour, as the picker's shortest preset. The END_WINDOWS specs (panels.mjs)
+ * read only ?_tend and bound their own 7 days or 24 hours back from it, so they run over their real window here too.
  */
-export const PARAMS = (src) => {
-  const win = fixedWindow(src);
-  const end = new Date(), start = new Date(Date.now() - (win ? windowMs(win) : 3600e3));
+export const PARAMS = () => {
+  const end = new Date(), start = new Date(Date.now() - 3600e3);
   return [{ _tstart: start.toISOString() }, { _tend: end.toISOString() }, ...controlParams()];
 };
 
@@ -92,7 +90,7 @@ function collect(node, out) {
   if (Array.isArray(node)) { node.forEach((n) => collect(n, out)); return; }
   if (node && typeof node === 'object') {
     for (const [k, v] of Object.entries(node)) {
-      if ((k === 'query' || k === 'esql') && typeof v === 'string' && /^\s*(SET\s[^;]*;\s*)*FROM\s/i.test(v)) out.push(v);
+      if ((k === 'query' || k === 'esql') && typeof v === 'string' && /^\s*(SET\s[^;]*;\s*)*(FROM|ROW)\s/i.test(v)) out.push(v);
       // A custom panel (9.6 custom_content) keeps its one query in an array.
       else if (k === 'esql_query' && Array.isArray(v)) v.filter((q) => typeof q === 'string').forEach((q) => out.push(q));
       else collect(v, out);
