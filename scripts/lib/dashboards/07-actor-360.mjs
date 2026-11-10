@@ -357,9 +357,9 @@ export function build() {
         ['actor', filterable('user.name', { label: 'Principal id', width: 165, min: 160 })], ['events'],
         'The identities behind the selection, busiest first, named as in the Identity dropdown, with the Principal id each ran as. Click a Principal id to pin it across the suite. Unattributed requests count in Events but have no row.')],
       [7, (x, y, w, h) => kpi(x, y, w, h,
-        // Identities as the Identity dropdown names them (a person and each of their keys are separate): count BY the raw
-      // keys first, then resolve. Recency is measured to the end of the range, so a past range does not read "72h ago".
-      `FROM ${IDX} | ${TIME} | STATS n = COUNT(*), av = VALUES(event.action), last_ts = MAX(@timestamp) BY ${IDENTITY_KEYS} | ${ACTOR_RESOLVE} | STATS Events = SUM(n), ids = COUNT_DISTINCT(actor), actions = COUNT_DISTINCT(av), last_ts = MAX(last_ts) | EVAL Events = COALESCE(Events, 0), mins = DATE_DIFF("minutes", last_ts, LEAST(TO_DATETIME(?_tend), NOW())) | EVAL detail = CASE(Events == 0, "no activity", CASE(ids > 1, CONCAT(${grouped('ids')}, " identities"), CONCAT(${grouped('actions')}, CASE(actions == 1, " action", " actions"), " · ", CASE(mins < 1, "just now", mins < 60, CONCAT(${grouped('mins')}, "m ago"), CONCAT(TO_STRING(mins / 60), "h ago"))))) | KEEP Events, detail`,
+        // Identities as Who this is lists them (a person and each of their keys are separate; placeholder names and
+      // unattributed requests left out): count BY the raw keys first, then resolve. Recency is measured to the end of the range, so a past range does not read "72h ago".
+      `FROM ${IDX} | ${TIME} | STATS n = COUNT(*), av = VALUES(event.action), last_ts = MAX(@timestamp) BY ${IDENTITY_KEYS} | ${ACTOR_RESOLVE} | EVAL named = CASE(user.email IS NOT NULL OR NOT STARTS_WITH(user.name, "<"), actor, null) | STATS Events = SUM(n), ids = COUNT_DISTINCT(named), actions = COUNT_DISTINCT(av), last_ts = MAX(last_ts) | EVAL Events = COALESCE(Events, 0), mins = DATE_DIFF("minutes", last_ts, LEAST(TO_DATETIME(?_tend), NOW())) | EVAL detail = CASE(Events == 0, "no activity", CASE(ids > 1, CONCAT(${grouped('ids')}, " identities"), CONCAT(${grouped('actions')}, CASE(actions == 1, " action", " actions"), " · ", CASE(mins < 1, "just now", mins < 60, CONCAT(${grouped('mins')}, "m ago"), CONCAT(TO_STRING(mins / 60), "h ago"))))) | KEEP Events, detail`,
         'Events', 'Every audited event for the selection. For one identity, the line counts its distinct actions and how long before the end of the range it was last active; for more, how many identities the page covers. Routine traffic included.',
         { secondary: 'detail' })],
       [7, (x, y, w, h) => kpi(x, y, w, h,
@@ -379,8 +379,8 @@ export function build() {
         'Index families', 'How widely this selection reaches into Elasticsearch: index families named in their requests, and how many distinct indices those families hold. Dated and backing indices fold into one family, so thirty days of a daily index is one.',
         { secondary: 'detail' })],
       [7, (x, y, w, h) => kpi(x, y, w, h,
-        `FROM ${IDX} | ${TIME} | WHERE client.ip IS NOT NULL | STATS events = COUNT(*), ${IP_GEO} BY client.ip | STATS \`Client IPs\` = COUNT(*), countries = COUNT_DISTINCT(country), unplaced = SUM(CASE(placed == 0, 1, 0)) | EVAL detail = CASE(\`Client IPs\` == 0, "no client address", CONCAT(${grouped('countries')}, CASE(countries == 1, " country", " countries"), CASE(unplaced > 0, CONCAT(", ", ${grouped('unplaced')}, " unknown"), ""))) | KEEP \`Client IPs\`, detail`,
-        'Client IPs', 'Distinct real client addresses for this selection, how many countries they resolve to, and how many have no known location (always so for a private address). Many addresses for one named person is the shared-credential signal.',
+        `FROM ${IDX} | ${TIME} | WHERE client.ip IS NOT NULL | STATS events = COUNT(*), ${IP_GEO} BY client.ip | STATS \`Client IPs\` = COUNT(*), countries = COUNT_DISTINCT(country), unplaced = SUM(CASE(placed == 0, 1, 0)) | EVAL detail = CASE(\`Client IPs\` == 0, "no client address", CONCAT(${grouped('countries')}, CASE(countries == 1, " country", " countries"))) | KEEP \`Client IPs\`, detail`,
+        'Client IPs', 'Distinct real client addresses for this selection, and how many countries they resolve to. Addresses with no known location (always so for a private address) count in the total only. Many addresses for one named person is the shared-credential signal.',
         { secondary: 'detail' })],
     ]),
 
