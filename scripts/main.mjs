@@ -31,6 +31,7 @@ const HELP = `Usage: ./audit <command>
                        ES|QL view the prior-period tiles read (logs-cloud-audit-events-view)
     --dashboards       Generate dashboards/*.json and deploy every dashboard. Removes a suite
                        dashboard left from an earlier deploy that is not in this run's set
+                       (AUDIT_NO_CUSTOM=1 puts a Lens table in place of Identity 360's custom panel)
     --rules            Generate rules/*.json and deploy the six alert rules (Universal Alerting).
                        A new rule is created disabled; a redeploy keeps each rule on or off as it is
     --verify           Render every dashboard in Chromium and inspect for broken panels

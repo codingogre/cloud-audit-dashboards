@@ -48,6 +48,12 @@ Stack "planned".
   ~0.8s at 7 days on the perf replica). Use one pipeline that MV_EXPANDs each row into the stages it feeds,
   then `STATS … BY stage, key`.
 - **`<use>` is stripped**, so an SVG sprite renders blank.
+- **A `<` followed by a letter or `/` anywhere inside `<style>` drops the whole style element**, comments
+  included (a CSS comment naming a tag blanked every rule, 2026-11-10). A unit test guards it.
+- **Liquid runs in the browser.** `{{ iso | date: "%b %-d %H:%M" }}` formats an ISO string in the viewer's
+  time zone, and `rows.size` works.
+- **`<details name="…">` keeps its `name`**, so a group of them is exclusive (the browser keeps one open), and
+  each `<summary>` takes Tab, Enter and Space with no script. A hidden radio cannot take Enter.
 - **Liquid HTML-escapes every `{{ }}` output**, so markup cannot be chosen at runtime by printing a string.
   The suite expands icons at build time instead (`<icon name>` / `<icon var>` in `scripts/lib/custom.mjs`).
 - Without a query the template is not run through Liquid at all.
@@ -130,6 +136,23 @@ could not be inferred drops out when Client IP is set.
 Kibana Object Forensics, so the counts are lower than the ribbon's.
 
 **Decided (2026-11-09):** the ribbon is removed. Click-to-pin went with it.
+
+**Keyboard.** Tab reaches one radio per column (the arrow keys pick, Space too), then each data-set chip, the
+*All data sets* list and Close. A chip is a `<summary>` in one exclusive `<details name="dsel">` group, so Enter
+or Space opens its panel and closes any other; Close is one more member of the group. The focused item, and its
+breadcrumb, show a ring. Verified with Playwright keyboard input on a private deploy (2026-11-10).
+
+**Ids and the row cap.** A data set's panel id is its level-6 parent id: an MD5 prefix of the object's path and
+the data set, so any index name makes a valid selector. A chip with no panel (a name lookup only, or cut by the
+6,000-row cap) is a plain label. When the result reaches the cap the panel says some objects and requests are not
+shown; the cap cuts requests first, then objects. With nobody in the Identity control the panel says it covers
+every identity (the query flags it from `?identity`).
+
+**Times** are in the viewer's time zone: the query returns ISO strings and Liquid formats them in the browser.
+
+**Fallback.** `AUDIT_NO_CUSTOM=1` at build swaps the panel for a Lens table of the credential › space › object
+type › operation paths with their counts (`IDENTITY_PATH_TABLE`, the same fine rows), in the same grid slot.
+Committed `dashboards/*.json` are never written from it.
 
 **A data set's queries.** Every data set under an object is a link. Clicking it opens a panel under the columns
 listing each query Kibana ran on that data set for that object, newest first (the latest 25): its time, the part

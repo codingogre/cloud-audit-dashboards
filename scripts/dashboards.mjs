@@ -62,8 +62,8 @@ export function emit() {
   const { problems } = checkLayout(all);
   if (problems.length) throw new Error(`refusing to deploy:\n  ${problems.join('\n  ')}`);
   // dashboards/*.json is committed and reviewed as the deployed payload, so a private render under
-  // AUDIT_ID_NS (whose ids and links carry the namespace) must not overwrite it.
-  if (process.env.AUDIT_ID_NS) return all;
+  // AUDIT_ID_NS (whose ids and links carry the namespace) must not overwrite it, nor the AUDIT_NO_CUSTOM fallback.
+  if (process.env.AUDIT_ID_NS || process.env.AUDIT_NO_CUSTOM) return all;
   mkdirSync(join(ROOT, 'dashboards'), { recursive: true });
   for (const [name, def] of Object.entries(all)) {
     writeFileSync(join(ROOT, 'dashboards', `${name}.json`), JSON.stringify(payload(def), null, 2) + '\n');

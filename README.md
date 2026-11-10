@@ -597,7 +597,7 @@ Probed against Kibana 9.6 serverless. Several are undocumented and cost real tim
 | Constraint | Handling |
 | --- | --- |
 | Generic `/api/saved_objects/{type}/{id}` CRUD is **disabled** on serverless | Vega and Discover sessions deploy through `_import` (multipart ndjson) |
-| The Dashboards API accepts only `links`, `markdown`, `vis`, `discover_session` and, as a serverless tech preview, `custom_content` panels | `custom_content` (Identity 360's drill-down: `custom/11-identity-path.html`, `scripts/lib/custom.mjs`) drops unknown config keys silently, so a renamed setting deploys cleanly and renders blank; see `docs/custom-panels.md`. `map` is unavailable. Inline `region_map` exists but takes no palette, legend or extent through the API (one alert-red fill over the basemap labels, a collapsed legend), so 05's map is a Vega choropleth over Elastic Maps Service (`vega/06-geo-origin.json`) |
+| The Dashboards API accepts only `links`, `markdown`, `vis`, `discover_session` and, as a serverless tech preview, `custom_content` panels | `custom_content` (Identity 360's drill-down: `custom/11-identity-path.html`, `scripts/lib/custom.mjs`) drops unknown config keys silently, so a renamed setting deploys cleanly and renders blank; see `docs/custom-panels.md`. Should custom panels be unavailable, `AUDIT_NO_CUSTOM=1 ./audit --dashboards` deploys a Lens table of the same paths in its place. `map` is unavailable. Inline `region_map` exists but takes no palette, legend or extent through the API (one alert-red fill over the basemap labels, a collapsed legend), so 05's map is a Vega choropleth over Elastic Maps Service (`vega/06-geo-origin.json`) |
 | A `vis` panel with `ref_id` **always** serialises its reference as `type: "lens"` | Vega charts are legacy `visualization` objects, so `repointVega()` rewrites those panels to the classic `panelRefName` form after deploy. Without it every Vega panel renders *"Visualization type not found."* |
 | ES\|QL visualizations cannot be standalone saved objects | Lens panels are inline in the dashboard definition, which also keeps each dashboard self-contained and diffable |
 | XY split key is `breakdown_by`, not `breakdown` | — |
@@ -1005,6 +1005,8 @@ legends over an empty domain, decade axes, solid placeholder cells, a flat line 
 ./audit --objects        Deploy the data view, 19 Vega visualizations, 12 Discover sessions and the
                          ES|QL view the prior-period tiles read (logs-cloud-audit-events-view)
 ./audit --dashboards     Generate dashboards/*.json and deploy every dashboard
+                         AUDIT_NO_CUSTOM=1 puts a Lens table in place of Identity 360's custom
+                         panel (and leaves dashboards/*.json alone)
 ./audit --rules          Generate rules/*.json and deploy the six alert rules (Universal Alerting).
                          A new rule is created disabled; a redeploy keeps each rule on or off as it is
 ./audit --verify         Render every dashboard in Chromium and inspect for broken panels
