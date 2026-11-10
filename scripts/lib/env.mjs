@@ -157,10 +157,20 @@ export function objFile(id) {
 }
 
 /**
+ * Specs deleted from vega/ or searches/, by their old file name. Deploys never delete on their own, so without this
+ * the saved object stays in every space it was deployed to. 1.0.8 removed the Identity 360 Vega ribbon, replaced by
+ * the custom-panel drill-down.
+ */
+export const REMOVED_SPECS = { vega: ['11-actor-object-flow'], search: [] };
+
+/**
  * The numbered ids 1.0.5 and earlier deployed (`cloud-audit-vega-01-actor-risk-treemap`), namespaced. They are
  * deleted after --dashboards re-points every panel (dashboards.mjs removeStrays) and by --clean. A file
  * with no order prefix kept its id, so it is never listed: deleting it would delete the live object.
  */
-export const RETIRED_OBJECTS = () => Object.entries({ vega: 'visualization', search: 'search' }).flatMap(([kind, type]) =>
-  objFiles(kind).filter((f) => ORDER.test(f))
-    .map((f) => ({ type, id: nsId(`cloud-audit-${kind}-${f.replace(/\.json$/, '')}`) })));
+export const RETIRED_OBJECTS = () => Object.entries({ vega: 'visualization', search: 'search' }).flatMap(([kind, type]) => [
+  ...objFiles(kind).filter((f) => ORDER.test(f))
+    .map((f) => ({ type, id: nsId(`cloud-audit-${kind}-${f.replace(/\.json$/, '')}`) })),
+  // a removed spec retires both its current id and its numbered one
+  ...REMOVED_SPECS[kind].flatMap((f) => [objId(kind, f), nsId(`cloud-audit-${kind}-${f}`)]).map((id) => ({ type, id })),
+]);

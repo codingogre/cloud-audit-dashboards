@@ -10,7 +10,7 @@ import {
 } from '../../scripts/lib/panels.mjs';
 import { buildAll } from '../../scripts/lib/definitions.mjs';
 import { sessionGrid } from '../../scripts/objects.mjs';
-import { nsId, objId, objFile, objFiles, RETIRED_OBJECTS } from '../../scripts/lib/env.mjs';
+import { nsId, objId, objFile, objFiles, RETIRED_OBJECTS, REMOVED_SPECS } from '../../scripts/lib/env.mjs';
 
 test('label() uses the suite vocabulary, then humanises', () => {
   assert.equal(label('actor'), 'Identity');
@@ -199,7 +199,8 @@ test('Vega and Discover ids drop the file order number; files map back; the numb
       assert.equal(objFile(`${pre}-vega-no-such-chart`), null);
       assert.equal(objFile(`${pre}-vega-01-actor-risk-treemap`), null, 'a numbered id is not a current one');
       const retired = RETIRED_OBJECTS();
-      assert.equal(retired.length, objFiles('vega').length + objFiles('search').length);
+      assert.equal(retired.length, objFiles('vega').length + objFiles('search').length + 2 * (REMOVED_SPECS.vega.length + REMOVED_SPECS.search.length));
+      assert.ok(retired.some((o) => o.type === 'visualization' && o.id === `${pre}-vega-actor-object-flow`), 'the removed ribbon retires');
       assert.ok(retired.some((o) => o.type === 'visualization' && o.id === `${pre}-vega-01-actor-risk-treemap`));
       assert.ok(retired.some((o) => o.type === 'search' && o.id === `${pre}-search-10-raw-signal-feed`));
       // Never a live id: retiring one would delete the object a dashboard now points at.
