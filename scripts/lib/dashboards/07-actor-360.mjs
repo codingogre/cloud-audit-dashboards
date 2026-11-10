@@ -29,7 +29,7 @@ import {
  */
 
 /**
- * IDENTITY PATH (custom panel, experiment): a guided drill-down — credential › space › object type › operation ›
+ * IDENTITY PATH (custom panel, 1.0.8): a guided drill-down — credential › space › object type › operation ›
  * the objects, and under each object the Elasticsearch data Kibana read for it (custom/11-identity-path.html).
  * Each column shows only the children of what is picked to its left; it opens on the busiest path.
  *
@@ -250,7 +250,7 @@ const INTRO = {
   heading: 'Everything one person did, on one page',
   paragraphs: [
     `Use it to check whether their activity is normal, see what they changed and read, and gather evidence for a review or investigation. ${RAW_RECORDS}`,
-    '**How to use it:** pick someone in the Identity control, or click a Principal id in a table; with nobody selected, the page covers everyone. ① *Is this normal?* always looks at the last 7 days in UTC, ② *What they did* follows the time picker, and ③ *Evidence* ends in the raw records. Table times are in your time zone.',
+    '**How to use it:** pick someone in the Identity control, or click a Principal id in a table; with nobody selected, the page covers everyone. ① *Is this normal?* always looks at the last 7 days in UTC, ② *What they did* follows the time picker (24 hours on opening), and ③ *Evidence* ends in the raw records. Table times are in your time zone.',
   ],
   howTo: [
     'Pick an Identity type first to shorten the Identity list. A person’s API keys are identities of their own, so their traffic never counts under the person.',
@@ -378,7 +378,7 @@ export function build() {
     ]),
 
     row(2, [[48, (x, y, w, h) => section(x, y, w, h, '② What they did', 'follows the time picker · times in your time zone')]]),
-    // Custom panel (experiment): replaced the Vega ribbon "How they reached what they touched in Kibana"
+    // Custom panel (1.0.8): replaced the Vega ribbon "How they reached what they touched in Kibana"
     // (vega/11-actor-object-flow, removed 2026-11-09 at the user's call); see IDENTITY_PATH.
     // Taller than the 16 rows it had beside the ribbon: a data set's requests open in a panel under the columns.
     row(22, [[48, (x, y, w, h) => custom(x, y, w, h, '11-identity-path', 'Drill down — credential › space › object type › operation › the data Kibana read',

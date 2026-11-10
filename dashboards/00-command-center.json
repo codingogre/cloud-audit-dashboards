@@ -106,7 +106,7 @@
         "h": 6
       },
       "config": {
-        "content": "### See who did what across your Elastic Cloud projects\n\nThis overview shows how much activity there was, who was busiest, which identities carry the most risk, and the latest events as they arrive.\n\nStart here for a routine review or when something looks wrong, then use the links above to go deeper on one person, sign-ins, Kibana objects, data access, security or location.\n\n**How to use it:** choose a Project, Identity type, Identity or Client IP in the controls to focus every panel, and set the time picker. Raw records: [All audit events](/app/discover#/view/cloud-audit-search-all-events), [Raw signal feed](/app/discover#/view/cloud-audit-search-raw-signal-feed).\n"
+        "content": "### See who did what across your Elastic Cloud projects\n\nThis overview shows how much activity there was, who was busiest, which identities carry the most risk, and the latest events as they arrive.\n\nStart here for a routine review or when something looks wrong, then use the links above to go deeper on one person, sign-ins, Kibana objects, data access, security or location.\n\n**How to use it:** focus the page with the controls above; it opens on the last 24 hours, so set the time picker to 7 days for a weekly review. Raw records: [All audit events](/app/discover#/view/cloud-audit-search-all-events), [Raw signal feed](/app/discover#/view/cloud-audit-search-raw-signal-feed).\n"
       }
     },
     {

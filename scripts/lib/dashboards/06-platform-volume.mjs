@@ -96,7 +96,7 @@ const INTRO = {
   paragraphs: [
     `The other dashboards hide routine traffic so the meaningful events stand out. This page counts everything, in four groups that add up to the total. ${RAW_RECORDS}`,
     "**Signal** is what the other dashboards show. **Auth success** is logged once for every authenticated request. **Query internals** are the background steps behind searches and page loads. **Infra health** is Elastic's own monitoring.",
-    'Use it to understand audit volume and to see how busy each API key is. **How to use it:** choose a Project, Identity type, Identity or Client IP in the controls and set the time picker.',
+    'Use it to understand audit volume and to see how busy each API key is. **How to use it:** focus the page with the controls above; it opens on the last 24 hours, so set the time picker to 7 days for a weekly review.',
   ],
   howTo: [
     'Nothing is filtered here, so these numbers are larger than the same counts on the other dashboards.',

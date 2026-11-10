@@ -132,7 +132,7 @@ const INTRO = {
   paragraphs: [
     `Dashboards, visualizations, data views, alert rules, SLOs, workflows and other saved objects: what was created, edited, deleted or opened, in which space, and by whom. ${RAW_RECORDS}`,
     "Use it to answer questions such as \"Who deleted that dashboard?\" or \"What changed before the alert stopped firing?\" Panels marked *noise gate applied* skip these audit dashboards' own activity, so you see your team's work.",
-    "**How to use it:** choose a Project, Identity type, Identity or Client IP in the controls and set the time picker. At the bottom, click a session bar or a session ID to replay that browser session step by step.",
+    "**How to use it:** focus the page with the controls above; it opens on the last 24 hours, so set the time picker to 7 days for a weekly review. At the bottom, click a session bar or ID to replay that browser session.",
   ],
   howTo: [
     '*Noise gate applied* leaves out page loads, usage counters, paging and these dashboards’ own views and install; real changes, test spaces included, stay.',

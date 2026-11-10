@@ -27,7 +27,7 @@ const HELP = `Usage: ./audit <command>
   Kibana as code
     --lint             Execute every ES|QL query in the repo; fails the build on any error.
                        --lint rules runs the alert rules alone (no events view needed)
-    --objects          Deploy the data view, 20 Vega visualizations, 11 Discover sessions and the
+    --objects          Deploy the data view, 19 Vega visualizations, 12 Discover sessions and the
                        ES|QL view the prior-period tiles read (logs-cloud-audit-events-view)
     --dashboards       Generate dashboards/*.json and deploy every dashboard. Removes a suite
                        dashboard left from an earlier deploy that is not in this run's set

@@ -1,9 +1,9 @@
-# Custom panels (Kibana 9.6, tech preview) — evaluation
+# Custom panels (Kibana 9.6, tech preview)
 
 Kibana 9.6 adds **custom panels** (`custom_content` in the Dashboards API): an HTML + inline-CSS template
 filled by **one** ES|QL query through Liquid, rendered in a sandboxed frame. This page records what they can
 and cannot do, measured on a private deploy on 2026-11-06, which panels in the suite they would improve, and
-what the Identity 360 prototype found.
+how Identity 360's drill-down (shipped in 1.0.8) uses one.
 
 Docs: <https://www.elastic.co/docs/explore-analyze/visualize/custom-panels>. Status: Serverless preview,
 Stack "planned".
@@ -32,7 +32,7 @@ Stack "planned".
   already there.
 - **One query.** Several result sets need `FORK` or the stage-expansion shape below.
 - **Reduced motion.** Kibana switches animation off for viewers who ask for reduced motion, so a design must
-  read correctly standing still. The prototype does.
+  read correctly standing still. The drill-down does.
 
 ## API and renderer facts (would be expensive to rediscover)
 
@@ -58,7 +58,7 @@ Stack "planned".
 - Inside one ES|QL `EVAL`, a later assignment saw an earlier one's input, not its output
   (`opens = COALESCE(opens, 0), v = opens + reads` gave null). Split it into two `EVAL`s.
 
-## The prototype: Identity 360 drill-down
+## Identity 360 drill-down (1.0.8)
 
 On Identity 360, in place of the Vega ribbon ("How they reached what they touched in Kibana"), which was
 removed on 2026-11-09 at the user's call. Source: `custom/11-identity-path.html`; query `IDENTITY_PATH` in
@@ -116,8 +116,9 @@ Node ids are MD5 prefixes of the path, computed in ES|QL. Items are styled with 
 and unpack in one pass: an `INLINE STATS` re-runs everything above it (2.4s at 7 days for the request join). Expand each fine row into the six levels it feeds, then take the
 `TOP` 25 children per parent over a packed string and unpack. No FORK.
 
-**Measured (2026-11-06):** about 0.3s over 24h live, and 0.67 to 0.71s at 7 days on the 2.6M-event perf replica,
-at the 0.7s budget (0.6s before the request join). Identity 360 loads in 3.0s at 7 days. Rendered and
+**Measured (2026-11-10, as shipped):** about 0.3s over 24h live, and 0.79 to 0.81s at 7 days on the 2.6M-event perf
+replica, over the 0.7s budget (accepted); about 475ms of it is the scan and first STATS. Identity 360 loads in 3.5 to
+3.7s at 7 days, measured on a day the cluster ran about 7% slow. Rendered and
 inspected in dark and light, at 1440 and 1100px, and with reduced motion. Its animations are entrance-only and
 come to rest on the final frame.
 
@@ -138,7 +139,7 @@ nothing and came from no named part of the page: that is Kibana's own column dis
 runs. The audit log has no query text, so the panel says so. The panel lives inside the same custom panel:
 a separate dashboard panel cannot be hidden, and could only learn the click through a visible control or pill
 (a link CAN set an ES|QL control without a reload, verified, but it needs a dropdown in the control bar).
-Cost: the drill-down went from about 0.71s to 0.77s at 7 days on the perf replica.
+Cost: the request list is part of the 0.79 to 0.81s above.
 
 ## Where else they fit
 

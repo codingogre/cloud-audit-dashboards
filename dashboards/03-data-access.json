@@ -106,7 +106,7 @@
         "h": 6
       },
       "config": {
-        "content": "### What data was read or written in Elasticsearch, and by whom\n\nSee which indices each identity uses, the kinds of requests they made, any denied requests, and every touch of system or hidden indices. Raw records: [All audit events](/app/discover#/view/cloud-audit-search-all-events), [Raw signal feed](/app/discover#/view/cloud-audit-search-raw-signal-feed).\n\nRelated indices are grouped into one family, so a data stream and its daily backing indices read as a single row. Use it to confirm that sensitive data is reached only by the people and keys you expect.\n\n**How to use it:** choose a Project, Identity type, Identity or Client IP in the controls and set the time picker. Empty denied and system-index panels usually mean all is well.\n"
+        "content": "### What data was read or written in Elasticsearch, and by whom\n\nSee which indices each identity uses, the kinds of requests they made, any denied requests, and every touch of system or hidden indices. Raw records: [All audit events](/app/discover#/view/cloud-audit-search-all-events), [Raw signal feed](/app/discover#/view/cloud-audit-search-raw-signal-feed).\n\nRelated indices are grouped into one family, so a data stream and its daily backing indices read as a single row. Use it to confirm that sensitive data is reached only by the people and keys you expect.\n\n**How to use it:** focus the page with the controls above; it opens on the last 24 hours, so set the time picker to 7 days for a weekly review. Empty denied and system-index panels usually mean all is well.\n"
       }
     },
     {

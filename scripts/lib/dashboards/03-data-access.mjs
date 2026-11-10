@@ -153,7 +153,7 @@ const INTRO = {
   paragraphs: [
     `See which indices each identity uses, the kinds of requests they made, any denied requests, and every touch of system or hidden indices. ${RAW_RECORDS}`,
     "Related indices are grouped into one family, so a data stream and its daily backing indices read as a single row. Use it to confirm that sensitive data is reached only by the people and keys you expect.",
-    "**How to use it:** choose a Project, Identity type, Identity or Client IP in the controls and set the time picker. Empty denied and system-index panels usually mean all is well.",
+    "**How to use it:** focus the page with the controls above; it opens on the last 24 hours, so set the time picker to 7 days for a weekly review. Empty denied and system-index panels usually mean all is well.",
   ],
   howTo: [
     'This page counts all traffic, these dashboards’ own reads included: on a page about who reads what, those reads are the subject.',

@@ -133,7 +133,7 @@ const INTRO = {
   paragraphs: [
     `Each sensitive action earns a risk weight, from 10 for a workflow run up to 50 for a security setting change, while routine work scores zero. ${RAW_RECORDS}`,
     "Panels rank identities by that risk, show newly seen identities, and list every security configuration change. Elastic's own routine API key clean-up is counted separately, so it never hides real changes.",
-    "**How to use it:** choose a Project, Identity type, Identity or Client IP in the controls and set the time picker. Hover the ⓘ beside a panel title to see how it is scored.",
+    "**How to use it:** focus the page with the controls above; it opens on the last 24 hours, so set the time picker to 7 days for a weekly review. Hover the ⓘ beside a panel title to see how it is scored.",
   ],
   howTo: [
     'Weights: security config change 50, key invalidation 45, failure 40, anonymous denial 35, destructive change 30, other Kibana change 25, workflow run 10.',

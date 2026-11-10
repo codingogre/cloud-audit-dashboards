@@ -88,7 +88,7 @@ Network, and Platform Volume last when it is deployed. The numbers below are sou
 | 04 | 🚨 **Security & Anomalies** | Mean severity (0–50) and a risk leaderboard, security config changes, rare/privileged operations, newly seen identities. |
 | 05 | 🌍 **Geo & Network** | Real client geography, choropleth, impossible-travel detection, and proof that `source.ip` is the wrong field. |
 | 06 | 📊 **Platform Volume** · *opt-in* | The unfiltered firehose, quarantined so the rest stay readable. Not deployed unless asked for: see *Optional dashboards* under Commands. |
-| 07 | 👤 **Identity 360** (named Actor 360 until 1.0.5.3; the id is still `elastic_cloud-audit-actor-360`) | One identity's whole footprint — pick someone in the Identity control. **① Is this normal?** reads a fixed 7 days whatever the picker says: activity against their own hourly baseline, their rank among the week's 40 busiest identities, their weekly rhythm. **② What they did** follows the picker: a credential → space → object → operation flow, changes, reads, a map with travel lines, the risk receipts. **③ Evidence**: a 24-hour session timeline whose bars filter the dashboard to that session and zoom it there, over the raw records. |
+| 07 | 👤 **Identity 360** (named Actor 360 until 1.0.5.3; the id is still `elastic_cloud-audit-actor-360`) | One identity's whole footprint — pick someone in the Identity control. **① Is this normal?** reads a fixed 7 days whatever the picker says: activity against their own hourly baseline, their rank among the week's 40 busiest identities, their weekly rhythm. **② What they did** follows the picker: a drill-down from credential to space, object type and operation, down to the data Kibana read, changes, reads, a map with travel lines, the risk receipts. **③ Evidence**: a 24-hour session timeline whose bars filter the dashboard to that session and zoom it there, over the raw records. |
 
 ### The risk model
 
@@ -205,8 +205,7 @@ computed per event, so the session's description says to narrow the range first.
 range, put ``WHERE http.request.id == "<id>" OR `http.request.header.x-opaque-id` == "<id>" OR
 STARTS_WITH(`http.request.header.x-opaque-id`, "<id>;")`` straight after `FROM`: the same rows in ~16ms.
 
-**Vega panels filter too.** On Identity 360, clicking a credential or a space in the flow, or
-shift-clicking a session, pins it across the suite. Clicking a session (on Identity 360 and on Kibana
+**Vega panels filter too.** Shift-clicking a session pins it across the suite. Clicking a session (on Identity 360 and on Kibana
 Object Forensics) pins a `session: …` pill on `kibana.session.id` AND sets the time range to
 the session plus a minute either side, because the records under the timeline follow the picker while
 the timeline is fixed at 24 hours. The zoom is sent 0.7s and 1.4s after the click, from a Vega timer:
@@ -506,9 +505,9 @@ requests-per-minute bars are whole intervals counted back from the range's end, 
 panel reads the clock for itself, up to a second apart, so a total and its parts can differ by an event at the edges.
 07's ① panels: baseline band = the interquartile range of the 7 observations for that hour, a point beyond 1.5× it
 marked, quartiles from the identity's first event, no band under three days of history; punchcard in UTC, the current
-hour outlined; cohort = the 40 busiest people by email in the projects in scope (approximate when several). 07's flow
-chart counts Kibana object events only (Elasticsearch events have no space or object), seven values per column plus
-*other (N)*. `event.category` is multi-valued, so 00's categories sum to more than the event total.
+hour outlined; cohort = the 40 busiest people by email in the projects in scope (approximate when several). 07's drill-down
+shows Kibana actions and the Elasticsearch data requests Kibana made for them apart, never added together; each
+level keeps its 25 largest items and folds the rest into *+N smaller not shown*. `event.category` is multi-valued, so 00's categories sum to more than the event total.
 
 ---
 
@@ -598,7 +597,7 @@ Probed against Kibana 9.6 serverless. Several are undocumented and cost real tim
 | Constraint | Handling |
 | --- | --- |
 | Generic `/api/saved_objects/{type}/{id}` CRUD is **disabled** on serverless | Vega and Discover sessions deploy through `_import` (multipart ndjson) |
-| The Dashboards API accepts only `links`, `markdown`, `vis`, `discover_session` panels | `map` is unavailable. Inline `region_map` exists but takes no palette, legend or extent through the API (one alert-red fill over the basemap labels, a collapsed legend), so 05's map is a Vega choropleth over Elastic Maps Service (`vega/06-geo-origin.json`) |
+| The Dashboards API accepts only `links`, `markdown`, `vis`, `discover_session` and, as a serverless tech preview, `custom_content` panels | `custom_content` (Identity 360's drill-down: `custom/11-identity-path.html`, `scripts/lib/custom.mjs`) drops unknown config keys silently, so a renamed setting deploys cleanly and renders blank; see `docs/custom-panels.md`. `map` is unavailable. Inline `region_map` exists but takes no palette, legend or extent through the API (one alert-red fill over the basemap labels, a collapsed legend), so 05's map is a Vega choropleth over Elastic Maps Service (`vega/06-geo-origin.json`) |
 | A `vis` panel with `ref_id` **always** serialises its reference as `type: "lens"` | Vega charts are legacy `visualization` objects, so `repointVega()` rewrites those panels to the classic `panelRefName` form after deploy. Without it every Vega panel renders *"Visualization type not found."* |
 | ES\|QL visualizations cannot be standalone saved objects | Lens panels are inline in the dashboard definition, which also keeps each dashboard self-contained and diffable |
 | XY split key is `breakdown_by`, not `breakdown` | — |
@@ -1003,7 +1002,7 @@ legends over an empty domain, decade axes, solid placeholder cells, a flat line 
                          too, as Kibana runs them
 ./audit --lint rules     Lint the six alert rules alone (no events view needed, so it works on a
                          private copy)
-./audit --objects        Deploy the data view, 20 Vega visualizations, 12 Discover sessions and the
+./audit --objects        Deploy the data view, 19 Vega visualizations, 12 Discover sessions and the
                          ES|QL view the prior-period tiles read (logs-cloud-audit-events-view)
 ./audit --dashboards     Generate dashboards/*.json and deploy every dashboard
 ./audit --rules          Generate rules/*.json and deploy the six alert rules (Universal Alerting).
@@ -1219,13 +1218,15 @@ scripts/
     layout.mjs              Offline structural checks (grid, fragment drift, Vega rules)
     drilldowns.mjs          Panel drilldowns, into and out of Identity 360
     controls.mjs            Control bar (PUT pinned_panels) + its data view
+    custom.mjs              Custom panels (9.6 tech preview): custom() templates, build-time icons and labels
     view.mjs                The ES|QL events view the prior-period tiles read: create, require, delete
     canary.mjs              --verify's prior-period canary (no time filter, true prior counts)
     html.mjs                Presenter-guide markup and stylesheet
     env.mjs http.mjs log.mjs
 dashboards/*.json           Generated definitions, committed for review
 rules/*.json                Generated alert rule payloads (the exact PUT bodies), committed for review
-vega/*.json                 20 Vega specs (13 full Vega, 7 Vega-Lite); 14 and 15-prev-* are generated
+vega/*.json                 19 Vega specs (12 full Vega, 7 Vega-Lite); 14 and 15-prev-* are generated
+custom/*.html               Custom panel templates (Liquid + CSS, no JavaScript): Identity 360's drill-down
 searches/*.json             12 ES|QL Discover sessions (00 is every event, unfiltered)
 ingest/*.json               Pipeline, templates, mappings
 esql/fragments.md           Canonical query fragments

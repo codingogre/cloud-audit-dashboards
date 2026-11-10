@@ -184,7 +184,7 @@ const INTRO = {
   paragraphs: [
     "See which sign-in methods and credentials are in use, your busiest people and API keys, every key and when it was last used, and each failed or denied attempt.",
     `Use it to check that access looks as expected, review API keys, or follow up on failed sign-ins. Empty failure panels are good news. ${RAW_RECORDS}`,
-    "**How to use it:** choose a Project, Identity type, Identity or Client IP in the controls and set the time picker. Click an email or Principal id in a table to add a filter pill, which every page in the suite keeps.",
+    "**How to use it:** focus the page with the controls above; it opens on the last 24 hours, so set the time picker to 7 days for a weekly review. Click an email or Principal id to add a filter pill that every page keeps.",
   ],
   howTo: [
     'Identities read as in the Identity dropdown: an email, else an API key’s name, else the account name. A key named after a person is still a key.',

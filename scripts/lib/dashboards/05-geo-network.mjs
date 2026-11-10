@@ -135,7 +135,7 @@ const INTRO = {
   paragraphs: [
     `See activity by country and city, your busiest client addresses, and anyone seen in more than one country, a sign of a shared or stolen credential. ${RAW_RECORDS}`,
     "Locations come from each client's real address, not Elastic's own network hops. Country is reliable; city is often your internet provider's nearest hub. Private network addresses cannot be placed on a map.",
-    "**How to use it:** choose a Project, Identity type, Identity or Client IP in the controls and set the time picker. Click an address or email in a table to add a filter pill, which every page in the suite keeps.",
+    "**How to use it:** focus the page with the controls above; it opens on the last 24 hours, so set the time picker to 7 days for a weekly review. Click an address or email to add a filter pill that every page keeps.",
   ],
   howTo: [
     'Every address is the real client, forwarded by Elastic Cloud’s proxy; the proxy’s own address is never used for location.',

@@ -3,20 +3,34 @@
 `CLAUDE.md`-style durable context lives in `README.md` and `esql/fragments.md` and wins on
 conflict. This file is "where we are right now" and should be assumed stale.
 
-## Next: 1.0.8.1 "State the window"
+## Next: 1.0.8.2 "Identity 360 on the time picker; drill-down fixes"
 
-Built on the 1.0.8 code (the user, 2026-11-10: every later step starts from 1.0.8). Step 4 of the 1.0.7 plan, as the user decided on 2026-10-26: **the 24h default stays** (no 7-day default: it would make
-every panel scan 7 days and the prior-period tiles 14, on streams far bigger than the test project). Each intro states
-the window the page opens on (24 hours; Identity 360's fixed 7-day panels say theirs), and How to read points a weekly
-reviewer to the time picker. Copy only; measure nothing new unless a query changes. Then Identity 360 anchored to the
-picker (1.0.8.2), objects/spaces/index pivots (1.0.8.3), sign-ins and sessions (1.0.8.4), discovery against a baseline
-on 03 (1.0.8.5). No open user decisions.
+Plan: `~/.claude/plans/continue-to-develop-the-wild-comet.md` (user interview 2026-11-10). Decisions: the fixed windows
+(vega 08, 09, 12, 13; 13 also on 02) follow the time picker's END through the events view **whatever it costs**
+(measure and report, no cap); one time zone on the page; "all identities" labels and a prompt with nobody selected;
+drill-down keyboard access, a stated 6,000-row cut, MD5 data-set ids, a `--verify` render check and an
+`AUDIT_NO_CUSTOM` Lens fallback. Then 1.0.8.3 pivots and records, 1.0.8.4 sign-ins and sessions (run_as is impossible
+on serverless: user APIs 410, the run_as header is ignored; UC-066 becomes an "on someone's behalf" panel; platform
+accounts' realm_authentication_failed scores 0, no panel), 1.0.8.5 discovery against a baseline (follows the picker).
 
-**Already in 1.0.8.1 (user, 2026-11-10):** the retired-chart clean-up, commit 7431542 on main. `REMOVED_SPECS`
-(`scripts/lib/env.mjs`) lists specs deleted from `vega/` or `searches/`; `RETIRED_OBJECTS` retires their current and
-numbered ids, so `--dashboards` deletes them after re-pointing and `--clean` removes them too. It deleted 1.0.8's
-`cloud-audit-vega-actor-object-flow` from the Default space on 2026-11-10 (deployed with 1.0.8). Put it in the
-1.0.8.1 release notes; the 1.0.8.1 tag goes on the commit that finishes "State the window".
+## Release 1.0.8.1 — State the window, 2026-11-10
+
+Copy and docs only; no query, id or panel changed.
+- Every intro's *How to use it* line says the page opens on the last 24 hours and to set the time picker to 7 days for
+  a weekly review (in the intro, not How to read: that list is at `HOW_TO_MAX` on 00-05 and 07). The line now says
+  "focus the page with the controls above" instead of naming the four controls, and 01, 02 and 05 lost a few words, so
+  every paragraph stays on one line at 1440 (rendered, `AUDIT_VERIFY_WIDTH=1440`). Identity 360 says ② follows the
+  picker "(24 hours on opening)"; its ① wording changes with 1.0.8.2.
+- README: the drill-down replaces the ribbon text (07 row, *Vega panels filter too*, the counting note); `custom_content`
+  in *Platform constraints*; 19 Vega specs (12 Vega, 7 Vega-Lite); `custom/` and `lib/custom.mjs` in *Layout*. The CLI
+  help said 20 Vega and 11 sessions: now 19 and 12. `docs/custom-panels.md` describes the shipped drill-down and the
+  2026-11-10 timings.
+- **The retired-chart clean-up** (7431542): `REMOVED_SPECS` (`scripts/lib/env.mjs`) lists specs deleted from `vega/` or
+  `searches/`; `RETIRED_OBJECTS` retires their current and numbered ids, so `--dashboards` deletes them after
+  re-pointing and `--clean` removes them too. It deleted 1.0.8's `cloud-audit-vega-actor-object-flow` from the Default
+  space on 2026-11-10.
+- Roadmap revised against the 1.0.8 code (32 holes; the 1.0.8 keys/roles phase renumbered 1.0.9, Evidence 1.0.10) and
+  this release's hole closed.
 
 ## Release 1.0.8 — Identity 360 drill-down replaces the Vega ribbon, 2026-11-10
 
@@ -171,7 +185,7 @@ Path became a display-only Request, and the columns dropped for width stay dropp
   ~400ms on the replica) because grouping reads every signal event in range, not the 200 newest.
 - **Not done / known:** a ~45-character key name (the r1051c probes) is cut at 1440 in Top failed's Identity and API
   key alike, so at 7d rows that differ only in the name's tail look alike (hover shows it; at 1920 both hold it; a
-  full-width Top failed would fix it, a layout decision not taken); the Live feed's Request is ~180px at 1440 and cuts long
+  full-width Top failed would fix it — done since 1.0.7.2, Top failed is 48 wide); the Live feed's Request is ~180px at 1440 and cuts long
   transport actions and API paths (hover shows them; it was ~250px in the badge-less draft); Principal id cuts the
   36-character placeholder at 1440 on the Live feed and Top failed (it wraps on Failed sign-ins); a group's first
   event is not shown on the Live feed; Caller and Request are computed, so they do not click; the key a failed
@@ -1024,7 +1038,7 @@ exactly those keys when a spec does not override them. Do not reintroduce them.
 
 ## Not done, deliberately
 
-- **Two pre-existing Vega specs are slow**, surfaced by the new lint timings: `vega/05-rare-event-scatter`
+- ~~**Two pre-existing Vega specs are slow**~~ — superseded: README *Performance* times every panel under 0.7s at 7d. Surfaced by the new lint timings: `vega/05-rare-event-scatter`
   **13.3s** and `vega/01-actor-risk-treemap` **6.4s** at 1h. Both evaluate the `RISK` CASE and the actor
   COALESCE on every document before grouping; the aggregate-first rewrite should apply. Outside the
   Actor 360 scope of this change, so left for a follow-up.
@@ -1037,7 +1051,7 @@ exactly those keys when a spec does not override them. Do not reintroduce them.
 - **No drilldown from "What they changed".** Its useful columns (`type`, `name`) are derived and a pill on
   them matches nothing; `space` is the only real field, and a drilldown on space alone was judged too
   weak to be worth it.
-- **`./audit --clean dashboards` does not delete Vega specs, searches or the data view.** It calls
+- ~~**`./audit --clean dashboards` does not delete Vega specs, searches or the data view.**~~ — fixed: `clean.mjs` deletes one object per call (`kb.deleteObject`). It calls
   `POST /api/saved_objects/_bulk_delete`, which serverless answers with 400 *"not available with the
   current configuration"*, and it does not check the status — so it reports success. Found while
   removing throwaway probe objects. What works, verified on 13 objects:

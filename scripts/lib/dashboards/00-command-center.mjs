@@ -110,7 +110,7 @@ const INTRO = {
   paragraphs: [
     "This overview shows how much activity there was, who was busiest, which identities carry the most risk, and the latest events as they arrive.",
     "Start here for a routine review or when something looks wrong, then use the links above to go deeper on one person, sign-ins, Kibana objects, data access, security or location.",
-    `**How to use it:** choose a Project, Identity type, Identity or Client IP in the controls to focus every panel, and set the time picker. ${RAW_RECORDS}`,
+    `**How to use it:** focus the page with the controls above; it opens on the last 24 hours, so set the time picker to 7 days for a weekly review. ${RAW_RECORDS}`,
   ],
   howTo: [
     'Risk is weight × events, from 10 for a workflow run to 50 for a security change, so it runs far above event counts.',
