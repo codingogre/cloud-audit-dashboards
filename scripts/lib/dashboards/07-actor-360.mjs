@@ -250,11 +250,11 @@ const INTRO = {
   heading: 'Everything one person did, on one page',
   paragraphs: [
     `Use it to check whether their activity is normal, see what they changed and read, and gather evidence for a review or investigation. ${RAW_RECORDS}`,
-    '**How to use it:** pick someone in the Identity control, or click a Principal id in a table; with nobody selected, the page covers everyone. ① *Is this normal?* always looks at the last 7 days in UTC, ② *What they did* follows the time picker (24 hours on opening), and ③ *Evidence* ends in the raw records. Table times are in your time zone.',
+    '**How to use it:** pick someone in the Identity control, or click a Principal id in a table; with nobody selected, the page covers everyone. ① *Is this normal?* looks at the 7 days up to the end of the time picker, ② *What they did* follows the time picker (24 hours on opening), and ③ *Evidence* ends in the raw records. Times are in your time zone.',
   ],
   howTo: [
     'Pick an Identity type first to shorten the Identity list. A person’s API keys are identities of their own, so their traffic never counts under the person.',
-    'The ① panels read a fixed 7 days with no noise gate, so they will not match the Events tile or the time picker.',
+    'The ① panels read the 7 days before the picker’s end with no noise gate, so they will not match the Events tile.',
     'Baseline: the band is their usual range for each hour; with under three days of history no band is drawn.',
     'The Risk tile and Every scoring action count whole minutes only, so they can stop up to a minute short of the panels around them.',
     'Session timeline: click a bar to pin a session and zoom to it (Elasticsearch panels then read empty); the browser’s Back button returns to the previous time range, and removing the pill shows every session again. API-only identities have no sessions.',
@@ -327,8 +327,8 @@ export function build() {
         ['actor', filterable('user.name', { label: 'Principal id', width: 165, min: 160 })], ['events'],
         'The identities behind the selection, busiest first, named as in the Identity dropdown, with the Principal id each ran as. Click a Principal id to pin it across the suite. Unattributed requests count in Events but have no row.')],
       [7, (x, y, w, h) => kpi(x, y, w, h,
-        `FROM ${IDX} | ${TIME} | STATS Events = COUNT(*), actions = COUNT_DISTINCT(event.action, 100), last_ts = MAX(@timestamp) | EVAL mins = DATE_DIFF("minutes", last_ts, NOW()) | EVAL detail = CASE(Events == 0, "no activity", CONCAT(${grouped('actions')}, CASE(actions == 1, " action", " actions"), " · ", CASE(mins < 1, "just now", mins < 60, CONCAT(${grouped('mins')}, "m ago"), CONCAT(TO_STRING(mins / 60), "h ago")))) | KEEP Events, detail`,
-        'Events', 'Every audited event for the selection, how many distinct actions that was, and how recently they were last seen. Routine traffic included, so it counts connection housekeeping.',
+        `FROM ${IDX} | ${TIME} | STATS Events = COUNT(*), actions = COUNT_DISTINCT(event.action, 100), ids = COUNT_DISTINCT(user.name, 1000), last_ts = MAX(@timestamp) | EVAL mins = DATE_DIFF("minutes", last_ts, NOW()) | EVAL detail = CASE(Events == 0, "no activity", CONCAT(CASE(ids > 1, CONCAT(${grouped('ids')}, " identities"), CONCAT(${grouped('actions')}, CASE(actions == 1, " action", " actions"))), " · ", CASE(mins < 1, "just now", mins < 60, CONCAT(${grouped('mins')}, "m ago"), CONCAT(TO_STRING(mins / 60), "h ago")))) | KEEP Events, detail`,
+        'Events', 'Every audited event for the selection and how recently it was last active. With one identity selected, the line counts its distinct actions; with nobody selected, how many identities the page covers. Routine traffic included.',
         { secondary: 'detail' })],
       [7, (x, y, w, h) => kpi(x, y, w, h,
         `FROM ${IDX} | ${WHOLE_MINUTES} | ${riskScored()} | STATS sev = SUM(risk * n) BY event.action, risk | STATS Risk = SUM(sev), worst = MAX(risk), kinds = COUNT(*) | EVAL detail = CASE(worst IS NULL, "nothing scored", CONCAT(${grouped('kinds')}, CASE(kinds == 1, " action · worst ", " actions · worst "), ${grouped('worst')})), Risk = COALESCE(Risk, 0) | KEEP Risk, detail`,
@@ -370,14 +370,14 @@ export function build() {
       ['weight', 'events', { column: 'severity', label: 'Risk', width: 180, summary: { type: 'sum', label: 'Sum, all rows' } }, 'last_seen'],
       'The receipts for the Risk tile: one row per scoring action and weight, largest first; scroll for more. Risk is weight × events, and the Sum under it is the tile\'s number. Click an action, then Open in Security & Anomalies.', { scroll: true, cut: false }))]]),
 
-    row(2, [[48, (x, y, w, h) => section(x, y, w, h, '① Is this normal?', 'fixed 7-day window in UTC (ignores the time picker)')]]),
+    row(2, [[48, (x, y, w, h) => section(x, y, w, h, '① Is this normal?', 'the 7 days up to the end of the time picker')]]),
     row(14, [
       [20, vegaPanel('08-actor-baseline-band', 'Is this normal for them? — hourly (UTC)')],
       [12, vegaPanel('12-actor-cohort', 'Where they rank')],
       [16, vegaPanel('09-activity-punchcard', 'Working rhythm — by hour (UTC)')],
     ]),
 
-    row(2, [[48, (x, y, w, h) => section(x, y, w, h, '② What they did', 'follows the time picker · times in your time zone')]]),
+    row(2, [[48, (x, y, w, h) => section(x, y, w, h, '② What they did', 'follows the time picker')]]),
     // Custom panel (1.0.8): replaced the Vega ribbon "How they reached what they touched in Kibana"
     // (vega/11-actor-object-flow, removed 2026-11-09 at the user's call); see IDENTITY_PATH.
     // Taller than the 16 rows it had beside the ribbon: a data set's requests open in a panel under the columns.
@@ -437,7 +437,7 @@ export function build() {
         'This selection’s real client addresses, busiest first, including ones the map cannot show. “unplaced” means no location was found, always so for a private address; “—” is a country with no city. Click an address to pin it.'))],
     ]),
 
-    row(2, [[48, (x, y, w, h) => section(x, y, w, h, '③ Evidence', 'session timeline is fixed at 24 hours · the records follow the time picker · your time zone')]]),
+    row(2, [[48, (x, y, w, h) => section(x, y, w, h, '③ Evidence', 'session timeline: the 24 hours up to the end of the time picker · the records follow the picker')]]),
     row(7, [[48, vegaPanel('13-session-gantt', 'Kibana browser sessions · your time zone')]]),
     row(12, [[48, (x, y, w, h) => sessionRecords(x, y, w, h, 'Session records',
       'The raw Kibana events behind the session timeline, newest first. Click a timeline bar, or a Session cell, to read one session. An hour with only an idle Kibana tab is empty.', { empty: 'quiet' })]]),
