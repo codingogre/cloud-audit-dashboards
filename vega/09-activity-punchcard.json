@@ -68,15 +68,58 @@
       "as": "day"
     },
     {
-      "calculate": "timeFormat(datum.key, '%a %d %b, %H:%M') + '–' + timeFormat(datum.key + 3600000, '%H:%M')",
-      "as": "when"
-    },
-    {
-      "calculate": "datum.key + 3600000 > datum.end",
+      "calculate": "datum.key + 3600000 > datum.end ? 1 : 0",
       "as": "partial"
     },
     {
-      "calculate": "datum.partial ? 'in progress — ' + format(datum.doc_count, ',') + ' so far' : format(datum.doc_count, ',')",
+      "aggregate": [
+        {
+          "op": "sum",
+          "field": "doc_count",
+          "as": "doc_count"
+        },
+        {
+          "op": "min",
+          "field": "key",
+          "as": "key"
+        },
+        {
+          "op": "count",
+          "as": "n"
+        },
+        {
+          "op": "max",
+          "field": "partial",
+          "as": "partial"
+        }
+      ],
+      "groupby": [
+        "day",
+        "hour"
+      ]
+    },
+    {
+      "impute": "doc_count",
+      "key": "hour",
+      "keyvals": {
+        "start": 0,
+        "stop": 24
+      },
+      "groupby": [
+        "day"
+      ],
+      "value": 0
+    },
+    {
+      "calculate": "!isValid(datum.key) ? 'not in these 7 days' : timeFormat(datum.key, '%a %d %b, %H:%M') + '–' + timeFormat(datum.key + 3600000, '%H:%M') + (datum.n > 1 ? ' (twice: the clocks changed)' : '')",
+      "as": "when"
+    },
+    {
+      "calculate": "datum.partial === 1",
+      "as": "partial"
+    },
+    {
+      "calculate": "!isValid(datum.key) ? 'the clocks changed this week' : datum.partial ? 'in progress — ' + format(datum.doc_count, ',') + ' so far' : format(datum.doc_count, ',')",
       "as": "eventsText"
     }
   ],
