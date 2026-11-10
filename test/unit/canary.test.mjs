@@ -56,7 +56,8 @@ test('tilesOn() finds the prior-period tiles each dashboard places', () => {
   assert.equal(canaryQueries().get(withStream(prevQuery('es-events'))), 'es-events');
 });
 
-const S = Date.UTC(2026, 9, 22, 10), E = S + 864e5;
+// A 24-hour picker ending an hour ago, so its prior window lies inside the tiles' lookback (see the clipped test).
+const E = Math.floor(Date.now() / 36e5) * 36e5 - 36e5, S = E - 864e5;
 // The tile's request as Kibana sends it, a Client IP chosen (1.0.5.2): the truth must be narrowed the same way.
 const P = [{ _tstart: new Date(S).toISOString() }, { _tend: new Date(E).toISOString() }, { project: '' }, { identity_kind: '' }, { identity: '' }, { client_ip: '203.0.113.7' }];
 const state = ({ ranges = [], prev = 2200, stream = true } = {}) => ({
@@ -91,6 +92,20 @@ test('judge(): fails when prior reads 0 while the picker starts after the stream
   assert.deepEqual(w.problems, [], 'a prior period that really was empty is not a failure');
   const d = await judge(state({ prev: 7 }), ['total-events'], { esqlRun: truth(8) });
   assert.match(d.problems.join('\n'), /prior count is 7, TIME on the stream counts 8/);
+});
+
+test('judge(): a prior window cut by the lookback may read fewer events, never more', async () => {
+  // A picker ending 20 days ago: its prior window starts before NOW() - PREV_LOOKBACK_DAYS, which the tile cuts.
+  const e = Date.now() - 20 * 864e5, s = e - 864e5;
+  const p = [{ _tstart: new Date(s).toISOString() }, { _tend: new Date(e).toISOString() }, ...P.slice(2)];
+  const st = (prev) => ({ requests: [{ key: 'total-events', ranges: [], params: p }, { key: 'stream', ranges: [], params: [] }],
+    rows: [{ key: 'total-events', row: { cur: 9, prev, s, e }, params: p }, { key: 'stream', row: { t0: Date.now() - 15 * 864e5 }, params: [] }], unread: [] });
+  const run = (n) => async () => ({ ok: true, body: { values: [[n]] } });
+  const fewer = await judge(st(5), ['total-events'], { esqlRun: run(8) });
+  assert.deepEqual(fewer.problems, []);
+  assert.equal(fewer.tiles[0].clipped, true);
+  const more = await judge(st(9), ['total-events'], { esqlRun: run(8) });
+  assert.match(more.problems.join('\n'), /prior count is 9, TIME on the stream counts 8 .*cannot read more/);
 });
 
 test('judge(): fails when a tile on the page sent nothing, or the gate was never read', async () => {

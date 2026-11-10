@@ -16,7 +16,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { cfg, withStream, objId, CONTROL_VARS, ROOT, DEFAULT_VIEW } from './env.mjs';
 import { es } from './http.mjs';
-import { PREV_TILES, prevQuery, prevStreamQuery, prevEsql, prevRef, flatPanels, END_WINDOWS } from './panels.mjs';
+import { PREV_TILES, prevQuery, prevStreamQuery, prevEsql, prevRef, flatPanels, END_WINDOWS, PREV_LOOKBACK_DAYS } from './panels.mjs';
 
 export const ESQL_ASYNC = /\/internal\/search\/esql_async(\/|\?|$)/;
 
@@ -133,11 +133,16 @@ export async function judge(state, expected, { budgetMs = 30e3, esqlRun = es.esq
     const who = CONTROL_VARS.map((n) => ({ [n]: paramValue(got.params, n) ?? '' }));
     const truth = await esqlRun(prevEsql(key), [{ _tstart: new Date(2 * s - e).toISOString() }, { _tend: new Date(s).toISOString() }, ...who], { budgetMs });
     const want = truth.ok ? truth.body.values?.[0]?.[0] : undefined;
-    tiles.push({ key, cur, prev, priorOnStream: want, from: new Date(2 * s - e).toISOString(), to: new Date(s).toISOString() });
+    // A prior window reaching past the lookback (a picker ending days ago) is cut at NOW() - PREV_LOOKBACK_DAYS by the
+    // tile, which then reads "no full prior": it can only count fewer than the whole window, never the same.
+    const clipped = 2 * s - e < Date.now() - PREV_LOOKBACK_DAYS * 864e5;
+    tiles.push({ key, cur, prev, priorOnStream: want, clipped, from: new Date(2 * s - e).toISOString(), to: new Date(s).toISOString() });
     if (want === undefined) problems.push(`prior-period ${key}: the ground-truth query failed (${JSON.stringify(truth.body).slice(0, 120)})`);
     else if (prev === 0 && want > 0 && firstEvent !== null && s > firstEvent) {
       problems.push(`prior-period ${key}: the prior count reads 0 while the picker starts after the stream's first event (${new Date(firstEvent).toISOString()}) and the stream holds ${want} — the hidden time filter is back`);
-    } else if (prev !== want) problems.push(`prior-period ${key}: the tile's prior count is ${prev}, TIME on the stream counts ${want} over the same window`);
+    } else if (clipped ? prev > want : prev !== want) {
+      problems.push(`prior-period ${key}: the tile's prior count is ${prev}, TIME on the stream counts ${want} over the same window${clipped ? ' (the tile cuts it at the lookback, so it cannot read more)' : ''}`);
+    }
   }
   if (expected.length && !stream) problems.push(`prior-period: the stream's first event (the "no full prior" gate) was never read`);
   return { problems, tiles, firstEvent };
