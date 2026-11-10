@@ -1174,7 +1174,7 @@
       },
       "config": {
         "ref_id": "cloud-audit-vega-session-gantt",
-        "title": "Kibana browser sessions · your time zone",
+        "title": "Kibana browser sessions · one day to the time picker’s end · your time zone",
         "description": "The 12 latest Kibana browser sessions in the 24 hours to the time picker’s end: length is how long, shade is how much was done. Click a bar for that session’s records; the browser’s Back button undoes the zoom."
       }
     },

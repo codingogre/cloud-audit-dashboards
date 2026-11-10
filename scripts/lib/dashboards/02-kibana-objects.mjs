@@ -255,7 +255,7 @@ export function build() {
     // above the records it indexes: a click on a bar pins that session and zooms the picker to it, which
     // narrows Session reconstruction beneath. It shows the 24 hours to the picker's end (END_WINDOWS), so a zoom
     // re-anchors it on the zoomed session.
-    vega(0, 82, 48, 7, '13-session-gantt', 'Kibana browser sessions · your time zone', specDescription('13-session-gantt')),
+    vega(0, 82, 48, 7, '13-session-gantt', 'Kibana browser sessions · one day to the time picker’s end · your time zone', specDescription('13-session-gantt')),
     sessionRecords(0, 89, 48, 14, 'Session reconstruction',
       'One person’s Kibana session, event by event, newest first: each object they opened or changed, in Kibana’s own words. Click a session bar above, or a Session cell, to narrow it to one session.',
       { empty: 'empty when no browser session opened or changed anything' }),

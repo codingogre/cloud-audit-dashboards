@@ -310,7 +310,7 @@ export function checkEndWindowSpec(file, spec, problems) {
     if (/\?_tstart/.test(q)) problems.push(`vega: ${label} reads ?_tstart — its window ends at the picker's end and does not follow its start`);
   }
   const text = JSON.stringify(spec);
-  if (/\bnow\s*\(\s*\)/i.test(text)) problems.push(`vega: ${file} calls now() — key times and axis ends on the picker's end (the anchor e), not the wall clock`);
+  if (/\bnow\s*\(\s*\)/.test(text)) problems.push(`vega: ${file} calls now() — key times and axis ends on the picker's end (the anchor e), not the wall clock`);
   if (/\butc(hours|day|date|month|year|minutes|Format|Parse)\b|"utc"/.test(text)) problems.push(`vega: ${file} draws in UTC — Identity 360 shows the viewer's time zone`);
 }
 

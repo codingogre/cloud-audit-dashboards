@@ -88,7 +88,7 @@ Network, and Platform Volume last when it is deployed. The numbers below are sou
 | 04 | 🚨 **Security & Anomalies** | Mean severity (0–50) and a risk leaderboard, security config changes, rare/privileged operations, newly seen identities. |
 | 05 | 🌍 **Geo & Network** | Real client geography, choropleth, impossible-travel detection, and proof that `source.ip` is the wrong field. |
 | 06 | 📊 **Platform Volume** · *opt-in* | The unfiltered firehose, quarantined so the rest stay readable. Not deployed unless asked for: see *Optional dashboards* under Commands. |
-| 07 | 👤 **Identity 360** (named Actor 360 until 1.0.5.3; the id is still `elastic_cloud-audit-actor-360`) | One identity's whole footprint — pick someone in the Identity control. **① Is this normal?** reads a fixed 7 days whatever the picker says: activity against their own hourly baseline, their rank among the week's 40 busiest identities, their weekly rhythm. **② What they did** follows the picker: a drill-down from credential to space, object type and operation, down to the data Kibana read, changes, reads, a map with travel lines, the risk receipts. **③ Evidence**: a 24-hour session timeline whose bars filter the dashboard to that session and zoom it there, over the raw records. |
+| 07 | 👤 **Identity 360** (named Actor 360 until 1.0.5.3; the id is still `elastic_cloud-audit-actor-360`) | One identity's whole footprint — pick someone in the Identity control. **① Is this normal?** reads the 7 days up to the end of the time picker: activity against their own hourly baseline, their rank among that week's 40 busiest identities, their weekly rhythm. **② What they did** follows the picker: a drill-down from credential to space, object type and operation, down to the data Kibana read, changes, reads, a map with travel lines, the risk receipts. **③ Evidence**: a timeline of the sessions in the 24 hours up to the picker's end, whose bars filter the dashboard to that session and zoom it there, over the raw records. |
 
 ### The risk model
 
@@ -173,7 +173,7 @@ same tab. It is a Kibana URL drilldown on the panel menu trigger, and it carries
 
 | Carried | How |
 |---|---|
-| Time range | `_g=(time:…)` from the panel's time range (the picker's, or a fixed panel's own 24 hours) |
+| Time range | `_g=(time:…)` from the panel's time range (the picker's) |
 | Filter pills | written into the session's ES\|QL, straight after `FROM`, as `WHERE KQL("""field:"value" """)` (`NOT KQL(…)` when negated), one per enabled single-field phrase pill: every table cell's pin, and the timeline's *session:* pill. KQL keeps the pill's own meaning: a multi-valued field (an event's indices) matches on any value, and an excluding pill keeps events without the field; ``==`` gave 0 rows in both cases (measured live: 0 against 1,972, and 0 against 96,247) |
 | Query bar | `WHERE KQL("""…""")` in the same place |
 | Not carried | the four dropdowns (ES\|QL variables; no session reads them), and a pill that is not a single-field phrase (the treemap's identity pill, a range, an *exists*) |
@@ -208,15 +208,15 @@ STARTS_WITH(`http.request.header.x-opaque-id`, "<id>;")`` straight after `FROM`:
 **Vega panels filter too.** Shift-clicking a session pins it across the suite. Clicking a session (on Identity 360 and on Kibana
 Object Forensics) pins a `session: …` pill on `kibana.session.id` AND sets the time range to
 the session plus a minute either side, because the records under the timeline follow the picker while
-the timeline is fixed at 24 hours. The zoom is sent 0.7s and 1.4s after the click, from a Vega timer:
+the timeline shows the 24 hours up to the picker's end. The zoom is sent 0.7s and 1.4s after the click, from a Vega timer:
 `kibanaAddFilter` resolves its data view over the network before it fires, and a time change sent first
 reloads the panel and drops the filter (clicked in Playwright: the pill never appeared); sent 5s later,
 the reload the filter itself causes has already replaced the view and the zoom is lost. **The way back is the
 browser's Back button** (1.0.7.2, measured on a 9.6 private deploy): the zoom pushes a history entry, and one Back
 returns the picker to the range before the click (*24 hours ago → 1 minute ago*); the *session:* pill stays, because
 the 9.6 dashboard keeps pills out of the URL, so the how-to says to remove it to see every session. The spec cannot
-draw a *Back to previous range* mark itself: the pill reloads the panel, so it forgets the click, and its fixed
-24-hour window hides the picker from it. On Command Center,
+draw a *Back to previous range* mark itself: the pill reloads the panel, so it forgets the click. After a zoom the
+timeline ends at the zoomed range's end, so it still shows the session. On Command Center,
 clicking a treemap tile pins that identity — its email, key name, or user name, each with the two dropdowns' own conditions (the realm
 for a Cloud key, an unnamed key or a service account; for a *Failed sign-in* tile, the failed sign-ins under that name; for any other name, no
 email, key name, key or service-account realm, and no failed sign-in; for an `(unattributed)` tile, the events with no
@@ -504,8 +504,10 @@ such rather than given an impossible speed.
 requests-per-minute bars are whole intervals counted back from the range's end, height = requests ÷ minutes. Each
 panel reads the clock for itself, up to a second apart, so a total and its parts can differ by an event at the edges.
 07's ① panels: baseline band = the interquartile range of the 7 observations for that hour, a point beyond 1.5× it
-marked, quartiles from the identity's first event, no band under three days of history; punchcard in UTC, the current
-hour outlined; cohort = the 40 busiest people by email in the projects in scope (approximate when several). 07's drill-down
+marked, quartiles from the identity's first event, no band under three days of history; punchcard in the browser's time zone, the hour the
+range ends in outlined (a cell that holds two hours or none across a clock change says so; in a half-hour zone a
+cell is the UTC hour starting at :30). Charts and the drill-down use the browser's zone; Lens tables follow Kibana's
+*Timezone* advanced setting (`dateFormat:tz`), which is the browser's zone unless a space sets another; cohort = the 40 busiest people by email in the projects in scope (approximate when several). 07's drill-down
 shows Kibana actions and the Elasticsearch data requests Kibana made for them apart, never added together; each
 level keeps its 25 largest items and folds the rest into *+N smaller not shown*. `event.category` is multi-valued, so 00's categories sum to more than the event total.
 
@@ -611,7 +613,7 @@ Probed against Kibana 9.6 serverless. Several are undocumented and cost real tim
 | Reporting API rejects `pngV2` / `printablePdfV2` | Verification drives Chromium directly |
 | **Every Lens ES\|QL request carries a hidden `@timestamp` range filter for exactly the picker's window**, whether or not the query uses `?_tstart`/`?_tend` (captured in the browser: `"filter":{"bool":{"filter":[{"range":{"@timestamp":{"gte":…,"lte":…}}}]}}` beside the params, on a query that never compares `@timestamp` with `?_tstart`). Kibana adds it for the layer's time field — the column first compared with the params, else `@timestamp` at run time; another column only moves it | No Lens panel can read outside the range: a previous-period count comes back 0, and a lower bound below `?_tstart` is silently cut there (it was on Identity 360's whole-minute window until 1.0.5). The prior-period tiles read the events view instead (next rows), and *Audit data held* is a DSL Vega spec (`coverageSpec()` in `panels.mjs`) |
 | A DSL Vega body can read the picker without being bound to it: `{"%timefilter%": "min"}` / `"max"` anywhere in `body.query` or `body.aggs` becomes the window's start or end in ms (a script's `params` included) | Used by the prior-period tiles until 1.0.5.1; no spec uses it now. `--lint` still binds the placeholders to a fixed window, so one that does is linted rather than rejected |
-| An ES\|QL Vega spec **always** follows its panel's time range — omitting `%timefield%` does not opt out — and that is the picker's unless the panel has its own | A panel that needs its own window (a 7-day baseline on a 24h dashboard) is an ES\|QL spec bounded by `TIME` on a `vis` panel with `config.time_range` (`VEGA_WINDOWS` in `panels.mjs`; vega/08, 09, 12, 13): `?_tstart`/`?_tend` and the hidden range filter are then that window, and the dropdowns still apply. Kibana badges the panel with the window (*Last 7 days*); a viewer can click it to change the range. The re-point keeps it (stored as `embeddableConfig.time_range`). A rounded range badges long (*Last 167 hours rounded to the hour*), so the hourly charts take `now-7d` and keep their 168 hours in the query. `--lint` and `--perf` run these specs over that window. A **DSL** spec (`url.index` + `url.body`, explicit `@timestamp` range, `%dashboard_context-*%` placeholders) is left for what neither a panel range nor the events view can express: the stream's first event (vega/14). The prior period is an ES\|QL spec on `cloud-audit-events-view` (next rows) |
+| An ES\|QL Vega spec **always** follows its panel's time range — omitting `%timefield%` does not opt out — and that is the picker's unless the panel has its own | A chart that needs a window other than the picker's (a 7-day baseline on a 24h dashboard) reads the events view and bounds itself back from the picker's end (`END_WINDOWS`, `endWindow` and `END_AT` in `panels.mjs`; vega/08, 09, 12, 13): no panel range, so investigating an old range shows the 7 days (24 hours for 13) before its end. `END_AT` is `LEAST(TO_DATETIME(?_tend), NOW())`: *Today* and *This week* round the end up to midnight or the week's end, which would count back from hours that have not happened. These panels carry no window badge, so their titles, descriptions and the section headers say the window. The view costs ~0.2s more per 7-day query than the stream (`--perf`, 1.0.8.2: Identity 360's 24h load 1.2s → 2.1s, 7d 3.1s → 3.8s). `--lint` runs them with `?_tend` = now. A **DSL** spec (`url.index` + `url.body`, explicit `@timestamp` range, `%dashboard_context-*%` placeholders) is left for what neither a panel range nor the events view can express: the stream's first event (vega/14). The prior period is an ES\|QL spec on `cloud-audit-events-view` (next rows) |
 | A Vega ES\|QL dataset gets the dashboard's filters (pills, KQL) only with `"%context%": true`, and then all of them; ES\|QL control variables reach every dataset, `%context%` or not | Every ES\|QL spec sets it, except the estate half of 07's cohort (vega/12), which must not be narrowed by the selection: it reads the Project dropdown directly (`TIME_ONLY AND PROJECT_WHERE`), is grouped by project, and the spec keeps the projects the selection's dataset reports, so a project pill narrows it too (`TWO_DATASET_SPECS` in `layout.mjs`), and the six prior-period tiles' `stream` dataset, which finds the stream's first event and is unfiltered by design |
 | An ES\|QL Vega spec on an **ES\|QL view that has no `@timestamp`** gets no time filter: `get_timefield` finds no time column (answers `{}`; the same query with `event_time > ?_tstart` answers `event_time`). Undocumented: it follows a Kibana code comment | The prior-period tiles read `logs-cloud-audit-events-view` (`FROM <stream> \| RENAME @timestamp AS event_time`, `lib/view.mjs`) and bound their own window, so they can count the period before the picker **and** follow the dropdowns, pills and KQL (tested live). The query never compares a column bare with `?_tstart`/`?_tend` (always `TO_DATETIME(?_tstart)`), never `BUCKET`s on them, never sets `%timefield%` and names no column `first` (reserved): each brings the filter back or breaks the query, and `layout.mjs` fails a spec that does. `--lint` asks `get_timefield` about every query on the view, and `--verify` fails if a tile's request carries a range filter or its prior count differs from the stream's (*Prior-period tiles*) |
 | ES\|QL views are **index-level** resources with their own privileges (measured with narrowed API keys, 1.0.5.1): creating or replacing one needs `create_view` on its name (no read on the stream is checked at create time), deleting it `delete_view`, reading its definition `read_view_metadata`; `manage_view` (or `manage`) covers all three. Querying it needs `read` on the view name **and** on the stream. Cluster `manage` alone grants none of it | `--objects` creates the view and reads it back, `--clean dashboards` deletes it, `--dashboards` and `--verify` fail with "run ./audit --objects" when it is missing or defined differently. **Every dashboard viewer's role needs `read` on the view too**, which is why it is named `logs-cloud-audit-events-view`: a role that reads `logs-*` covers it (tested with a key limited to `logs-*`). Wildcards do not pick views up: `FROM logs-*` and `GET logs-*/_count` returned the same count with the view present as without it, so nothing on the project counts these events twice |
@@ -975,8 +977,8 @@ background (dark panels are ~`#111C2C`, light are white).
   and no column count is safe from it (vega/04).
 
 **Vega empty states.** A selection that matches nothing must read as empty, not as a broken chart. Every
-spec says so in words — *No activity for this selection in this time range* (or *in the last 7 days*
-on a fixed-window panel) — and hides whatever would print `NaN`, `undefined` or a key for nothing:
+spec says so in words — *No activity for this selection in this time range* (or *in the 7 days to <date>*
+on an end-window chart) — and hides whatever would print `NaN`, `undefined` or a key for nothing:
 legends over an empty domain, decade axes, solid placeholder cells, a flat line on a degenerate scale.
 - *Vega-Lite*: name the data source (`"data": {"name": "rows", …}`), put the message in
   `title.text` as an expression over `length(data('rows'))` (text marks are not themed), and give the
@@ -1058,7 +1060,7 @@ set too, so the committed files are the default seven; a `--with` run (without `
 
 `--lint` runs before every deploy and executes every query against the cluster with concrete
 `?_tstart` / `?_tend` values, so the exact text that ships is proven to run first: the last hour, or a
-fixed-window spec's own window (`VEGA_WINDOWS`), never a window its panel cannot show. That includes the
+an end-window spec's own 7 days or 24 hours before it (`END_WINDOWS`), never a window its panel cannot show. That includes the
 Elasticsearch DSL behind the one remaining DSL Vega spec (data coverage, vega/14), which it runs
 unfiltered — the expensive case — and whose `format.property` path it checks resolves, because a typo there
 renders an empty panel that nothing downstream can see. It runs each alert rule over the rule's own lookback, as
@@ -1069,8 +1071,8 @@ than 5s, which is how a panel that passes today is noticed before it times out o
 
 Before any query runs, `--lint` checks structure offline: exact grid tessellation, fragment drift
 between the Lens panels and the static ES|QL in Vega and Discover, and the Vega rules above — every
-spec registered, DSL specs windowed, scoped and named, fixed-window specs ES\|QL on `TIME` with exactly
-their declared panel range (and no other panel carrying one), text marks readable in both themes. Nothing may sit
+spec registered, DSL specs windowed, scoped and named, end-window specs on the events view bounded by `endWindowOnly` with no `now()`, no
+UTC and no panel range (and no panel carrying one), text marks readable in both themes. Nothing may sit
 on the events view that would bring Kibana's hidden time filter back. After the queries it runs the prior-period
 *parity* check: each `PREV_TILES` tile's current and prior counts must equal plain `TIME`-bounded ES\|QL on the
 stream over the same windows, with nothing chosen and with `AUDIT_PROJECT`, `AUDIT_IDENTITY_KIND`,
@@ -1108,9 +1110,12 @@ Three failures it was built to catch, all real:
 `--lint` times queries on the live stream, which holds only a few hours of events, so a 7-day panel
 looks as cheap there as a 1-hour one. `./audit --perf seed` copies the live stream into a sibling
 `-perf` data stream under the production template, re-stamped over 7 days. `./audit --perf run` then
-times every dashboard query on it, one at a time and as a concurrent page load per dashboard. Windows
-end at the newest replica document; a fixed-window spec is timed over its own window in every pass and
-reported as `[fixed window]`. Each run writes `build/perf-<stamp>/report.json`, and it warns
+times every dashboard query on it, one at a time, as a concurrent page load per dashboard, and as `--users N`
+viewers (default 5) opening the same dashboard at once, reporting each viewer's wait, the slowdown against one
+viewer and any failures (`--users 1` skips it; it loads the shared project, so it runs last in each window). Windows
+end at the newest replica document; an end-window spec (Identity 360's ① row and the session timeline) reads the 7
+days or 24 hours before that end in every pass and is reported as `[own window]`. The replica holds 7 days, so it
+cannot time a picker that ends weeks back. Each run writes `build/perf-<stamp>/report.json`, and it warns
 when ES|QL work is already resident on the dataset, because that load skews every timing.
 
 Measured 2026-10-14 with `./audit --perf run --windows 1h,24h,7d` on a 2,625,300-event replica

@@ -2,7 +2,7 @@
  * Query performance at production volume, measured against a replica rather than the live stream.
  *
  *   --perf seed  [--copies N] [--days D] [--slices S] [--max-minutes M] [--seed s] [--force-append]
- *   --perf run   [--windows 1h,24h,7d] [--budget ms] [--only name,...] [--anchor data|now]
+ *   --perf run   [--windows 1h,24h,7d] [--budget ms] [--only name,...] [--anchor data|now] [--users N]
  *   --perf clean
  *
  * Why a replica: the live audit stream holds a couple of hours of events, so every window wider than
@@ -370,6 +370,9 @@ async function cmdRun(args) {
   const budgetMs = num(args, '--budget', 30e3);
   const only = opt(args, '--only', '');
   const anchorMode = opt(args, '--anchor', 'data');
+  // (c) below: N viewers opening the same dashboard at once. 5 by default; --users 1 skips it.
+  const users = num(args, '--users', 5);
+  if (!Number.isInteger(users) || users < 1 || users > 50) throw new Error('--users must be a whole number from 1 to 50');
   if (!['data', 'now'].includes(anchorMode)) throw new Error('--anchor must be data or now');
 
   if (!(await streamExists(perf))) throw new Error(`${perf} does not exist — run ./audit --perf seed first`);
@@ -425,6 +428,7 @@ async function cmdRun(args) {
 
   const seq = [];   // { window, key, src, kind, ms, ok, cancelled, error }
   const conc = [];  // { window, dashboard, wallMs, n, failed, cancelled, items: [...] }
+  const multi = []; // { window, dashboard, users, wallMs: [per viewer], maxMs, p50Ms, slowdown, failed, cancelled }
   for (const win of windows) {
     info(`window ${win.label}: sequential, ${unique.size} queries`);
     // (a) One at a time on a quiet cluster: the query's own cost. Each unique query is timed once
@@ -448,6 +452,27 @@ async function cmdRun(args) {
       conc.push({ window: win.label, dashboard: g.name, wallMs, n: rs.length, failed, cancelled, items: rs });
       (failed ? warn : detail)(`${win.label} ${g.name.padEnd(24)} ${String(rs.length).padStart(3)} queries  wall ${fmtMs(wallMs).padStart(7)}${failed ? `  ${failed} failed (${cancelled} over budget)` : ''}`);
     }
+    // (c) Several viewers: `users` page loads of the same dashboard fired together, each viewer's
+    // wall-clock from first submit to its last response. Shows queueing on the cluster that one viewer
+    // never sees. It loads the shared project, so it runs only here, after the quiet measurements.
+    if (users > 1) {
+      info(`window ${win.label}: ${users} viewers at once`);
+      for (const g of groups) {
+        if (g.noPageLoad) continue;
+        const loads = await Promise.all(Array.from({ length: users }, async () => {
+          const t0 = Date.now();
+          const rs = await Promise.all(g.items.map((x) => timeOne(x, win, budgetMs, lib, anchor)));
+          return { wallMs: Date.now() - t0, failed: rs.filter((r) => !r.ok).length, cancelled: rs.filter((r) => r.cancelled).length };
+        }));
+        const walls = loads.map((l) => l.wallMs);
+        const one = conc.find((c) => c.dashboard === g.name && c.window === win.label)?.wallMs;
+        const maxMs = Math.max(...walls);
+        const failed = loads.reduce((t, l) => t + l.failed, 0), cancelled = loads.reduce((t, l) => t + l.cancelled, 0);
+        const slowdown = one ? maxMs / one : null;
+        multi.push({ window: win.label, dashboard: g.name, users, wallMs: walls, maxMs, p50Ms: percentile(walls, 0.5), slowdown, failed, cancelled });
+        (failed ? warn : detail)(`${win.label} ${g.name.padEnd(24)} ${users} viewers  slowest ${fmtMs(maxMs).padStart(7)}  median ${fmtMs(percentile(walls, 0.5)).padStart(7)}${slowdown ? `  ×${slowdown.toFixed(1)} one viewer` : ''}${failed ? `  ${failed} failed (${cancelled} over budget)` : ''}`);
+      }
+    }
     for (const g of groups) {
       g.seq ??= {};
       g.seq[win.label] = g.items.map((x) => ({ key: x.key, ...byKey.get(x.key) }));
@@ -462,15 +487,17 @@ async function cmdRun(args) {
       const ms = s.map((r) => r.ms);
       const worst = s.reduce((m, r) => (r.ms > m.ms ? r : m), { ms: -1 });
       const c = conc.find((x) => x.dashboard === g.name && x.window === win.label);
-      rows.push({ dashboard: g.name, window: win.label, queries: s.length, slowestMs: worst.ms, slowest: worst.key,
+      const m = multi.find((x) => x.dashboard === g.name && x.window === win.label);
+      rows.push({ usersMaxMs: m?.maxMs ?? null, usersFailed: m?.failed ?? null, dashboard: g.name, window: win.label, queries: s.length, slowestMs: worst.ms, slowest: worst.key,
                   p50Ms: percentile(ms, 0.5), concurrentWallMs: c?.wallMs ?? null, failed: s.filter((r) => !r.ok).length,
                   concurrentFailed: c?.failed ?? null });
     }
   }
   console.log('');
-  console.log(`${'dashboard'.padEnd(24)} ${'window'.padEnd(6)} ${'n'.padStart(3)} ${'slowest'.padStart(8)} ${'p50'.padStart(7)} ${'page'.padStart(8)}  slowest query`);
+  const uh = users > 1 ? `${users} users`.padStart(9) : '';
+  console.log(`${'dashboard'.padEnd(24)} ${'window'.padEnd(6)} ${'n'.padStart(3)} ${'slowest'.padStart(8)} ${'p50'.padStart(7)} ${'page'.padStart(8)}${uh ? ` ${uh}` : ''}  slowest query`);
   for (const r of rows) {
-    console.log(`${r.dashboard.padEnd(24)} ${r.window.padEnd(6)} ${String(r.queries).padStart(3)} ${fmtMs(r.slowestMs).padStart(8)} ${fmtMs(r.p50Ms).padStart(7)} ${fmtMs(r.concurrentWallMs).padStart(8)}  ${r.slowest}${r.failed ? `  (${r.failed} failed)` : ''}`);
+    console.log(`${r.dashboard.padEnd(24)} ${r.window.padEnd(6)} ${String(r.queries).padStart(3)} ${fmtMs(r.slowestMs).padStart(8)} ${fmtMs(r.p50Ms).padStart(7)} ${fmtMs(r.concurrentWallMs).padStart(8)}${uh ? ` ${fmtMs(r.usersMaxMs).padStart(9)}` : ''}  ${r.slowest}${r.failed ? `  (${r.failed} failed)` : ''}`);
   }
   const top = [...seq].sort((a, b) => b.ms - a.ms).slice(0, 15);
   console.log('\nslowest 15 (sequential):');
@@ -480,7 +507,7 @@ async function cmdRun(args) {
   mkdirSync(out, { recursive: true });
   const file = join(out, 'report.json');
   writeFileSync(file, JSON.stringify({ at: new Date().toISOString(), stream: perf, docs: st.docs, span: [st.lo, st.hi],
-    budgetMs, anchor: new Date(anchor).toISOString(), anchorMode, windows: windows.map((w) => w.label), residentAtStart: resident, summary: rows, sequential: seq, concurrent: conc }, null, 2));
+    budgetMs, anchor: new Date(anchor).toISOString(), anchorMode, windows: windows.map((w) => w.label), residentAtStart: resident, users, summary: rows, sequential: seq, concurrent: conc, viewers: multi }, null, 2));
   await es.raw(`/_query/view/${view}`, { method: 'DELETE' });
   const bad = seq.filter((s) => !s.ok).length;
   (bad ? warn : success)(`${seq.length} timings, ${bad} over budget or failed — report ${file.replace(`${ROOT}/`, '')}`);

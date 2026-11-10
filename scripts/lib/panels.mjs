@@ -1642,17 +1642,23 @@ export const END_WINDOWS = {
 };
 /** The END_WINDOWS span for a spec path or ref ('vega/08-....json' or '08-...'), or undefined. */
 export const endWindowOf = (src) => END_WINDOWS[String(src).replace(/^vega\//, '').replace(/\.json$/, '')];
-/** The window on the view: `span` ending at the picker's end. Wrapped params only (escape rules). */
-export const endWindowOnly = (span) => `WHERE ${VIEW_TIME} <= TO_DATETIME(?_tend) AND ${VIEW_TIME} > TO_DATETIME(?_tend) - ${span}`;
+/**
+ * Where an end-window chart ends: the picker's end, or now when the picker ends later (Today, This week and an
+ * absolute end in the future round ?_tend up to the end of the day or week, which would count back from hours that
+ * have not happened yet and call them unusually quiet).
+ */
+export const END_AT = 'LEAST(TO_DATETIME(?_tend), NOW())';
+/** The window on the view: `span` ending at END_AT. Wrapped params only (escape rules). */
+export const endWindowOnly = (span) => `WHERE ${VIEW_TIME} <= ${END_AT} AND ${VIEW_TIME} > ${END_AT} - ${span}`;
 /** endWindowOnly plus the four dropdowns: the view's counterpart of TIME. */
 export const endWindow = (span) => `${endWindowOnly(span)} AND ${CONTROLS_WHERE}`;
 /** The anchor row: the picker's end in ms. No source, so no time filter and always one row. */
-export const ANCHOR_QUERY = 'ROW e = TO_LONG(TO_DATETIME(?_tend))';
+export const ANCHOR_QUERY = `ROW e = TO_LONG(${END_AT})`;
 /**
  * An hourly spec's hour, counted back from the one the picker's end falls in (0) to the first of the seven
  * days (167). Evaluated on grouped rows, after `STATS ... BY hour = DATE_TRUNC(1 hour, event_time)`.
  */
-export const HOUR_AGO = 'ago = DATE_DIFF("hour", hour, DATE_TRUNC(1 hour, TO_DATETIME(?_tend)))';
+export const HOUR_AGO = `ago = DATE_DIFF("hour", hour, DATE_TRUNC(1 hour, ${END_AT}))`;
 
 /** Vega panels are legacy `visualization` saved objects; see dashboards.mjs repointVega(). */
 /**

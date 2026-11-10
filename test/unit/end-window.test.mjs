@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
-  END_WINDOWS, endWindowOf, endWindow, endWindowOnly, ANCHOR_QUERY, vega, IDENTITY_WHERE, CLIENT_IP_WHERE, PROJECT_WHERE,
+  END_WINDOWS, END_AT, endWindowOf, endWindow, endWindowOnly, ANCHOR_QUERY, vega, IDENTITY_WHERE, CLIENT_IP_WHERE, PROJECT_WHERE,
   CONTROLS_WHERE, HOUR_AGO, flatPanels, VIEW_TIME,
 } from '../../scripts/lib/panels.mjs';
 import { buildAll } from '../../scripts/lib/definitions.mjs';
@@ -34,7 +34,9 @@ test('the four windows: 7 days for Identity 360\'s baseline row, 24 hours for th
   assert.equal(endWindowOf('vega/07-noise-ratio-stream.json'), undefined);
   assert.equal(endWindowOf('dashboards/07-actor-360'), undefined);
   // Wrapped params only: a bare `event_time <= ?_tend` would make Kibana filter event_time to the picker's range.
-  assert.equal(endWindowOnly('7 days'), `WHERE ${VIEW_TIME} <= TO_DATETIME(?_tend) AND ${VIEW_TIME} > TO_DATETIME(?_tend) - 7 days`);
+  // The end is the picker's end, or now when the picker ends later (Today, This week).
+  assert.equal(END_AT, 'LEAST(TO_DATETIME(?_tend), NOW())');
+  assert.equal(endWindowOnly('7 days'), `WHERE ${VIEW_TIME} <= ${END_AT} AND ${VIEW_TIME} > ${END_AT} - 7 days`);
   assert.equal(endWindow('24 hours'), `${endWindowOnly('24 hours')} AND ${CONTROLS_WHERE}`);
 });
 
@@ -82,7 +84,7 @@ test('each spec reads the view, bounded back from ?_tend, with no DSL, no %timef
 test('the specs show no wall-clock time and no UTC: every time is the anchor', () => {
   for (const ref of Object.keys(END_WINDOWS)) {
     const text = JSON.stringify(spec(ref));
-    assert.ok(!/\bnow\s*\(/i.test(text), `${ref}: no now()`);
+    assert.ok(!/\bnow\s*\(/.test(text), `${ref}: no Vega now()`); // ES|QL NOW() inside END_AT is fine
     assert.ok(!/utc/i.test(text.replace(/"query":"[^"]*"/g, '')), `${ref}: no UTC`);
   }
   for (const ref of ['08-actor-baseline-band', '12-actor-cohort', '13-session-gantt']) {
@@ -92,7 +94,7 @@ test('the specs show no wall-clock time and no UTC: every time is the anchor', (
   }
   // 09 is Vega-Lite (one data source), so the anchor rides on its rows and is spread over the imputed hours.
   const p = spec('09-activity-punchcard');
-  assert.ok(p.data.url.query.endsWith('| EVAL e = TO_LONG(TO_DATETIME(?_tend)) | KEEP ago, doc_count, e'));
+  assert.ok(p.data.url.query.endsWith(`| EVAL e = TO_LONG(${END_AT}) | KEEP ago, doc_count, e`));
   assert.deepEqual(p.transform[1], { joinaggregate: [{ op: 'max', field: 'e', as: 'end' }] });
   // The gantt's axis ends at the picker's end.
   assert.equal(spec('13-session-gantt').scales.find((x) => x.name === 'x').domain.signal, '[e - 86400000, e]');
@@ -106,8 +108,8 @@ test('the guard trips on a now(), a UTC format, a dataset on the stream, ?_tstar
   assert.match(mutate((c) => { c.scales[0].type = 'utc'; }), /draws in UTC/);
   assert.match(mutate((c) => { counts(c).query = counts(c).query.replace(DEFAULT_VIEW, 'logs-elastic_cloud.serverless_audit.otel-default'); }), /does not read the events view/);
   assert.match(mutate((c) => { counts(c).query = counts(c).query.replace('- 7 days', '- 30 days'); }), /not bounded by endWindowOnly\('7 days'\)/);
-  assert.match(mutate((c) => { counts(c).query = counts(c).query.replace('TO_DATETIME(?_tend) - 7 days', 'TO_DATETIME(?_tstart)'); }), /reads \?_tstart|not bounded/);
-  assert.match(mutate((c) => { counts(c).query = counts(c).query.replace('event_time <= TO_DATETIME(?_tend)', 'event_time <= ?_tend'); }), /compares a column bare/);
+  assert.match(mutate((c) => { counts(c).query = counts(c).query.replace(`${END_AT} - 7 days`, 'TO_DATETIME(?_tstart)'); }), /reads \?_tstart|not bounded/);
+  assert.match(mutate((c) => { counts(c).query = counts(c).query.replace(`event_time <= ${END_AT}`, 'event_time <= ?_tend'); }), /compares a column bare/);
   assert.match(mutate((c) => { counts(c)['%timefield%'] = '@timestamp'; }), /sets %timefield%/);
 });
 
