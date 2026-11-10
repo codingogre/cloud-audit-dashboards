@@ -1,7 +1,8 @@
 <style>
 /* ---- frame ---- */
-html,body{height:100%}
-.ip{--g:24px;--row:46px;font-family:var(--cc-font-family);color:var(--cc-color-text);font-size:13px;line-height:1.35;height:100vh;display:flex;flex-direction:column;gap:6px;padding:2px 4px 0;box-sizing:border-box}
+/* Kibana pads the frame body 16px: the drill-down fills the box inside that padding, so its bottom is not cut off */
+html,body{height:100%}body{box-sizing:border-box}
+.ip{--g:24px;--row:46px;font-family:var(--cc-font-family);color:var(--cc-color-text);font-size:13px;line-height:1.35;height:100%;display:flex;flex-direction:column;gap:6px;padding:2px 4px 0;box-sizing:border-box}
 .ip *{box-sizing:border-box}
 .ip svg.ic{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
 .mute{color:color-mix(in srgb,var(--cc-color-text) 62%,transparent)}
@@ -23,10 +24,11 @@ html,body{height:100%}
 .cs{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;margin-right:calc(-1 * var(--g));padding-right:var(--g);scrollbar-width:thin;mask-image:linear-gradient(to bottom,#000 calc(100% - 14px),transparent);padding-bottom:12px}
 .col h4{margin:0 0 4px;font-size:11px;font-weight:600;letter-spacing:.02em;text-transform:uppercase;color:color-mix(in srgb,var(--cc-color-text) 60%,transparent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .col.objs .scroll{flex:1;min-height:0;overflow:auto;padding-right:4px;mask-image:linear-gradient(to bottom,#000 calc(100% - 20px),transparent)}
-.grp{display:none;flex-direction:column;gap:4px;animation:colIn var(--cc-motion-normal) var(--cc-ease) both;animation-delay:var(--lv,0ms)}
+.grp{display:none;flex-direction:column;gap:4px;animation:colIn var(--cc-motion-normal) var(--cc-ease) backwards;animation-delay:var(--lv,0ms)}
 .grp.root{display:flex}
 .c2 .grp{--lv:40ms}.c3 .grp{--lv:80ms}.c4 .grp{--lv:120ms}.objs .grp{--lv:160ms}
 @keyframes colIn{from{opacity:0;transform:translateX(-6px)}}
+/* backwards, not both: a transform left filling after the entrance would make each column the containing block of the fixed request panel inside it */
 /* ---- an item (levels 1-4): the radio, then a sibling box styled by `input:checked + .bx` ---- */
 .it{position:relative;display:block;min-height:var(--row);cursor:pointer}
 .it input{position:absolute;inset:0;opacity:0;margin:0;cursor:pointer;z-index:1}
@@ -55,7 +57,7 @@ html,body{height:100%}
 .fold{display:flex;align-items:center;gap:6px;height:30px;white-space:nowrap;overflow:hidden;padding:0 8px;border:1px dashed var(--cc-color-border);border-radius:var(--cc-radius-s,4px);font-size:11.5px;cursor:default;color:color-mix(in srgb,var(--cc-color-text) 66%,transparent)}
 .fold .dot{width:6px;height:6px;border-radius:50%;background:var(--cc-color-danger)}
 /* ---- objects and their data ---- */
-.ob{border:1px solid var(--cc-color-border);border-radius:var(--cc-radius-s,4px);background:var(--cc-color-surface);padding:6px 10px;animation:colIn var(--cc-motion-normal) var(--cc-ease) both;animation-delay:calc(var(--lv,0ms) + var(--i,0) * 20ms)}
+.ob{border:1px solid var(--cc-color-border);border-radius:var(--cc-radius-s,4px);background:var(--cc-color-surface);padding:6px 10px;animation:colIn var(--cc-motion-normal) var(--cc-ease) backwards;animation-delay:calc(var(--lv,0ms) + var(--i,0) * 20ms)}
 .ob .l1{display:flex;flex-wrap:wrap;gap:2px 8px;align-items:center}
 .ob .l1>svg.ic{flex:none}
 .ob .nm{flex:1 1 150px;min-width:0;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -76,24 +78,25 @@ html,body{height:100%}
 .ob a:hover{text-decoration:underline}
 .more{font-size:11.5px;padding:4px 2px 10px;color:color-mix(in srgb,var(--cc-color-text) 60%,transparent)}
 .empty{margin:auto;padding:28px;text-align:center;border:1px dashed var(--cc-color-border);border-radius:var(--cc-radius,6px);color:color-mix(in srgb,var(--cc-color-text) 70%,transparent)}
-/* ---- a data set's requests: a panel that opens under the columns ---- */
-/* each chip is a details element named dsel: the browser keeps one open; Enter, Space and a click toggle it (never write a tag inside style: the sanitizer drops the whole style) */
+/* ---- a data set's requests: a panel inside the chip's own details, drawn under the columns ---- */
+/* each chip is a details element named dsel: the browser keeps one open; Enter, Space and a click toggle it, and its panel follows it in Tab order (never write a tag inside style: the sanitizer drops the whole style) */
 details.dk{display:inline-flex;max-width:100%;min-width:0}
 summary.ds.dl{cursor:pointer;list-style:none;transition:border-color var(--cc-motion-fast),background var(--cc-motion-fast)}
 summary.ds.dl::-webkit-details-marker{display:none}
 summary.ds.dl:hover{border-color:var(--cc-color-primary)}
 summary.ds.dl::after{content:"›";margin-left:2px;opacity:.6}
 details.dk[open]>summary.ds{border-color:var(--cc-color-primary);background:color-mix(in srgb,var(--cc-color-primary) 16%,transparent)}
-summary.ds:focus-visible,.dv summary.x:focus-visible,.ob summary:focus-visible,.ob a:focus-visible{outline:2px solid var(--cc-color-primary);outline-offset:1px}
-.dv{display:none;flex:0 0 46%;min-height:0;flex-direction:column;gap:4px;border:1px solid var(--cc-color-primary);border-radius:var(--cc-radius,6px);background:var(--cc-color-surface);padding:8px 12px 6px;margin-bottom:4px;animation:dvIn var(--cc-motion-normal) var(--cc-ease) both}
+summary.ds:focus-visible,.dv .tbw:focus-visible,.ob summary:focus-visible,.ob a:focus-visible{outline:2px solid var(--cc-color-primary);outline-offset:1px}
+/* the open chip's panel is fixed to the frame's lower 46%, inside Kibana's 16px body padding; a spacer of the same height after the columns (generated rule below) makes room for it */
+.ip::after{content:"";display:none;flex:0 0 calc(46vh - 16px)}
+/* a mask on an ancestor clips a fixed descendant too, so the objects column drops its fade while a panel is open */
+.ip:has(details.dk[open]) .col.objs .scroll{mask-image:none}
+.dv{position:fixed;z-index:5;left:16px;right:16px;bottom:16px;height:calc(46vh - 16px);display:flex;flex-direction:column;gap:4px;border:1px solid var(--cc-color-primary);border-radius:var(--cc-radius,6px);background:var(--cc-color-surface);padding:8px 12px 6px;font-size:13px;font-weight:400;white-space:normal;color:var(--cc-color-text);cursor:auto;animation:dvIn var(--cc-motion-normal) var(--cc-ease) both}
 @keyframes dvIn{from{opacity:0;transform:translateY(10px)}}
 .dv .dh{display:flex;align-items:center;gap:6px 8px;flex-wrap:wrap}
 .dv .t{font-weight:600;font-size:13.5px}
 .dv .sum{font-size:12px;font-variant-numeric:tabular-nums}
-.dv .xd{margin-left:auto}
-.dv .x{display:block;list-style:none;cursor:pointer;font-size:12px;padding:2px 8px;border:1px solid var(--cc-color-border);border-radius:var(--cc-radius-s,4px)}
-.dv .x::-webkit-details-marker{display:none}
-.dv .x:hover{border-color:var(--cc-color-primary);color:var(--cc-color-primary)}
+.dv .hint{margin-left:auto;font-size:11.5px}
 .dv .note{font-size:11.5px}
 .dv .tbw{flex:1;min-height:0;overflow:auto;scrollbar-width:thin}
 .dv table{width:auto;min-width:min(100%,720px);border-collapse:collapse;font-size:12px;font-variant-numeric:tabular-nums}
@@ -108,19 +111,21 @@ summary.ds:focus-visible,.dv summary.x:focus-visible,.ob summary:focus-visible,.
 .ip{%- if L >= 2 -%}:has(#n{{ r["h1"].value }}:checked){%- endif -%}{%- if L >= 3 -%}:has(#n{{ r["h2"].value }}:checked){%- endif -%}{%- if L >= 4 -%}:has(#n{{ r["h3"].value }}:checked){%- endif -%}:has(#n{{ r["nid"].value }}:checked) :is(.g{{ r["nid"].value }},.b{{ r["nid"].value }}){display:flex}
 .ip:has(#n{{ r["nid"].value }}:focus-visible) .b{{ r["nid"].value }}{outline:2px solid var(--cc-color-primary);outline-offset:-1px}
 {%- endif -%}{%- endfor %}
-{%- comment -%} a data set's panel: its id is the level-6 parent id, an MD5 prefix of the object's path and the data set {%- endcomment -%}
+{%- comment -%} the spacer under the columns, while a data set's panel is open AND shown: the path to its object still picked, and not
+inside a closed All-data-sets list. Its id is the level-6 parent id, an MD5 prefix of the object's path and the data set. {%- endcomment -%}
 {%- assign gp = "" -%}{%- for r in rows -%}{%- if r["lvl"].value == 6 and r["pid"].value != gp -%}{%- assign gp = r["pid"].value -%}
-.ip:has(#n{{ r["h1"].value }}:checked):has(#n{{ r["h2"].value }}:checked):has(#n{{ r["h3"].value }}:checked):has(#n{{ r["h4"].value }}:checked):has(.k{{ gp }}[open]) .v{{ gp }}{display:flex}
+.ip:has(#n{{ r["h1"].value }}:checked):has(#n{{ r["h2"].value }}:checked):has(#n{{ r["h3"].value }}:checked):has(#n{{ r["h4"].value }}:checked):has(.k{{ gp }}[open]:not(.mo:not([open]) .dk))::after{display:block}
 {%- endif -%}{%- endfor %}
 </style>
 {%- assign tot = nil -%}
 {%- for r in rows -%}{%- if r["lvl"].value == 0 -%}{%- assign tot = r -%}{%- endif -%}{%- endfor -%}
-{%- comment -%} dmap: "|<object id>#<data set>#<panel id>#<requests shown>|" for every data set with a panel. A chip with
-no entry (a name lookup only, or cut by the row cap) is a plain label. Index names cannot hold | or #. {%- endcomment -%}
+{%- comment -%} dmap: "|<object id>#<data set>#<panel id>#<first row>#<requests shown>|" for every data set with a panel, so its
+chip renders the panel from rows[first row] on (rows are sorted by level and parent). A chip with no entry (a name
+lookup only, or cut by the row cap) is a plain label. Index names cannot hold | or #. {%- endcomment -%}
 {%- assign dmap = "|" -%}{%- assign gp = "" -%}{%- assign gn = 0 -%}{%- assign gk = "" -%}
 {%- for r in rows -%}{%- if r["lvl"].value == 6 -%}
 {%- if r["pid"].value != gp -%}{%- if gp != "" -%}{%- assign dmap = dmap | append: gk | append: gn | append: "|" -%}{%- endif -%}
-{%- assign gp = r["pid"].value -%}{%- assign gn = 0 -%}{%- assign gk = r["h5"].value | append: "#" | append: r["fm"].value | append: "#" | append: gp | append: "#" -%}{%- endif -%}
+{%- assign gp = r["pid"].value -%}{%- assign gn = 0 -%}{%- assign gk = r["h5"].value | append: "#" | append: r["fm"].value | append: "#" | append: gp | append: "#" | append: forloop.index0 | append: "#" -%}{%- endif -%}
 {%- assign gn = gn | plus: 1 -%}
 {%- endif -%}{%- endfor -%}
 {%- if gp != "" -%}{%- assign dmap = dmap | append: gk | append: gn | append: "|" -%}{%- endif -%}
@@ -130,10 +135,15 @@ no entry (a name lookup only, or cut by the row cap) is a plain label. Index nam
 {%- else -%}
 {%- assign o = tot["opens"].value -%}{%- assign ch = tot["creates"].value | plus: tot["changes"].value | plus: tot["deletes"].value -%}
 {%- assign ls = tot["lists"].value -%}{%- assign rn = tot["runs"].value -%}{%- assign f = tot["fails"].value -%}{%- assign dq = tot["dreq"].value -%}
-{%- comment -%} nobody in the Identity control, and the row cap reached: one line between them {%- endcomment -%}
+{%- comment -%} more than one identity in the rows (the control, a Principal id pill or Identity type can each narrow it), and the
+row cap reached: one line between them. ids is counted on the level-0 row; nfmt groups its thousands. {%- endcomment -%}
 {%- assign cut = false -%}{%- if rows.size >= 6000 -%}{%- assign cut = true -%}{%- endif -%}
-{%- if tot["anyone"].value == 1 or cut -%}<p class="hd">
-{%- if tot["anyone"].value == 1 -%}<span class="who"><b>All identities.</b> Pick one in the Identity control, or click a Principal id in <i>Who this is</i>.</span>{%- endif -%}
+{%- assign ni = tot["ids"].value | default: 0 -%}
+{%- if ni > 1 or cut -%}<p class="hd">
+{%- if ni > 1 -%}{%- assign nr = ni -%}{%- assign nfmt = "" -%}
+{%- for g in (1..4) -%}{%- if nr >= 1000 -%}{%- assign m = nr | modulo: 1000 -%}{%- assign g3 = m | prepend: "00" | slice: -3, 3 -%}{%- assign nfmt = "," | append: g3 | append: nfmt -%}{%- assign nr = nr | minus: m | divided_by: 1000 -%}{%- endif -%}{%- endfor -%}
+{%- assign nfmt = nr | append: nfmt -%}
+<span class="who"><b>{{ nfmt }} identities.</b> Pick one in the Identity control, or click a Principal id in <i>Who this is</i>.</span>{%- endif -%}
 {%- if cut -%}<span class="cut mute">Some objects and requests are not shown. Narrow the time range or pick an identity.</span>{%- endif -%}
 </p>{%- endif -%}
 <p class="lede">{%- assign first = true -%}
@@ -253,31 +263,22 @@ no entry (a name lookup only, or cut by the row cap) is a plain label. Index nam
 {%- if isopen -%}{%- assign rest = sn | minus: c -%}{%- if rest > 0 -%}<div class="more">and {{ rest }} more {% if rest == 1 %}object{% else %}objects{% endif %} on this path</div>{%- endif -%}</div>{%- endif -%}
 </div></section>
 </div>
-{%- assign gp = "" -%}{%- assign isopen = false -%}
-{%- for r in rows -%}{%- if r["lvl"].value == 6 -%}
-{%- if r["pid"].value != gp -%}
-{%- if isopen -%}</tbody></table></div></section>{%- endif -%}
-{%- assign gp = r["pid"].value -%}{%- assign isopen = true -%}{%- assign did = gp -%}
-{%- assign dn = "#" | append: did | append: "#" -%}{%- assign shn = dmap | split: dn | last | split: "|" | first | plus: 0 -%}
-{%- assign k = r["ok"].value -%}{%- assign t = r["ty"].value -%}{%- assign L3 = 3 -%}<labels level="L3" key="t"/>
-{%- assign nm = r["name"].value -%}
-{%- if nm == blank -%}
-{%- if k == "new" -%}{%- assign nm = "Unsaved Discover session" -%}
-{%- elsif k contains "app:" -%}{%- assign app = k | remove_first: "app:" -%}{%- if app == blank -%}{%- assign nm = "Kibana (no app recorded)" -%}{%- else -%}{%- assign nm = app | replace: "-", " " | capitalize | append: " app" -%}{%- endif -%}
-{%- elsif k.size > 36 -%}{%- assign head = k | slice: 0, 20 -%}{%- assign tail = k | slice: -12, 12 -%}{%- assign nm = head | append: "…" | append: tail -%}
-{%- else -%}{%- assign nm = k -%}{%- endif -%}
 {%- endif -%}
-{%- assign sn = r["sib_n"].value -%}{%- assign sd = r["sib_dreq"].value -%}
-<section class="dv v{{ did }}" aria-label="Requests for {{ r["fm"].value }}">
-<div class="dh"><icon name="db"/><span class="t">{{ r["fm"].value }}</span><span class="mute">read for</span><icon var="ic"/><span class="t">{{ nm }}</span><span class="mute">· {{ lbl }}</span>
-<span class="sum">· <b>{{ sn }}</b> {% if sn == 1 %}query{% else %}queries{% endif %} · <b>{{ sd }}</b> returned documents{% if r["sib_fails"].value > 0 %} · <span class="badge fail">{{ r["sib_fails"].value }} failed</span>{% endif %}</span>
-<details name="dsel" class="dk xd"><summary class="x" title="Close">✕ Close</summary></details></div>
-<div class="note mute">Each query Kibana ran on this data set for this object, newest first{% if shn < sn %}; the latest {{ shn }} of {{ sn }}{% endif %}. Name and field lookups, and Kibana’s own column discovery, are left out. The audit log records who ran what and when, not the query text.</div>
+</div>
+{%- comment -%} a data set's panel, written into each chip's details after its summary by expandDsets (scripts/lib/custom.mjs).
+In scope: r, nm, lbl and ic of the object row; did, dst (its first request row), dct (rows shown) and dfm (the data set). {%- endcomment -%}
+<dpanel>
+{%- assign q0 = rows[dst] -%}{%- assign dsn = q0["sib_n"].value -%}{%- assign dsd = q0["sib_dreq"].value -%}{%- assign dsf = q0["sib_fails"].value -%}
+<section class="dv" aria-label="Requests for {{ dfm }}">
+<div class="dh"><icon name="db"/><span class="t">{{ dfm }}</span><span class="mute">read for</span><icon var="ic"/><span class="t">{{ nm }}</span><span class="mute">· {{ lbl }}</span>
+<span class="sum">· <b>{{ dsn }}</b> {% if dsn == 1 %}query{% else %}queries{% endif %} · <b>{{ dsd }}</b> returned documents{% if dsf > 0 %} · <span class="badge fail">{{ dsf }} failed</span>{% endif %}</span>
+<span class="hint mute">Press the data set again to close</span></div>
+<div class="note mute">Each query Kibana ran on this data set for this object, newest first{% if dct < dsn %}; the latest {{ dct }} of {{ dsn }}{% endif %}. Name and field lookups, and Kibana’s own column discovery, are left out. The audit log records who ran what and when, not the query text.</div>
 <div class="tbw"><table><thead><tr><th>Time</th><th>Part of the page</th><th>Language</th><th>Result</th></tr></thead><tbody>
-{%- endif -%}
-{%- assign comp = r["k"].value | split: ";" | last -%}{%- assign pid8 = comp | split: ":" | last -%}{%- if pid8.size > 14 -%}{%- assign pid8 = pid8 | slice: 0, 8 | append: "…" -%}{%- endif -%}
+{%- for q in rows offset: dst limit: dct -%}
+{%- assign comp = q["k"].value | split: ";" | last -%}{%- assign pid8 = comp | split: ":" | last -%}{%- if pid8.size > 14 -%}{%- assign pid8 = pid8 | slice: 0, 8 | append: "…" -%}{%- endif -%}
 {%- if comp contains "unifiedHistogram" -%}{%- assign part = "Histogram" -%}
-{%- elsif comp contains "application:discover:" and comp != r["k"].value -%}{%- assign c6 = comp | slice: 0, 7 -%}{%- if c6 == "kibana:" -%}{%- assign part = "Page setup (fields, data view)" -%}{%- else -%}{%- assign part = "Results table" -%}{%- endif -%}
+{%- elsif comp contains "application:discover:" and comp != q["k"].value -%}{%- assign c6 = comp | slice: 0, 7 -%}{%- if c6 == "kibana:" -%}{%- assign part = "Page setup (fields, data view)" -%}{%- else -%}{%- assign part = "Results table" -%}{%- endif -%}
 {%- elsif comp contains "lens:lnsDatatable:" -%}{%- assign part = "Table panel " | append: pid8 -%}
 {%- elsif comp contains "lens:lnsMetric:" -%}{%- assign part = "Metric panel " | append: pid8 -%}
 {%- elsif comp contains "lens:lnsXY:" -%}{%- assign part = "Chart panel " | append: pid8 -%}
@@ -285,8 +286,7 @@ no entry (a name lookup only, or cut by the row cap) is a plain label. Index nam
 {%- elsif comp contains "vega:" -%}{%- assign part = "Vega panel " | append: pid8 -%}
 {%- elsif comp contains "kibana:" or comp contains "application:" -%}{%- assign part = "Page itself (no panel named)" -%}
 {%- else -%}{%- assign part = comp -%}{%- endif -%}
-<tr><td>{{ r["lastf"].value | date: "%b %-d %H:%M:%S" }}</td><td class="pp">{{ part }}</td><td>{{ r["famlist"].value }}</td><td>{%- if r["fails"].value > 0 -%}<span class="badge fail">failed</span>{%- elsif r["dreq"].value > 0 -%}<span class="docs">returned documents</span>{%- elsif r["famlist"].value contains "ES|QL" -%}<span class="mute">no documents read</span>{%- else -%}<span class="mute">names or fields only</span>{%- endif -%}</td></tr>
-{%- endif -%}{%- endfor -%}
-{%- if isopen -%}</tbody></table></div></section>{%- endif -%}
-{%- endif -%}
-</div>
+<tr><td>{{ q["lastf"].value | date: "%b %-d %H:%M:%S" }}</td><td class="pp">{{ part }}</td><td>{{ q["famlist"].value }}</td><td>{%- if q["fails"].value > 0 -%}<span class="badge fail">failed</span>{%- elsif q["dreq"].value > 0 -%}<span class="docs">returned documents</span>{%- elsif q["famlist"].value contains "ES|QL" -%}<span class="mute">no documents read</span>{%- else -%}<span class="mute">names or fields only</span>{%- endif -%}</td></tr>
+{%- endfor -%}
+</tbody></table></div></section>
+</dpanel>

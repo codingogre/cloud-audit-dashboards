@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { expandIcons, expandLabels, expandDsets, loadTemplate, ICONS, LABELS, TEMPLATE_LIMIT } from '../../scripts/lib/custom.mjs';
-import { PROJECT_WHERE, IDENTITY_WHERE, CLIENT_IP_WHERE, READ_ACTIONS, LOOKUP_ACTIONS, ANY } from '../../scripts/lib/panels.mjs';
+import { PROJECT_WHERE, IDENTITY_WHERE, CLIENT_IP_WHERE, READ_ACTIONS, LOOKUP_ACTIONS, ACTOR_RESOLVE } from '../../scripts/lib/panels.mjs';
 import { IDENTITY_PATH, IDENTITY_PATH_TABLE, T_CLIENT_IP, T_ROWS } from '../../scripts/lib/dashboards/07-actor-360.mjs';
 import { buildAll } from '../../scripts/lib/definitions.mjs';
 
@@ -119,9 +119,13 @@ test('a data set opens its queries in a panel under the columns, lookups left ou
   assert.ok(IDENTITY_PATH.includes('acts = CASE(lvl == 6, TO_LONG(seen) / 1000'), 'requests rank newest first');
   assert.ok(t.includes('<details name="dsel" class="dk k{{ did }}"><summary class="ds dl'), 'a data-set chip opens its panel');
   assert.ok(!/<details name="dsel"[^>]*\sopen/.test(t), 'nothing open by default');
-  assert.ok(t.includes('<details name="dsel" class="dk xd"><summary class="x"'), 'Close is one more member of the group');
-  assert.match(t, /\.dv\{display:none/, 'the panel is hidden until a data set is clicked');
-  assert.ok(t.includes(':has(#n{{ r["h4"].value }}:checked):has(.k{{ gp }}[open]) .v{{ gp }}{display:flex}'), 'it shows only while the path to its object is still picked');
+  // the panel is content of the chip's own details: a closed details renders none of it, so no display rule hides it,
+  // and a column hidden by a path change hides it with the column
+  assert.match(t, /<details name="dsel" class="dk k\{\{ did \}\}"><summary [^>]*>[\s\S]*?<\/summary>\{%- assign q0 = rows\[dst\] [^%]*-%\}[^<]*<section class="dv"[\s\S]*?<\/section><\/details>/, 'the panel follows its summary inside the details');
+  assert.ok(!/\.dv\{[^}]*display:none/.test(t) && !/\.v\{\{ (gp|did) \}\}/.test(t), 'no separate show rule per panel');
+  assert.match(t, /\.dv\{position:fixed;[^}]*bottom:16px;height:calc\(46vh - 16px\)/, 'drawn under the columns, inside Kibana\'s 16px body padding');
+  assert.ok(t.includes('.ip::after{content:"";display:none;flex:0 0 calc(46vh - 16px)}'), 'a spacer the panel\'s height makes room under the columns');
+  assert.ok(t.includes(':has(#n{{ r["h4"].value }}:checked):has(.k{{ gp }}[open]:not(.mo:not([open]) .dk))::after{display:block}'), 'the spacer shows only while the open panel is itself shown');
   assert.ok(t.includes('not the query text'), 'says the audit log has no query text');
 });
 
@@ -141,24 +145,36 @@ test('the drill-down prints times in the viewer\'s zone: ISO from the query, for
   const t = loadTemplate('11-identity-path');
   assert.ok(IDENTITY_PATH.includes('lastf = TO_STRING(seen)'), 'an ISO string, not a UTC-formatted one');
   assert.ok(!/DATE_FORMAT\("MMM/.test(IDENTITY_PATH));
-  assert.ok(t.includes('{{ r["lastf"].value | date: "%b %-d %H:%M" }}') && t.includes('{{ r["lastf"].value | date: "%b %-d %H:%M:%S" }}'));
+  assert.ok(t.includes('{{ r["lastf"].value | date: "%b %-d %H:%M" }}') && t.includes('{{ q["lastf"].value | date: "%b %-d %H:%M:%S" }}'));
   assert.ok(!/\bUTC\b/.test(t.replace(/<style>[\s\S]*?<\/style>/, '')), 'no UTC label left');
 });
 
-test('the drill-down works from the keyboard: every chip, the list toggles and Close take focus and show it', () => {
+test('the drill-down works from the keyboard: Tab follows the chip into its panel, and the chip closes it with focus kept', () => {
   const src = readFileSync('custom/11-identity-path.html', 'utf8');
   const t = loadTemplate('11-identity-path');
   assert.ok(!/\.dsel\{display:none\}/.test(t) && !t.includes('type="radio" name="dsel"'), 'hidden radios were mouse-only');
-  assert.ok(/summary\.ds:focus-visible[^{]*\.dv summary\.x:focus-visible[^{]*\{outline:2px/.test(t), 'chips and Close show focus');
+  assert.ok(!t.includes('class="x"') && !/Close<\/summary>/.test(t), 'a Close inside the hidden panel hid its own focused element, and the next Tab restarted at the top');
+  assert.ok(t.includes('Press again to close.') && t.includes('Press the data set again to close'), 'the chip says how to close');
+  // the panel sits in DOM (and so Tab) order right after its chip, not after every column
+  const chip = t.indexOf('<summary class="ds dl'), panel = t.indexOf('<section class="dv"'), objs = t.indexOf('<section class="col objs">');
+  assert.ok(objs > 0 && objs < chip && chip < panel && t.indexOf('</details>', panel) === t.indexOf('</section></details>', panel) + '</section>'.length, 'panel inside the objects column, after its chip, inside its details');
+  assert.ok(/summary\.ds:focus-visible[^{]*\.dv \.tbw:focus-visible[^{]*\{outline:2px/.test(t), 'chips and the panel\'s scroller show focus');
+  // a fixed panel is clipped by an ancestor's mask and pinned to an ancestor that keeps a transform
+  assert.ok(t.includes('.ip:has(details.dk[open]) .col.objs .scroll{mask-image:none}'));
+  assert.ok(!/animation:colIn[^;]*\bboth\b/.test(t), 'a filling transform made each column the panel\'s containing block');
   assert.ok(src.includes('.ip:has(#n{{ r["nid"].value }}:focus-visible) .b{{ r["nid"].value }}{outline:'), 'the breadcrumb shows which item has focus');
   assert.ok(/\.it input:focus-visible\+\.bx\{outline/.test(t), 'the level radios keep theirs');
   assert.equal((src.match(/<dset name="\w+" label="\w+"\/>/g) || []).length, 4, 'every chip goes through expandDsets');
 });
 
-test('expandDsets(): a data set with requests is a details in the dsel group, any other a plain label', () => {
+test('expandDsets(): a data set with requests is a details in the dsel group carrying its panel, any other a plain label', () => {
   const out = expandDsets('<dset name="fm" label="lab"/>');
   assert.ok(out.includes('{%- if dmap contains dn -%}'));
   assert.ok(out.includes('<details name="dsel" class="dk k{{ did }}">'));
+  assert.ok(out.includes('{%- assign did = dp[0] -%}{%- assign dst = dp[1] | plus: 0 -%}{%- assign dct = dp[2] | plus: 0 -%}{%- assign dfm = fm -%}'), 'panel id, first row and rows shown from dmap');
+  const two = expandDsets('A<dset name="fm" label="lab"/>B<dset name="x" label="x"/>C<dpanel>\n<p>{{ dfm }}</p>\n</dpanel>\n');
+  assert.ok(!two.includes('dpanel') && two.endsWith('C'), 'the panel block is cut from the template');
+  assert.equal(two.split('</summary><p>{{ dfm }}</p></details>').length, 3, 'and written into every chip, after its summary');
   assert.ok(out.includes('{%- else -%}<span class="ds{% if c0 == "." %} sys{% endif %}" title="{{ fm }}">'), 'a lookup-only data set is not a dead link');
   assert.ok(!/(href|for)=/.test(out));
 });
@@ -166,9 +182,10 @@ test('expandDsets(): a data set with requests is a details in the dsel group, an
 test('data-set ids are MD5 prefixes from the query, never built from the index name', () => {
   const src = readFileSync('custom/11-identity-path.html', 'utf8');
   assert.ok(!src.includes('replace: ".", "_"'), 'a name with + @ = ( ) \' & ! made an invalid selector');
-  assert.ok(src.includes('{%- assign did = gp -%}') && src.includes('.v{{ gp }}{display:flex}'), 'the panel id is the level-6 parent id');
+  assert.ok(src.includes('.k{{ gp }}[open]') && src.includes('append: gp | append: "#" | append: forloop.index0'), 'the panel id is the level-6 parent id');
   assert.ok(IDENTITY_PATH.includes('pid = CASE(lvl <= 1, null, SUBSTRING(MD5(parent), 1, 10))'), 'parent of a request = object path + data set');
-  assert.ok(src.includes('append: r["h5"].value') || src.includes('r["h5"].value | append: "#"'), 'dmap keys a panel by its object id');
+  assert.ok(src.includes('r["h5"].value | append: "#"'), 'dmap keys a panel by its object id');
+  assert.ok(src.includes('{%- for q in rows offset: dst limit: dct -%}'), 'a panel reads its own rows from where they start, never a scan of every row per chip');
 });
 
 test('the row cap: the panel says so, and a cut panel counts the requests it shows', () => {
@@ -176,17 +193,68 @@ test('the row cap: the panel says so, and a cut panel counts the requests it sho
   assert.ok(IDENTITY_PATH.endsWith(`| LIMIT ${T_ROWS}`));
   assert.ok(src.includes(`rows.size >= ${T_ROWS}`), 'the template tests the same cap as the query');
   assert.ok(src.includes('Some objects and requests are not shown. Narrow the time range or pick an identity.'));
-  assert.ok(src.includes('{% if shn < sn %}; the latest {{ shn }} of {{ sn }}{% endif %}'), '"the latest 25" was wrong when the cap cut a panel short');
+  assert.ok(src.includes('{% if dct < dsn %}; the latest {{ dct }} of {{ dsn }}{% endif %}'), '"the latest 25" was wrong when the cap cut a panel short');
   assert.ok(!src.includes('the latest 25 of'));
   // "and N more" / "+N smaller" subtract the children drawn (c) from the pre-LIMIT sib_n, so they stay true when cut
   assert.ok(src.includes('{%- assign rest = sn | minus: c -%}') && src.includes('{%- assign sn = r["sib_n"].value -%}'));
 });
 
-test('nobody selected: the query flags it from ?identity, and the panel says it covers every identity', () => {
-  const t = loadTemplate('11-identity-path');
-  assert.ok(IDENTITY_WHERE.includes(`?identity == "" OR ?identity == "${ANY}"`), 'the control sends "" or Any for nobody');
-  assert.ok(IDENTITY_PATH.includes(`anyone = CASE(lvl == 0 AND (?identity == "" OR ?identity == "${ANY}"), 1, 0)`));
-  assert.ok(t.includes('{%- if tot["anyone"].value == 1 -%}') && t.includes('<b>All identities.</b> Pick one in the Identity control, or click a Principal id in <i>Who this is</i>.'));
+/**
+ * A Liquid subset, enough to run the template's own thousands grouping: assign with filters, for over a range, if
+ * with a comparison. Liquid is not a dependency, so the snippet is interpreted here rather than string-matched.
+ */
+function runLiquid(src, vars) {
+  const toks = [...src.matchAll(/\{%-?\s*([\s\S]*?)\s*-?%\}/g)].map((m) => m[1]);
+  const val = (x) => (/^-?\d+$/.test(x) ? Number(x) : /^"(.*)"$/.test(x) ? x.slice(1, -1) : vars[x]);
+  const F = { modulo: (v, a) => v % a, prepend: (v, a) => `${a}${v}`, append: (v, a) => `${v}${a}`, minus: (v, a) => v - a,
+    divided_by: (v, a) => v / a, plus: (v, a) => Number(v) + a, slice: (v, a, n) => String(v).slice(a < 0 ? String(v).length + a : a).slice(0, n) };
+  const expr = (e) => e.split('|').map((x) => x.trim()).reduce((v, f, i) => {
+    if (!i) return val(f);
+    const [name, args = ''] = f.split(/:\s*/, 2);
+    return F[name](v, ...args.split(',').map((x) => val(x.trim())));
+  }, undefined);
+  const run = (i, end) => {
+    while (i < end) {
+      const t = toks[i];
+      if (t.startsWith('assign ')) { const [, k, e] = t.match(/^assign (\w+) = (.*)$/); vars[k] = expr(e); i++; }
+      else if (t.startsWith('for ')) {
+        const [, k, lo, hi] = t.match(/^for (\w+) in \((\d+)\.\.(\d+)\)$/);
+        const close = toks.indexOf('endfor', i);
+        for (let n = Number(lo); n <= Number(hi); n++) { vars[k] = n; run(i + 1, close); }
+        i = close + 1;
+      } else if (t.startsWith('if ')) {
+        const [, a, op, b] = t.match(/^if (\w+) (>=|>) (\d+)$/);
+        const close = toks.indexOf('endif', i);
+        if (op === '>=' ? val(a) >= val(b) : val(a) > val(b)) run(i + 1, close);
+        i = close + 1;
+      } else throw new Error(`runLiquid: unsupported tag ${t}`);
+    }
+  };
+  run(0, toks.length);
+  return vars;
+}
+
+test('the identity prompt: counted from the rows, not ?identity, so a Principal id pill or Identity type narrows it too', () => {
+  const q = IDENTITY_PATH;
+  assert.ok(!/anyone|\?identity == ""/.test(q.slice(q.indexOf('| EVAL lvl = '))), 'the old flag read only the Identity control');
+  // count BY the raw identity keys first, then name them the suite's way on the grouped rows (panels.mjs rule 2)
+  const first = q.indexOf('BY service.name, user.domain'), resolve = q.indexOf(`| ${ACTOR_RESOLVE} `);
+  assert.ok(first > 0 && resolve > first && q.slice(first, resolve).includes('user.email, api_key.name, user.name'), 'raw keys in the first STATS, resolved after it');
+  assert.equal(q.split(ACTOR_RESOLVE).length, 2, 'resolved once, on grouped rows');
+  // the identity rides through both packed joins and the fine STATS, so no INLINE STATS or second scan is needed
+  for (const [pack, unpack] of [['%{actor_j}', 'actor = actor_j'], ['%{actor_s}', 'actor = actor_s']]) assert.ok(q.includes(pack) && q.includes(unpack));
+  assert.match(q, /BY cred, space, cip, type, op, oid, rq, fam, meta, lang, es, actor /);
+  assert.ok(q.includes('ids = COUNT_DISTINCT(actor) WHERE lvl == 0 BY lvl, key') && q.includes('ids = MAX(ids) BY lvl, parent'), 'counted on the level-0 row only, after the aggregation');
+  assert.ok(!q.includes('INLINE STATS') && (q.match(/\bFROM /g) || []).length === 1);
+
+  const src = readFileSync('custom/11-identity-path.html', 'utf8');
+  assert.ok(src.includes('{%- assign ni = tot["ids"].value | default: 0 -%}') && src.includes('{%- if ni > 1 or cut -%}') && src.includes('{%- if ni > 1 -%}'), 'a prompt only above one identity');
+  assert.ok(src.includes('<b>{{ nfmt }} identities.</b> Pick one in the Identity control, or click a Principal id in <i>Who this is</i>.'));
+  assert.ok(!src.includes('All identities.'));
+  const loop = src.slice(src.indexOf('{%- if ni > 1 -%}') + '{%- if ni > 1 -%}'.length, src.indexOf('<span class="who">'));
+  for (const [n, want] of [[2, '2'], [999, '999'], [1000, '1,000'], [1005, '1,005'], [12345, '12,345'], [1234567, '1,234,567']]) {
+    assert.equal(String(runLiquid(loop, { ni: n }).nfmt), want, `${n} grouped`);
+  }
 });
 
 test('AUDIT_NO_CUSTOM=1 swaps the drill-down for a Lens table of the same paths in the same slot', () => {

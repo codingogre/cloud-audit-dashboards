@@ -2,7 +2,7 @@
 import {
   IDX, TIME, CONTROLS_WHERE, ACTOR_KEYS, ACTOR_RESOLVE, INDEX_FAMILY, IP_GEO, indexFamily, dash, kpi, table, vega, section, row, stack, resetIds,
   sized, filterable, grouped, SYS_INDEX, fitRows, IDENTITY_KEYS, KIND_GROUPED,
-  custom, KIBANA_INTERNALS, OBJ_PRESENT, OBJ_TYPE, READ_ACTIONS, LOOKUP_ACTIONS, inList, TIME_ONLY, PROJECT_WHERE, IDENTITY_WHERE, CLIENT_IP_WHERE, ANY
+  custom, KIBANA_INTERNALS, OBJ_PRESENT, OBJ_TYPE, READ_ACTIONS, LOOKUP_ACTIONS, inList, TIME_ONLY, PROJECT_WHERE, IDENTITY_WHERE, CLIENT_IP_WHERE
 } from '../panels.mjs';
 import { rawId } from '../suite.mjs';
 import { LABELS } from '../custom.mjs';
@@ -68,8 +68,8 @@ const T_PACKED = ['keep', 'acts', 'kacts', 'opens', 'creates', 'changes', 'delet
 const T_NUMS = T_PACKED.slice(2, 15);
 /** The fine row's columns that ride through the object join (cred, type and oid are its group keys). */
 /** The grouped row's columns that ride through the request join. */
-const T_JOIN = ['cred', 'space', 'cip', 'type', 'op', 'oid', 'rq', 'es', 'meta', 'lang', 'n', 'nf', 'ts', 'nm', 'ix'];
-const T_FINE = ['space', 'cip', 'op', 'rq', 'fam', 'meta', 'lang', 'es', 'n', 'nf', 'ts', 'nm'];
+const T_JOIN = ['cred', 'space', 'cip', 'type', 'op', 'oid', 'rq', 'es', 'meta', 'lang', 'n', 'nf', 'ts', 'nm', 'ix', 'actor'];
+const T_FINE = ['space', 'cip', 'op', 'rq', 'fam', 'meta', 'lang', 'es', 'n', 'nf', 'ts', 'nm', 'actor'];
 const t_md5 = (x) => `SUBSTRING(MD5(${x}), 1, 10)`;
 const t_prefix = (n) => `MV_CONCAT(MV_SLICE(parts, 0, ${n - 1}), "${T_PATH}")`;
 const HTTP_REQ = `${K_SIDE} AND event.action == "http_request"`;
@@ -84,8 +84,13 @@ const HTTP_JOINABLE = `${HTTP_REQ} AND NOT user.domain IN ("_cloud_api_key", "_e
 export const T_CLIENT_IP = CLIENT_IP_WHERE.replace('client.ip ==', 'cip ==');
 /** The drill-down's row cap. The template says so when a result reaches it (custom/11-identity-path.html). */
 export const T_ROWS = 6000;
-/** Nobody in the Identity control (IDENTITY_WHERE treats "" and "Any" alike): the panel says it covers everyone. */
-const T_ANYONE = `CASE(lvl == 0 AND (?identity == "" OR ?identity == "${ANY}"), 1, 0)`;
+/**
+ * How many identities the selection covers, from the data, not from ?identity: a pinned Principal id pill or an
+ * Identity type narrows it as surely as the Identity control. Each event is counted BY its raw identity keys in the
+ * first STATS, named the suite's way (ACTOR_RESOLVE) on those grouped rows, carried through both joins as `actor`,
+ * and counted distinct on the level-0 row only. The panel asks for a pick when it covers more than one.
+ */
+const T_IDS = 'ids = COUNT_DISTINCT(actor) WHERE lvl == 0';
 /** The fine rows both the drill-down and its Lens fallback read: joined, typed, after Client IP. */
 const T_BASE =
   `FROM ${IDX} | ${TIME_ONLY} AND ${PROJECT_WHERE} AND ${IDENTITY_WHERE} ` +
@@ -95,8 +100,8 @@ const T_BASE =
   `| EVAL rq = CASE(${K_SIDE}, CASE(event.action LIKE "*_find" OR event.action == "http_request", http.request.id), ${OPAQUE}) ` +
   '| STATS n = COUNT(*), nf = COUNT(*) WHERE event.outcome == "failure", ts = MAX(@timestamp), nm = MAX(kibana.saved_object.name), ' +
   'idx = VALUES(elasticsearch.audit.indices) BY service.name, user.domain, authentication.type, kibana.space.id, kibana.saved_object.type, ' +
-  'kibana.saved_object.id, event.action, act = elasticsearch.audit.action, rq, client.ip ' +
-  `| EVAL http = ${HTTP_REQ} | ${OBJ_TYPE} ` +
+  'kibana.saved_object.id, event.action, act = elasticsearch.audit.action, rq, client.ip, user.email, api_key.name, user.name ' +
+  `| EVAL http = ${HTTP_REQ} | ${OBJ_TYPE} | ${ACTOR_RESOLVE} ` +
   `| EVAL es = NOT ${K_SIDE}, ctx = REPLACE(rq, "^[^;]*;kibana:", "") ` +
   '| EVAL c_app = CASE(es, REPLACE(ctx, "^[^:;]*:([^:;]*):.*$", "$1")), c_id = CASE(es, REPLACE(ctx, "^[^:;]*:[^:;]*:([^;]*).*$", "$1")), ' +
   `meta = es AND ${inList('act', LOOKUP_ACTIONS)}, ` +
@@ -117,12 +122,12 @@ const T_BASE =
   `| WHERE rows IS NOT NULL | MV_EXPAND rows | DISSECT rows "${T_JOIN.map((c) => `%{${c}_j}`).join(T_SEP)}" ` +
   '| EVAL es = es_j == "true", meta = meta_j == "true", n = CASE(n_j == "", null, TO_LONG(n_j)), nf = CASE(nf_j == "", null, TO_LONG(nf_j)), ' +
   'ts = TO_DATETIME(ts_j), nm = CASE(nm_j == "", null, nm_j), rq = CASE(rq_j == "", null, rq_j), cred = cred_j, type = type_j, op = op_j, oid = oid_j, ' +
-  'lang = CASE(lang_j == "", null, lang_j), ' +
+  'lang = CASE(lang_j == "", null, lang_j), actor = actor_j, ' +
   'idx = CASE(ix_j == "", null, SPLIT(ix_j, "|")) ' +
   '| EVAL space = CASE(es, CASE(MV_COUNT(hsp) == 1, hsp), space_j), cip = CASE(es, hip, cip_j == "", null, TO_IP(cip_j)) ' +
   '| MV_EXPAND idx ' +
   `| EVAL fam = CASE(es AND LOCATE(idx, "*") == 0 AND NOT idx LIKE "<*", ${indexFamily('idx')}) ` +
-  '| STATS n = SUM(n) WHERE NOT es, nf = SUM(nf), ts = MAX(ts), nm = MAX(nm) BY cred, space, cip, type, op, oid, rq, fam, meta, lang, es ' +
+  '| STATS n = SUM(n) WHERE NOT es, nf = SUM(nf), ts = MAX(ts), nm = MAX(nm) BY cred, space, cip, type, op, oid, rq, fam, meta, lang, es, actor ' +
   // the object join: a read with no space or address of its own takes its object's, and sits under Opened when the
   // object was opened in range.
   // Pack, group by object, unpack: an INLINE STATS here cost ~450ms of 1.0s at 7d on the perf replica.
@@ -131,7 +136,7 @@ const T_BASE =
   `| MV_EXPAND rows | DISSECT rows "${T_FINE.map((c) => `%{${c}_s}`).join(T_SEP)}" ` +
   '| EVAL es = es_s == "true", meta = meta_s == "true", n = CASE(n_s == "", null, TO_LONG(n_s)), nf = CASE(nf_s == "", null, TO_LONG(nf_s)), ' +
   'ts = TO_DATETIME(ts_s), space = CASE(space_s == "", null, space_s), rq = CASE(rq_s == "", null, rq_s), fam = CASE(fam_s == "", null, fam_s), ' +
-  'nm = CASE(nm_s == "", null, nm_s), op = op_s, cip = CASE(cip_s == "", null, TO_IP(cip_s)), lang = CASE(lang_s == "", null, lang_s) ' +
+  'nm = CASE(nm_s == "", null, nm_s), op = op_s, actor = actor_s, cip = CASE(cip_s == "", null, TO_IP(cip_s)), lang = CASE(lang_s == "", null, lang_s) ' +
   '| EVAL space = CASE(space IS NOT NULL, space, MV_COUNT(kspaces) == 1, kspaces, kspaces IS NULL, "(space not recorded)", "(several spaces)"), ' +
   'cip = CASE(cip IS NOT NULL, cip, MV_COUNT(kips) == 1, kips), nm = COALESCE(nm, onm) ' +
   `| WHERE ${T_CLIENT_IP} ` +
@@ -149,7 +154,7 @@ export const IDENTITY_PATH = `${T_BASE} ` +
   'deletes = SUM(n) WHERE op == "delete", runs = SUM(n) WHERE op == "run", lists = COUNT_DISTINCT(rq) WHERE op == "list", ' +
   'kfails = SUM(nf) WHERE NOT es, rfails = COUNT_DISTINCT(rq) WHERE es AND nf > 0, objs = COUNT_DISTINCT(oid), ' +
   'dreq = COUNT_DISTINCT(rq) WHERE es AND NOT meta AND fam IS NOT NULL, sysn = COUNT_DISTINCT(fam) WHERE es AND NOT meta AND fam LIKE ".*", ' +
-  'fams = VALUES(fam) WHERE es AND NOT meta, looked = VALUES(fam) WHERE es AND meta, langs = VALUES(lang) WHERE es, seen = MAX(ts), name = MAX(nm) BY lvl, key ' +
+  `fams = VALUES(fam) WHERE es AND NOT meta, looked = VALUES(fam) WHERE es AND meta, langs = VALUES(lang) WHERE es, seen = MAX(ts), name = MAX(nm), ${T_IDS} BY lvl, key ` +
   `| EVAL ${T_NUMS.filter((c) => !['kacts', 'dsets', 'lk', 'fails'].includes(c)).map((c) => `${c} = COALESCE(${c}, 0)`).join(', ')}, fails = COALESCE(kfails, 0) + COALESCE(rfails, 0) ` +
   // a request (level 6) ranks by time, newest first, so its parent keeps the latest 25
   '| EVAL kacts = opens + creates + changes + deletes + runs + lists, acts = CASE(lvl == 6, TO_LONG(seen) / 1000, opens + creates + changes + deletes + runs + lists + dreq), dsets = COALESCE(MV_COUNT(fams), 0), lk = COALESCE(MV_COUNT(looked), 0), ' +
@@ -159,7 +164,7 @@ export const IDENTITY_PATH = `${T_BASE} ` +
   `parent = CASE(lvl <= 1, "all", REPLACE(key, "${T_PATH}[^${T_PATH}]*$", "")) ` +
   `| EVAL pack = CONCAT(${T_PACKED.map((c) => (c === 'acts' ? 'TO_STRING(acts + 1000000000000)' : T_NUMS.includes(c) || c === 'keep' ? `TO_STRING(${c})` : `COALESCE(${c}, "")`)).join(`, "${T_SEP}", `)}) ` +
   '| STATS kids = TOP(pack, 25, "desc"), sib_n = COUNT(*), sib_acts = SUM(acts), sib_opens = SUM(opens), sib_chg = SUM(creates + changes + deletes + runs), ' +
-  'sib_k = SUM(kacts), sib_lists = SUM(lists), sib_dreq = SUM(dreq), sib_fails = SUM(fails) BY lvl, parent ' +
+  'sib_k = SUM(kacts), sib_lists = SUM(lists), sib_dreq = SUM(dreq), sib_fails = SUM(fails), ids = MAX(ids) BY lvl, parent ' +
   '| MV_EXPAND kids ' +
   `| DISSECT kids "${T_PACKED.map((c) => `%{${c}}`).join(T_SEP)}" ` +
   `| EVAL ${T_NUMS.map((c) => `${c} = TO_LONG(${c})`).join(', ')}, acts = TO_LONG(acts) - 1000000000000, keep = TO_LONG(keep) ` +
@@ -168,8 +173,7 @@ export const IDENTITY_PATH = `${T_BASE} ` +
   `h1 = CASE(lvl >= 2, ${t_md5(t_prefix(1))}), h2 = CASE(lvl >= 3, ${t_md5(t_prefix(2))}), h3 = CASE(lvl >= 4, ${t_md5(t_prefix(3))}), h4 = CASE(lvl >= 5, ${t_md5(t_prefix(4))}), ` +
   `h5 = CASE(lvl >= 6, ${t_md5(t_prefix(5))}), ` +
   'oid = CASE(lvl == 5 AND NOT MV_LAST(parts) LIKE "app:*", MV_LAST(parts)), ty = CASE(lvl >= 5, MV_SLICE(parts, 2, 2)), opn = CASE(lvl >= 5, MV_SLICE(parts, 3, 3)), ' +
-  'ok = CASE(lvl == 6, MV_SLICE(parts, 4, 4)), fm = CASE(lvl == 6, MV_SLICE(parts, 5, 5)), ' +
-  `anyone = ${T_ANYONE} ` +
+  'ok = CASE(lvl == 6, MV_SLICE(parts, 4, 4)), fm = CASE(lvl == 6, MV_SLICE(parts, 5, 5)) ' +
   `| DROP kids, parts, parent | SORT lvl, pid, acts DESC, k | LIMIT ${T_ROWS}`;
 
 /**

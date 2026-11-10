@@ -54,6 +54,11 @@ Stack "planned".
   time zone, and `rows.size` works.
 - **`<details name="…">` keeps its `name`**, so a group of them is exclusive (the browser keeps one open), and
   each `<summary>` takes Tab, Enter and Space with no script. A hidden radio cannot take Enter.
+- **The frame's `<body>` has 16px padding**, so a root at `height:100vh` overflows and loses its bottom 32px;
+  `body{box-sizing:border-box}` and `height:100%` fit it.
+- **A `position:fixed` element is pinned to the frame only if no ancestor keeps a transform**, and an
+  ancestor's `mask-image` still clips it. An entrance animation with `fill-mode: both` keeps its transform after
+  it ends, so use `backwards`.
 - **Liquid HTML-escapes every `{{ }}` output**, so markup cannot be chosen at runtime by printing a string.
   The suite expands icons at build time instead (`<icon name>` / `<icon var>` in `scripts/lib/custom.mjs`).
 - Without a query the template is not run through Liquid at all.
@@ -124,7 +129,9 @@ and unpack in one pass: an `INLINE STATS` re-runs everything above it (2.4s at 7
 
 **Measured (2026-11-10, as shipped):** about 0.3s over 24h live, and 0.79 to 0.81s at 7 days on the 2.6M-event perf
 replica, over the 0.7s budget (accepted); about 475ms of it is the scan and first STATS. Identity 360 loads in 3.5 to
-3.7s at 7 days, measured on a day the cluster ran about 7% slow. Rendered and
+3.7s at 7 days, measured on a day the cluster ran about 7% slow. The identity count (1.0.8.2) costs nothing
+measurable: 0.87 to 0.92s at 7 days with it and 0.87 to 0.91s without, back to back on a slower day (2026-11-10);
+0.5s at 24 hours. Rendered and
 inspected in dark and light, at 1440 and 1100px, and with reduced motion. Its animations are entrance-only and
 come to rest on the final frame.
 
@@ -137,16 +144,29 @@ Kibana Object Forensics, so the counts are lower than the ribbon's.
 
 **Decided (2026-11-09):** the ribbon is removed. Click-to-pin went with it.
 
-**Keyboard.** Tab reaches one radio per column (the arrow keys pick, Space too), then each data-set chip, the
-*All data sets* list and Close. A chip is a `<summary>` in one exclusive `<details name="dsel">` group, so Enter
-or Space opens its panel and closes any other; Close is one more member of the group. The focused item, and its
-breadcrumb, show a ring. Verified with Playwright keyboard input on a private deploy (2026-11-10).
+**Keyboard.** Tab order follows the screen: one radio per column (the arrow keys pick, Space too), then in the
+objects column each data-set chip and the *All data sets* list. A chip is a `<summary>` in one exclusive
+`<details name="dsel">` group, and its request panel is that details' own content, written after the summary. So
+Enter or Space opens the panel and closes any other; the next Tab goes into the panel (its table, when it scrolls)
+and then on to the next chip; pressing the chip again closes the panel, and focus stays on the chip. There is no
+Close button: one inside the panel hid its own focused element, and the next Tab restarted at the top. The chip's
+tooltip and the panel both say to press the chip again. CSS draws the panel under the columns (fixed to the lower
+46% of the frame, with a spacer the same height so the columns shrink instead of being covered). A panel inside the
+*All data sets* list hides with it, and so does one whose object is no longer on the picked path. The focused item,
+and its breadcrumb, show a ring. Verified with Playwright keyboard input only on a private deploy, dark and light
+(2026-11-10). One gap: when the columns shrink, the chip that opened the panel can scroll out of the objects
+column's view; the next Tab or Shift+Tab brings it back.
 
 **Ids and the row cap.** A data set's panel id is its level-6 parent id: an MD5 prefix of the object's path and
 the data set, so any index name makes a valid selector. A chip with no panel (a name lookup only, or cut by the
 6,000-row cap) is a plain label. When the result reaches the cap the panel says some objects and requests are not
-shown; the cap cuts requests first, then objects. With nobody in the Identity control the panel says it covers
-every identity (the query flags it from `?identity`).
+shown; the cap cuts requests first, then objects.
+
+**How many identities.** When the rows cover more than one identity the panel opens with "N identities. Pick one
+in the Identity control, or click a Principal id in *Who this is*." (thousands grouped). It is counted from the data,
+not from the Identity control, so a pinned Principal id pill or an Identity type narrows it too: the first STATS
+groups by the raw identity keys, `ACTOR_RESOLVE` names each grouped row the suite's way, the name rides through
+both packed joins, and `COUNT_DISTINCT` runs on the level-0 row only. No second scan and no `INLINE STATS`.
 
 **Times** are in the viewer's time zone: the query returns ISO strings and Liquid formats them in the browser.
 
@@ -154,8 +174,9 @@ every identity (the query flags it from `?identity`).
 type › operation paths with their counts (`IDENTITY_PATH_TABLE`, the same fine rows), in the same grid slot.
 Committed `dashboards/*.json` are never written from it.
 
-**A data set's queries.** Every data set under an object is a link. Clicking it opens a panel under the columns
-listing each query Kibana ran on that data set for that object, newest first (the latest 25): its time, the part
+**A data set's queries.** Each data set with queries is a chip; pressing it opens a panel under the columns
+listing each query Kibana ran on that data set for that object, newest first (up to 25, fewer when the row cap
+cuts; the panel then says "the latest N of M"): its time, the part
 of the page that sent it (results table, histogram, or a panel id, from the last part of `x-opaque-id`), the
 language, and whether documents came back. Name and field lookups are left out, and so is a query that read
 nothing and came from no named part of the page: that is Kibana's own column discovery, which buried the user's
