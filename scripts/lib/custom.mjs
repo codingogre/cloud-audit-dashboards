@@ -68,9 +68,24 @@ export function expandIcons(src) {
   });
 }
 
+/**
+ * `<dset name="fm" label="lab"/>` → a data-set chip for data set `fm` of the object row `r` (both Liquid variables).
+ * A data set with requests to list (in `dmap`, built at the top of the drill-down template) is a `<details>` in the
+ * one `dsel` group: the browser keeps one open, it takes Tab, Enter and Space with no script, and its id `k<pid>` is
+ * an MD5 prefix from the query, so any index name is a valid selector. Any other data set is a plain label.
+ */
+export function expandDsets(src) {
+  return src.replace(/<dset\s+name="(\w+)"\s+label="(\w+)"\s*\/>/g, (m, fm, lab) =>
+    `{%- assign dn = "|" | append: r["nid"].value | append: "#" | append: ${fm} | append: "#" -%}{%- assign c0 = ${fm} | slice: 0 -%}` +
+    `{%- if dmap contains dn -%}{%- assign did = dmap | split: dn | last | slice: 0, 10 -%}` +
+    `<details name="dsel" class="dk k{{ did }}"><summary class="ds dl{% if c0 == "." %} sys{% endif %}" title="{{ ${fm} }}: see each request"><icon name="db"/>{{ ${lab} }}</summary></details>` +
+    `{%- else -%}<span class="ds{% if c0 == "." %} sys{% endif %}" title="{{ ${fm} }}"><icon name="db"/>{{ ${lab} }}</span>{%- endif -%}`);
+}
+
 /** custom/<ref>.html with its icons expanded. Throws on a leftover <icon> tag or an oversized result. */
 export function loadTemplate(ref) {
-  const out = expandIcons(expandLabels(readFileSync(join(ROOT, 'custom', `${ref}.html`), 'utf8')));
+  const out = expandIcons(expandDsets(expandLabels(readFileSync(join(ROOT, 'custom', `${ref}.html`), 'utf8'))));
+  if (/<dset\b/.test(out)) throw new Error(`custom/${ref}.html: a <dset> tag did not expand (needs name="…" label="…")`);
   if (/<icon\b/.test(out)) throw new Error(`custom/${ref}.html: an <icon> tag did not expand (needs name="…" or var="…")`);
   if (/<labels\b/.test(out)) throw new Error(`custom/${ref}.html: a <labels> tag did not expand (needs level="…" key="…")`);
   if (Buffer.byteLength(out) > TEMPLATE_LIMIT) throw new Error(`custom/${ref}.html expands to ${Buffer.byteLength(out)} bytes, over Kibana's ${TEMPLATE_LIMIT}`);

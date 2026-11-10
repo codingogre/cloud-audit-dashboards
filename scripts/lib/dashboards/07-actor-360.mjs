@@ -2,9 +2,10 @@
 import {
   IDX, TIME, CONTROLS_WHERE, ACTOR_KEYS, ACTOR_RESOLVE, INDEX_FAMILY, IP_GEO, indexFamily, dash, kpi, table, vega, section, row, stack, resetIds,
   sized, filterable, grouped, SYS_INDEX, fitRows, IDENTITY_KEYS, KIND_GROUPED,
-  custom, KIBANA_INTERNALS, OBJ_PRESENT, OBJ_TYPE, READ_ACTIONS, LOOKUP_ACTIONS, inList, TIME_ONLY, PROJECT_WHERE, IDENTITY_WHERE, CLIENT_IP_WHERE
+  custom, KIBANA_INTERNALS, OBJ_PRESENT, OBJ_TYPE, READ_ACTIONS, LOOKUP_ACTIONS, inList, TIME_ONLY, PROJECT_WHERE, IDENTITY_WHERE, CLIENT_IP_WHERE, ANY
 } from '../panels.mjs';
 import { rawId } from '../suite.mjs';
+import { LABELS } from '../custom.mjs';
 import {
   riskScored, CHANGED, CHANGED_KEYS, CHANGED_DERIVE, specDescription, RAW_RECORDS, IDENTITY_HOW_TO, sessionRecords, openInByTitle
 } from './shared.mjs';
@@ -81,7 +82,12 @@ const HTTP_JOINABLE = `${HTTP_REQ} AND NOT user.domain IN ("_cloud_api_key", "_e
   'AND url.original RLIKE "https?://[^/]*(/s/[^/]*)?/(internal/(data_views|controls|esql|esql_registry|index_management|index-pattern-management|apm|search)|api/(fleet|index_management|metrics))/.*"';
 /** Client IP against the browser's address a row carries after the request join (`cip`), not the event's own. */
 export const T_CLIENT_IP = CLIENT_IP_WHERE.replace('client.ip ==', 'cip ==');
-export const IDENTITY_PATH =
+/** The drill-down's row cap. The template says so when a result reaches it (custom/11-identity-path.html). */
+export const T_ROWS = 6000;
+/** Nobody in the Identity control (IDENTITY_WHERE treats "" and "Any" alike): the panel says it covers everyone. */
+const T_ANYONE = `CASE(lvl == 0 AND (?identity == "" OR ?identity == "${ANY}"), 1, 0)`;
+/** The fine rows both the drill-down and its Lens fallback read: joined, typed, after Client IP. */
+const T_BASE =
   `FROM ${IDX} | ${TIME_ONLY} AND ${PROJECT_WHERE} AND ${IDENTITY_WHERE} ` +
   `| WHERE (${K_SIDE} AND ${OBJ_PRESENT} AND (event.action IS NULL OR NOT (${KIBANA_INTERNALS}))) OR (${HTTP_JOINABLE}) ` +
   `OR (service.name == "serverless-elasticsearch" AND elasticsearch.audit.indices IS NOT NULL AND ${OPAQUE} LIKE "*;kibana:*" ` +
@@ -129,7 +135,8 @@ export const IDENTITY_PATH =
   '| EVAL space = CASE(space IS NOT NULL, space, MV_COUNT(kspaces) == 1, kspaces, kspaces IS NULL, "(space not recorded)", "(several spaces)"), ' +
   'cip = CASE(cip IS NOT NULL, cip, MV_COUNT(kips) == 1, kips), nm = COALESCE(nm, onm) ' +
   `| WHERE ${T_CLIENT_IP} ` +
-  '| EVAL op = CASE(es AND opened > 0, "open", es, "read", op) ' +
+  '| EVAL op = CASE(es AND opened > 0, "open", es, "read", op)';
+export const IDENTITY_PATH = `${T_BASE} ` +
   // level 6 lists the requests that ran a query (with or without documents back), never a bare name or field lookup:
   // Discover lists every index name on each refresh, and those buried the queries in the latest 25 (rendered 2026-11-09).
   // A query that read nothing is kept only when a named part of the page sent it (x-opaque-id carries a third part,
@@ -147,7 +154,8 @@ export const IDENTITY_PATH =
   // a request (level 6) ranks by time, newest first, so its parent keeps the latest 25
   '| EVAL kacts = opens + creates + changes + deletes + runs + lists, acts = CASE(lvl == 6, TO_LONG(seen) / 1000, opens + creates + changes + deletes + runs + lists + dreq), dsets = COALESCE(MV_COUNT(fams), 0), lk = COALESCE(MV_COUNT(looked), 0), ' +
   'keep = CASE(lvl < 6 AND (fails > 0 OR deletes > 0 OR sysn > 0), 1, 0), famlist = CASE(lvl == 6, MV_CONCAT(MV_SORT(langs), ", "), MV_CONCAT(MV_SORT(fams), "|")), lklist = MV_CONCAT(MV_SORT(looked), "|"), ' +
-  'lastf = CASE(lvl == 6, DATE_FORMAT("MMM d HH:mm:ss", seen), DATE_FORMAT("MMM d HH:mm", seen)), ' +
+    // ISO, so the template formats it in the viewer's time zone (Liquid's date filter runs in the browser)
+  'lastf = TO_STRING(seen), ' +
   `parent = CASE(lvl <= 1, "all", REPLACE(key, "${T_PATH}[^${T_PATH}]*$", "")) ` +
   `| EVAL pack = CONCAT(${T_PACKED.map((c) => (c === 'acts' ? 'TO_STRING(acts + 1000000000000)' : T_NUMS.includes(c) || c === 'keep' ? `TO_STRING(${c})` : `COALESCE(${c}, "")`)).join(`, "${T_SEP}", `)}) ` +
   '| STATS kids = TOP(pack, 25, "desc"), sib_n = COUNT(*), sib_acts = SUM(acts), sib_opens = SUM(opens), sib_chg = SUM(creates + changes + deletes + runs), ' +
@@ -160,8 +168,32 @@ export const IDENTITY_PATH =
   `h1 = CASE(lvl >= 2, ${t_md5(t_prefix(1))}), h2 = CASE(lvl >= 3, ${t_md5(t_prefix(2))}), h3 = CASE(lvl >= 4, ${t_md5(t_prefix(3))}), h4 = CASE(lvl >= 5, ${t_md5(t_prefix(4))}), ` +
   `h5 = CASE(lvl >= 6, ${t_md5(t_prefix(5))}), ` +
   'oid = CASE(lvl == 5 AND NOT MV_LAST(parts) LIKE "app:*", MV_LAST(parts)), ty = CASE(lvl >= 5, MV_SLICE(parts, 2, 2)), opn = CASE(lvl >= 5, MV_SLICE(parts, 3, 3)), ' +
-  'ok = CASE(lvl == 6, MV_SLICE(parts, 4, 4)), fm = CASE(lvl == 6, MV_SLICE(parts, 5, 5)) ' +
-  '| DROP kids, parts, parent | SORT lvl, pid, acts DESC, k | LIMIT 6000';
+  'ok = CASE(lvl == 6, MV_SLICE(parts, 4, 4)), fm = CASE(lvl == 6, MV_SLICE(parts, 5, 5)), ' +
+  `anyone = ${T_ANYONE} ` +
+  `| DROP kids, parts, parent | SORT lvl, pid, acts DESC, k | LIMIT ${T_ROWS}`;
+
+/**
+ * THE LENS FALLBACK (AUDIT_NO_CUSTOM=1 at build): the same paths as a table, should custom panels be unavailable.
+ * It reads T_BASE, so the counts match the drill-down's first four columns; the labels come from LABELS.
+ */
+const T_WORDS = (lvl, col, fallback) => `CASE(${Object.entries(LABELS[lvl]).map(([k, [l]]) => `${col} == "${k}", "${l}"`).join(', ')}, ${fallback})`;
+export const IDENTITY_PATH_TABLE = `${T_BASE} ` +
+  '| STATS acts = SUM(n) WHERE NOT es AND op != "list", lists = COUNT_DISTINCT(rq) WHERE op == "list", ' +
+  'data_requests = COUNT_DISTINCT(rq) WHERE es AND NOT meta AND fam IS NOT NULL, kfails = SUM(nf) WHERE NOT es, ' +
+  'rfails = COUNT_DISTINCT(rq) WHERE es AND nf > 0, objects = COUNT_DISTINCT(oid), last_seen = MAX(ts) BY cred, space, type, op ' +
+  '| EVAL kibana_actions = COALESCE(acts, 0) + COALESCE(lists, 0), failed = COALESCE(kfails, 0) + COALESCE(rfails, 0), ' +
+  `credential = ${T_WORDS(1, 'cred', 'REPLACE(cred, "-", " ")')}, space = ${T_WORDS(2, 'space', 'space')}, ` +
+  `object_type = ${T_WORDS(3, 'type', 'CASE(type LIKE "app:*", CONCAT(TO_UPPER(SUBSTRING(type, 5, 1)), REPLACE(SUBSTRING(type, 6), "[-_]", " "), " app"), REPLACE(type, "-", " "))')}, ` +
+  `operation = ${T_WORDS(4, 'op', 'op')} ` +
+  '| SORT kibana_actions DESC, data_requests DESC, credential, space | KEEP credential, space, object_type, operation, objects, kibana_actions, data_requests, failed, last_seen | LIMIT 100';
+const PATH_TITLE = 'Drill down — credential › space › object type › operation › the data Kibana read';
+const PATH_DESC = 'Pick a credential, space, object type and operation; each column narrows to the objects and the data Kibana read. Click a data set to list each request. Routine internals and this suite’s dashboards are left out.';
+/** The drill-down, or with AUDIT_NO_CUSTOM=1 its Lens table in the same grid slot. */
+const identityPath = (x, y, w, h) => (process.env.AUDIT_NO_CUSTOM
+  ? table(x, y, w, h, 'Kibana paths — credential › space › object type › operation', IDENTITY_PATH_TABLE,
+    [sized('credential', 170), sized('space', 160), sized('object_type', 180), 'operation'], ['objects', 'kibana_actions', 'data_requests', 'failed', 'last_seen'],
+    'Each path this selection took through Kibana, busiest first: Kibana actions, and the data requests Kibana sent to Elasticsearch, never added. Routine internals and this suite’s dashboards are left out.', { scroll: true })
+  : custom(x, y, w, h, '11-identity-path', PATH_TITLE, PATH_DESC, IDENTITY_PATH));
 
 const vegaPanel = (ref, title) => (x, y, w, h) => vega(x, y, w, h, ref, title, specDescription(ref));
 
@@ -381,9 +413,7 @@ export function build() {
     // Custom panel (1.0.8): replaced the Vega ribbon "How they reached what they touched in Kibana"
     // (vega/11-actor-object-flow, removed 2026-11-09 at the user's call); see IDENTITY_PATH.
     // Taller than the 16 rows it had beside the ribbon: a data set's requests open in a panel under the columns.
-    row(22, [[48, (x, y, w, h) => custom(x, y, w, h, '11-identity-path', 'Drill down — credential › space › object type › operation › the data Kibana read',
-      'Pick a credential, space, object type and operation; each column narrows to the objects and the data Kibana read. Click a data set to list each request. Routine internals and this suite’s dashboards are left out.',
-      IDENTITY_PATH)]]),
+    row(22, [[48, identityPath]]),
     // Deletes first, then newest. Newest-first alone showed ten creates from the latest burst and put
     // 1,859 deletes (24h) below the panel edge, so a reader concluded this person deleted nothing (round-3
     // review). A delete is the change an investigator looks for first and the one RISK weighs highest

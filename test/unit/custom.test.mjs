@@ -6,9 +6,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { expandIcons, expandLabels, loadTemplate, ICONS, LABELS, TEMPLATE_LIMIT } from '../../scripts/lib/custom.mjs';
-import { PROJECT_WHERE, IDENTITY_WHERE, CLIENT_IP_WHERE, READ_ACTIONS, LOOKUP_ACTIONS } from '../../scripts/lib/panels.mjs';
-import { IDENTITY_PATH, T_CLIENT_IP } from '../../scripts/lib/dashboards/07-actor-360.mjs';
+import { expandIcons, expandLabels, expandDsets, loadTemplate, ICONS, LABELS, TEMPLATE_LIMIT } from '../../scripts/lib/custom.mjs';
+import { PROJECT_WHERE, IDENTITY_WHERE, CLIENT_IP_WHERE, READ_ACTIONS, LOOKUP_ACTIONS, ANY } from '../../scripts/lib/panels.mjs';
+import { IDENTITY_PATH, IDENTITY_PATH_TABLE, T_CLIENT_IP, T_ROWS } from '../../scripts/lib/dashboards/07-actor-360.mjs';
 import { buildAll } from '../../scripts/lib/definitions.mjs';
 
 const customPanels = () => Object.entries(buildAll()).flatMap(([name, d]) =>
@@ -117,14 +117,101 @@ test('a data set opens its queries in a panel under the columns, lookups left ou
   assert.ok(IDENTITY_PATH.includes('EVAL lvl = [0, 1, 2, 3, 4, 5, 6]'), 'a level per request');
   assert.ok(IDENTITY_PATH.includes('WHERE lvl < 6 OR (es AND fam IS NOT NULL AND (NOT meta OR (lang IN ("ES|QL", "search", "SQL", "EQL") AND rq LIKE "*;*;*")))'), 'bare lookups and background column discovery never listed');
   assert.ok(IDENTITY_PATH.includes('acts = CASE(lvl == 6, TO_LONG(seen) / 1000'), 'requests rank newest first');
-  assert.match(t, /<label class="ds dl c\{\{ r\["nid"\]\.value \}\}-\{\{ fid \}\}/, 'a data-set chip is a link to its panel');
-  assert.match(t, /<input type="radio" name="dsel" id="d0" checked>/, 'nothing open by default');
-  assert.match(t, /<label class="x" for="d0"/, 'a close link');
+  assert.ok(t.includes('<details name="dsel" class="dk k{{ did }}"><summary class="ds dl'), 'a data-set chip opens its panel');
+  assert.ok(!/<details name="dsel"[^>]*\sopen/.test(t), 'nothing open by default');
+  assert.ok(t.includes('<details name="dsel" class="dk xd"><summary class="x"'), 'Close is one more member of the group');
   assert.match(t, /\.dv\{display:none/, 'the panel is hidden until a data set is clicked');
-  assert.match(t, /:has\(#n\{\{ r\["h4"\]\.value \}\}:checked\):has\(#d\{\{ did \}\}:checked\) \.v\{\{ did \}\}\{display:flex\}/, 'it shows only while the path to its object is still picked');
+  assert.ok(t.includes(':has(#n{{ r["h4"].value }}:checked):has(.k{{ gp }}[open]) .v{{ gp }}{display:flex}'), 'it shows only while the path to its object is still picked');
   assert.ok(t.includes('not the query text'), 'says the audit log has no query text');
 });
 
 test('the system badge sits from object type down, never on a credential or a space', () => {
   assert.ok(loadTemplate('11-identity-path').includes('r["sysn"].value > 0 and L >= 3'));
+});
+
+test('the sanitizer keeps the style: no tag-like text inside <style>', () => {
+  // A `<` followed by a letter or `/` anywhere in a style element's text makes Kibana's sanitizer drop the whole
+  // element (a CSS comment naming <details> blanked every rule on a 2026-11-10 private deploy).
+  for (const { p } of customPanels()) {
+    for (const [, css] of p.config.template.matchAll(/<style>([\s\S]*?)<\/style>/g)) assert.ok(!/<[\/\w]/.test(css), css.match(/.{0,40}<[\/\w].{0,20}/)?.[0]);
+  }
+});
+
+test('the drill-down prints times in the viewer\'s zone: ISO from the query, formatted by Liquid in the browser', () => {
+  const t = loadTemplate('11-identity-path');
+  assert.ok(IDENTITY_PATH.includes('lastf = TO_STRING(seen)'), 'an ISO string, not a UTC-formatted one');
+  assert.ok(!/DATE_FORMAT\("MMM/.test(IDENTITY_PATH));
+  assert.ok(t.includes('{{ r["lastf"].value | date: "%b %-d %H:%M" }}') && t.includes('{{ r["lastf"].value | date: "%b %-d %H:%M:%S" }}'));
+  assert.ok(!/\bUTC\b/.test(t.replace(/<style>[\s\S]*?<\/style>/, '')), 'no UTC label left');
+});
+
+test('the drill-down works from the keyboard: every chip, the list toggles and Close take focus and show it', () => {
+  const src = readFileSync('custom/11-identity-path.html', 'utf8');
+  const t = loadTemplate('11-identity-path');
+  assert.ok(!/\.dsel\{display:none\}/.test(t) && !t.includes('type="radio" name="dsel"'), 'hidden radios were mouse-only');
+  assert.ok(/summary\.ds:focus-visible[^{]*\.dv summary\.x:focus-visible[^{]*\{outline:2px/.test(t), 'chips and Close show focus');
+  assert.ok(src.includes('.ip:has(#n{{ r["nid"].value }}:focus-visible) .b{{ r["nid"].value }}{outline:'), 'the breadcrumb shows which item has focus');
+  assert.ok(/\.it input:focus-visible\+\.bx\{outline/.test(t), 'the level radios keep theirs');
+  assert.equal((src.match(/<dset name="\w+" label="\w+"\/>/g) || []).length, 4, 'every chip goes through expandDsets');
+});
+
+test('expandDsets(): a data set with requests is a details in the dsel group, any other a plain label', () => {
+  const out = expandDsets('<dset name="fm" label="lab"/>');
+  assert.ok(out.includes('{%- if dmap contains dn -%}'));
+  assert.ok(out.includes('<details name="dsel" class="dk k{{ did }}">'));
+  assert.ok(out.includes('{%- else -%}<span class="ds{% if c0 == "." %} sys{% endif %}" title="{{ fm }}">'), 'a lookup-only data set is not a dead link');
+  assert.ok(!/(href|for)=/.test(out));
+});
+
+test('data-set ids are MD5 prefixes from the query, never built from the index name', () => {
+  const src = readFileSync('custom/11-identity-path.html', 'utf8');
+  assert.ok(!src.includes('replace: ".", "_"'), 'a name with + @ = ( ) \' & ! made an invalid selector');
+  assert.ok(src.includes('{%- assign did = gp -%}') && src.includes('.v{{ gp }}{display:flex}'), 'the panel id is the level-6 parent id');
+  assert.ok(IDENTITY_PATH.includes('pid = CASE(lvl <= 1, null, SUBSTRING(MD5(parent), 1, 10))'), 'parent of a request = object path + data set');
+  assert.ok(src.includes('append: r["h5"].value') || src.includes('r["h5"].value | append: "#"'), 'dmap keys a panel by its object id');
+});
+
+test('the row cap: the panel says so, and a cut panel counts the requests it shows', () => {
+  const src = readFileSync('custom/11-identity-path.html', 'utf8');
+  assert.ok(IDENTITY_PATH.endsWith(`| LIMIT ${T_ROWS}`));
+  assert.ok(src.includes(`rows.size >= ${T_ROWS}`), 'the template tests the same cap as the query');
+  assert.ok(src.includes('Some objects and requests are not shown. Narrow the time range or pick an identity.'));
+  assert.ok(src.includes('{% if shn < sn %}; the latest {{ shn }} of {{ sn }}{% endif %}'), '"the latest 25" was wrong when the cap cut a panel short');
+  assert.ok(!src.includes('the latest 25 of'));
+  // "and N more" / "+N smaller" subtract the children drawn (c) from the pre-LIMIT sib_n, so they stay true when cut
+  assert.ok(src.includes('{%- assign rest = sn | minus: c -%}') && src.includes('{%- assign sn = r["sib_n"].value -%}'));
+});
+
+test('nobody selected: the query flags it from ?identity, and the panel says it covers every identity', () => {
+  const t = loadTemplate('11-identity-path');
+  assert.ok(IDENTITY_WHERE.includes(`?identity == "" OR ?identity == "${ANY}"`), 'the control sends "" or Any for nobody');
+  assert.ok(IDENTITY_PATH.includes(`anyone = CASE(lvl == 0 AND (?identity == "" OR ?identity == "${ANY}"), 1, 0)`));
+  assert.ok(t.includes('{%- if tot["anyone"].value == 1 -%}') && t.includes('<b>All identities.</b> Pick one in the Identity control, or click a Principal id in <i>Who this is</i>.'));
+});
+
+test('AUDIT_NO_CUSTOM=1 swaps the drill-down for a Lens table of the same paths in the same slot', () => {
+  const was = process.env.AUDIT_NO_CUSTOM;
+  const pick = (all) => all['07-actor-360'].panels.flatMap((p) => (p.section ? p.panels : [p]));
+  try {
+    delete process.env.AUDIT_NO_CUSTOM;
+    const drill = pick(buildAll()).find((p) => p.type === 'custom_content');
+    process.env.AUDIT_NO_CUSTOM = '1';
+    const all = buildAll();
+    assert.equal(Object.values(all).flatMap((d) => d.panels.flatMap((p) => (p.section ? p.panels : [p]))).filter((p) => p.type === 'custom_content').length, 0);
+    const tbl = pick(all).find((p) => p.config?.data_source?.query?.includes('BY cred, space, type, op'));
+    assert.ok(tbl, 'a table of the paths');
+    assert.equal(tbl.config.type, 'data_table');
+    assert.deepEqual(tbl.grid, drill.grid, 'same grid slot');
+    assert.ok(IDENTITY_PATH_TABLE.startsWith(IDENTITY_PATH.slice(0, IDENTITY_PATH.indexOf(' | EVAL lvl = '))), 'reads the drill-down\'s own fine rows');
+    assert.ok(tbl.config.rows.map((r) => r.column).join() === 'credential,space,object_type,operation');
+  } finally {
+    if (was === undefined) delete process.env.AUDIT_NO_CUSTOM; else process.env.AUDIT_NO_CUSTOM = was;
+  }
+});
+
+test('--verify looks inside the custom panel frame and fails a blank drill-down', () => {
+  const v = readFileSync('scripts/verify.mjs', 'utf8');
+  assert.ok(v.includes('page.frames()') && v.includes("document.querySelectorAll('.it')") && v.includes('No Kibana activity in this selection'));
+  assert.ok(/\|\| truncated \|\| drillBad \|\|/.test(v), 'a blank drill-down fails the run');
+  assert.ok(loadTemplate('11-identity-path').includes('No Kibana activity in this selection'), 'the empty state verify reads is still in the template');
 });

@@ -123,6 +123,30 @@ const pageStats = (page) => page.evaluate(() => {
   };
 });
 
+/**
+ * A custom panel renders in a sandboxed srcdoc iframe, which the page text above cannot see. Find the frame
+ * holding Identity 360's drill-down (`.ip`) and count its items: `.it` in total and how many are on screen, and
+ * whether it shows its empty state instead. null when no frame holds it.
+ */
+async function drillStats(page) {
+  for (const f of page.frames()) {
+    if (f === page.mainFrame()) continue;
+    try {
+      const s = await f.evaluate(() => {
+        if (!document.querySelector('.ip')) return null;
+        const items = [...document.querySelectorAll('.it')];
+        return {
+          items: items.length,
+          shown: items.filter((e) => e.getClientRects().length > 0).length,
+          empty: document.body.innerText.includes('No Kibana activity in this selection'),
+        };
+      });
+      if (s) return s;
+    } catch { /* a frame that detached mid-walk */ }
+  }
+  return null;
+}
+
 export async function run(argv = []) {
   const { chromium } = loadPlaywright();
   const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+/, '').replace('T', '-');
@@ -151,6 +175,9 @@ export async function run(argv = []) {
   const ids = Object.keys(all).filter((n) => !only.length || only.some((o) => n.includes(o)))
     .map(dashId);
   const defs = Object.fromEntries(Object.entries(all).map(([n, d]) => [dashId(n), d.panels.filter((p) => p.section)]));
+  // Pages carrying a custom panel (none under AUDIT_NO_CUSTOM): their drill-down must render items or its empty state.
+  const drillOn = new Set(Object.entries(all).filter(([, d]) => d.panels.flatMap((p) => (p.section ? p.panels : [p]))
+    .some((p) => p.type === 'custom_content')).map(([n]) => dashId(n)));
   // The prior-period tiles on each page (lib/canary.mjs), and the view they read, without which they show an error.
   const prevOn = Object.fromEntries(Object.entries(all).map(([n, d]) => [dashId(n), tilesOn(d)]));
   await requireView();
@@ -187,6 +214,7 @@ export async function run(argv = []) {
       const SCROLLER = '[data-test-subj="kbnChromeLayoutApplication"]';
       const { shot, measured } = await walkAndGrow(page, SCROLLER, width);
       const stats = await pageStats(page);
+      if (drillOn.has(id)) stats.drill = await drillStats(page);
       // SECTIONS (panels.mjs): every page carries a collapsed "How to read this page" section. Count them
       // before touching anything: a deploy that lost the saved object's `sections`, or left one open, shows
       // here as a header count that does not match the definition.
@@ -223,6 +251,8 @@ export async function run(argv = []) {
       const unexpected = errs.filter((e) => !isPlatformNoise(e));
       report.push({ id, ...stats, consoleErrors: errs.length, unexpectedErrors: unexpected, file, fileOpen });
       const truncated = shot >= 12000 || measured <= 1400;
+      // Neither items nor the empty state: the template or its query broke, which shows as a blank panel.
+      const drillBad = drillOn.has(id) && (!stats.drill || (!stats.drill.items && !stats.drill.empty));
       const line = `${id}  panels=${stats.panels} broken=${stats.brokenPanels} vegaErrors=${stats.vegaErrors.length}`
         + ` vegaWarnings=${stats.vegaWarnings} loading=${stats.stillLoading}`
         + ` noData=${stats.noData} styleLeak=${stats.rawStyleLeak}`
@@ -231,7 +261,8 @@ export async function run(argv = []) {
         + `${stats.textOverflow.length ? ` TEXT-OVERFLOW=${stats.textOverflow.length}` : ''}`
         + `${prior.tiles.length ? ` prior=${prior.tiles.length - prior.problems.length}/${prior.tiles.length}` : ''}`
         + `${prior.problems.length ? ` PRIOR-PERIOD=${prior.problems.length}` : ''}`
-        + `${unexpected.length ? ` UNEXPECTED-ERRORS=${unexpected.length}` : ''}${truncated ? ' TRUNCATED' : ''}`;
+        + `${unexpected.length ? ` UNEXPECTED-ERRORS=${unexpected.length}` : ''}${truncated ? ' TRUNCATED' : ''}`
+        + `${drillOn.has(id) ? (drillBad ? ' DRILL-DOWN-BLANK' : ` drill=${stats.drill.empty ? 'empty' : `${stats.drill.shown}/${stats.drill.items}`}`) : ''}`;
       report[report.length - 1].capturedPx = shot;
       report[report.length - 1].measuredPx = measured;
       report[report.length - 1].truncated = truncated;
@@ -241,7 +272,7 @@ export async function run(argv = []) {
       // A capture that never grew past the viewport means the scroller selector stopped
       // matching — that is exactly how this script was silently blind before, so fail loud.
       if (stats.brokenPanels || stats.vegaErrors.length || stats.rawStyleLeak || stats.controls !== CONTROLS.length
-          || truncated || unexpected.length || stats.textOverflow.length || prior.problems.length
+          || truncated || drillBad || unexpected.length || stats.textOverflow.length || prior.problems.length
           || stats.sectionsCollapsed !== expectedSections || (stats.sectionsCollapsed && stats.sectionsOpened !== stats.sectionsCollapsed)) {
         bad++; fail(line);
         for (const e of stats.vegaErrors.slice(0, 5)) detail(`    vega: ${e}`);
