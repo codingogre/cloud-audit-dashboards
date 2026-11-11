@@ -4,13 +4,13 @@
 
 How well the seven dashboards and twelve Discover sessions serve SOC analysts, compliance auditors, platform admins and security managers: where the design gets in their way, which of their questions it answers, and what comes next.
 
-Reviewed **2026-11-10** against release **1.0.8**, updated for **1.0.8.1** · 136 use cases · 31 open design holes. The full page, with filters and every
+Reviewed **2026-11-10** against release **1.0.8**, updated for **1.0.8.2** · 136 use cases · 25 open design holes. The full page, with filters and every
 use case's detail, is [`docs/roadmap.html`](roadmap.html): download it and open it in a browser.
 
 ## Investigation works; evidence and reporting lag
 
 - **Most questions are partly answered.** Of 136 customer use cases, 35 (26%) are answered outright and 72 (53%) partly. The usual gap is the last step: a count no panel adds up, an export that loses its context, or a field the stream has but no panel shows.
-- **Following an identity works.** The Identity type and Identity dropdowns reach every kind of credential, API keys included, and every identity table and treemap tile clicks through to Identity 360 with the identity pinned. Identity 360's drill-down walks one identity's credential, space, object type and operation down to the data Kibana read, and every record panel opens its records in Discover with the page's pills. What's left: Open in Discover leaves out the dropdowns, there is no picker for one index or one saved object, and the drill-down needs keyboard access, stated cuts and a render check.
+- **Following an identity works.** The Identity type and Identity dropdowns reach every kind of credential, API keys included, and every identity table and treemap tile clicks through to Identity 360 with the identity pinned. Identity 360's drill-down walks one identity's credential, space, object type and operation down to the data Kibana read, and every record panel opens its records in Discover with the page's pills. Identity 360's baseline, rhythm and session charts end at the time picker's end, so an old incident shows its own week. What's left: Open in Discover leaves out the dropdowns, and there is no picker for one index or one saved object.
 - **Six alert rules watch the sharpest signals; behaviour alerts come later.** The starter pack raises failed-sign-in bursts, a sign-in after failed sign-ins, new API keys and role changes, security changes at an unusual hour, new identities, and audit events that stop arriving. The rules ship disabled with no delivery of their own, so each customer turns them on and routes them. 17 use cases still need a rule or longer retention: alerts against an identity's own baseline (1.2.0), checks that need months of history, and first access to a Kibana space (UC-112).
 - **Evidence and reporting are the weakest area.** Row caps are stated only in titles, exports drop the query and the time range, and there is no one-page summary or scheduled report.
 - **Managers are served least.** 13 of their 58 questions are answered outright. Headline tiles compare with the previous period, but there is no posture summary to share.
@@ -24,30 +24,7 @@ use case's detail, is [`docs/roadmap.html`](roadmap.html): download it and open 
 
 ## Roadmap
 
-Every open design hole and every use case not answered today, placed in the release that closes it. Patch releases add to the dashboards: a run of small ones on the 1.0.8 code, 1.0.8.2 to 1.0.8.5, then 1.0.9 for identities, keys and roles and 1.0.10 for evidence. 1.1.0 adds a dashboard; 2.0.0 brings in data from outside the audit stream.
-
-### 1.0.8.2 — Identity 360 on the time picker; drill-down fixes
-
-Identity 360 covers the time picked and says when it is showing everyone, and its drill-down works from the keyboard, states its cuts and is checked on every deploy.
-
-- Identity 360's 7-day and 24-hour windows, and the session timeline, end at the time picker's end
-- One time zone on the page, the drill-down included
-- A prompt and "all identities" labels when nobody is selected, on the tiles and the drill-down
-- Data-set chips, request list and Close reachable by keyboard
-- A line when the drill-down's 6,000-row limit cuts objects or requests
-- Element ids that work for every index name
-- --verify fails when the drill-down renders empty; a Lens fallback kept ready
-
-6 design holes · 0 use cases
-
-Design holes:
-
-- **medium** — Identity 360's 7-day and 24-hour windows, and the session timeline on Kibana Objects, end at the current moment, not at the time picker, and Identity 360 mixes UTC with local time
-- **low** — With nobody selected, Identity 360 shows project-wide totals and an all-identities drill-down under the heading 'Everything one person did, on one page', and nothing on the panels says they cover all identities
-- **medium** — The drill-down's data-set chips, request list and Close control work only with a mouse
-- **medium** — The drill-down cuts its rows at 6,000 without saying so, and the deepest levels go first
-- **low** — Data-set chips do nothing for index names with characters the id builder keeps
-- **medium** — Identity 360's drill-down depends on a tech-preview panel, with no render check and no fallback
+Every open design hole and every use case not answered today, placed in the release that closes it. Patch releases add to the dashboards: a run of small ones on the 1.0.8 code, 1.0.8.3 to 1.0.8.5, then 1.0.9 for identities, keys and roles and 1.0.10 for evidence. 1.1.0 adds a dashboard; 2.0.0 brings in data from outside the audit stream.
 
 ### 1.0.8.3 — Pivots and records
 
@@ -336,15 +313,7 @@ Severity **high** · capability · Compliance auditor, SOC analyst · effort M �
 - **Fix:** Add a 'showing N of M' line to capped feeds, using a sibling COUNT over the same filter as the KPI tiles do. Add an `./audit --evidence` command that pages matching events by time through ES|QL async and writes CSV/NDJSON.
 - **Evidence:** withCut panels.mjs:1362-1371 only appends '· newest N at most' / '· top N at most' to titles. LIMIT 1000: FAILED_FEED 01-identity-access.mjs:144, key inventory 01:153, first/last seen 01:174, Cross-space 02-kibana-objects.mjs:117, OBJECT_ACTIVITY 02:125, Session reconstruction shared.mjs:187, Raw system index requests 03-data-access.mjs:247, MUTATION_FEED 04-security-anomalies.mjs:48, Config-change event feed 04:248. 'What they changed · up to 100' 07-actor-360.mjs:392-393. drilldowns.mjs:82-83 'the session keeps its own LIMIT'. searches/*.json mostly LIMIT 1000; 00-all-events LIMIT 10000; 10-raw-signal-feed LIMIT 200. No panel shows a total beside its cap. main.mjs:97-109 has no export command.
 
-### 4. Identity 360's 7-day and 24-hour windows, and the session timeline on Kibana Objects, end at the current moment, not at the time picker, and Identity 360 mixes UTC with local time
-
-Severity **medium** · navigation · SOC analyst, Compliance auditor · effort M · planned for 1.0.8.2
-
-- **Impact:** When you investigate an incident from 10 days ago, the baseline, rhythm, cohort and session timeline still show the last 7 days or 24 hours, not the days around the incident. On Identity 360, a UTC hour on the baseline sits beside local-time table rows, which invites off-by-hours mistakes in a report. The drill-down prints its times in UTC inside section ②, whose tables use the viewer's time zone.
-- **Fix:** Anchor the windows to the picker's end: bound the ES|QL by ?_tend minus 7 days or 24 hours instead of a panel range that ends at now. Show the baseline and rhythm hours in the viewer's zone, or put the UTC offset on every time axis on the page. Format the drill-down's times in the viewer's zone, or label them UTC beside the section's local-time tables.
-- **Evidence:** scripts/lib/panels.mjs:1639-1644 VEGA_WINDOWS sets 08, 09 and 12 to now-7d → now and 13-session-gantt to now-24h → now. windowMs (:1647-1650) throws on any 'to' other than now. Identity 360 copy: 07-actor-360.mjs:253 intro 'last 7 days in UTC … Table times are in your time zone'; :373 section 'fixed 7-day window in UTC (ignores the time picker)'; :375 'Is this normal for them? — hourly (UTC)'; :377 'Working rhythm — by hour (UTC)'; :380 and :440-441 'your time zone'. 02-kibana-objects.mjs:256-258 places the same 13-session-gantt on its fixed 24 hours. The drill-down formats its times in ES|QL (UTC) and sits in section ② beside tables in the browser's zone (07-actor-360.mjs:383-386, custom/11-identity-path.html).
-
-### 5. Security & Anomalies' posture tiles and the risk score have no previous-period comparison or longer trend
+### 4. Security & Anomalies' posture tiles and the risk score have no previous-period comparison or longer trend
 
 Severity **medium** · capability · CISO · effort M · planned for 1.1.0
 
@@ -352,7 +321,7 @@ Severity **medium** · capability · CISO · effort M · planned for 1.1.0
 - **Fix:** Add PREV_TILES entries for Anonymous denials (a plain filter) and for Failures (FAILED_OR_DENIED, which differs from the 00 'failed-events' filter). Config changes needs a tile that leaves out housekeeping. Risk needs a RISK-scored variant, which PREV_TILES rules out today because its spec takes plain filters only. Add a weekly risk-total trend panel with its own 90-day window. Raise PREV_LOOKBACK_DAYS only after stating the extra scan cost, since the prior read doubles the window.
 - **Evidence:** PREV_TILES has six keys: total-events, failed-events, es-events, esql-queries, access-denied, kibana-events (scripts/lib/panels.mjs:1731-1738). PREV_LOOKBACK_DAYS = 15 (panels.mjs:1725). The comment 'Only plain filters are tiles: NOISE, RISK and COUNT_DISTINCT tiles stay Lens' is at panels.mjs:1719-1720. prevKpi is used at 00-command-center.mjs:132 and :151, 02-kibana-objects.mjs:151, and 03-data-access.mjs:172, :180 and :184. Security & Anomalies uses plain kpi() for Mean severity, Config changes, Key invalidations, Failures, Anonymous denials and Scoring events (04-security-anomalies.mjs:154-172). 'Risk over time' buckets only the picked range (04-security-anomalies.mjs:196-199).
 
-### 6. No one-page summary or scheduled report exists
+### 5. No one-page summary or scheduled report exists
 
 Severity **medium** · capability · CISO, Compliance auditor · effort M · planned for 1.1.0
 
@@ -360,7 +329,7 @@ Severity **medium** · capability · CISO, Compliance auditor · effort M · pla
 - **Fix:** Add a compact 'Executive summary' dashboard that fits on one screen: the prior-period tiles, the top 5 risky identities and the latest config changes. Add `./audit --report --range 7d`. It renders that dashboard through the Chromium path --verify already drives and writes a PDF plus a markdown digest from the same queries.
 - **Evidence:** The CLI commands are --ingest, --ingest-check, --lint, --objects, --dashboards, --rules, --verify, --queries, --demo-guide, --synth, --perf, --deploy and --clean (scripts/main.mjs:97-109). None of them produces a report; --perf writes a timing report.json (main.mjs:55). verify.mjs already takes full-page Chromium screenshots (scripts/verify.mjs:196, :214). The built dashboards are 00, 01, 02, 03, 04, 05 and 07, with no summary dashboard. Height by max y+h: dashboards/04-security-anomalies.json is 137 rows and dashboards/07-actor-360.json is 126. README.md:612 says 'Reporting API rejects `pngV2` / `printablePdfV2`'.
 
-### 7. No evidence pack: nothing exports the query, time range, row count and a hash together
+### 6. No evidence pack: nothing exports the query, time range, row count and a hash together
 
 Severity **medium** · capability · Compliance auditor · effort M · planned for 1.0.10
 
@@ -368,7 +337,7 @@ Severity **medium** · capability · Compliance auditor · effort M · planned f
 - **Fix:** Add `./audit --evidence --from --to [--identity]`. It writes CSV or NDJSON with the raw fields and no row cap, plus a manifest holding the ES|QL text, the range, row counts and a SHA-256.
 - **Evidence:** Full ids: Principal id column shared.mjs:102-103 (PIN_PRINCIPAL / PIN_PRINCIPAL_SHORT); full Cloud key id under 'Key ID (Cloud)' on Busiest API keys by name (01-identity-access.mjs:295 comment). RAW_RECORDS shared.mjs:59 links All audit events and Raw signal feed. searches/00-all-events.json: computed, renamed columns (Time, Identity, Identity type, Source, Action, Outcome, Object, Client IP, Message…), LIMIT 10000. identityLabel/ACTOR_LABEL panels.mjs:690-693 shorten Cloud key ids in Identity columns. drilldowns.mjs:82-111 Open in Discover keeps the session's LIMIT. main.mjs:97-109 has no export or evidence flag.
 
-### 8. Data coverage and retention appear only on Command Center, and the README gives no retention guidance
+### 7. Data coverage and retention appear only on Command Center, and the README gives no retention guidance
 
 Severity **medium** · trust · Compliance auditor, CISO · effort S · planned for 1.0.10
 
@@ -376,7 +345,7 @@ Severity **medium** · trust · Compliance auditor, CISO · effort S · planned 
 - **Fix:** Put the coverage line (first stored event and retention) in the Identity & Access and Security & Anomalies intros, or reuse the 14-data-coverage tile on those pages. Add README steps for setting data_retention on the audit data stream and archiving to a snapshot repository.
 - **Evidence:** The only coverage tile is on Command Center: scripts/lib/dashboards/00-command-center.mjs:166-167 (vega COVERAGE_REF, untitled). It is built by scripts/lib/panels.mjs:1906 coverageSpec and :1940 retentionText. The intros in scripts/lib/dashboards/01-identity-access.mjs:187 and 04-security-anomalies.mjs:136 say only 'set the time picker'. 04-security-anomalies.mjs:207-210 'Identities by first appearance in range' has no coverage line. README.md:613, :634 and :852-854 describe the tile only. README has no data_retention or snapshot guidance (grep finds none).
 
-### 9. A Cloud API key has no name or owner anywhere in the suite, and nothing links to the Cloud console where they are kept
+### 8. A Cloud API key has no name or owner anywhere in the suite, and nothing links to the Cloud console where they are kept
 
 Severity **medium** · investigation · Cloud/platform admin, SOC analyst · effort S · planned for 1.0.9
 
@@ -384,7 +353,7 @@ Severity **medium** · investigation · Cloud/platform admin, SOC analyst · eff
 - **Fix:** Put a link to the Cloud Organization API keys page beside Cloud API key ids, as a How to read bullet or a URL-formatted column. Support an optional user-maintained lookup index (key id → name, owner, purpose) and join it into the identity tables with ES|QL LOOKUP JOIN.
 - **Evidence:** Full ids appear in PIN_PRINCIPAL / PIN_PRINCIPAL_SHORT (scripts/lib/dashboards/shared.mjs:102-103), in 'Key ID (Cloud) / creator' on 'Busiest API keys by name' (01-identity-access.mjs:300-302) and in the Principal id column of 'API key inventory' (01:355-356). That table's Key ID column is api_key.id, which is empty for a Cloud key, and its owner is set to "Cloud organization" (01:155). Identity cells are shortened to '_4KEO… · Cloud API key' (panels.mjs:660-693). Tables with no Principal id: 03-data-access.mjs:233 and 06-platform-volume.mjs:217 (noPin). README.md:253 says the name and creator are in the Cloud console, but no page links there. scripts/lib, custom/ and searches/ contain no cloud.elastic.co link and no LOOKUP JOIN.
 
-### 10. Risk weights are hard-coded and risk grows linearly with event count, so a repetitive job outranks rarer, more severe actions
+### 9. Risk weights are hard-coded and risk grows linearly with event count, so a repetitive job outranks rarer, more severe actions
 
 Severity **medium** · trust · CISO, SOC analyst, Compliance auditor · effort M · planned for 1.1.0
 
@@ -392,7 +361,7 @@ Severity **medium** · trust · CISO, SOC analyst, Compliance auditor · effort 
 - **Fix:** Move the weights into a config file, or into a small lookup index read with LOOKUP JOIN, so dashboards and rules share one table. Cap or log-scale each action's contribution per identity, for example weight × log2(1+events), so repetition cannot swamp severity. Keep the raw count and Risk total beside it. This changes what PMs see on the leaderboard, so confirm with them first.
 - **Evidence:** The weights are a fixed CASE: 50/45/40/35/30/25/10, with housekeeping and suite_install at 0 (scripts/lib/panels.mjs:525-534). RISK_INDEX_STATS is risk_total = SUM(risk * n) (panels.mjs:549), and mean_severity is computed at panels.mjs:551. How to read this page lists the weights and says 'Risk total is weight × events' (04-security-anomalies.mjs:139-140). The Mean severity tile is at 04-security-anomalies.mjs:154. The Risk leaderboard runs SORT risk_total DESC, and its description says 'sustained behavior outranks one high-severity event' (04-security-anomalies.mjs:214-220). 'Why these identities scored' has a weight column (04-security-anomalies.mjs:221-225). RISK and riskScored are also used in rules.mjs, 07-actor-360.mjs and shared.mjs.
 
-### 11. Titles and table values use builder jargon and raw action names
+### 10. Titles and table values use builder jargon and raw action names
 
 Severity **medium** · copy · CISO, Cloud/platform admin · effort M · planned for 1.1.0
 
@@ -400,7 +369,7 @@ Severity **medium** · copy · CISO, Cloud/platform admin · effort M · planned
 - **Fix:** Add a plain-label column next to each raw Action column, from an ACTION_LABEL CASE in panels.mjs ('API keys revoked', 'Kibana object searched'). Keep the raw value clickable. Rewrite titles outcome-first, e.g. 'Most active identities, sized by activity, coloured by risk' and 'Who reads which indices'.
 - **Evidence:** Titles: 'Identity footprint · area by √events, color by risk total' (00-command-center.mjs:173); `Signal vs noise over time${ALL}` (00:187); 'Live signal feed · repeats grouped · Kibana key clean-up left out' (00:230); 'Who reads which index family · up to 10 identities' (03-data-access.mjs:206); 'Top transport actions' (03:216); 'Proxy vs real client IP, by proxy' (05-geo-network.mjs:248); 'What they read, by index family' (07-actor-360.mjs:411). Raw action column: 'Most frequent actions' uses filterable('event.action', { label: 'Action' }) (00:191-193). Request column: requestCase (dashboards/shared.mjs:162), used at 00:103/232 and 01-identity-access.mjs:145, :338. Nothing in panels.mjs maps event.action to a plain label (grep finds no ACTION_LABEL).
 
-### 12. Geo & Network gives prime space to proving source.ip is a proxy, and calls a country count 'impossible travel'
+### 11. Geo & Network gives prime space to proving source.ip is a proxy, and calls a country count 'impossible travel'
 
 Severity **low** · copy · SOC analyst, CISO · effort M · planned for 1.1.0
 
@@ -408,7 +377,7 @@ Severity **low** · copy · SOC analyst, CISO · effort M · planned for 1.1.0
 - **Fix:** Move the Proxy IPs tile and the proxy table into a collapsed diagnostics section or to Platform Volume. Rename the tile and table 'People seen from several countries'. Drop 'impossible travel' from the tile tip, table title, table tip, reading note and dashboard description. Add a velocity table of consecutive locations with implied km/h, reusing the vega/10 calculation.
 - **Evidence:** 05-geo-network.mjs: Proxy IPs kpi at :167 (tip :168); 'Multi-country people' tip 'the impossible-travel signal' at :177; table 'Countries per person (impossible travel) · no service credentials' at :208, a COUNT_DISTINCT of countries with no timing (:209), tip at :212; 'Proxy vs real client IP, by proxy' at :248-251; reading note 'Impossible travel lists people only' at :145; dashboard description 'Impossible-travel detection.' at :259. Speed logic: vega/10-actor-geography.json:144 (>300 / >900 km/h); its description at :3 says 'Not an impossible-travel detector.'
 
-### 13. Colour-only encodings and emoji in titles hurt accessibility
+### 12. Colour-only encodings and emoji in titles hurt accessibility
 
 Severity **medium** · other · SOC analyst, CISO, Compliance auditor · effort M · planned for 1.1.0
 
@@ -416,15 +385,7 @@ Severity **medium** · other · SOC analyst, CISO, Compliance auditor · effort 
 - **Fix:** Replace SEVERITY_RAMP with a colour-blind-safe sequential ramp that varies in lightness (viridis-like) and have layout.mjs enforce it. Add a text mark with the count to vega/03 and vega/04, as vega/02 does. Replace panel-title emoji with a text marker such as 'Review:'. Drop emoji from dashboard titles, or confirm the screen-reader cost is acceptable for the dashboard list.
 - **Evidence:** SEVERITY_RAMP ['#54B399','#D6BF57','#E7664C'] at panels.mjs:1091, used in vega/01-actor-risk-treemap.json:590-594, vega/05-rare-event-scatter.json:143 ('Highest-severity actions, by how rare', 04-security-anomalies.mjs:190) and vega/02-auth-matrix.json:99. The treemap prints risk only when it fits (vega/01:361, :451, :541). vega/03-object-verb-heatmap.json:239 ('Object type × operation', 02-kibana-objects.mjs:173) and vega/04-actor-index-matrix.json:110 (03-data-access.mjs:206) draw rect marks only, with no text mark. vega/02-auth-matrix.json:109 has one. layout.mjs:358-359 only checks that a ramp is MAGNITUDE_RAMP or SEVERITY_RAMP. Emoji dashboard titles: 00:242, 01:377, 02:272, 03:259, 04:270, 05:258, 06:224, 07:455. Emoji panel titles: 02-kibana-objects.mjs:164, 03-data-access.mjs:238, 04-security-anomalies.mjs:184, 07-actor-360.mjs:392, :415.
 
-### 14. With nobody selected, Identity 360 shows project-wide totals and an all-identities drill-down under the heading 'Everything one person did, on one page', and nothing on the panels says they cover all identities
-
-Severity **low** · other · SOC analyst, CISO · effort S · planned for 1.0.8.2
-
-- **Impact:** A reader who opens Identity 360 without picking anyone can take the Events, Risk, Index families and Client IPs tiles, and the drill-down's credentials and spaces, for one person's footprint. The only hint that the page covers everyone is one clause in the intro.
-- **Fix:** Show a short prompt when nothing is selected: 'Pick an identity in the Identity control, or click a Principal id in Who this is'. Add 'all identities' to the tile secondary lines and the drill-down header when the Identity control and pills are empty. 'Who this is' already works as the pick list and needs no change.
-- **Evidence:** scripts/lib/dashboards/07-actor-360.mjs:250 heading 'Everything one person did, on one page'; :253 'with nobody selected, the page covers everyone'. The tiles keep fixed titles whatever is selected: :331 'Events', :335 'Risk', :347 'Index families', :351 'Client IPs'. Their secondary 'detail' strings never mention scope. :325 'Who this is — by identity and principal id'. The drill-down at :383-385 says only 'Pick a credential, space, object type and operation…'. custom/11-identity-path.html has no no-selection text (grep for nobody/everyone/pick an finds none).
-
-### 15. No table shows the request id, opaque id, trace id or span id, so one API-key script run cannot be followed across its events
+### 13. No table shows the request id, opaque id, trace id or span id, so one API-key script run cannot be followed across its events
 
 Severity **medium** · investigation · SOC analyst, Compliance auditor · effort S · planned for 1.0.9
 
@@ -432,7 +393,7 @@ Severity **medium** · investigation · SOC analyst, Compliance auditor · effor
 - **Fix:** Add filterable Request id (http.request.id) and Opaque id (x-opaque-id) columns to the All audit events and Raw signal feed sessions. Add an 'API run reconstruction' session that groups events by x-opaque-id, or by identity and client IP with gaps under 5 minutes, and makes the raw field click-to-filter.
 - **Evidence:** Final KEEPs in searches/00-all-events.json, 10-raw-signal-feed.json and 09-session-reconstruction.json have no http.request.id, x-opaque-id, trace.id or span.id. searches/11-kibana-request-trace.json keys only Kibana-originated requests (KIBANA_REQUEST_FROM / kibana_request, panels.mjs:185-188). Caller is a client label (01-identity-access.mjs:139-146, column at :351). http.request.id is used only inside queries: 06-platform-volume.mjs:119, 07-actor-360.mjs:89 and :218 (CASCADE_KEY). The Request column in Command Center's Live signal feed (00-command-center.mjs:230-232) names what was touched, not an id. 07-actor-360.mjs:260: 'API-only identities have no sessions.'
 
-### 16. User roles are never shown, so no panel says which roles did what or whether privileged roles are in use
+### 14. User roles are never shown, so no panel says which roles did what or whether privileged roles are in use
 
 Severity **medium** · investigation · Cloud/platform admin, Compliance auditor · effort S · planned for 1.0.9
 
@@ -440,7 +401,7 @@ Severity **medium** · investigation · Cloud/platform admin, Compliance auditor
 - **Fix:** First check with a probe that user.roles is populated in the serverless audit stream. If it is, add a filterable Roles column (user.roles) to 'Who this is — by identity and principal id' on Identity 360 and to 'Busiest human identities' and 'Identity first and last seen' on Identity & Access. Then add a 'Privileged-role activity' table to Security Anomalies: events and actions by identity where user.roles includes a superuser or admin role.
 - **Evidence:** user.roles appears only in docs/roadmap.html and docs/ROADMAP.md. It is not in scripts/lib, searches/, vega/, custom/, esql/ or README.md. user.full_name is left out on purpose (controls.mjs:6, README.md:276, 01-identity-access.mjs:304). Target tables: 07-actor-360.mjs:325, 01-identity-access.mjs:311 and :360. Command Center's Privileged ops tile (00-command-center.mjs:148-149) counts security-config changes, not activity by role holders.
 
-### 17. Object names and index families cannot be clicked, and there is no Object or Space dropdown, so finding who else touched an object or index family means typing a filter or leaving for Discover
+### 15. Object names and index families cannot be clicked, and there is no Object or Space dropdown, so finding who else touched an object or index family means typing a filter or leaving for Discover
 
 Severity **medium** · investigation · SOC analyst, Compliance auditor · effort M · planned for 1.0.8.3
 
@@ -448,7 +409,7 @@ Severity **medium** · investigation · SOC analyst, Compliance auditor · effor
 - **Fix:** Add a filterable Object id (kibana.saved_object.id) column next to Object on the Kibana Objects tables and on 'What they changed', and make Space filterable there (kibana.space.id). Give 'Top index families by events' and 'What they read, by index family' a filterable representative index, as 'System and hidden index reads' has. Optionally add a Space dropdown to Kibana Object Forensics.
 - **Evidence:** 02-kibana-objects.mjs: Space is filterable on '⚠️ Mutations' (:164-167) and on 'Kibana saved-object activity' (:248-250, with Action). Object type is filterable on 'Busiest objects' (:183, :199) and 'Object types' (:232-234). Object is a plain column on all of them. 03-data-access.mjs:212-214: Index family is plain on 'Top index families by events'. 07-actor-360.mjs:392 and :404: verb, type, name and space are plain on '⚠️ What they changed'. 07:411-413: 'What they read, by index family' is plain. Only '⚠️ System and hidden index reads' (07:415-426) has a filterable 'Index (one per family)'. controls.mjs:84-118 defines only Project, Identity type, Identity and Client IP.
 
-### 18. There is no API key hygiene view: no list of stale keys, widely shared keys or rotation cadence.
+### 16. There is no API key hygiene view: no list of stale keys, widely shared keys or rotation cadence.
 
 Severity **medium** · capability · Cloud/platform admin, CISO · effort M · planned for 1.0.9
 
@@ -456,7 +417,7 @@ Severity **medium** · capability · Cloud/platform admin, CISO · effort M · p
 - **Fix:** Add a 'Key hygiene' table with a fixed 90-day panel window. Show days since last use, IP and country counts (flag keys over a threshold), create and invalidate events per key name (rotation cadence), and whether the creator has any activity in the window. Say in the panel description that the audit stream never shows a key that is never used.
 - **Evidence:** scripts/lib/dashboards/01-identity-access.mjs:151-156: KEY_INVENTORY reads ${TIME} (the picker). It groups STATS events, first_seen, last_seen, ips = COUNT_DISTINCT(client.ip) and indices BY api_key.name, api_key.id, user.email, user.name, with SORT events DESC | LIMIT 1000. It has no fixed window, no country count, no IP threshold and no create/invalidate count. :355-359: the 'API key inventory' panel's description reads 'Every API key used in range…' and does not mention keys that are never used.
 
-### 19. The suite installs only into the Default space. It has no named viewer role, no field-level guidance for emails and IPs, no page message for readers without read on the audit stream, and no alert when a suite dashboard is edited or deleted.
+### 17. The suite installs only into the Default space. It has no named viewer role, no field-level guidance for emails and IPs, no page message for readers without read on the audit stream, and no alert when a suite dashboard is edited or deleted.
 
 Severity **medium** · access · Cloud/platform admin, Compliance auditor, CISO · effort S · planned for 2.0.0
 
@@ -464,7 +425,7 @@ Severity **medium** · access · Cloud/platform admin, Compliance auditor, CISO 
 - **Fix:** Publish a minimal 'audit_viewer' role in the README: read on the stream and on the view, plus Kibana dashboard read. Offer an optional --space flag for a dedicated space, but keep the Default install and the elastic_cloud-audit-* ids as the default. Recommend field-level security on client.ip and user.email for readers outside security. Add one intro line per page saying it needs read on the audit stream. Ship a rule that alerts on changes to elastic_cloud-audit-* objects.
 - **Evidence:** README.md:12, 19, 32: the suite installs into the Default space. README.md:1251: 'Dashboard viewers: read on the audit data stream and on logs-cloud-audit-events-view (a role on logs-* covers both)'. The README has no role definition, no field-level-security advice and no --space option. The page intros in scripts/lib/dashboards/*.mjs (e.g. 00-command-center.mjs:106-109, 07-actor-360.mjs:242) do not mention the read requirement. rules/*.json has api-key-or-role-change, audit-events-stopped, failed-signin-burst, first-seen-identity, signin-after-failures and unusual-hour-security-change, and none watches suite objects.
 
-### 20. The Project dropdown lists and matches project names, so same-named projects merge. No panel compares risk or changes across projects.
+### 18. The Project dropdown lists and matches project names, so same-named projects merge. No panel compares risk or changes across projects.
 
 Severity **medium** · navigation · Cloud/platform admin, CISO · effort S · planned for 2.0.0
 
@@ -472,7 +433,7 @@ Severity **medium** · navigation · Cloud/platform admin, CISO · effort S · p
 - **Fix:** Build each Project option as 'name (id prefix)' and match on project.id. Add a 'Risk and changes by project' table to Command Center with a filterable project.id column.
 - **Evidence:** scripts/lib/controls.mjs:85-86: Project options come from optionsQuery('project', 'project.name', … EVAL project = project.name). scripts/lib/panels.mjs:241: PROJECT_WHERE = (unset('project') OR project.name == ?project). No query in scripts/lib/dashboards/*.mjs groups by project.name or project.id; grep finds only comments. Only vega/12-actor-cohort.json groups by project ('BY project = project.name, key = user.email').
 
-### 21. Nobody has measured what each dashboard view adds to the audit stream. Load times are published only up to 7 days, on one replica.
+### 19. Nobody has measured what each dashboard view adds to the audit stream. Load times are published only up to 7 days, on one replica.
 
 Severity **low** · performance · CISO, Cloud/platform admin · effort M · planned for 2.0.0
 
@@ -480,7 +441,7 @@ Severity **low** · performance · CISO, Cloud/platform admin · effort M · pla
 - **Fix:** Measure and publish the audit events and bytes one view of each dashboard generates. Run ./audit --perf with 30d and 90d windows on a larger replica, and re-time Identity 360 with its drill-down, with nobody selected, at 30 and 90 days. Decide whether the executive and trend views should read a summary stream (a transform or an ES|QL rollup).
 - **Evidence:** README.md:1115-1122: measured 2026-10-14 with --windows 1h,24h,7d on a 2,625,300-event replica, 117 queries per window, slowest load 3.2s (Platform Volume, 7d). README.md:1133-1134: the replica holds no more distinct values than the live stream. README.md:50: every panel view emits ES|QL sub-requests, field_caps, async_search and page-load events, which the gate marks as Query internals. The README has no events-or-bytes-per-view figure, no 30d or 90d timing and no summary stream.
 
-### 22. Time charts carry no annotations for known events, and nothing links a panel to Cases.
+### 20. Time charts carry no annotations for known events, and nothing links a panel to Cases.
 
 Severity **low** · capability · SOC analyst, Compliance auditor · effort M · planned for 1.1.0
 
@@ -488,39 +449,7 @@ Severity **low** · capability · SOC analyst, Compliance auditor · effort M ·
 - **Fix:** Add an annotation layer to the time charts, read from an 'audit-annotations' index, with an ./audit subcommand to add entries. Document 'Add to case' from Lens panels where the project type supports it, and ship a case template.
 - **Evidence:** grep for 'annotation' in scripts/lib/*.mjs and scripts/lib/dashboards/*.mjs finds only in-memory lint markers (panels.mjs:1519, :2027). No xy() panel has an annotation layer. scripts/main.mjs has no annotations index or subcommand. README.md has no 'Cases' or 'add to case' entry; the only 'case' hits are ES|QL CASE().
 
-### 23. The drill-down's data-set chips, request list and Close control work only with a mouse
-
-Severity **medium** · other · SOC analyst, Compliance auditor · effort S · planned for 1.0.8.2
-
-- **Impact:** A keyboard or screen-reader user can walk the first four drill-down levels but cannot open a data set's request list, close it, or use the breadcrumb. Screen readers never announce the chips.
-- **Fix:** Keep the data-set radios in the tab order the way the level radios are (visually hidden, not display:none), give the chips, Close and the breadcrumb a visible focus ring, and check the panel with the keyboard alone.
-- **Evidence:** custom/11-identity-path.html:78 .dsel{display:none} hides the data-set radios (:110), so they never take focus; Close is a label for d0 (:250); breadcrumb items are labels (.bc-n, :13, :128) with no focusable control. The level 1-4 radios stay focusable (opacity 0, :30).
-
-### 24. The drill-down cuts its rows at 6,000 without saying so, and the deepest levels go first
-
-Severity **medium** · trust · SOC analyst, Compliance auditor · effort S · planned for 1.0.8.2
-
-- **Impact:** Over 7 days with nobody selected, a busy project can pass the limit. Objects and request lists then vanish with no sign, and the 'and N more' counts stop matching what is shown.
-- **Fix:** Count the rows before the LIMIT and show 'some objects not shown, narrow the time or pick an identity' when it bites, or size the per-level caps so the total cannot reach it. Measure the row count at 7 and 30 days with nobody selected.
-- **Evidence:** scripts/lib/dashboards/07-actor-360.mjs:164 '| SORT lvl, pid, acts DESC, k | LIMIT 6000', so level 6 (requests) and then level 5 (objects) rows are cut first. Each parent keeps its top 25 children and each data set its latest 25 requests; neither cut is stated on the panel.
-
-### 25. Data-set chips do nothing for index names with characters the id builder keeps
-
-Severity **low** · investigation · SOC analyst · effort S · planned for 1.0.8.2
-
-- **Impact:** For an index whose name holds + @ = ( ) ' & or !, clicking its chip in the drill-down does nothing and shows no error, so that data set's requests cannot be seen.
-- **Fix:** Build the element ids from the data set's position or a hash, as the level items already use nid, not from its name.
-- **Evidence:** custom/11-identity-path.html:102, :110, :210, :220-224, :237 build ids by replacing only . : * space and / in the index name; the generated CSS then uses '#d<id>:checked' (:103-104). Elasticsearch allows + @ = ( ) ' & ! in index names, which make that selector invalid, so the browser drops the rule.
-
-### 26. Identity 360's drill-down depends on a tech-preview panel, with no render check and no fallback
-
-Severity **medium** · trust · SOC analyst, CISO, Compliance auditor · effort M · planned for 1.0.8.2
-
-- **Impact:** If Kibana renames a custom_content setting, the deploy still succeeds and Identity 360's centre panel renders blank. If the panel type is withdrawn, or the suite meets a Kibana without it, the deploy fails or the panel is dropped.
-- **Fix:** Make --verify fail when the drill-down renders no items. Keep a fallback ready: a Lens table of the same credential › space › object type › operation paths, switched in by a build flag.
-- **Evidence:** docs/custom-panels.md:39-41: unknown config keys are dropped silently; custom_content is a serverless tech preview. scripts/lib/layout.mjs and the --verify checks have no custom_content-specific test. The drill-down is IDENTITY_PATH (07-actor-360.mjs) rendered by custom/11-identity-path.html.
-
-### 27. The drill-down's links drop the time range, and its request rows lead nowhere
+### 21. The drill-down's links drop the time range, and its request rows lead nowhere
 
 Severity **medium** · navigation · SOC analyst, Compliance auditor · effort S · planned for 1.0.8.3
 
@@ -528,7 +457,7 @@ Severity **medium** · navigation · SOC analyst, Compliance auditor · effort S
 - **Fix:** Carry the drill-down's time range (?_tstart, ?_tend) into each link as _g. Show the request id on each request row and link it to the 'Kibana request → Elasticsearch requests' session filtered to that request (custom panels may link to /app/discover).
 - **Evidence:** custom/11-identity-path.html:198 '<a href="/app/dashboards#/view/{{ oid }}">Open dashboard ↗</a>' carries no time; scripts/lib/custom.mjs:12 links to /app/dashboards and /app/discover keep their href. The request rows hold the x-opaque-id but print no id and no link; searches/11-kibana-request-trace.json is reachable from no dashboard.
 
-### 28. Open in Discover silently drops the page's dropdowns everywhere except Identity 360
+### 22. Open in Discover silently drops the page's dropdowns everywhere except Identity 360
 
 Severity **medium** · navigation · SOC analyst, Compliance auditor · effort M · planned for 1.0.8.3
 
@@ -536,7 +465,7 @@ Severity **medium** · navigation · SOC analyst, Compliance auditor · effort M
 - **Fix:** Write the dropdown values into the session's ES|QL the way the pills are written, if the drilldown can read the ES|QL variables. Otherwise name the gap on every page's menu entry ('ignores the dropdowns') and in How to read.
 - **Evidence:** scripts/lib/drilldowns.mjs:98-106: the dropdowns are ES|QL variables no session reads; only a panel given a discoverName (07's openInByTitle third argument) says so in its menu entry.
 
-### 29. Discover sessions are reached through markdown 'Raw records' links that keep only the time range, and two sessions have no link at all
+### 23. Discover sessions are reached through markdown 'Raw records' links that keep only the time range, and two sessions have no link at all
 
 Severity **low** · navigation · SOC analyst, Compliance auditor · effort S · planned for 1.0.8.3
 
@@ -544,7 +473,7 @@ Severity **low** · navigation · SOC analyst, Compliance auditor · effort S ·
 - **Fix:** Add a thin full-width 'Records in Discover' Links panel under the nav bar on every dashboard, listing that page's sessions (from its openInByTitle map, plus the Kibana request trace on Kibana Object Forensics and Identity 360), and take 'Raw records' out of the intros.
 - **Evidence:** scripts/lib/dashboards/shared.mjs:59 RAW_RECORDS puts the session links in each intro's markdown; no Links panel lists sessions. searches/11-kibana-request-trace.json is linked from no panel.
 
-### 30. The Cloud API keys that run the suite's alert rules count as identities on every page
+### 24. The Cloud API keys that run the suite's alert rules count as identities on every page
 
 Severity **medium** · trust · SOC analyst, CISO, Cloud/platform admin · effort S · planned for 1.0.10
 
@@ -552,7 +481,7 @@ Severity **medium** · trust · SOC analyst, CISO, Cloud/platform admin · effor
 - **Fix:** Recognise the rule runner's requests (the alerting_v2 rule_executor marker in x-opaque-id, as RULE_RUNNER does) in the shared identity fragments and treat them as the suite's own traffic, counted out with an 'excl. N' line as suite installs are.
 - **Evidence:** scripts/lib/rules.mjs:67 RULE_RUNNER matches '*;kibana:task%20manager:run%20alerting_v2%3Arule_executor:*'; only the rules use it (rules/first-seen-identity.json). No fragment in scripts/lib/panels.mjs leaves these requests out of the dashboards.
 
-### 31. Nobody has tested which denials the serverless audit stream records, yet panels and rules read empty as good
+### 25. Nobody has tested which denials the serverless audit stream records, yet panels and rules read empty as good
 
 Severity **medium** · trust · SOC analyst, Compliance auditor, CISO · effort M · planned for 1.0.10
 
