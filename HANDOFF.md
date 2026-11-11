@@ -3,15 +3,44 @@
 `CLAUDE.md`-style durable context lives in `README.md` and `esql/fragments.md` and wins on
 conflict. This file is "where we are right now" and should be assumed stale.
 
-## Next: 1.0.8.2 "Identity 360 on the time picker; drill-down fixes"
+## Next: 1.0.8.3 "Pivots and records"
 
-Plan: `~/.claude/plans/continue-to-develop-the-wild-comet.md` (user interview 2026-11-10). Decisions: the fixed windows
-(vega 08, 09, 12, 13; 13 also on 02) follow the time picker's END through the events view **whatever it costs**
-(measure and report, no cap); one time zone on the page; "all identities" labels and a prompt with nobody selected;
-drill-down keyboard access, a stated 6,000-row cut, MD5 data-set ids, a `--verify` render check and an
-`AUDIT_NO_CUSTOM` Lens fallback. Then 1.0.8.3 pivots and records, 1.0.8.4 sign-ins and sessions (run_as is impossible
-on serverless: user APIs 410, the run_as header is ignored; UC-066 becomes an "on someone's behalf" panel; platform
-accounts' realm_authentication_failed scores 0, no panel), 1.0.8.5 discovery against a baseline (follows the picker).
+Plan: `~/.claude/plans/continue-to-develop-the-wild-comet.md`. Clickable object id and space on 02 and 07, a
+representative index on the index-family tables, the failed-change share on 02's Mutations tile (UC-064), a per-space
+table with the previous period (UC-113), drill-down links that keep the time range and request rows that open the
+Kibana request trace, Open in Discover and the dropdowns (probe; else say so on every page), and the decided "Records in
+Discover" Links panel (probe `externalLink`; else a markdown strip). Then 1.0.8.4 sign-ins and sessions, 1.0.8.5
+discovery against a baseline.
+
+## Release 1.0.8.2 — Identity 360 on the time picker; drill-down fixes, 2026-11-11
+
+- **End windows.** vega/08 baseline, 09 rhythm, 12 cohort and 13 session timeline (13 also on Kibana Objects) read the
+  events view, bounded 7 days (24 hours for 13) back from `END_AT = LEAST(TO_DATETIME(?_tend), NOW())`: an old range
+  shows its own week, and *Today* / *This week* (which round the end up) stop at now. No panel range any more, so no
+  window badge: titles, descriptions and section headers say the window. `END_WINDOWS` / `endWindow` / `ANCHOR_QUERY`
+  in `panels.mjs` replace `VEGA_WINDOWS`; `checkNoPanelRange` / `checkEndWindowSpec` and `end-window.test.mjs` replace
+  the fixed-window checks; the `--verify` canary requires these charts' view requests and fails one with a range filter.
+- **One time zone.** 08 and 09 draw in the browser's zone (a cell that a clock change doubles or empties says so); the
+  drill-down formats times with Liquid `date`, which runs in the browser (probed: −0500 New York, +0900 Tokyo).
+- **Identity 360 tiles.** Events counts the identities Who this is lists when more than one, else actions and how long
+  before the range end it was last active; Client IPs shows countries only (the line was cut at 1440).
+- **Drill-down.** Keyboard: each data set is a `<details name>` chip whose request list sits inside it (Enter/Space
+  opens and closes, focus stays; Close removed). A muted line when the 6,000-row cap cuts. Data-set ids from the
+  level-6 MD5 `pid`; a chip with no panel is a plain label. "N identities. Pick one…" only when the rows cover more
+  than one identity (counted from the data, so a pinned Principal id or an Identity type clears it). `--verify` walks the
+  frames and fails a drill-down with no items and no empty-state text (`drill=shown/total`). `AUDIT_NO_CUSTOM=1` builds a
+  Lens table of the same paths instead (not written to `dashboards/*.json`). Kibana's sanitizer drops a whole `<style>`
+  if any text in it looks like a tag, comments included (unit-tested).
+- **`--perf`.** `--users N` (default 5) opens each dashboard N times at once and reports each viewer's wait; the
+  replica view is kept between runs and warmed before timing (a fresh view's first query took 623ms).
+- **Cost (README *Performance*).** On the replica the view queries cost ~270ms against ~50ms before; Identity 360's page
+  1.13 → 2.07s at 24h, 2.84 → 3.89s at 7d; five viewers 4.9 → 11.2s and 12.6 → 18.0s. On the live project the view adds
+  only ~25ms per chart. The view is ~5× the identical inline query on the replica (two or three backing indices) and not
+  on the live stream (one); inline is impossible (`get_timefield` answers `@timestamp`, so Kibana would clip the window).
+  Worth raising with Elastic. The user chose "follow the picker whatever it costs" (2026-11-10).
+- **Known, not done:** the drill-down's identity count covers Kibana activity only, so it can read lower than the
+  Events tile (2 vs 3); the drill-down's chip can scroll out of view when a request list opens (no JavaScript to scroll
+  it back); the cohort's LIMIT 10000 (project, email) rows can cut silently on a very large estate.
 
 ## Release 1.0.8.1 — State the window, 2026-11-10
 
