@@ -127,3 +127,15 @@ test('on the real suite, every embedded Vega/Discover ref resolves to a gathered
   const embedded = groups.filter((g) => !g.noPageLoad).flatMap((g) => g.items).filter((i) => !i.src.startsWith('dashboards/'));
   assert.ok(embedded.length > 0, 'no Vega or Discover queries were attributed to any dashboard');
 });
+
+test('the replica view is reused when it already reads the replica, and warmed queries are the ones on it', async () => {
+  const { viewNeedsPut, readsView } = await import('../../scripts/perf.mjs');
+  assert.equal(viewNeedsPut(undefined, 'FROM a | RENAME @timestamp AS event_time'), true);
+  assert.equal(viewNeedsPut('FROM b | RENAME @timestamp AS event_time', 'FROM a | RENAME @timestamp AS event_time'), true);
+  assert.equal(viewNeedsPut('FROM a | RENAME @timestamp AS event_time', 'FROM a | RENAME @timestamp AS event_time'), false);
+  const v = 'logs-cloud-audit-events-view-perf';
+  assert.equal(readsView({ kind: 'esql', q: `SET unmapped_fields="nullify"; FROM ${v} | WHERE x` }, v), true);
+  assert.equal(readsView({ kind: 'esql', q: 'FROM logs-elastic_cloud.serverless_audit.otel-perf | WHERE x' }, v), false);
+  assert.equal(readsView({ kind: 'esql', q: `FROM ${v}x | WHERE x` }, v), false);
+  assert.equal(readsView({ kind: 'dsl', q: `FROM ${v}` }, v), false);
+});

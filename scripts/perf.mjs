@@ -69,6 +69,11 @@ export function assertPerfTarget(target, live) {
   return target;
 }
 
+/** Whether the replica view must be (re)created: missing, or defined over something else. */
+export const viewNeedsPut = (current, wanted) => current !== wanted;
+/** Whether a timed item reads the replica view (warmed before timing). */
+export const readsView = (item, view) => item.kind === 'esql' && new RegExp(`\\bFROM\\s+${view.replace(/[-.]/g, '\\$&')}\\b`).test(item.q);
+
 /** `1h,24h,7d` -> [{ label, ms }]. Units m/h/d; the label is kept verbatim for the report. */
 export function parseWindows(spec) {
   const out = String(spec).split(',').map((s) => s.trim()).filter(Boolean).map((label) => {
@@ -399,9 +404,18 @@ async function cmdRun(args) {
   // The prior-period tiles read the events view, which is over the live stream, so they are timed on a view of the
   // same definition over the replica (perfView). Not on the view's text written in: measured live in 1.0.5.1, a
   // query through the view took 0.2–0.37s over 7–30 days where the same text inlined took 0.04s.
+  // The view is kept between runs (--perf clean removes it) and warmed before each window: a freshly created
+  // view is cold, and timing one inflated every query on it (measured 2026-11-10: the first query through a view
+  // took 623ms, the next ones ~65ms; the 1.0.8.2 end-window charts read +230ms each on a fresh view, +25ms warm).
   const view = perfView();
-  const pv = await es.raw(`/_query/view/${view}`, { method: 'PUT', body: { query: (await import('./lib/panels.mjs')).EVENTS_VIEW_QUERY(perf) } });
-  if (!pv.ok) throw new Error(`could not create ${view} over ${perf} (${pv.status}: ${reasonOf(pv).slice(0, 160)})`);
+  const viewQuery = (await import('./lib/panels.mjs')).EVENTS_VIEW_QUERY(perf);
+  const have = await es.raw(`/_query/view/${view}`);
+  const current = have.ok ? (have.body.views || []).find((x) => x.name === view)?.query : undefined;
+  if (viewNeedsPut(current, viewQuery)) {
+    const pv = await es.raw(`/_query/view/${view}`, { method: 'PUT', body: { query: viewQuery } });
+    if (!pv.ok) throw new Error(`could not create ${view} over ${perf} (${pv.status}: ${reasonOf(pv).slice(0, 160)})`);
+    info(`created ES|QL view ${view} over ${perf}`);
+  } else detail(`reusing ES|QL view ${view}`);
   // The prior-period tiles cap their lookback with NOW(); with --anchor data the picker windows end at the replica's
   // newest event, so the cap must end there too, or a replica older than the lookback times an empty read.
   const atAnchor = (q) => (anchorMode === 'data' ? q.replaceAll('NOW()', `TO_DATETIME("${new Date(anchor).toISOString()}")`) : q);
@@ -429,7 +443,10 @@ async function cmdRun(args) {
   const seq = [];   // { window, key, src, kind, ms, ok, cancelled, error }
   const conc = [];  // { window, dashboard, wallMs, n, failed, cancelled, items: [...] }
   const multi = []; // { window, dashboard, users, wallMs: [per viewer], maxMs, p50Ms, slowdown, failed, cancelled }
+  const onView = [...unique.values()].filter((x) => readsView(x, view));
   for (const win of windows) {
+    // Untimed warm-up of every query on the view, so a cold view does not land on the first timings.
+    if (onView.length) { detail(`window ${win.label}: warming ${onView.length} view queries`); for (const x of onView) await timeOne(x, win, budgetMs, lib, anchor); }
     info(`window ${win.label}: sequential, ${unique.size} queries`);
     // (a) One at a time on a quiet cluster: the query's own cost. Each unique query is timed once
     // per window even when several dashboards embed it.
@@ -508,7 +525,6 @@ async function cmdRun(args) {
   const file = join(out, 'report.json');
   writeFileSync(file, JSON.stringify({ at: new Date().toISOString(), stream: perf, docs: st.docs, span: [st.lo, st.hi],
     budgetMs, anchor: new Date(anchor).toISOString(), anchorMode, windows: windows.map((w) => w.label), residentAtStart: resident, users, summary: rows, sequential: seq, concurrent: conc, viewers: multi }, null, 2));
-  await es.raw(`/_query/view/${view}`, { method: 'DELETE' });
   const bad = seq.filter((s) => !s.ok).length;
   (bad ? warn : success)(`${seq.length} timings, ${bad} over budget or failed — report ${file.replace(`${ROOT}/`, '')}`);
 }
